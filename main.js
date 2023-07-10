@@ -228,17 +228,11 @@ if (config.bot.enable)
             await setValue(friendCode, { ...data, status: "sent", time: new Date().getTime(),});
             sendFriendRequest(cj, friendCode)
               .then(async () => {
-                const requests = await getSentRequests(cj);
-                if (!(friendCode in requests)) appendQueue(data);
-                // TODO: skip freiend code validation next try
-                else {
-                  // BUG: Can't hit this path
-                  await setValue(friendCode, { ...data, status: "sent", time: new Date().getTime(),});
-                  await trace({
-                    log: `好友请求发送成功！请在5分钟内同意好友请求来继续`,
-                    progress: 10,
-                  });
-                }
+                await setValue(friendCode, { ...data, status: "sent", time: new Date().getTime(),});
+                await trace({
+                  log: `好友请求发送成功！请在5分钟内同意好友请求来继续`,
+                  progress: 10,
+                });
               })
               .catch(async (err) => {
                 console.log(err);

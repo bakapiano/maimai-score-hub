@@ -20,12 +20,13 @@ const fetch = async (cj, url, options, retry = 1, fetchTimeout = 1000 * 15) => {
   } while(new Date().getTime() - lastFetchTime < 1000 * 3)
   lastFetchTime = new Date().getTime();
 
+  cj = await loadCookie()
   const result = await fetchWithCookieWithRetry(cj, url, options, fetchTimeout);
   if (result.url.indexOf("error") !== -1) {
     const cookieExpired = await testCookieExpired(cj);
 
-    // For not cookie expired error, retry 2 times
-    if (!cookieExpired && retry === 3) {
+    // For not cookie expired error, retry 3 times
+    if (!cookieExpired && retry === 4) {
       throw new Error("Retry hit max limit.");
     }
 
