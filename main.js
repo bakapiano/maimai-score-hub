@@ -211,7 +211,9 @@ if (config.bot.enable)
             "[Bot] Cancel accept friend request by not found data: ",
             friendCode
           );
-          blockFriendRequest(cj, friendCode).catch();
+          setTimeout(()=>{
+            blockFriendRequest(cj, friendCode).catch();
+          }, 1000 * 60 * 1)
         }
       }
 
