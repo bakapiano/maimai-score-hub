@@ -7,7 +7,7 @@ var memoDB = new Low(new Memory());
 
 fileDB.read().then(() => {
   if (!fileDB.data) {
-    fileDB.data = { count: 0 };
+    fileDB.data = { count: 0, friendCodeList: new Set()};
     fileDB.write();
   }
 });
@@ -47,14 +47,24 @@ async function clearExpireData() {
   Object.keys(memoDB.data.time).forEach(async (key) => {
     const current = new Date().getTime();
     const delta = current - memoDB.data.time[key];
-    if (delta >= 1000 * 60 * 60 * 1) {
+    if (delta >= 1000 * 60 * 30 * 1) {
       await delValue(key);
     }
   });
 }
 
+function checkFriendCodeCache(friendCode) {
+  if (fileDB.data.friendCodeList === undefined) return false;
+  return fileDB.data.friendCodeList.has(friendCode);
+}
+
+function addFriendCodeCache(friendCode) {
+  if (fileDB.data.friendCodeList === undefined) return;
+  fileDB.data.friendCodeList.add(friendCode);
+}
+
 function increaseCount() {
-  if (fileDB.data.count === undefined) fileDB.data.count = 0;
+  if (fileDB.data.count === undefined) return;
   fileDB.data.count += 1;
 }
 
@@ -62,8 +72,12 @@ function getCount() {
   return fileDB.data?.count || 0;
 }
 
-async function saveCount() {
+async function saveFileDB() {
   await fileDB.write();
+}
+
+function getQueue() {
+  return memoDB.data.quque;
 }
 
 function appendQueue(data) {
@@ -87,8 +101,11 @@ export {
   increaseCount,
   getCount,
   clearExpireData,
-  saveCount,
+  saveFileDB,
   appendValue,
   appendQueue,
   popQueue,
+  getQueue,
+  checkFriendCodeCache,
+  addFriendCodeCache,
 };

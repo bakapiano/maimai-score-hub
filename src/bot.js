@@ -6,6 +6,7 @@ const getCookieValue = (cj) => {
   return [
     cj.cookies?.get("maimai.wahlap.com")?.get("_t")?.value,
     cj.cookies?.get("maimai.wahlap.com")?.get("userId")?.value,
+    cj.cookies?.get("maimai.wahlap.com")?.get("friendCodeList")?.value,
   ];
 };
 
@@ -13,14 +14,14 @@ var lastFetchTime = 0;
 
 const fetch = async (cj, url, options, retry = 1, fetchTimeout = 1000 * 15) => {
   // sleep random 1 - 3 seconds
-  do { 
+  do {
     await new Promise((r) => {
       setTimeout(r, Math.random() * 1000 * 3);
     });
-  } while(new Date().getTime() - lastFetchTime < 1000 * 3)
+  } while (new Date().getTime() - lastFetchTime < 1000 * 3);
   lastFetchTime = new Date().getTime();
 
-  cj = await loadCookie()
+  cj = await loadCookie();
   const result = await fetchWithCookieWithRetry(cj, url, options, fetchTimeout);
   if (result.url.indexOf("error") !== -1) {
     const cookieExpired = await testCookieExpired(cj);
@@ -60,11 +61,15 @@ const fetch = async (cj, url, options, retry = 1, fetchTimeout = 1000 * 15) => {
   const old = await loadCookie();
   if (
     old.cookies?.get("maimai.wahlap.com")?.get("_t")?.value !== undefined &&
-    old.cookies?.get("maimai.wahlap.com")?.get("userId")?.value !== undefined
+    old.cookies?.get("maimai.wahlap.com")?.get("userId")?.value !== undefined &&
+    old.cookies?.get("maimai.wahlap.com")?.get("friendCodeList")?.value !==
+      undefined
   ) {
     if (
       (cj.cookies?.get("maimai.wahlap.com")?.get("_t")?.value !==
         old.cookies?.get("maimai.wahlap.com")?.get("_t")?.value ||
+        cj.cookies?.get("maimai.wahlap.com")?.get("friendCodeList")?.value !==
+          old.cookies?.get("maimai.wahlap.com")?.get("friendCodeList")?.value ||
         cj.cookies?.get("maimai.wahlap.com")?.get("userId")?.value !==
           old.cookies?.get("maimai.wahlap.com")?.get("userId")?.value) &&
       !(await testCookieExpired(cj))
@@ -73,6 +78,8 @@ const fetch = async (cj, url, options, retry = 1, fetchTimeout = 1000 * 15) => {
       cj.cookies.get("maimai.wahlap.com").get("userId").expiry =
         new Date().setFullYear(2099);
       cj.cookies.get("maimai.wahlap.com").get("_t").expiry =
+        new Date().setFullYear(2099);
+      cj.cookies.get("maimai.wahlap.com").get("friendCodeList").expiry =
         new Date().setFullYear(2099);
       await cj.save(config.wechatLogin.cookiePath);
     }
@@ -117,9 +124,68 @@ const getSentRequests = async (cj) => {
   const text = await result.text();
   const t = text.matchAll(/<input type="hidden" name="idx" value="(.*?)"/g);
   const ids = [...t].map((x) => x[1]);
-  console.log(`[Bot] Done get sent friend requests`);
+  console.log(`[Bot] Done get sent friend requests: `, ids);
   return ids;
 };
+
+const getAccpetRequests = async (cj) => {
+  console.log(`[Bot] Start get accept friend requests`);
+  const result = await fetch(
+    cj,
+    "https://maimai.wahlap.com/maimai-mobile/friend/accept/"
+  );
+  const text = await result.text();
+  const t = text.matchAll(/<input type="hidden" name="idx" value="(.*?)"/g);
+  const ids = [...t].map((x) => x[1]);
+  console.log(`[Bot] Done get accept friend requests: `, ids);
+  return ids;
+}
+
+const allowFriendRequest = async (cj, friendCode) => {
+  console.log(`[Bot] Start allow friend request, friend code ${friendCode}`);
+  await fetch(
+    cj,
+    "https://maimai.wahlap.com/maimai-mobile/friend/accept/allow/",
+    {
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: `idx=${friendCode}&token=${
+        cj.cookies.get("maimai.wahlap.com").get("_t").value
+      }&allow=`,
+      method: "POST",
+    }
+  );
+
+  await fetch(
+    cj,
+    "https://maimai.wahlap.com/maimai-mobile/friend/accept/allow/",
+  );
+  console.log(`[Bot] Done allow friend request, friend code ${friendCode}`);
+}
+
+const blockFriendRequest = async (cj, friendCode) => {
+  console.log(`[Bot] Start block friend request, friend code ${friendCode}`);
+  await fetch(
+    cj,
+    "https://maimai.wahlap.com/maimai-mobile/friend/accept/block/",
+    {
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: `idx=${friendCode}&token=${
+        cj.cookies.get("maimai.wahlap.com").get("_t").value
+      }&block=`,
+      method: "POST",
+    }
+  );
+
+  await fetch(
+    cj,
+    "https://maimai.wahlap.com/maimai-mobile/friend/accept/block/",
+  );
+  console.log(`[Bot] Done block friend request, friend code ${friendCode}`);
+}
 
 const favoriteOnFriend = async (cj, friendCode) => {
   console.log(`[Bot] Start favorite on friend, friend code ${friendCode}`);
@@ -241,4 +307,7 @@ export {
   favoriteOnFriend,
   getFriendVS,
   validateFriendCode,
+  getAccpetRequests,
+  allowFriendRequest,
+  blockFriendRequest,
 };

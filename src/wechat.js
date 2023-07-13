@@ -22,7 +22,7 @@ async function refreshCookie() {
     console.log(result.status)
     // wait 10 seconds
     await new Promise((r) => {
-      setTimeout(r, 1000 * 10);
+      setTimeout(r, 1000 * 5);
     });
   }
 

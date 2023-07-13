@@ -1,3 +1,5 @@
+import "express-async-errors"
+
 import { appendQueue, getCount, increaseCount, setValue } from "./db.js";
 import { getAuthUrl, verifyProberAccount } from "./crawler.js";
 import { getTrace, useTrace } from "./trace.js";
@@ -189,6 +191,7 @@ if (config.bot.enable) {
       log: "已加入等待队列中，请稍后...",
       status: "running",
       progress: 0,
+      time: new Date().getTime(),
     });
 
     const redirect = false;
@@ -200,5 +203,10 @@ if (config.bot.enable) {
 }
 
 app.use(express.static("static"));
+
+app.use((err, req, res, next)=>{
+  console.error(err.stack)
+  res.status(500).send('500 Internal Server Error')
+})
 
 export { app as server };

@@ -1,10 +1,13 @@
 import {
+  addFriendCodeCache,
   appendQueue,
+  checkFriendCodeCache,
   clearExpireData,
   delValue,
+  getQueue,
   getValue,
   popQueue,
-  saveCount,
+  saveFileDB,
   setValue,
 } from "./src/db.js";
 import {
@@ -68,7 +71,7 @@ for (let min = 0; min < 60; min += 5) {
 schedule.scheduleJob(rule, async () => {
   try {
     console.log(`Clear in-memory DB and save count...`);
-    await saveCount();
+    await saveFileDB();
     await clearExpireData();
   } catch (err) {
     console.error(err);
@@ -84,9 +87,9 @@ function single(func) {
     if (lock) return;
     lock = true;
     const lockTimeout = setTimeout(() => {
-      lock = false; 
-      console.log("[Bot] Cacncel lock")
-    }, 1000 * 60 * 1);
+      lock = false;
+      console.log("[Bot] Cacncel lock");
+    }, 1000 * 60 * 2);
     try {
       await func();
     } catch (err) {
@@ -139,8 +142,7 @@ if (config.bot.enable)
         console.log("[CookieRefresher] Cookie expired, refresh...");
         await refreshCookie();
         cj = await loadCookie();
-      }
-      else {
+      } else {
         console.log("[CookieRefresher] Cookie good");
       }
     })
@@ -161,40 +163,57 @@ if (config.bot.enable)
       console.log("[Bot] Pending requests: ", requests);
       console.log("[Bot] Friends: ", friends);
 
-      // Clear pending requests 
+      // Clear pending requests
       for (const friendCode of requests) {
         const data = await getValue(friendCode);
         if (!data) {
-          console.log("[Bot] Cancel friend request by not found data: ", friendCode)
+          console.log(
+            "[Bot] Cancel friend request by not found data: ",
+            friendCode
+          );
           cancelFriendRequest(cj, friendCode).catch();
-        }
-        else {
-          const { time, traceUUID } = data;
+        } else {
+          const { time, traceUUID, status } = data;
           const trace = useTrace(traceUUID);
           const delta = new Date().getTime() - time;
-          if (delta > 1000 * 60 * 5) {
+          if ((status === "sent" && delta > 1000 * 60 * 5) || delta > 1000 * 60 * 10) {
             await trace({
               log: `长时间未接受好友请求，请重试`,
               status: "failed",
             });
-            console.log("[Bot] Cancel friend request by timeout: ", friendCode)
-            cancelFriendRequest(cj, friendCode).catch().finally(() => delValue(friendCode));
+            console.log("[Bot] Cancel friend request by timeout: ", friendCode);
+            cancelFriendRequest(cj, friendCode)
+              .catch()
+              .finally(() => delValue(friendCode));
           }
         }
       }
 
-      const appendBack = []
+      console.log("[Bot] Queue: ", getQueue());
+      const appendBack = [];
       // Pop up queue to send friendRequest
-      let count = Math.max(0, Math.min(20 - friends.length, 10 - requests.length))
+      let count = Math.max(
+        0,
+        Math.min(10 - friends.length, 10 - requests.length)
+      );
       while (true) {
         const data = popQueue();
         if (!data) break;
 
         console.log("[Bot] Processing queue front data:", data);
 
-        const { friendCode, traceUUID } = data;
+        const { friendCode, traceUUID, time } = data;
         const trace = useTrace(traceUUID);
 
+        if ( new Date().getTime() - time > 1000 * 60 * 10) {
+          await trace({
+            log: `等待时间过长，请重试`,
+            status: "failed",
+          });
+          await delValue(friendCode);
+          continue;
+        }
+        
         if (
           requests.indexOf(friendCode) !== -1 ||
           friends.indexOf(friendCode) !== -1
@@ -203,63 +222,93 @@ if (config.bot.enable)
             log: `好友请求发送成功！请在5分钟内同意好友请求来继续`,
             progress: 10,
           });
-          await setValue(friendCode, { ...data, status: "sent", time: new Date().getTime(),});
-          continue;
-        }
-
-        if (requests.length >= 10 || friends.length >= 20 || count === 0) {
-          await trace({log: `bot好友数量已达上限，请稍后...`});
-          appendBack.push(data)
-          continue;
-        }
-
-        count -= 1
-        validateFriendCode(cj, friendCode)
-          .then(async (result) => {
-            if (!result) {
-              await trace({
-                log: `玩家不存在，请检查好友代码！`,
-                status: "failed",
-              });
-              await delValue(friendCode);
-              return;
-            }
-
-            await setValue(friendCode, { ...data, status: "sent", time: new Date().getTime(),});
-            sendFriendRequest(cj, friendCode)
-              .then(async () => {
-                await setValue(friendCode, { ...data, status: "sent", time: new Date().getTime(),});
-                await trace({
-                  log: `好友请求发送成功！请在5分钟内同意好友请求来继续`,
-                  progress: 10,
-                });
-              })
-              .catch(async (err) => {
-                console.log(err);
-                appendQueue(data);
-                await delValue(friendCode)
-              });
-          })
-          .catch((err) => {
-            console.log(err);
-            appendQueue(data);
+          await setValue(friendCode, {
+            ...data,
+            status: "sent",
+            time: new Date().getTime(),
           });
+          continue;
+        }
+
+        if (requests.length >= 10 || friends.length >= 10 || count === 0) {
+          await trace({ log: `bot好友数量已达上限，请稍后...` });
+          appendBack.push(data);
+          continue;
+        }
+
+        await setValue(friendCode, {
+          ...data,
+          status: "sending",
+          time: new Date().getTime(),
+        });
+        const timeout = setTimeout(async () => {
+          const { status } = await getValue(friendCode)
+          if (status === "sending") {
+            console.log("[Bot] Send friend request timeout, append back:", data);
+            appendQueue(data);
+            await delValue(friendCode);
+          }
+        }, 1000 * 60 * 1);
+        count -= 1;
+        const next = async (result) => {
+          if (!result) {
+            await trace({
+              log: `玩家不存在，请检查好友代码！`,
+              status: "failed",
+            });
+            await delValue(friendCode);
+            clearTimeout(timeout);
+            return;
+          }
+
+          if (!checkFriendCodeCache(friendCode)) addFriendCodeCache(friendCode);
+
+          sendFriendRequest(cj, friendCode)
+            .then(async () => {
+              await setValue(friendCode, {
+                ...data,
+                status: "sent",
+                time: new Date().getTime(),
+              });
+              await trace({
+                log: `好友请求发送成功！请在5分钟内同意好友请求来继续`,
+                progress: 10,
+              });
+              clearTimeout(timeout);
+            })
+            .catch(async (err) => {
+              clearTimeout(timeout);
+              appendQueue(data);
+              await delValue(friendCode);
+            });
+        };
+        if (checkFriendCodeCache(friendCode)) next(true);
+        else {
+          validateFriendCode(cj, friendCode)
+            .then(next)
+            .catch(async (err) => {
+              clearTimeout(timeout);
+              appendQueue(data);
+              await delValue(friendCode);
+            });
+        }
       }
 
       for (const data of appendBack) {
-        await appendQueue(data)
+        await appendQueue(data);
       }
 
       // Get friend list
-      const friendList = await getFriendList(cj);
       for (const friendCode of friendList) {
         const work = () =>
           new Promise(async (resolve) => {
             const data = await getValue(friendCode);
 
             console.log(friendCode, data);
+            
             if (!data) {
               // 清理已经完成的好友
+              console.log("[Bot] Remove friend:", friendCode);
               removeFriend(cj, friendCode).catch();
               return resolve();
             }
@@ -315,7 +364,12 @@ if (config.bot.enable)
                         16,
                         async () => {
                           // Sleep random time to avoid ban
-                          await new Promise((r) => setTimeout(r, 1000 * (diff + 1) * 2 + 1000 * 5 * Math.random()));
+                          await new Promise((r) =>
+                            setTimeout(
+                              r,
+                              1000 * (diff + 1) * 2 + 1000 * 5 * Math.random()
+                            )
+                          );
 
                           let v1 = undefined;
                           let v2 = undefined;
@@ -366,7 +420,7 @@ if (config.bot.enable)
                     status: "success",
                   });
                   // await favoriteOffFriend(cj, friendCode);
-                  await removeFriend(cj, friendCode);
+                  removeFriend(cj, friendCode).catch();
                 },
                 true
               );
@@ -383,7 +437,7 @@ if (config.bot.enable)
 
         await work();
       }
-      
-      console.log("[Bot] Bot work done")
+
+      console.log("[Bot] Bot work done");
     })
   );
