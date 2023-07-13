@@ -6,10 +6,13 @@ var fileDB = new Low(new JSONFile("db.json"));
 var memoDB = new Low(new Memory());
 
 fileDB.read().then(() => {
-  if (!fileDB.data) {
-    fileDB.data = { count: 0, friendCodeList: new Set()};
-    fileDB.write();
+  if (!fileDB.data.count) {
+    fileDB.data.count = 0;
   }
+  if (!fileDB.data.friendCodeList) {
+    fileDB.data.friendCodeList = new Set();
+  }
+  fileDB.write();
 });
 
 memoDB.read().then(() => {

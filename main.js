@@ -11,9 +11,12 @@ import {
   setValue,
 } from "./src/db.js";
 import {
+  allowFriendRequest,
+  blockFriendRequest,
   cancelFriendRequest,
   favoriteOffFriend,
   favoriteOnFriend,
+  getAccpetRequests,
   getFriendList,
   getFriendVS,
   getSentRequests,
@@ -29,6 +32,7 @@ import { CookieJar } from "node-fetch-cookies";
 import config from "./config.js";
 import fetch from "node-fetch";
 import fs from "fs";
+import { v4 as genUUID } from "uuid";
 import { interProxy } from "./src/inter-proxy.js";
 import { proxy } from "./src/proxy.js";
 import schedule from "node-schedule";
@@ -81,25 +85,25 @@ schedule.scheduleJob(rule, async () => {
 // Set up bot
 const botRule = new schedule.RecurrenceRule();
 botRule.second = [0, 10, 20, 30, 40, 50];
-var lock = false;
+var lock = undefined;
 function single(func) {
   return async () => {
-    if (lock) return;
-    lock = true;
+    if (lock !== undefined) return;
+    lock = genUUID();
     const lockTimeout = setInterval(async () => {
       cj = await loadCookie();
       if (!await testCookieExpired(cj)) {
-        lock = false;
+        lock = undefined;
         console.log("[Bot] Cacncel lock");
         clearInterval(lockTimeout);
       }
     }, 1000 * 60 * 1.5);
     try {
-      await func();
+      await func(lock);
     } catch (err) {
       console.log(err);
     } finally {
-      lock = false;
+      lock = undefined;
       clearInterval(lockTimeout);
     }
   };
@@ -155,7 +159,7 @@ if (config.bot.enable)
 if (config.bot.enable)
   schedule.scheduleJob(
     botRule,
-    single(async () => {
+    single(async (_lock) => {
       console.log("[Bot] Bot wake up");
 
       let cj = null;
@@ -163,9 +167,15 @@ if (config.bot.enable)
 
       const requests = await getSentRequests(cj);
       const friends = await getFriendList(cj);
-
+      const acceptRequests = await getAccpetRequests(cj)
+      const queue = getQueue();
+      
       console.log("[Bot] Pending requests: ", requests);
       console.log("[Bot] Friends: ", friends);
+      console.log("[Bot] Accept requests: ", acceptRequests);
+      console.log("[Bot] Queue: ", getQueue());
+
+      if (lock !== _lock) return
 
       // Clear pending requests
       for (const friendCode of requests) {
@@ -193,8 +203,18 @@ if (config.bot.enable)
         }
       }
 
-      console.log("[Bot] Queue: ", getQueue());
-      const appendBack = [];
+      // Clear accept requests
+      for (const friendCode of acceptRequests) {
+        const data = await getValue(friendCode);
+        if (!data || !queue.find((value) => value.friendCode === friendCode)) {
+          console.log(
+            "[Bot] Cancel accept friend request by not found data: ",
+            friendCode
+          );
+          blockFriendRequest(cj, friendCode).catch();
+        }
+      }
+
       // Pop up queue to send friendRequest
       let count = Math.max(
         0,
@@ -209,21 +229,75 @@ if (config.bot.enable)
         const { friendCode, traceUUID, time } = data;
         const trace = useTrace(traceUUID);
 
-        if ( new Date().getTime() - time > 1000 * 60 * 10) {
+        if (new Date().getTime() - time > 1000 * 60 * 10) {
           await trace({
-            log: `等待时间过长，请重试`,
+            log: `在队列中的等待时间过长，请重试`,
             status: "failed",
           });
           await delValue(friendCode);
           continue;
         }
         
-        if (
-          requests.indexOf(friendCode) !== -1 ||
-          friends.indexOf(friendCode) !== -1
-        ) {
+        if (requests.length >= 10 || friends.length >= 10 || count === 0) {
+          await trace({ log: `bot好友数量已达上限，请稍后...` });
+          appendQueue(data);
+          continue;
+        }
+
+        // 接受好友请求
+        if (acceptRequests.indexOf(friendCode) !== -1) {
+          count -= 1
           await trace({
-            log: `好友请求发送成功！请在5分钟内同意好友请求来继续`,
+            log:"正在接受好友申请"
+          })
+          await setValue(friendCode, {
+            ...data,
+            status: "accepting",
+            time: new Date().getTime(),
+          });
+          const timeout = setTimeout(async () => {
+            const { status } = await getValue(friendCode)
+            if (status === "accepting") {
+              console.log("[Bot] Accept friend request timeout, append back:", data);
+              await trace({
+                log: `接受好友请求失败，请尝试重新添加或等待bot主动发起好友申请`,
+              });
+              appendQueue(data);
+              await delValue(friendCode);
+            }
+          }, 1000 * 60 * 1);
+          allowFriendRequest(cj, friendCode).then(()=>{
+            clearTimeout(timeout);
+            await trace({
+              log: "成功接受好友申请",
+              progress: 10,
+            });
+            await setValue(friendCode, {
+              ...data,
+              status: "sent",
+              time: new Date().getTime(),
+            });
+          }).catch(()=>{
+            await trace({
+              log: `接受好友请求失败，请尝试重新添加或等待bot主动发起好友申请`,
+            });
+            clearTimeout(timeout);
+            appendQueue(data);
+            await delValue(friendCode);
+          })
+          continue
+        }
+
+        // 好友已经存在 or 请求已发送
+        if (
+          friends.indexOf(friendCode) !== -1 ||
+          requests.indexOf(friendCode) !== -1
+        ) {
+          let log = ""
+          if (friends.indexOf(friendCode) !== -1) log = "好友已存在"
+          if (requests.indexOf(friendCode) !== -1) log = "好友请求已发送"
+          await trace({
+            log,
             progress: 10,
           });
           await setValue(friendCode, {
@@ -234,12 +308,8 @@ if (config.bot.enable)
           continue;
         }
 
-        if (requests.length >= 10 || friends.length >= 10 || count === 0) {
-          await trace({ log: `bot好友数量已达上限，请稍后...` });
-          appendBack.push(data);
-          continue;
-        }
-
+        // 发送好友请求
+        await trace({log: `正在发送好友请求...`})
         await setValue(friendCode, {
           ...data,
           status: "sending",
@@ -249,6 +319,9 @@ if (config.bot.enable)
           const { status } = await getValue(friendCode)
           if (status === "sending") {
             console.log("[Bot] Send friend request timeout, append back:", data);
+            await trace({
+              log: `好友请求发送失败，正在尝试重新发送好友请求...`,
+            });
             appendQueue(data);
             await delValue(friendCode);
           }
@@ -281,6 +354,9 @@ if (config.bot.enable)
               clearTimeout(timeout);
             })
             .catch(async (err) => {
+              await trace({
+                log: `好友请求发送失败，正在尝试重新发送好友请求...`,
+              });
               clearTimeout(timeout);
               appendQueue(data);
               await delValue(friendCode);
@@ -298,11 +374,7 @@ if (config.bot.enable)
         }
       }
 
-      for (const data of appendBack) {
-        appendQueue(data);
-      }
-
-      // Get friend list
+      // Process friend list
       for (const friendCode of friends) {
         const work = () =>
           new Promise(async (resolve) => {
@@ -336,8 +408,7 @@ if (config.bot.enable)
             }
 
             await trace({
-              log: `已成功添加好友！`,
-              progress: 10,
+              log: `已确认好友 ${friendCode} 存在...`,
             });
             await setValue(friendCode, {
               ...data,
@@ -349,7 +420,7 @@ if (config.bot.enable)
             try {
               await stage(
                 "更新数据",
-                0,
+                10,
                 async () => {
                   const descriptions = [
                     "Basic",

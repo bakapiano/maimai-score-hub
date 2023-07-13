@@ -188,7 +188,7 @@ if (config.bot.enable) {
     const trace = useTrace(traceUUID);
 
     await trace({
-      log: "已加入等待队列中，请稍后...",
+      log: "请等待 bot 主动发起好友请求(需等待1-5分钟)/或主动向 bot 发送好友请求(好友号码:413252453611467)来继续...",
       status: "running",
       progress: 0,
       time: new Date().getTime(),
