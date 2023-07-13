@@ -171,6 +171,11 @@ if (config.bot.enable)
       const acceptRequests = await getAccpetRequests(cj)
       const queue = getQueue();
       
+      let count = Math.max(
+        0,
+        Math.min(10 - friends.length, 10 - requests.length)
+      );    
+      
       console.log("[Bot] Pending requests: ", requests);
       console.log("[Bot] Friends: ", friends);
       console.log("[Bot] Accept requests: ", acceptRequests);
@@ -204,6 +209,49 @@ if (config.bot.enable)
         }
       }
 
+      // 接受好友请求
+      const accept = async (data) => {
+        const { friendCode } = data
+        await trace({
+          log:"正在接受好友申请"
+        })
+        await setValue(friendCode, {
+          ...data,
+          status: "accepting",
+          time: new Date().getTime(),
+        });
+        const timeout = setTimeout(async () => {
+          const { status } = await getValue(friendCode)
+          if (status === "accepting") {
+            console.log("[Bot] Accept friend request timeout, append back:", data);
+            await trace({
+              log: `接受好友请求失败，请尝试重新添加或等待bot主动发起好友申请`,
+            });
+            appendQueue(data);
+            await delValue(friendCode);
+          }
+        }, 1000 * 60 * 1);
+        allowFriendRequest(cj, friendCode).then(async ()=>{
+          clearTimeout(timeout);
+          await trace({
+            log: "成功接受好友申请",
+            progress: 10,
+          });
+          await setValue(friendCode, {
+            ...data,
+            status: "sent",
+            time: new Date().getTime(),
+          });
+        }).catch(async ()=>{
+          await trace({
+            log: `接受好友请求失败，请尝试重新添加或等待bot主动发起好友申请`,
+          });
+          clearTimeout(timeout);
+          appendQueue(data);
+          await delValue(friendCode);
+        })
+      }
+
       // Clear accept requests
       for (const friendCode of acceptRequests) {
         const data = await getValue(friendCode);
@@ -215,18 +263,23 @@ if (config.bot.enable)
           );
           if (!timeoutBlock[friendCode]) {
             timeoutBlock[friendCode] = setTimeout(() => {
-              blockFriendRequest(cj, friendCode).catch();
+              const data = await getValue(friendCode);
+              const queue = getQueue();
+              if (!data && !queue.find((value) => value.friendCode === friendCode)) {
+                blockFriendRequest(cj, friendCode).catch();
+              }
               delete timeoutBlock[friendCode]
             }, 1000 * 60 * 5)
           }
         }
+        else if (!data || (data.status !== "running" && data.status !== "accepting")){
+          count -= 1
+          await accept(data)
+        }
       }
 
       // Pop up queue to send friendRequest
-      let count = Math.max(
-        0,
-        Math.min(10 - friends.length, 10 - requests.length)
-      );
+
       while (true) {
         const data = popQueue();
         if (!data) break;
@@ -249,50 +302,6 @@ if (config.bot.enable)
           await trace({ log: `bot好友数量已达上限，请稍后...` });
           appendQueue(data);
           continue;
-        }
-
-        // 接受好友请求
-        if (acceptRequests.indexOf(friendCode) !== -1) {
-          count -= 1
-          await trace({
-            log:"正在接受好友申请"
-          })
-          await setValue(friendCode, {
-            ...data,
-            status: "accepting",
-            time: new Date().getTime(),
-          });
-          const timeout = setTimeout(async () => {
-            const { status } = await getValue(friendCode)
-            if (status === "accepting") {
-              console.log("[Bot] Accept friend request timeout, append back:", data);
-              await trace({
-                log: `接受好友请求失败，请尝试重新添加或等待bot主动发起好友申请`,
-              });
-              appendQueue(data);
-              await delValue(friendCode);
-            }
-          }, 1000 * 60 * 1);
-          allowFriendRequest(cj, friendCode).then(async ()=>{
-            clearTimeout(timeout);
-            await trace({
-              log: "成功接受好友申请",
-              progress: 10,
-            });
-            await setValue(friendCode, {
-              ...data,
-              status: "sent",
-              time: new Date().getTime(),
-            });
-          }).catch(async ()=>{
-            await trace({
-              log: `接受好友请求失败，请尝试重新添加或等待bot主动发起好友申请`,
-            });
-            clearTimeout(timeout);
-            appendQueue(data);
-            await delValue(friendCode);
-          })
-          continue
         }
 
         // 好友已经存在 or 请求已发送
