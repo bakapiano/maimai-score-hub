@@ -109,6 +109,7 @@ function single(func) {
   };
 }
 
+var timeoutBlock = {}
 const botCookieRefresher = new schedule.RecurrenceRule();
 botCookieRefresher.second = [0, 10, 20, 30, 40, 50];
 var cookieLock = false;
@@ -206,14 +207,18 @@ if (config.bot.enable)
       // Clear accept requests
       for (const friendCode of acceptRequests) {
         const data = await getValue(friendCode);
-        if (!data || !queue.find((value) => value.friendCode === friendCode)) {
+        const queue = getQueue();
+        if (!data && !queue.find((value) => value.friendCode === friendCode)) {
           console.log(
             "[Bot] Cancel accept friend request by not found data: ",
             friendCode
           );
-          setTimeout(()=>{
-            blockFriendRequest(cj, friendCode).catch();
-          }, 1000 * 60 * 1)
+          if (!timeoutBlock[friendCode]) {
+            timeoutBlock[friendCode] = setTimeout(() => {
+              blockFriendRequest(cj, friendCode).catch();
+              delete timeoutBlock[friendCode]
+            }, 1000 * 60 * 5)
+          }
         }
       }
 
