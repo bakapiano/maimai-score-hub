@@ -272,7 +272,7 @@ if (config.bot.enable)
             }, 1000 * 60 * 5)
           }
         }
-        else if (!data || (data.status !== "running" && data.status !== "accepting")){
+        else if (data && data.status !== "running" && data.status !== "accepting" && !queue.find((value) => value.friendCode === friendCode)){
           count -= 1
           await accept(data)
         }
@@ -322,6 +322,13 @@ if (config.bot.enable)
             time: new Date().getTime(),
           });
           continue;
+        }
+
+        // 接受好友请求
+        if (acceptRequests.indexOf(friendCode) !== -1) {
+          count -= 1
+          await accept(data)
+          continue
         }
 
         // 发送好友请求
