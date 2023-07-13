@@ -303,7 +303,7 @@ if (config.bot.enable)
       }
 
       // Get friend list
-      for (const friendCode of friendList) {
+      for (const friendCode of friends) {
         const work = () =>
           new Promise(async (resolve) => {
             const data = await getValue(friendCode);
