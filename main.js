@@ -211,7 +211,8 @@ if (config.bot.enable)
 
       // 接受好友请求
       const accept = async (data) => {
-        const { friendCode } = data
+        const { friendCode, traceUUID } = data
+        const trace = useTrace(traceUUID);
         await trace({
           log:"正在接受好友申请"
         })
