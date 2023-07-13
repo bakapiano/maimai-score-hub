@@ -262,7 +262,7 @@ if (config.bot.enable)
             friendCode
           );
           if (!timeoutBlock[friendCode]) {
-            timeoutBlock[friendCode] = setTimeout(() => {
+            timeoutBlock[friendCode] = setTimeout(async () => {
               const data = await getValue(friendCode);
               const queue = getQueue();
               if (!data && !queue.find((value) => value.friendCode === friendCode)) {
