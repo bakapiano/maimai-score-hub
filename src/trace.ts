@@ -1,6 +1,6 @@
 import { appendValue, getValue, setValue } from "./db.js";
 
-import config from "../config.js";
+import config from "./config.js";
 
 const PREFIX = "RESULT";
 
@@ -8,7 +8,7 @@ const LOG_KEY = "LOG";
 const PROGRESS_KEY = "PROGRESS";
 const STATUS_KEY = "STATUS";
 
-async function appendLog(uuid, text) {
+async function appendLog(uuid: string, text: string) {
   const key = `${PREFIX}-${uuid}-${LOG_KEY}`;
   const time = new Date()
     .toLocaleString("en", { timeZone: "Asia/Shanghai" })
@@ -18,17 +18,17 @@ async function appendLog(uuid, text) {
   await appendValue(key, log, "");
 }
 
-async function setProgress(uuid, progress) {
+async function setProgress(uuid: string, progress: number) {
   const key = `${PREFIX}-${uuid}-${PROGRESS_KEY}`;
   const current = Number(await getValue(key)) || 0;
   await setValue(key, current + progress);
 }
 
-async function setStatus(uuid, status) {
+async function setStatus(uuid: string, status: string) {
   await setValue(`${PREFIX}-${uuid}-${STATUS_KEY}`, status);
 }
 
-async function getTrace(uuid) {
+async function getTrace(uuid: string) {
   return {
     progress: Number(await getValue(`${PREFIX}-${uuid}-${PROGRESS_KEY}`)),
     log: (await getValue(`${PREFIX}-${uuid}-${LOG_KEY}`)) || "",
@@ -36,9 +36,9 @@ async function getTrace(uuid) {
   };
 }
 
-const queue = {};
+const queue = {} as Record<string, any>;
 
-function tryExecute(uuid) {
+function tryExecute(uuid: string) {
   if (queue[uuid] === undefined || queue[uuid].length === 0) return
   const {payload, execute, resolve, reject} = queue[uuid][0]
   execute(payload)
@@ -54,10 +54,19 @@ function tryExecute(uuid) {
     })
 }
 
-function useTrace(uuid) {
-  return (payload) =>
+export interface TracePayload {
+  log?: string;
+  progress?: number;
+  status?: string;
+  time?: number;
+}
+
+export type TraceFunction = (payload: TracePayload) => Promise<void>;
+
+function useTrace(uuid: string) : TraceFunction {
+  return (payload : TracePayload) =>
     new Promise((resolve, reject) => {
-      const execute = async (payload) => {
+      const execute = async (payload: TracePayload) => {
         console.log(uuid, payload);
         const { status, log, progress } = payload;
         status && (await setStatus(uuid, status));
@@ -70,7 +79,15 @@ function useTrace(uuid) {
     });
 }
 
-function useStage(trace) {
+
+export type StageFunction = (
+  description: string,
+  progress: number,
+  func: () => Promise<void>,
+  noRetry?: boolean
+) => Promise<void>;
+
+function useStage(trace: TraceFunction) : StageFunction {
   let failed = false;
   return async (description, progress, func, noRetry) => {
     await trace({ log: `开始${description}...` });

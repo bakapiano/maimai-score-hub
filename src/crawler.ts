@@ -1,11 +1,11 @@
 import { useStage, useTrace } from "./trace.js";
 
 import { CookieJar } from "node-fetch-cookies";
-import config from "../config.js";
+import config from "./config.js";
 import fetch from "node-fetch";
 import { fetchWithCookieWithRetry } from "./util.js";
 
-async function verifyProberAccount(username, password) {
+async function verifyProberAccount(username: string, password: string) {
   const res = await fetch(
     "https://www.diving-fish.com/api/maimaidxprober/login",
     {
@@ -19,11 +19,16 @@ async function verifyProberAccount(username, password) {
       body: JSON.stringify({ username, password }),
     }
   );
-  const data = await res.json();
+  const data : any = await res.json();
   return data.errcode == undefined;
 }
 
-async function getAuthUrl(type) {
+export enum GameType {
+  maimai = "maimai-dx",
+  chunithm = "chunithm",
+}
+
+async function getAuthUrl(type: GameType) {
   if (!["maimai-dx", "chunithm"].includes(type)) {
     throw new Error("unsupported type");
   }
@@ -35,9 +40,9 @@ async function getAuthUrl(type) {
   return href;
 }
 
-const getCookieByAuthUrl = async (authUrl) => {
+const getCookieByAuthUrl = async (authUrl: string) => {
   const cj = new CookieJar();
-  const fetch = async (url, options) =>
+  const fetch = async (url : string, options : any | undefined = undefined) =>
     await fetchWithCookieWithRetry(cj, url, options);
   await fetch(authUrl, {
     headers: {
@@ -62,13 +67,22 @@ const getCookieByAuthUrl = async (authUrl) => {
   return cj;
 };
 
+
+export enum MaimaiDiffType {
+  Basic = "Basic",
+  Advanced = "Advanced",
+  Expert = "Expert",
+  Master = "Master",
+  ReMaster = "Re:Master",
+}
+
 const updateMaimaiScore = async (
-  username,
-  password,
-  authUrl,
-  traceUUID,
-  diffList,
-  logCreatedCallback
+  username : string,
+  password : string,
+  authUrl : string, 
+  traceUUID : string,
+  diffList : MaimaiDiffType[],
+  logCreatedCallback : (value : any) => void
 ) => {
   try {
     const trace = useTrace(traceUUID);
@@ -76,7 +90,7 @@ const updateMaimaiScore = async (
 
     const cj = new CookieJar();
 
-    const fetch = async (url, options) =>
+    const fetch = async (url : string, options : any = undefined) =>
       await fetchWithCookieWithRetry(cj, url, options);
 
     await trace({
@@ -85,7 +99,7 @@ const updateMaimaiScore = async (
       progress: 0,
     });
 
-    logCreatedCallback();
+    logCreatedCallback(undefined);
 
     await stage("登录公众号", 10, async () => {
       await fetch(authUrl, {
@@ -117,14 +131,14 @@ const updateMaimaiScore = async (
     });
 
     const diffNameList = [
-      "Basic", 
-      "Advanced", 
-      "Expert", 
-      "Master", 
-      "Re:Master"
+      MaimaiDiffType.Basic,
+      MaimaiDiffType.Advanced,
+      MaimaiDiffType.Expert,
+      MaimaiDiffType.Master,
+      MaimaiDiffType.ReMaster,
     ];
 
-    const tasks = [];
+    const tasks : Promise<any>[] = [];
     [0, 1, 2, 3, 4].forEach(diff => {
       const name = diffNameList[diff]
       const progress = 9;
@@ -140,7 +154,7 @@ const updateMaimaiScore = async (
         // Sleep random time to avoid ban
         await new Promise((r) => setTimeout(r, 1000 * (diff + 1) * 2 + 1000 * 5 * Math.random()));
         
-        let body = undefined;
+        let body : undefined | string = undefined;
         
         await stage(`获取 ${name} 分数`, progress, async () => {
           const result = await fetch(
@@ -175,7 +189,7 @@ const updateMaimaiScore = async (
 
     await trace({
       log: "maimai 数据更新完成",
-      process: 0,
+      progress: 0,
       status: "success",
     });
   } catch (err) {
@@ -183,19 +197,29 @@ const updateMaimaiScore = async (
   }
 };
 
+export enum ChunithmDiffType {
+  Basic = "Basic",
+  Advanced = "Advanced",
+  Expert = "Expert",
+  Master = "Master",
+  Ultima = "Ultima",
+  WorldsEnd = "WorldsEnd",
+  Recent = "Recent",
+}
+
 const updateChunithmScore = async (
-  username,
-  password,
-  authUrl,
-  traceUUID,
-  diffList,
-  logCreatedCallback
+  username : string,
+  password : string,
+  authUrl : string,
+  traceUUID : string,
+  diffList : ChunithmDiffType[],
+  logCreatedCallback : (value : any) => void
 ) => {
   try {
     const trace = useTrace(traceUUID);
     const stage = useStage(trace);
     const cj = new CookieJar();
-    const fetch = async (url, options) =>
+    const fetch = async (url : string, options : any = undefined) =>
       await fetchWithCookieWithRetry(cj, url, options);
 
     await trace({
@@ -204,7 +228,7 @@ const updateChunithmScore = async (
       progress: 0,
     });
 
-    logCreatedCallback();
+    logCreatedCallback(undefined);
 
     await stage("登录公众号", 6.25, async () => {
       const authResult = await fetch(authUrl, {
@@ -255,19 +279,19 @@ const updateChunithmScore = async (
     ];
 
     const diffNameList = [
-      "Basic",
-      "Advanced",
-      "Expert",
-      "Master",
-      "Ultima",
-      "WorldsEnd",
-      "Recent",
+      ChunithmDiffType.Basic,
+      ChunithmDiffType.Advanced,
+      ChunithmDiffType.Expert,
+      ChunithmDiffType.Master,
+      ChunithmDiffType.Ultima,
+      ChunithmDiffType.WorldsEnd,
+      ChunithmDiffType.Recent,
     ];
 
     const _t = cj.cookies.get("chunithm.wahlap.com").get("_t").value;
 
-    const tasks = [];
-    [0, 1, 2, 3, 4, 5, 6].forEach(diff => {
+    const tasks : Promise<any>[] = [];
+    [0, 1, 2, 3, 4, 5, 6].forEach((diff) => {
       const name = diffNameList[diff]
       const progress = 6.25;
       const url = urls[diff];
@@ -283,7 +307,7 @@ const updateChunithmScore = async (
         // Sleep random time to avoid ban
         await new Promise((r) => setTimeout(r, 1000 * (diff + 1) * 2 + 1000 * 5 * Math.random()));
 
-        let resultHtml = undefined;
+        let resultHtml : string | undefined = undefined;
 
         await stage(`获取 ${name} 分数`, progress, async () => {
           if (url[0]) {
@@ -308,7 +332,7 @@ const updateChunithmScore = async (
           async () => {
             const uploadResult = await fetch(
               "https://www.diving-fish.com/api/chunithmprober/player/update_records_html" +
-                (url[1].includes("Recent") ? "?recent=1" : ""),
+                (url[1] && url[1].includes("Recent") ? "?recent=1" : ""),
               {
                 method: "POST",
                 body: resultHtml,

@@ -1,14 +1,15 @@
-import config from "../config.js";
-import { fetch } from "node-fetch-cookies";
-import http from "node:http";
-import https from "node:https";
+import * as http from "node:http";
+import * as https from "node:https";
 
-async function fetchWithCookieWithRetry(cj, url, options, fetchTimeout) {
+import config from "./config.js";
+import { fetch } from "node-fetch-cookies";
+
+async function fetchWithCookieWithRetry(cj: any, url: string, options : any | undefined = undefined, fetchTimeout: number | undefined = undefined) {
   for (let i = 0; i < config.fetchRetryCount; i++) {
     try {
       const result = await fetch(cj, url, {
-        signal: AbortSignal.timeout(fetchTimeout || config.fetchTimeOut),
-        agent: function (_parsedURL) {
+        signal: (AbortSignal as any).timeout(fetchTimeout || config.fetchTimeOut),
+        agent: function (_parsedURL: any) {
           if (_parsedURL.protocol == "http:") {
             return new http.Agent({ keepAlive: true });
           } else {
@@ -27,6 +28,12 @@ async function fetchWithCookieWithRetry(cj, url, options, fetchTimeout) {
       });
     }
   }
+} 
+
+async function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
-export { fetchWithCookieWithRetry };
+export { fetchWithCookieWithRetry, sleep };

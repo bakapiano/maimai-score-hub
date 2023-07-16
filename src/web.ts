@@ -1,24 +1,37 @@
-import "express-async-errors"
+import "express-async-errors";
 
-import { appendQueue, getCount, increaseCount, setValue } from "./db.js";
+import {
+  appendQueue,
+  delValue,
+  getCount,
+  getValue,
+  increaseCount,
+  removeFromQueueByFriendCode,
+  setValue,
+} from "./db.js";
 import { getAuthUrl, verifyProberAccount } from "./crawler.js";
 import { getTrace, useTrace } from "./trace.js";
 
 import bodyParser from "body-parser";
-import config from "../config.js";
+import config from "./config.js";
 import cors from "cors";
 import { exec } from "child_process";
 import express from "express";
-import fs from "fs";
 import { v4 as genUUID } from "uuid";
-import url from "url";
+import { parse } from "url";
+import { queueLock } from "./bot/work.js";
 
 const app = express();
 app.use(cors());
 
-const jsonParser = bodyParser.json({ extended: false });
+const jsonParser = bodyParser.json();
 
-async function serve(serverReq, serverRes, data, redirect) {
+async function serve(
+  serverReq: any,
+  serverRes: any,
+  data: any,
+  redirect: boolean
+) {
   let { username, password, callbackHost, type, diffList, allDiff } = data;
 
   diffList = diffList?.split(",");
@@ -45,7 +58,15 @@ async function serve(serverReq, serverRes, data, redirect) {
     diffList =
       type == "maimai-dx"
         ? ["Basic", "Advanced", "Expert", "Master", "Re:Master"]
-        : ["Basic", "Advanced", "Expert", "Master", "Ultima", "WorldsEnd", "Recent"];
+        : [
+            "Basic",
+            "Advanced",
+            "Expert",
+            "Master",
+            "Ultima",
+            "WorldsEnd",
+            "Recent",
+          ];
   } else if (allDiff === false) {
     diffList =
       type == "maimai-dx"
@@ -75,9 +96,9 @@ async function serve(serverReq, serverRes, data, redirect) {
 
   const href = await getAuthUrl(type);
 
-  const resultUrl = url.parse(href, true);
+  const resultUrl = parse(href, true);
   const { redirect_uri } = resultUrl.query;
-  const key = url.parse(redirect_uri, true).query.r;
+  const key = String(parse(String(redirect_uri), true).query.r);
 
   await setValue(key, { username, password, callbackHost, diffList });
   // setTimeout(() => delValue(key), 1000 * 60 * 5);
@@ -89,31 +110,31 @@ async function serve(serverReq, serverRes, data, redirect) {
     : serverRes.status(200).send(href);
 }
 
-app.post("/auth", jsonParser, async (serverReq, serverRes) => {
+app.post("/auth", jsonParser, async (serverReq: any, serverRes: any) => {
   return await serve(serverReq, serverRes, serverReq.body, false);
 });
 
-app.get("/shortcut", async (serverReq, serverRes) => {
+app.get("/shortcut", async (serverReq: any, serverRes: any) => {
   return await serve(serverReq, serverRes, serverReq.query, true);
 });
 
-app.get("/trace", async (serverReq, serverRes) => {
+app.get("/trace", async (serverReq: any, serverRes: any) => {
   const { uuid } = serverReq.query;
   !uuid
     ? serverRes.status(400).send("请提供uuid")
-    : serverRes.send(await getTrace(uuid));
+    : serverRes.send(await getTrace(String(uuid)));
 });
 
-app.get("/count", async (_serverReq, serverRes) => {
+app.get("/count", async (_serverReq: any, serverRes: any) => {
   const count = getCount();
   serverRes.status(200).send({ count });
 });
 
 if (config.wechatLogin.enable) {
-  const validateToken = (serve) => {
-    return async (serverReq, serverRes) => {
+  const validateToken = (serve: any) => {
+    return async (serverReq: any, serverRes: any) => {
       const { token } = serverReq.query;
-      if (token !== config.wechatLogin.token) {
+      if (token !== config.authToken) {
         serverRes.status(400).send("Invalid token");
         return;
       }
@@ -124,16 +145,16 @@ if (config.wechatLogin.enable) {
   // Use for local login
   app.get(
     "/token",
-    validateToken(async (serverReq, serverRes) => {
+    validateToken(async (serverReq: any, serverRes: any) => {
       let { type } = serverReq.query;
 
       const href = await getAuthUrl(type);
 
-      const resultUrl = url.parse(href, true);
+      const resultUrl = parse(href, true);
       const { redirect_uri } = resultUrl.query;
-      const key = url.parse(redirect_uri, true).query.r;
+      const key = parse(String(redirect_uri), true).query.r;
 
-      await setValue(key, { local: true });
+      await setValue(String(key), { local: true });
 
       serverRes.redirect(href);
     })
@@ -142,31 +163,15 @@ if (config.wechatLogin.enable) {
   // Trigger a wechat login
   app.get(
     "/trigger",
-    validateToken(async (_serverReq, serverRes) => {
-      try {
-        fs.unlink(config.wechatLogin.cookiePath, () => {});
-      } catch (_err) {}
+    validateToken(async (_serverReq: any, serverRes: any) => {
       exec(config.wechatLogin.cmd2Execute);
       serverRes.status(200).send("Triggered");
-    })
-  );
-
-  // Get cookie file content
-  app.get(
-    "/cookie",
-    validateToken(async (_serverReq, serverRes) => {
-      try {
-        const content = fs.readFileSync(config.wechatLogin.cookiePath, "utf8");
-        serverRes.status(200).send(content);
-      } catch (err) {
-        serverRes.status(400).send(err.message);
-      }
     })
   );
 }
 
 if (config.bot.enable) {
-  app.post("/bot", jsonParser, async (req, res) => {
+  app.post("/bot", jsonParser, async (req: any, res: any) => {
     const { username, password, friendCode } = req.body;
 
     if (!username || !password || !friendCode) {
@@ -179,12 +184,24 @@ if (config.bot.enable) {
       return;
     }
 
-    const traceUUID = genUUID();
-    appendQueue({ username, password, friendCode, traceUUID });
+    if (queueLock) {
+      res.status(400).send("Bot 同时使用人数过多，请稍后再试！");
+      return;
+    }
 
+    // Clean up old once
+    removeFromQueueByFriendCode(friendCode);
+    const { task } = await getValue(friendCode);
+    if (task) {
+      try {
+        task.cancel();
+      } catch (_err) {}
+    }
+    await delValue(friendCode);
+
+    const traceUUID = genUUID();
     const protocol = config.dev ? "http" : "https";
     const tracePageUrl = `${protocol}://${config.host}/#/trace/${traceUUID}/`;
-
     const trace = useTrace(traceUUID);
 
     await trace({
@@ -193,20 +210,24 @@ if (config.bot.enable) {
       progress: 0,
       time: new Date().getTime(),
     });
+    
+    appendQueue({
+      username,
+      password,
+      friendCode,
+      traceUUID,
+      createTime: Date.now(),
+    });
 
-    const redirect = false;
-
-    redirect === true
-      ? res.redirect(tracePageUrl)
-      : res.status(200).send(tracePageUrl);
+    res.status(200).send(tracePageUrl);
   });
 }
 
 app.use(express.static("static"));
 
-app.use((err, req, res, next)=>{
-  console.error(err.stack)
-  res.status(500).send('500 Internal Server Error')
-})
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error(err.stack);
+  res.status(500).send("500 Internal Server Error");
+});
 
 export { app as server };

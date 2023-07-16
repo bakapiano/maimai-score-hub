@@ -1,7 +1,8 @@
-import config from "../config.js";
-import http from "http";
-import net from "net";
-import url from "url";
+import * as http from "http";
+import * as net from "net";
+import * as url from "url";
+
+import config from "./config.js";
 
 const proxyServer = http.createServer(httpOptions);
 
@@ -22,8 +23,7 @@ const WHITE_LIST = [
   "maibot.bakapiano.com",
 ].concat(config.host);
 
-function checkHostInWhiteList(target) {
-  console.log(target)
+function checkHostInWhiteList(target: string | null) {
   if (!target) return false;
   target = target.split(":")[0];
   console.log(WHITE_LIST.find((value) => value === target) !== undefined, target, WHITE_LIST)
@@ -31,8 +31,8 @@ function checkHostInWhiteList(target) {
 }
 
 // handle http proxy requests
-async function httpOptions(clientReq, clientRes) {
-  clientReq.on("error", (e) => {
+async function httpOptions(clientReq : any, clientRes : any) {
+  clientReq.on("error", (e : any) => {
     console.log("client socket error: " + e);
   });
 
@@ -81,8 +81,8 @@ async function httpOptions(clientReq, clientRes) {
 }
 
 // handle https proxy requests (CONNECT method)
-proxyServer.on("connect", (clientReq, clientSocket, head) => {
-  clientSocket.on("error", (e) => {
+proxyServer.on("connect", (clientReq: any, clientSocket : any, head) => {
+  clientSocket.on("error", (e : any) => {
     console.log("client socket error: " + e);
     clientSocket.end();
   });
@@ -112,7 +112,7 @@ proxyServer.on("connect", (clientReq, clientSocket, head) => {
   };
 
   // create socket connection for client, then pipe (redirect) it to client socket
-  var serverSocket = net.connect(options, () => {
+  var serverSocket = net.connect(options as any, () => {
     clientSocket.write(
       "HTTP/" +
       clientReq.httpVersion +
@@ -135,7 +135,7 @@ proxyServer.on("connect", (clientReq, clientSocket, head) => {
   });
 });
 
-proxyServer.on("clientError", (err, clientSocket) => {
+proxyServer.on("clientError", (err, clientSocket : any) => {
   console.log("client error: " + err);
   clientSocket.statusCode = 400;
   clientSocket.end("HTTP/1.1 400 Bad Request\r\n\r\n");

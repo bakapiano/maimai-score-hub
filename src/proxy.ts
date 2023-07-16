@@ -1,13 +1,14 @@
+import * as http from "http";
+import * as net from "net";
+import * as url from "url";
+
 import { delValue, getValue } from "./db.js";
 import { getCookieByAuthUrl, updateChunithmScore, updateMaimaiScore } from "./crawler.js";
 
 import { HTTPParser } from "http-parser-js";
-import config from "../config.js";
-import fs from "fs";
+import config from "./config.js";
 import { v4 as genUUID } from "uuid"
-import http from "http";
-import net from "net";
-import url from "url";
+import { saveCookie } from "./bot/cookie.js";
 
 const proxyServer = http.createServer(httpOptions);
 
@@ -27,18 +28,18 @@ const WHITE_LIST = [
   "libs.baidu.com",
 ].concat(config.host);
 
-function checkHostInWhiteList(target) {
+function checkHostInWhiteList(target: string | null) {
   if (!target) return false;
   target = target.split(":")[0];
   return WHITE_LIST.find((value) => value === target) !== undefined;
 }
 
-async function onAuthHook(href) {
+async function onAuthHook(href: string) {
   console.log("Successfully hook auth request!");
 
   const protocol = config.dev ? "http" : "https"
   const target = href.replace("http", "https");
-  const key = url.parse(target, true).query.r;
+  const key = String(url.parse(target, true).query.r);
   const value = await getValue(key);
   
   if (value === undefined || key === "count") {
@@ -46,12 +47,9 @@ async function onAuthHook(href) {
   }
 
   // Save cookie to local path
-  if (value.local === true && config.wechatLogin.enable) {
+  if (value.local === true && config.bot.enable) {
     const cj = await getCookieByAuthUrl(target);
-    cj.cookies.get("maimai.wahlap.com").get("userId").expiry = (new Date()).setFullYear(2099)
-    cj.cookies.get("maimai.wahlap.com").get("_t").expiry = (new Date()).setFullYear(2099)
-    cj.cookies.get("maimai.wahlap.com").get("friendCodeList").expiry = (new Date()).setFullYear(2099)
-    await cj.save(config.wechatLogin.cookiePath)
+    await saveCookie(cj)
     return `${protocol}://${config.host}/#/error`;
   }
 
@@ -71,7 +69,7 @@ async function onAuthHook(href) {
   // wait for first log message created, then return redirect url
   const [updateMaimaiScoreWaitLogCreate, updateChunithmScoreWaitLogCreate] = [
     updateMaimaiScore, updateChunithmScore,].map((func) => {
-      return (username, password, target, traceUUID, diffList) => {
+      return (username : string, password : string, target : string, traceUUID : string, diffList: any) => {
         return new Promise((resolve, reject) => {
           func(username, password, target, traceUUID, diffList, resolve).catch(reject);
         });
@@ -89,8 +87,8 @@ async function onAuthHook(href) {
 }
 
 // handle http proxy requests
-async function httpOptions(clientReq, clientRes) {
-  clientReq.on("error", (e) => {
+async function httpOptions(clientReq : any, clientRes: any) {
+  clientReq.on("error", (e: any) => {
     console.log("client socket error: " + e);
   });
 
@@ -148,8 +146,8 @@ async function httpOptions(clientReq, clientRes) {
 }
 
 // handle https proxy requests (CONNECT method)
-proxyServer.on("connect", (clientReq, clientSocket, head) => {
-  clientSocket.on("error", (e) => {
+proxyServer.on("connect", (clientReq : any, clientSocket : any, head : any) => {
+  clientSocket.on("error", (e: any) => {
     console.log("client socket error: " + e);
     clientSocket.end();
   });
@@ -178,13 +176,13 @@ proxyServer.on("connect", (clientReq, clientSocket, head) => {
       "Proxy-agent: Node.js-Proxy\r\n" +
       "\r\n",
       "UTF-8", () => {
-        const parser = new HTTPParser('REQUEST');
-        parser[HTTPParser.kOnHeadersComplete] = async (info) => {
+        const parser: any = new HTTPParser('REQUEST');
+        parser[HTTPParser.kOnHeadersComplete] = async (info: any) => {
           const redirectResult = await onAuthHook(`http://tgk-wcaime.wahlap.com${info.url}`);
           clientSocket.end(`HTTP/1.1 302 Found\r\nLocation: ${redirectResult}\r\n\r\n`);
         };
 
-        clientSocket.on('data', chunk => {
+        clientSocket.on('data', (chunk: any) => {
           parser.execute(chunk);
         });
       });
@@ -198,7 +196,7 @@ proxyServer.on("connect", (clientReq, clientSocket, head) => {
   };
 
   // create socket connection for client, then pipe (redirect) it to client socket
-  var serverSocket = net.connect(options, () => {
+  var serverSocket = net.connect(options as any, () => {
     clientSocket.write(
       "HTTP/" +
       clientReq.httpVersion +
@@ -221,7 +219,7 @@ proxyServer.on("connect", (clientReq, clientSocket, head) => {
   });
 });
 
-proxyServer.on("clientError", (err, clientSocket) => {
+proxyServer.on("clientError", (err, clientSocket: any) => {
   console.log("client error: " + err);
   clientSocket.statusCode = 400;
   clientSocket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
