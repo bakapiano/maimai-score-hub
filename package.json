@@ -6,8 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon --watch src src/main.ts 127.0.0.1",
-    "start": "cross-env forever -o $INIT_CWD/log/out.log -e $INIT_CWD/log/err.log -a start main.js",
-    "stop": "cross-env forever stop main.js",
+    "run": "ts-node src/main.ts 127.0.0.1",
+    "start": "cross-env forever start -o $INIT_CWD/log/out.log -e $INIT_CWD/log/err.log -a -c ts-node src/main.ts",
+    "stop": "cross-env forever stop src/main.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

@@ -7,13 +7,17 @@ import { fetchWithCookieWithRetry } from "../util.js";
 import { sleep } from "../util.js";
 
 async function removeCookie() {
-  fs.unlinkSync(config.bot.cookiePath);
+  try {
+    fs.unlinkSync(config.bot.cookiePath);
+  } catch (_err) {}
   return;
 }
 
 async function refreshCookie() {
   // Trigger a wechat login
-  await fetch(`${config.bot.trigger}/trigger?token=${config.authToken}`);
+  const url = `${config.bot.trigger}/trigger?token=${config.authToken}`;
+  console.log("[Bot] Start refresh cookie: ", url);
+  await fetch(url);
 
   for (let i = 0; i < 60 * 2; ++i) {
     // Check cookie file exists
@@ -61,10 +65,11 @@ async function updateCookie(cj: any) {
 
 async function saveCookie(cj: any) {
   const value = await getCookieValue(cj);
-  Object.values(value).forEach((v) => {
+  Object.keys(value).forEach((key) => {
     // Set cookie expire day to 2099, or will lose this value when save cookie to file
     // This may be a bug(or by design) for CookieJar from node-fetch-cookies
-    v.expiry = new Date().setFullYear(2099);
+    const value = cj?.cookies?.get("maimai.wahlap.com")?.get(key);
+    value.expiry = new Date().setFullYear(2099);
   });
   await cj.save(config.bot.cookiePath);
 }
@@ -78,16 +83,21 @@ function getCookieValue(cj: any) {
   };
 }
 
-async function testCookieExpired(cj: any) {
+async function testCookieExpired(cj: any): Promise<boolean> {
   console.log("[Bot] Start test cookie expired: ", getCookieValue(cj));
-  const result = await fetchWithCookieWithRetry(
-    cj,
-    "https://maimai.wahlap.com/maimai-mobile/home/"
-  );
-  const body = await result.text();
-  const reuslt = body.indexOf("登录失败") !== -1;
-  console.log("[Bot] Done test cookie expired: ", reuslt);
-  return result;
+  try {
+    const result = await fetchWithCookieWithRetry(
+      cj,
+      "https://maimai.wahlap.com/maimai-mobile/home/"
+    );
+    const body = await result.text();
+    const testReuslt = body.indexOf("登录失败") !== -1;
+    console.log("[Bot] Done test cookie expired: ", testReuslt);
+    return testReuslt;
+  } catch (err) {
+    console.log("[Bot] Done test cookie expired with error: ", err);
+    return true;
+  }
 }
 
 export {

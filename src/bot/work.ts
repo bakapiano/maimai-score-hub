@@ -1,5 +1,3 @@
-import * as workerpool from "workerpool";
-
 import {
   QueueData,
   delValue,
@@ -31,29 +29,15 @@ import {
 import { useStage, useTrace } from "../trace.js";
 
 import config from "../config.js";
-import { fileURLToPath } from "url";
-import path from "path";
+import fetch from "node-fetch";
 import { sleep } from "../util.js";
-
-const __filename = fileURLToPath(import.meta.url);
-
-const __dirname = path.dirname(__filename);
-
-const pool = workerpool.pool(__dirname + "/worker.js",
-{
-  workerType: "process"
-});
 
 var queueLock = false;
 
-var data: {
-  friends: string[] | undefined;
-  requests: string[] | undefined;
-  accepts: string[] | undefined;
-} = {
-  friends: undefined,
-  requests: undefined,
-  accepts: undefined,
+export type WorkerData = {
+  friends: string[];
+  requests: string[];
+  accepts: string[];
 };
 
 async function updateWork({
@@ -144,25 +128,25 @@ async function updateWork({
         status: "success",
       });
 
-      removeFriend(friendCode);
+      removeFriend(friendCode).catch();
     },
     true
   );
 }
 
-async function sendFriendRequestWork() {
+async function sendFriendRequestWork(data: WorkerData) {
   console.log("[Bot][SendFriendRequestWork] Start");
   getQueue().forEach((item) => {
     const { friendCode, traceUUID } = item;
     const trace = useTrace(traceUUID);
     if (
-      data.friends?.includes(friendCode) ||
-      data.accepts?.includes(friendCode)
+      data.friends.includes(friendCode) ||
+      data.accepts.includes(friendCode)
     )
       return;
 
     // If not found friend request, send one
-    if (!data.requests?.includes(friendCode)) {
+    if (!data.requests.includes(friendCode)) {
       if (
         !item.requestSentTime ||
         Date.now() - item.requestSentTime > 1000 * 60 * 1
@@ -171,12 +155,12 @@ async function sendFriendRequestWork() {
         trace({ log: `正在尝试发送好友请求...` });
         validateFriendCodeCached(friendCode).then((result) => {
           result
-            ? [sendFriendRequest(friendCode)]
+            ? [sendFriendRequest(friendCode).catch()]
             : [
                 trace({ log: "不存在的好友代码！", status: "failed" }),
                 removeFromQueue(item),
               ];
-        });
+        }).catch();
       }
       return;
     }
@@ -193,7 +177,7 @@ async function sendFriendRequestWork() {
   console.log("[Bot][SendFriendRequestWork] Done");
 }
 
-async function startUpdateWork() {
+async function startUpdateWork(data: WorkerData) {
   console.log("[Bot][StartUpdateWork] Start");
   getQueue().forEach(async (item) => {
     const { friendCode, traceUUID } = item;
@@ -206,14 +190,8 @@ async function startUpdateWork() {
       removeFromQueue(item);
 
       // Start update
-      const task = pool
-        .exec(updateWork, [item])
+      updateWork(item)
         .catch(async (error) => {
-          if (error instanceof workerpool.Promise.TimeoutError)
-            return await trace({
-              log: `更新时间过长，请重试!`,
-              status: "failed",
-            });
           await trace({ log: `更新失败: ${String(error)}`, status: "failed" });
 
           removeFriend(friendCode);
@@ -226,33 +204,30 @@ async function startUpdateWork() {
           await delValue(friendCode);
           console.log("[Bot][StartUpdateWork] Done");
         });
-
-      // Set a value to prevent update again
-      await setValue(friendCode, task);
     }
   });
   console.log("[Bot][StartUpdateWork] Done");
 }
 
-async function acceptFriendWork() {
+async function acceptFriendWork(data: WorkerData) {
   console.log("[Bot][AcceptFriendWork] Start");
   getQueue().forEach(async (item) => {
     const { friendCode, traceUUID } = item;
     const trace = useTrace(traceUUID);
     if (
-      data.friends?.includes(friendCode) ||
-      data.requests?.includes(friendCode)
+      data.friends.includes(friendCode) ||
+      data.requests.includes(friendCode)
     )
       return;
 
-    if (data.accepts?.includes(friendCode)) {
+    if (data.accepts.includes(friendCode)) {
       if (
         !item.acceptSentTime ||
         Date.now() - item.acceptSentTime > 1000 * 60 * 1
       ) {
         await trace({ log: `正在尝试接受好友请求...` });
         item.acceptSentTime = Date.now();
-        allowFriendRequest(friendCode);
+        allowFriendRequest(friendCode).catch();
         console.log("[Bot][AcceptFriendWork] Accept friend: ", friendCode);
       }
       return;
@@ -261,52 +236,52 @@ async function acceptFriendWork() {
   console.log("[Bot][AcceptFriendWork] Done");
 }
 
-async function cleanUpAcceptWork() {
+async function cleanUpAcceptWork(data: WorkerData) {
   console.log("[Bot][CleanUpAcceptWork] Start");
   data.accepts?.forEach(async (friendCode) => {
     if (
-      data.friends?.includes(friendCode) ||
+      data.friends.includes(friendCode) ||
       !getQueue().some((item) => item.friendCode === friendCode)
     ) {
-      blockFriendRequest(friendCode);
+      blockFriendRequest(friendCode).catch();
       console.log("[Bot][CleanUpAcceptWork] Block friend: ", friendCode);
     }
   });
   console.log("[Bot][CleanUpAcceptWork] Done");
 }
 
-async function cleanUpFriendWork() {
+async function cleanUpFriendWork(data: WorkerData) {
   console.log("[Bot][CleanUpFriendWork] Start");
-  data.friends?.forEach(async (friendCode) => {
+  data.friends.forEach(async (friendCode) => {
     if (
       !getQueue().some((item) => item.friendCode === friendCode) &&
       !(await getValue(friendCode))
     ) {
-      removeFriend(friendCode);
+      removeFriend(friendCode).catch();
       console.log("[Bot][CleanUpFriendWork] Remove friend: ", friendCode);
     }
   });
   console.log("[Bot][CleanUpFriendWork] Done");
 }
 
-async function cleanUpSentRequestWork() {
+async function cleanUpSentRequestWork(data: WorkerData) {
   console.log("[Bot][CleanUpSentRequestWork] Start");
-  data.requests?.forEach(async (friendCode) => {
+  data.requests.forEach(async (friendCode) => {
     if (
-      data.friends?.includes(friendCode) ||
+      data.friends.includes(friendCode) ||
       !getQueue().some((item) => item.friendCode === friendCode)
     ) {
-      cancelFriendRequest(friendCode);
+      cancelFriendRequest(friendCode).catch();
       console.log("[Bot][CleanUpSentRequestWork] Cancel reqiest: ", friendCode);
     }
   });
   console.log("[Bot][CleanUpSentRequestWork] Done");
 }
 
-async function cleanUpLongQueueTaskWork() {
+async function cleanUpLongQueueTaskWork(data: WorkerData) {
   console.log("[Bot][CleanUpLongQueueTaskWork] Start");
   getQueue().forEach(async (item) => {
-    if (Date.now() - item.createTime > 1000 * 60 * 10) {
+    if (Date.now() - item.createTime > 1000 * 60 * 5) {
       const { traceUUID } = item;
       const trace = useTrace(traceUUID);
       removeFromQueue(item);
@@ -319,19 +294,30 @@ async function cleanUpLongQueueTaskWork() {
 }
 
 async function prepareWork() {
+  const data: WorkerData = {
+    friends: [],
+    requests: [],
+    accepts: [],
+  };
   console.log("[Bot][PrepareWork] Start");
-  await Promise.all([
-    getFriendList().then((result) => (data.friends = result)),
-    getAccpetRequests().then((result) => (data.accepts = result)),
-    getSentRequests().then((result) => (data.requests = result)),
-  ]);
-
-  if (getQueue().length >= 10 || (data.friends?.length || 0) >= 20) {
-    queueLock = true;
-  } else {
-    queueLock = false;
+  try {
+    await Promise.all([
+      getFriendList().then((result) => (data.friends = result)),
+      getAccpetRequests().then((result) => (data.accepts = result)),
+      getSentRequests().then((result) => (data.requests = result)),
+    ]);
+    if (getQueue().length >= 10 || (data.friends?.length || 0) >= 20) {
+      queueLock = true;
+    } else {
+      queueLock = false;
+    }
+  }
+  catch(err) {
+    console.log("[Bot][PrepareWork] Failed to load data, error: ", err);
+    return undefined
   }
   console.log("[Bot][PrepareWork] Done, data: ", data);
+  return data;
 }
 
 async function cookieRefreshWork() {
@@ -340,7 +326,7 @@ async function cookieRefreshWork() {
 
   for (let i = 0; i < 3; ++i) {
     const cj = await loadCookie();
-    if (!(await testCookieExpired(cj))) {
+    if (await testCookieExpired(cj) === false) {
       failed = false;
       break;
     } else {

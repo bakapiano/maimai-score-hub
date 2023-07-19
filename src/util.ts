@@ -20,7 +20,7 @@ async function fetchWithCookieWithRetry(cj: any, url: string, options : any | un
       });
       return result;
     } catch (e) {
-      console.log(`delay due to fetch failed with attempt ${url} #${i + 1}`);
+      console.log(`Delay due to fetch failed with attempt ${url} #${i + 1}, error: ${e}`);
       if (i === config.fetchRetryCount - 1) throw e;
 
       await new Promise((r) => {

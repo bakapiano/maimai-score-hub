@@ -1,7 +1,7 @@
 import * as schedule from "node-schedule";
-import * as workerpool from "workerpool";
 
 import {
+  WorkerData,
   acceptFriendWork,
   cleanUpAcceptWork,
   cleanUpFriendWork,
@@ -13,107 +13,62 @@ import {
   startUpdateWork,
 } from "./work.js";
 
-import { WorkerPoolOptions } from "workerpool";
-import { fileURLToPath } from "url";
-import path from "path";
-
-const __filename = fileURLToPath(import.meta.url);
-
-const __dirname = path.dirname(__filename);
-
+var data: WorkerData | undefined = undefined;
 
 function configureBot() {
+  console.log("Start configure bot...")
+  
   // Clean up per 3 mins
-  const cleanUpPool = workerpool.pool(path.join(__dirname, "work.js"), {
-    maxQueueSize: 1,
-    workerType: "process",
-  } as WorkerPoolOptions);
   const cleanUp = new schedule.RecurrenceRule();
   cleanUp.minute = [
     0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48, 51, 54, 57,
   ];
   schedule.scheduleJob(cleanUp, () => {
-    cleanUpPool
-      .exec(
-        "updateWork", []
-        // () =>
-        //   Promise.all([
-        //     cleanUpAcceptWork,
-        //     cleanUpFriendWork,
-        //     cleanUpSentRequestWork,
-        //     cleanUpLongQueueTaskWork,
-        //   ]),
-        // []
-      )
-      .timeout(1000 * 3)
-      .catch((err) => {
-        console.log("[Bot][CleanUp] Clean up error:", err);
-      });
+    data && [
+      cleanUpAcceptWork(data),
+      cleanUpFriendWork(data),
+      cleanUpSentRequestWork(data),
+      cleanUpLongQueueTaskWork(data),
+    ];
   });
 
-  // // Cookie refresh per 15 seconds
-  // const cookieRefreshPool = workerpool.pool({
-  //   maxQueueSize: 1,
-  //   workerType: "process",
-  // } as WorkerPoolOptions);
-  // const cookieRefresh = new schedule.RecurrenceRule();
-  // cookieRefresh.second = [0, 15, 30, 45];
-  // schedule.scheduleJob(cookieRefresh, () => {
-  //   cookieRefreshPool
-  //     .exec(cookieRefreshWork, [])
-  //     .timeout(1000 * 3)
-  //     .catch((err) => {
-  //       console.log("[Bot][CookieRefresh] Cookie refresh error:", err);
-  //     });
-  // });
+  // Cookie refresh per 15 seconds
+  let cookieRefreshLock = false
+  const cookieRefresh = new schedule.RecurrenceRule();
+  cookieRefresh.second = [0, 15, 30, 45];
+  schedule.scheduleJob(cookieRefresh, async () => {
+    if (cookieRefreshLock) return;
+    cookieRefreshLock = true;
+    try {
+      await cookieRefreshWork();
+    }
+    finally {
+      cookieRefreshLock = false;
+    }
+  });
 
-  // // Prepare per 1 min
-  // const preparePool = workerpool.pool({
-  //   maxQueueSize: 1,
-  //   workerType: "process",
-  // } as WorkerPoolOptions);
-  // const prepare = new schedule.RecurrenceRule();
-  // prepare.second = [0];
-  // schedule.scheduleJob(prepare, () => {
-  //   preparePool
-  //     .exec(() => Promise.all([prepareWork]), [])
-  //     .timeout(1000 * 2)
-  //     .catch((err) => {
-  //       console.log("[Bot][Prepare] Prepare error:", err);
-  //     });
-  // });
+  // Prepare data per 30s
+  const prepare = new schedule.RecurrenceRule();
+  prepare.second = [0, 30];
+  schedule.scheduleJob(prepare, () => {
+    prepareWork().then((res) => (data = res));
+  });
 
-  // // Start update work per 1 min
-  // const startUpdatePool = workerpool.pool({
-  //   maxQueueSize: 1,
-  //   workerType: "process",
-  // } as WorkerPoolOptions);
-  // const startUpdate = new schedule.RecurrenceRule();
-  // startUpdate.second = [0];
-  // schedule.scheduleJob(startUpdate, () => {
-  //   startUpdatePool
-  //     .exec(() => Promise.all([startUpdateWork]), [])
-  //     .timeout(1000 * 2)
-  //     .catch((err) => {
-  //       console.log("[Bot][StartUpdate] Start update error:", err);
-  //     });
-  // });
+  // Start update work per 30s
+  const startUpdate = new schedule.RecurrenceRule();
+  startUpdate.second = [29, 59];
+  schedule.scheduleJob(startUpdate, () => {
+    data && startUpdateWork(data);
+  });
 
-  // // Start send friend request & accept friend per 1 min
-  // const sendFriendRequestPool = workerpool.pool({
-  //   maxQueueSize: 1,
-  //   workerType: "process",
-  // } as WorkerPoolOptions);
-  // const sendFriendRequest = new schedule.RecurrenceRule();
-  // sendFriendRequest.second = [0];
-  // schedule.scheduleJob(sendFriendRequest, () => {
-  //   sendFriendRequestPool
-  //     .exec(() => Promise.all([sendFriendRequestWork, acceptFriendWork]), [])
-  //     .timeout(1000 * 2)
-  //     .catch((err) => {
-  //       console.log("[Bot][SendFriendRequest] Send friend request error:", err);
-  //     });
-  // });
+  // Start send friend request & accept friend per 30s
+  const sendFriendRequest = new schedule.RecurrenceRule();
+  sendFriendRequest.second = [29, 59];
+  schedule.scheduleJob(sendFriendRequest, () => {
+    data && [sendFriendRequestWork(data), acceptFriendWork(data)];
+  });
+
+  console.log("Configure bot done!")
 }
 
 export { configureBot };

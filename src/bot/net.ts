@@ -4,12 +4,12 @@ import { loadCookie, testCookieExpired, updateCookie } from "./cookie.js";
 
 var lastFetchTime = 0;
 
-const fetch = async (url : string, options : any | undefined = undefined, retry : number = 1, fetchTimeout : number = 1000 * 15) => {
-  // sleep random 1 - 3 seconds
+const fetch = async (url : string, options : any | undefined = undefined, retry : number = 1, fetchTimeout : number = 1000 * 30) => {
+  // TODO: change this to queue
   do {
-    await sleep(Math.random() * 1000 * 3);
-    console.log("[Bot][Fetch] Sleep random 1 - 3 seconds");
-  } while (new Date().getTime() - lastFetchTime < 1000 * 3);
+    await sleep(Math.random() * 1000 * 3 + 2000);
+    console.log("[Bot][Fetch] Sleep random 2 - 5 seconds");
+  } while (new Date().getTime() - lastFetchTime < 1000 * 2);
   lastFetchTime = new Date().getTime();
 
   const cj = await loadCookie();
@@ -17,7 +17,7 @@ const fetch = async (url : string, options : any | undefined = undefined, retry 
   // Auto add token to POST body
   let fetchOptions = { ...options };
   if (fetchOptions.addToken) {
-    const token = cj.cookies.get("maimai.wahlap.com").get("_t").value;
+    const token = cj?.cookies?.get("maimai.wahlap.com")?.get("_t")?.value;
     delete fetchOptions.addToken;
     fetchOptions = {
       ...options,
@@ -25,7 +25,7 @@ const fetch = async (url : string, options : any | undefined = undefined, retry 
     };
   }
 
-  const result = await fetchWithCookieWithRetry(url, options, fetchTimeout);
+  const result = await fetchWithCookieWithRetry(cj, url, fetchOptions, fetchTimeout);
   if (result.url.indexOf("error") !== -1) {
     const cookieExpired = await testCookieExpired(cj);
 
@@ -44,6 +44,7 @@ const fetch = async (url : string, options : any | undefined = undefined, retry 
     const errorBody = text.match(/<div class="p_5 f_12 gray break">(.*)<\/div>/)[1];
 
     console.log(`[Bot][Fetch] Fetch error, try to reload cookie and retry. Retry time: ${retry}`);
+    console.log("[Bot][Fetch] Request url:", url);
     console.log("[Bot][Fetch] Error url:", result.url);
     console.log("[Bot][Fetch] ErrorError code:", errroCode);
     console.log("[Bot][Fetch] ErrorError body:", errorBody);
@@ -58,7 +59,7 @@ const fetch = async (url : string, options : any | undefined = undefined, retry 
   }
 
   // Update cookie value if changed
-  updateCookie(cj)
+  updateCookie(cj).catch()
 
   return result;
 };

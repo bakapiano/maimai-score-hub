@@ -189,14 +189,8 @@ if (config.bot.enable) {
       return;
     }
 
-    // Clean up old once
+    // Clean up old one
     removeFromQueueByFriendCode(friendCode);
-    const { task } = await getValue(friendCode);
-    if (task) {
-      try {
-        task.cancel();
-      } catch (_err) {}
-    }
     await delValue(friendCode);
 
     const traceUUID = genUUID();
