@@ -4,16 +4,12 @@ import { env } from '../common/env'
 console.log(import.meta.env)
 
 const config = {
-  timeout: 1000 * 10,
+  timeout: 1000 * 5,
 }
 
 if (env.dev) {
   config.baseURL = 'http://127.0.0.1:8081'
 }
-// else {
-  // config.baseURL = "https://maimai.bakapiano.online"
-// }
-
 
 const service = axios.create(config)
 
