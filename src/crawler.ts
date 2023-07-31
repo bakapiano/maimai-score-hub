@@ -163,7 +163,7 @@ const updateMaimaiScore = async (
 
               await stage(`获取 ${nameWithPage} 分数`, page ? progress * 1.0 / genres.length:  progress, async () => {
                 const result = await fetch(
-                  `https://maimai.wahlap.com/maimai-mobile/record/musicGenre/search/?genre=${genres}&diff=${diff}`
+                  `https://maimai.wahlap.com/maimai-mobile/record/musicGenre/search/?genre=${genre}&diff=${diff}`
                 );
                 body = (await result.text())
                   .match(/<html.*>([\s\S]*)<\/html>/)[1]
