@@ -4,7 +4,37 @@ import { loadCookie, testCookieExpired, updateCookie } from "./cookie.js";
 
 var lastFetchTime = 0;
 
-const fetch = async (url : string, options : any | undefined = undefined, retry : number = 1, fetchTimeout : number = 1000 * 30) => {
+var queue: any[] = [];
+const fetch = async (
+  url: string,
+  options: any | undefined = undefined,
+  retry: number = 1,
+  fetchTimeout: number = 1000 * 30
+) => {
+  return await new Promise((resolve, reject) => {
+    queue.push({
+      url,
+      options,
+      retry,
+      fetchTimeout,
+      resolve,
+      reject,
+    });
+  });
+};
+
+setInterval(() => {
+  if (queue.length === 0) return;
+  const { url, options, retry, fetchTimeout, resolve, reject } = queue.shift();
+  doFetch(url, options, retry, fetchTimeout).then(resolve).catch(reject);
+}, 2000);
+
+const doFetch = async (
+  url: string,
+  options: any | undefined = undefined,
+  retry: number = 1,
+  fetchTimeout: number = 1000 * 30
+) => {
   // TODO: change this to queue
   do {
     await sleep(Math.random() * 1000 * 3 + 2000);
@@ -25,7 +55,12 @@ const fetch = async (url : string, options : any | undefined = undefined, retry 
     };
   }
 
-  const result = await fetchWithCookieWithRetry(cj, url, fetchOptions, fetchTimeout);
+  const result = await fetchWithCookieWithRetry(
+    cj,
+    url,
+    fetchOptions,
+    fetchTimeout
+  );
   if (result.url.indexOf("error") !== -1) {
     const cookieExpired = await testCookieExpired(cj);
 
@@ -36,22 +71,28 @@ const fetch = async (url : string, options : any | undefined = undefined, retry 
 
     // For cookie expired error, retry 10 times
     if (retry === 10) {
-      throw new Error("[Bot][Fetch] Retry hit max limit, failed to refresh cookie.");
+      throw new Error(
+        "[Bot][Fetch] Retry hit max limit, failed to refresh cookie."
+      );
     }
 
     const text = await result.text();
     const errroCode = text.match(/<div class="p_5 f_14 ">(.*)<\/div>/)[1];
-    const errorBody = text.match(/<div class="p_5 f_12 gray break">(.*)<\/div>/)[1];
+    const errorBody = text.match(
+      /<div class="p_5 f_12 gray break">(.*)<\/div>/
+    )[1];
 
-    console.log(`[Bot][Fetch] Fetch error, try to reload cookie and retry. Retry time: ${retry}`);
+    console.log(
+      `[Bot][Fetch] Fetch error, try to reload cookie and retry. Retry time: ${retry}`
+    );
     console.log("[Bot][Fetch] Request url:", url);
     console.log("[Bot][Fetch] Error url:", result.url);
     console.log("[Bot][Fetch] ErrorError code:", errroCode);
     console.log("[Bot][Fetch] ErrorError body:", errorBody);
-    
+
     return await new Promise((resolve, reject) => {
       sleep(1000 * 15).then(() =>
-        fetch(url, options, retry + 1, fetchTimeout)
+        doFetch(url, options, retry + 1, fetchTimeout)
           .then(resolve)
           .catch(reject)
       );
@@ -59,13 +100,15 @@ const fetch = async (url : string, options : any | undefined = undefined, retry 
   }
 
   // Update cookie value if changed
-  updateCookie(cj).catch(console.log)
+  updateCookie(cj).catch(console.log);
 
   return result;
 };
 
-const cancelFriendRequest = async (friendCode : string) => {
-  console.log(`[Bot][Net] Start cancel friend request, friend code ${friendCode}`);
+const cancelFriendRequest = async (friendCode: string) => {
+  console.log(
+    `[Bot][Net] Start cancel friend request, friend code ${friendCode}`
+  );
   await fetch("https://maimai.wahlap.com/maimai-mobile/friend/invite/cancel/", {
     headers: {
       "content-type": "application/x-www-form-urlencoded",
@@ -74,7 +117,9 @@ const cancelFriendRequest = async (friendCode : string) => {
     method: "POST",
     addToken: true,
   });
-  console.log(`[Bot][Net] Done cancel friend request, friend code ${friendCode}`);
+  console.log(
+    `[Bot][Net] Done cancel friend request, friend code ${friendCode}`
+  );
 };
 
 const getSentRequests = async () => {
@@ -96,13 +141,15 @@ const getAccpetRequests = async () => {
   );
   const text = await result.text();
   const t = text.matchAll(/<input type="hidden" name="idx" value="(.*?)"/g);
-  const ids = [...new Set([...t].map((x) => x[1]))]
+  const ids = [...new Set([...t].map((x) => x[1]))];
   console.log(`[Bot][Net] Done get accept friend requests: `, ids);
   return ids;
 };
 
-const allowFriendRequest = async (friendCode : string) => {
-  console.log(`[Bot][Net] Start allow friend request, friend code ${friendCode}`);
+const allowFriendRequest = async (friendCode: string) => {
+  console.log(
+    `[Bot][Net] Start allow friend request, friend code ${friendCode}`
+  );
   await fetch("https://maimai.wahlap.com/maimai-mobile/friend/accept/allow/", {
     headers: {
       "content-type": "application/x-www-form-urlencoded",
@@ -113,11 +160,15 @@ const allowFriendRequest = async (friendCode : string) => {
   });
 
   await fetch("https://maimai.wahlap.com/maimai-mobile/friend/accept/allow/");
-  console.log(`[Bot][Net] Done allow friend request, friend code ${friendCode}`);
+  console.log(
+    `[Bot][Net] Done allow friend request, friend code ${friendCode}`
+  );
 };
 
-const blockFriendRequest = async (friendCode : string) => {
-  console.log(`[Bot][Net] Start block friend request, friend code ${friendCode}`);
+const blockFriendRequest = async (friendCode: string) => {
+  console.log(
+    `[Bot][Net] Start block friend request, friend code ${friendCode}`
+  );
   await fetch("https://maimai.wahlap.com/maimai-mobile/friend/accept/block/", {
     headers: {
       "content-type": "application/x-www-form-urlencoded",
@@ -128,10 +179,12 @@ const blockFriendRequest = async (friendCode : string) => {
   });
 
   await fetch("https://maimai.wahlap.com/maimai-mobile/friend/accept/block/");
-  console.log(`[Bot][Net] Done block friend request, friend code ${friendCode}`);
+  console.log(
+    `[Bot][Net] Done block friend request, friend code ${friendCode}`
+  );
 };
 
-const favoriteOnFriend = async (friendCode : string) => {
+const favoriteOnFriend = async (friendCode: string) => {
   console.log(`[Bot][Net] Start favorite on friend, friend code ${friendCode}`);
   await fetch("https://maimai.wahlap.com/maimai-mobile/friend/favoriteOn/", {
     headers: {
@@ -144,8 +197,10 @@ const favoriteOnFriend = async (friendCode : string) => {
   console.log(`[Bot][Net] Done favorite on friend, friend code ${friendCode}`);
 };
 
-const favoriteOffFriend = async (friendCode : string) => {
-  console.log(`[Bot][Net] Start favorite off friend, friend code ${friendCode}`);
+const favoriteOffFriend = async (friendCode: string) => {
+  console.log(
+    `[Bot][Net] Start favorite off friend, friend code ${friendCode}`
+  );
   await fetch("https://maimai.wahlap.com/maimai-mobile/friend/favoriteOff/", {
     headers: {
       "content-type": "application/x-www-form-urlencoded",
@@ -157,7 +212,11 @@ const favoriteOffFriend = async (friendCode : string) => {
   console.log(`[Bot][Net] Done favorite off friend, friend code ${friendCode}`);
 };
 
-const getFriendVS = async (friendCode : string, scoreType: 1 | 2, diff: number ) : Promise<string> => {
+const getFriendVS = async (
+  friendCode: string,
+  scoreType: 1 | 2,
+  diff: number
+): Promise<string> => {
   let url = `https://maimai.wahlap.com/maimai-mobile/friend/friendGenreVs/battleStart/?scoreType=${scoreType}&genre=99&diff=${diff}&idx=${friendCode}`;
   const result = await fetch(url, {}, 1, 1000 * 60 * 5);
   return await result.text();
@@ -190,7 +249,9 @@ const removeFriend = async (friendCode: string) => {
 };
 
 const sendFriendRequest = async (friendCode: string) => {
-  console.log(`[Bot][Net] Start send friend request, friend code ${friendCode}`);
+  console.log(
+    `[Bot][Net] Start send friend request, friend code ${friendCode}`
+  );
   await fetch("https://maimai.wahlap.com/maimai-mobile/friend/search/invite/", {
     headers: {
       "content-type": "application/x-www-form-urlencoded",
@@ -208,7 +269,9 @@ const sendFriendRequest = async (friendCode: string) => {
 };
 
 const validateFriendCode = async (friendCode: string) => {
-  console.log(`[Bot][Net] Start validate friend code, friend code ${friendCode}`);
+  console.log(
+    `[Bot][Net] Start validate friend code, friend code ${friendCode}`
+  );
 
   const result = await fetch(
     `https://maimai.wahlap.com/maimai-mobile/friend/search/searchUser/?friendCode=${friendCode}`
