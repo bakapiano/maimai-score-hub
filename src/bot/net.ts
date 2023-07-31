@@ -25,6 +25,7 @@ const fetch = async (
 
 setInterval(() => {
   if (queue.length === 0) return;
+  console.log("[Bot][Fetch] Queue length:", queue.length);
   const { url, options, retry, fetchTimeout, resolve, reject } = queue.shift();
   doFetch(url, options, retry, fetchTimeout).then(resolve).catch(reject);
 }, 2000);
