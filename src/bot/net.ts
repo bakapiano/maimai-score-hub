@@ -10,7 +10,7 @@ const fetch = async (
   options: any | undefined = undefined,
   retry: number = 1,
   fetchTimeout: number = 1000 * 30
-) => {
+) : Promise<any> => {
   return await new Promise((resolve, reject) => {
     queue.push({
       url,
@@ -34,7 +34,7 @@ const doFetch = async (
   options: any | undefined = undefined,
   retry: number = 1,
   fetchTimeout: number = 1000 * 30
-) => {
+) : Promise<any> => { 
   // TODO: change this to queue
   do {
     await sleep(Math.random() * 1000 * 3 + 2000);
