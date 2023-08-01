@@ -157,7 +157,7 @@ const updateMaimaiScore = async (
           const genres = !page ? [99] : [101, 102, 103, 104, 105, 106];
           await Promise.all(
             genres.map(async (genre) => {
-              const nameWithPage = `${name} 分数` + (page ? `(第 ${genre - 100} / ${genres.length} 页)` : "");
+              const nameWithPage = `${name}` + (page ? `(第 ${genre - 100} / ${genres.length} 页)` : "");
               let body: undefined | string = undefined;
 
               // Sleep random time to avoid ban
