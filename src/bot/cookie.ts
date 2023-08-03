@@ -4,8 +4,10 @@ import { CookieJar } from "node-fetch-cookies";
 import config from "../config.js";
 import fetch from "node-fetch";
 import { fetchWithCookieWithRetry } from "../util.js";
+import lodash from "lodash";
 import { sleep } from "../util.js";
-import { throttle } from "lodash";
+
+const { throttle } = lodash
 
 async function removeCookie() {
   try {
