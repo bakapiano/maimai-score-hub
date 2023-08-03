@@ -5,6 +5,7 @@ import config from "../config.js";
 import fetch from "node-fetch";
 import { fetchWithCookieWithRetry } from "../util.js";
 import { sleep } from "../util.js";
+import { throttle } from "lodash";
 
 async function removeCookie() {
   try {
@@ -83,7 +84,7 @@ function getCookieValue(cj: any) {
   };
 }
 
-async function testCookieExpired(cj: any): Promise<boolean> {
+const testCookieExpired = throttle(async (cj: any): Promise<boolean> => {
   console.log("[Bot] Start test cookie expired: ", getCookieValue(cj));
   try {
     const result = await fetchWithCookieWithRetry(
@@ -98,7 +99,7 @@ async function testCookieExpired(cj: any): Promise<boolean> {
     console.log("[Bot] Done test cookie expired with error: ", err);
     return true;
   }
-}
+})
 
 export {
   refreshCookie,
