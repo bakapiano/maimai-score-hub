@@ -1,6 +1,7 @@
 import { addFriendCodeCache, checkFriendCodeCache } from "../db.js";
 import { fetchWithCookieWithRetry, sleep } from "../util.js";
 import { loadCookie, testCookieExpired, updateCookie } from "./cookie.js";
+import { lock, release } from "./lock.js";
 
 var queue: any[] = [];
 const fetch = async (
@@ -24,9 +25,11 @@ const fetch = async (
 setInterval(() => {
   if (queue.length === 0) return;
   console.log("[Bot][Fetch] Queue length:", queue.length);
+  if (queue.length >= 60) lock("fetch-queue")
+  else release("fetch-queue")
   const { url, options, retry, fetchTimeout, resolve, reject } = queue.shift();
   doFetch(url, options, retry, fetchTimeout).then(resolve).catch(reject);
-}, 150);
+}, 1500);
 
 const doFetch = async (
   url: string,

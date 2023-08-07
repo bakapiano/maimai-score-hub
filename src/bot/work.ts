@@ -26,13 +26,12 @@ import {
   removeCookie,
   testCookieExpired,
 } from "./cookie.js";
+import { lock, release } from "./lock.js";
 import { useStage, useTrace } from "../trace.js";
 
 import config from "../config.js";
 import fetch from "node-fetch";
 import { sleep } from "../util.js";
-
-var queueLock = false;
 
 export type WorkerData = {
   friends: string[];
@@ -150,7 +149,7 @@ async function sendFriendRequestWork(data: WorkerData) {
     if (!data.requests.includes(friendCode)) {
       if (
         !item.requestSentTime ||
-        Date.now() - item.requestSentTime > 1000 * 60 * 1
+        Date.now() - item.requestSentTime > 1000 * 60 * 2
       ) {
         item.requestSentTime = Date.now();
         trace({ log: `正在尝试发送好友请求...` });
@@ -225,7 +224,7 @@ async function acceptFriendWork(data: WorkerData) {
     if (data.accepts.includes(friendCode)) {
       if (
         !item.acceptSentTime ||
-        Date.now() - item.acceptSentTime > 1000 * 60 * 1
+        Date.now() - item.acceptSentTime > 1000 * 60 * 2
       ) {
         await trace({ log: `正在尝试接受好友请求...` });
         item.acceptSentTime = Date.now();
@@ -283,7 +282,7 @@ async function cleanUpSentRequestWork(data: WorkerData) {
 async function cleanUpLongQueueTaskWork(data: WorkerData) {
   console.log("[Bot][CleanUpLongQueueTaskWork] Start");
   getQueue().forEach(async (item) => {
-    if (Date.now() - item.createTime > 1000 * 60 * 5) {
+    if (Date.now() - item.createTime > 1000 * 60 * 10) {
       const { traceUUID } = item;
       const trace = useTrace(traceUUID);
       removeFromQueue(item);
@@ -308,11 +307,8 @@ async function prepareWork() {
       getAccpetRequests().then((result) => (data.accepts = result)),
       getSentRequests().then((result) => (data.requests = result)),
     ]);
-    if (getQueue().length >= 10 || (data.friends?.length || 0) >= 20) {
-      queueLock = true;
-    } else {
-      queueLock = false;
-    }
+    getQueue().length >= 10 ? lock("queue-length") : release("queue-length")
+    if (data.friends) data.friends.length >= 20 ? lock("friend-length") : release("friend-length")
   }
   catch(err) {
     console.log("[Bot][PrepareWork] Failed to load data, error: ", err);
@@ -351,7 +347,6 @@ async function cookieRefreshWork() {
 }
 
 export {
-  queueLock,
   cookieRefreshWork,
   prepareWork,
   startUpdateWork,

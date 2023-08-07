@@ -18,8 +18,8 @@ import cors from "cors";
 import { exec } from "child_process";
 import express from "express";
 import { v4 as genUUID } from "uuid";
+import { isLock } from "./bot/lock.js";
 import { parse } from "url";
-import { queueLock } from "./bot/work.js";
 
 const app = express();
 app.use(cors());
@@ -228,7 +228,7 @@ if (config.bot.enable) {
       return;
     }
 
-    if (queueLock) {
+    if (isLock()) {
       serverRes.status(400).send("Bot 同时使用人数过多，请稍后再试！");
       return;
     }
