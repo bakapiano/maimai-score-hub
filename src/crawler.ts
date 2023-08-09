@@ -92,8 +92,8 @@ const updateMaimaiScore = async (
     const trace = useTrace(traceUUID);
     const stage = useStage(trace);
     const cj = new CookieJar();
-    const fetch = async (url: string, options: any = undefined) =>
-      await fetchWithCookieWithRetry(cj, url, options);
+    const fetch = async (url: string, options: any = undefined, fetchTimeout : number = 1000 * 3) =>
+      await fetchWithCookieWithRetry(cj, url, options, fetchTimeout);
 
     await trace({
       log: "开始更新 maimai 成绩",
@@ -179,8 +179,18 @@ const updateMaimaiScore = async (
               await stage(`获取 ${nameWithPage} 分数`, progress * 1.0 / pages.length, async () => {
                 const result = await fetch(
                   `https://maimai.wahlap.com/maimai-mobile/record/musicSort/search/?search=${pageType + page !== undefined ? `${page}`: ""}&sort=1&playCheck=on&diff=${diff}`
-                  // `https://maimai.wahlap.com/maimai-mobile/record/musicGenre/search/?genre=${genre}&diff=${diff}`
                 );
+
+                if (result.url.indexOf("error") !== -1) {
+                  const text = await result.text();
+                  const errroCode = text.match(/<div class="p_5 f_14 ">(.*)<\/div>/)[1];
+                  const errorBody = text.match(
+                    /<div class="p_5 f_12 gray break">(.*)<\/div>/
+                  )[1];
+
+                  throw Error("Error code " + errroCode + " Error Body" + errorBody);
+                }
+                
                 body = (await result.text())
                   .match(/<html.*>([\s\S]*)<\/html>/)[1]
                   .replace(/\s+/g, " ");
@@ -246,8 +256,8 @@ const updateChunithmScore = async (
     const trace = useTrace(traceUUID);
     const stage = useStage(trace);
     const cj = new CookieJar();
-    const fetch = async (url: string, options: any = undefined) =>
-      await fetchWithCookieWithRetry(cj, url, options);
+    const fetch = async (url: string, options: any = undefined, fetchTimeout : number = 1000 * 3) =>
+      await fetchWithCookieWithRetry(cj, url, options, fetchTimeout);
 
     await trace({
       log: "开始更新 chunithm 成绩",
@@ -353,6 +363,17 @@ const updateChunithmScore = async (
             const result = await fetch(
               "https://chunithm.wahlap.com/mobile" + url[1]
             );
+
+            if (result.url.indexOf("error") !== -1) {
+              const text = await result.text();
+              const errroCode = text.match(/<div class="p_5 f_14 ">(.*)<\/div>/)[1];
+              const errorBody = text.match(
+                /<div class="p_5 f_12 gray break">(.*)<\/div>/
+              )[1];
+
+              throw Error("Error code " + errroCode + " Error Body" + errorBody);
+            }
+            
             resultHtml = await result.text();
           });
 
