@@ -1,6 +1,8 @@
 import { Low, Memory } from "lowdb";
 
 import { JSONFile } from "lowdb/node";
+import config from "./config.js";
+import fetch from "node-fetch";
 
 var fileDB : any= new Low(new JSONFile("db.json"), null);
 var memoDB : any = new Low(new Memory(), null);
@@ -28,13 +30,21 @@ async function getValue(key : string) {
   return memoDB.data[key];
 }
 
-async function appendValue(key : string, value : any, defaultValue : any) {
-  let current = memoDB.data[key];
-  if (current === undefined) {
-    current = defaultValue;
-  }
-  memoDB.data.time[key] = new Date().getTime();
-  memoDB.data[key] = current + value;
+async function getRemoteValue(key : string) {
+  const url = `${config.worker.db}${key}/?token=${config.authToken}`
+  const res = await fetch(url)
+  const {value} = await res.json() as any
+  return value
+} 
+
+async function setRemoteValue(key : string, value : any) {
+  const url = `${config.worker.db}${key}/?token=${config.authToken}`
+  const res = await fetch(url, {
+    method: 'post',
+    body: JSON.stringify({value}),
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return res
 }
 
 async function delValue(key : string) {
@@ -130,11 +140,12 @@ export {
   getCount,
   clearExpireData,
   saveFileDB,
-  appendValue,
   appendQueue,
   getQueue,
   removeFromQueue,
   checkFriendCodeCache,
   addFriendCodeCache,
   removeFromQueueByFriendCode,
+  getRemoteValue,
+  setRemoteValue,
 };

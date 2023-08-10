@@ -8,6 +8,11 @@ const config = {
     enable: true,
     port: 8081,
   },
+  worker: {
+    enable: true,
+    task: "http://127.0.0.1:8081/task/",
+    db: "http://127.0.0.1:8081/db/",
+  },
   httpProxy: {
     enable: true,
     port: 2560,

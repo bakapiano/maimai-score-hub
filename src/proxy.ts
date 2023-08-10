@@ -2,10 +2,12 @@ import * as http from "http";
 import * as net from "net";
 import * as url from "url";
 
-import { MaimaiDiffType, PageInfo, getCookieByAuthUrl, updateChunithmScore, updateMaimaiScore } from "./crawler.js";
+import { GameType, MaimaiDiffType, PageInfo, getCookieByAuthUrl, updateChunithmScore, updateMaimaiScore } from "./crawler.js";
 import { delValue, getValue, setValue } from "./db.js";
 
 import { HTTPParser } from "http-parser-js";
+import { appendLog } from "./trace.js";
+import { appendTask } from "./web.js";
 import config from "./config.js";
 import { v4 as genUUID } from "uuid"
 import { saveCookie } from "./bot/cookie.js";
@@ -74,20 +76,21 @@ async function onAuthHook(href: string) {
     return errorPageUrl;
   }
   
-  // wait for first log message created, then return redirect url
-  const [updateMaimaiScoreWaitLogCreate, updateChunithmScoreWaitLogCreate] = [
-    updateMaimaiScore, updateChunithmScore].map((func, index) => {
-      return (username : string, password : string, target : string, traceUUID : string, diffList: any, pageInfo: Map<MaimaiDiffType, PageInfo> | undefined) => {
-        return new Promise((resolve, reject) => {
-          func(username, password, target, traceUUID, diffList, index === 0 ? pageInfo : undefined, resolve).catch(reject);
-        });
-      };
-  });
+  await appendLog(traceUUID, "");
+
+  const data = {
+    username,
+    password,
+    authUrl: target,
+    traceUUID,
+    diffList,
+    pageInfo,
+  }
 
   if (target.includes('maimai-dx')) {
-    await updateMaimaiScoreWaitLogCreate(username, password, target, traceUUID, diffList, pageInfo);
+    appendTask(data, GameType.maimai)
   } else if (target.includes('chunithm')) {
-    await updateChunithmScoreWaitLogCreate(username, password, target, traceUUID, diffList, undefined);
+    appendTask(data, GameType.chunithm)
   } else { // ongeki? hahaha
     return errorPageUrl
   }

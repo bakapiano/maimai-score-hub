@@ -1,4 +1,4 @@
-import { appendValue, getValue, setValue } from "./db.js";
+import { getRemoteValue, getValue, setRemoteValue, setValue } from "./db.js";
 
 import config from "./config.js";
 import { sleep } from "./util.js";
@@ -16,17 +16,23 @@ async function appendLog(uuid: string, text: string) {
     .split(",")[1]
     .trim();
   const log = `[${time.replace(" ", "")}] ${text}` + "\n";
-  await appendValue(key, log, "");
+
+  const preLog = await getRemoteValue(key);
+  if (preLog) {
+    await setRemoteValue(key, preLog + log);
+  } else  {
+    await setRemoteValue(key, log);
+  }
 }
 
 async function setProgress(uuid: string, progress: number) {
   const key = `${PREFIX}-${uuid}-${PROGRESS_KEY}`;
   const current = Number(await getValue(key)) || 0;
-  await setValue(key, Math.min(100, current + progress));
+  await setRemoteValue(key, Math.min(100, current + progress));
 }
 
 async function setStatus(uuid: string, status: string) {
-  await setValue(`${PREFIX}-${uuid}-${STATUS_KEY}`, status);
+  await setRemoteValue(`${PREFIX}-${uuid}-${STATUS_KEY}`, status);
 }
 
 async function getTrace(uuid: string) {
@@ -80,7 +86,6 @@ function useTrace(uuid: string) : TraceFunction {
     });
 }
 
-
 export type StageFunction = (
   description: string,
   progress: number,
@@ -121,4 +126,4 @@ function useStage(trace: TraceFunction) : StageFunction {
   };
 }
 
-export { appendLog, setProgress, getTrace, setStatus, useTrace, useStage };
+export { getTrace, useTrace, useStage, appendLog };

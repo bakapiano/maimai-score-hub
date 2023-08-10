@@ -116,7 +116,6 @@ const updateMaimaiScore = async (
   traceUUID: string,
   diffList: MaimaiDiffType[],
   pageInfo: Map<MaimaiDiffType, PageInfo>,
-  logCreatedCallback: (value: any) => void
 ) => {
   try {
     const trace = useTrace(traceUUID);
@@ -130,8 +129,6 @@ const updateMaimaiScore = async (
       status: "running",
       progress: 0,
     });
-
-    logCreatedCallback(undefined);
 
     await stage("登录公众号", 10, async () => {
       await doFetch(cj, authUrl, {
@@ -281,7 +278,6 @@ const updateChunithmScore = async (
   traceUUID: string,
   diffList: ChunithmDiffType[],
   _pageInfo: any, // TODO: Support paging for chunithm
-  logCreatedCallback: (value: any) => void
 ) => {
   try {
     const trace = useTrace(traceUUID);
@@ -295,8 +291,6 @@ const updateChunithmScore = async (
       status: "running",
       progress: 0,
     });
-
-    logCreatedCallback(undefined);
 
     await stage("登录公众号", 6.25, async () => {
       const authResult = await doFetch(cj, authUrl, {

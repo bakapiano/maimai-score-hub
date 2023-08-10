@@ -1,6 +1,6 @@
 import "express-async-errors";
 
-import { MaimaiDiffType, PageInfo, getAuthUrl, lock, verifyProberAccount } from "./crawler.js";
+import { GameType, MaimaiDiffType, PageInfo, getAuthUrl, lock, verifyProberAccount } from "./crawler.js";
 import {
   appendQueue,
   delValue,
@@ -128,6 +128,11 @@ async function serve(
   if ((pageInfo === undefined || pageInfo === null) && type === "maimai-dx") {
     pageInfo = defaultMaimaiPageInfo
   }
+
+  // TODO: Support chunithm paging
+  if (type === "chunithm") {
+    pageInfo = undefined
+  }
   
   await setValue(key, { username, password, callbackHost, diffList, pageInfo });
   
@@ -176,18 +181,18 @@ app.get("/count", async (_serverReq: any, serverRes: any) => {
   serverRes.status(200).send({ count });
 });
 
-if (config.wechatLogin.enable) {
-  const validateToken = (serve: any) => {
-    return async (serverReq: any, serverRes: any) => {
-      const { token } = serverReq.query;
-      if (token !== config.authToken) {
-        serverRes.status(400).send("Invalid token");
-        return;
-      }
-      await serve(serverReq, serverRes);
-    };
+const validateToken = (serve: any) => {
+  return async (serverReq: any, serverRes: any) => {
+    const { token } = serverReq.query;
+    if (token !== config.authToken) {
+      serverRes.status(400).send("Invalid token");
+      return;
+    }
+    await serve(serverReq, serverRes);
   };
+};
 
+if (config.wechatLogin.enable) {
   // Use for local login
   app.get(
     "/token",
@@ -281,6 +286,59 @@ if (config.bot.enable) {
   });
 }
 
+// Worker api
+
+export type Task = {uuid: string, data : any, type: GameType}
+var taskQueue : Task[] = []
+var pendingQueue : Task[] = []
+
+function appendTask(data, type: GameType) {
+  const uuid = genUUID()
+  taskQueue.push({uuid, data, type})
+} 
+
+app.get("/task/", validateToken(async (serverReq: any, serverRes: any) => {
+  const task = taskQueue.shift()
+  if (task) {
+    pendingQueue.push(task)
+    serverRes.send(JSON.stringify(task))
+    // If not ack in 30s, put it back to task queue
+    setTimeout(() => {
+      const { uuid } = task
+      pendingQueue = pendingQueue.filter((task) => task.uuid !== uuid)
+      taskQueue.push(task)
+    }, 1000 * 30)
+  }
+  else {
+    serverRes.status(400).send("No task")
+  }
+}));
+
+app.post("/task/:uuid/", jsonParser, validateToken(async (serverReq: any, serverRes: any) => {
+  const { uuid } = serverReq.params;
+  const task = pendingQueue.find((task) => task.uuid === uuid)
+  if (task) {
+    pendingQueue = pendingQueue.filter((task) => task.uuid !== uuid)
+  }
+  else {
+    serverRes.status(400).send("Task not found")
+  }
+}));
+
+// DB
+app.get("/db/:key/", validateToken(async (serverReq: any, serverRes: any) => {
+  const { key } = serverReq.params;
+  const value = await getValue(key);
+  serverRes.send(JSON.stringify({value}));
+}));
+
+app.post("/db/:key/", jsonParser, validateToken(async (serverReq: any, serverRes: any) => {
+  const { key } = serverReq.params;
+  const { value } = serverReq.body;
+  await setValue(key, value);
+  serverRes.send("OK");
+}));
+
 app.use(express.static("static"));
 
 app.use((err: any, req: any, res: any, next: any) => {
@@ -288,4 +346,4 @@ app.use((err: any, req: any, res: any, next: any) => {
   res.status(500).send("500 Internal Server Error");
 });
 
-export { app as server };
+export { app as server, appendTask };

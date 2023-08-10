@@ -6,6 +6,7 @@ import {
 
 import config from "./config.js";
 import { configureBot } from "./bot/index.js";
+import { configureWorker } from "./worker.js";
 import { interProxy } from "./inter-proxy.js";
 import { proxy } from "./proxy.js";
 import { server } from "./web.js";
@@ -40,6 +41,10 @@ if (config.httpProxy.enable) {
 
 if (config.bot.enable) {
   configureBot()
+}
+
+if (config.worker.enable) {
+  configureWorker()
 }
 
 // Create a schedule to clear in-memory DB and save count
