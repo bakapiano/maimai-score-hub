@@ -29,8 +29,8 @@ const fetchWithCookieWithRetry = async (
 setInterval(() => {
   if (queue.length === 0) return;
   console.log("[Crawler][Fetch] Queue length:", queue.length);
-  // if (queue.length >= 30) lock = true
-  // else lock = false
+  if (queue.length >= 30) lock = true
+  else lock = false
   const { cj, url, options, fetchTimeout, resolve, reject } = queue.shift();
   doFetch(cj, url, options, fetchTimeout).then(resolve).catch(e => {
     reject?.(e)
