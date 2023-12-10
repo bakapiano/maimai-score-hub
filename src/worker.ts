@@ -19,12 +19,9 @@ const configureWorker = () => {
       console.log("[Worker] Lock fetch task")
       return;
     }
-    // 0 - 20 - 40
-    // 2s - 8s - 16s
-    if (queue.length >= 40 && Date.now() - lastFire < 16 * 1000) {
-      return;
-    }
-    if (queue.length >= 20 && Date.now() - lastFire < 8 * 1000) {
+    // 0 - 10 - 20 - 30 - 40 - 50 - 60
+    // 2s - 4s - 8s - 16s - 32s - 64s - 128s
+    if (Date.now() - lastFire < Math.pow(2, queue.length / 10) * 1000 + 1) {
       return;
     }
 
