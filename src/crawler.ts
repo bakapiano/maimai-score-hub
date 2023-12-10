@@ -229,9 +229,14 @@ const updateMaimaiScore = async (
               await sleep(1000 * (diff + index + 1) * 2 + 1000 * 5 * Math.random());
 
               await stage(`获取 ${nameWithPage} 分数`, progress * 1.0 / pages.length, async () => {
-                const result = await fetch(
-                  `https://maimai.wahlap.com/maimai-mobile/record/musicSort/search/?search=${pageType + page !== undefined ? `${page}`: ""}&sort=1&playCheck=on&diff=${diff}`
-                );
+                const url = `https://maimai.wahlap.com/maimai-mobile/record/musicSort/search/?search=${pageType + page !== undefined ? `${page}`: ""}&sort=1&playCheck=on&diff=${diff}`
+                const result = await fetch(url, {
+                  headers: {
+                    Host: "maimai.wahlap.com",
+                    "User-Agent":
+                      "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x6307001e)",
+                  },
+                });
 
                 if (result.url.indexOf("error") !== -1) {
                   const text = await result.text();
@@ -246,6 +251,11 @@ const updateMaimaiScore = async (
                 body = (await result.text())
                   .match(/<html.*>([\s\S]*)<\/html>/)[1]
                   .replace(/\s+/g, " ");
+
+                // Assert body is not empty
+                if (body == undefined || body?.indexOf("btn_music_level.png") == -1) {
+                  throw new Error("获取 " + nameWithPage + " 分数时出现错误");
+                }
               });
 
               await stage(
@@ -424,6 +434,10 @@ const updateChunithmScore = async (
             }
             
             resultHtml = await result.text();
+
+            if (resultHtml === undefined || resultHtml?.indexOf("乐曲成绩") === -1) {
+              throw new Error("获取 " + name + " 分数时出现错误");
+            }
           });
 
           await stage(
