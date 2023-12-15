@@ -57,7 +57,7 @@ setInterval(() => {
   catch (e) {
     console.error("[Crawler][Fetch] Start do fetch error:", e);
   }
-}, 2000);
+}, 500);
 
 async function verifyProberAccount(username: string, password: string) {
   const res = await fetch(
@@ -262,7 +262,8 @@ const updateMaimaiScore = async (
                 `上传 ${nameWithPage} 分数至 diving-fish 查分器数据库`,
                 progress * 1.0 / pages.length,
                 async () => {
-                  const uploadResult = await fetch(
+                  const uploadResult = await doFetch(
+                    cj,
                     `${config.pageParserHost}/page`,
                     {
                       method: "post",
@@ -444,7 +445,8 @@ const updateChunithmScore = async (
             `上传 ${name} 分数至 diving-fish 查分器数据库`,
             progress,
             async () => {
-              const uploadResult = await fetch(
+              const uploadResult = await doFetch(
+                cj,
                 "https://www.diving-fish.com/api/chunithmprober/player/update_records_html" +
                   (url[1] && url[1].includes("Recent") ? "?recent=1" : ""),
                 {

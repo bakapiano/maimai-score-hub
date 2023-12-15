@@ -32,7 +32,7 @@ async function serve(
   data: any,
   redirect: boolean
 ) {
-  if (taskQueue.length >= 30) {
+  if (taskQueue.length >= 10) {
     console.log(`[Worker API] ${taskQueue.length} task queue length reached, hit lock!`)
     serverRes.status(400).send("同时使用人数过多，请稍后再试！");
     return;
@@ -322,7 +322,7 @@ app.post("/task/:uuid/", jsonParser, validateToken(async (serverReq: any, server
   const { uuid } = serverReq.params;
   const task = pendingQueue.find((task) => task.uuid === uuid)
   if (task) {
-    console.log("[Worker ]Task ack", uuid)
+    console.log("[Worker] Task ack", uuid)
     pendingQueue = pendingQueue.filter((task) => task.uuid !== uuid)
     serverRes.status(200).send("OK")
   }
