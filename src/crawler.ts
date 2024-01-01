@@ -386,7 +386,7 @@ const updateChunithmScore = async (
     ];
 
     const _t = cj.cookies.get("chunithm.wahlap.com").get("_t").value;
-
+    
     const tasks: Promise<any>[] = [];
     [0, 1, 2, 3, 4, 5, 6].forEach((diff) => {
       const name = diffNameList[diff];
@@ -435,8 +435,7 @@ const updateChunithmScore = async (
             }
             
             resultHtml = await result.text();
-
-            if (resultHtml === undefined || resultHtml?.indexOf("乐曲成绩") === -1) {
+            if (resultHtml === undefined || (resultHtml?.indexOf("乐曲成绩") === -1 && resultHtml?.indexOf("Rating对象乐")  === -1)) {
               throw new Error("获取 " + name + " 分数时出现错误");
             }
           });
