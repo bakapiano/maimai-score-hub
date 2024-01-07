@@ -189,6 +189,20 @@ const menuOptions = [
       h(
         RouterLink,
         {
+          to: {
+            path: '/sbga/',
+          },
+        },
+        { default: () => '解小黑屋' }
+      ),
+    key: 'sbga',
+    to: '/sbga',
+  },
+  {
+    label: () =>
+      h(
+        RouterLink,
+        {
           onClick: () => {
             window.location.href =
               'https://www.diving-fish.com/maimaidx/prober/'

@@ -17,6 +17,7 @@ import config from "./config.js";
 import cors from "cors";
 import { exec } from "child_process";
 import express from "express";
+import fetch from "node-fetch";
 import { v4 as genUUID } from "uuid";
 import { isLock } from "./bot/lock.js";
 import { parse } from "url";
@@ -343,6 +344,39 @@ app.post("/db/:key/", jsonParser, validateToken(async (serverReq: any, serverRes
   const { value } = serverReq.body;
   await setValue(key, value);
   serverRes.send("OK");
+}));
+
+// 小黑屋
+let apiEndpoint = null;
+app.post("/logout/", jsonParser, (async (serverReq: any, serverRes: any) => {
+  if (apiEndpoint == null) {
+    serverRes.status(400).send("服务暂时不可用");
+    return;
+  }
+
+  const { uid } = serverReq.body;
+  const r = await fetch(`http://${apiEndpoint}/api/logout?uid=${uid}`, {method: "GET"});
+  return serverRes.status(200).send(await r.text());
+}));
+
+app.post("/qrcode/", jsonParser, (async (serverReq: any, serverRes: any) => {
+  if (apiEndpoint == null) {
+    serverRes.status(400).send("服务暂时不可用");
+    return;
+  }
+  
+  const { qrcode } = serverReq.body;
+  const r = await fetch(`http://${apiEndpoint}/api/get-userid?qrcode=${qrcode}`, {method: "GET"});
+  return serverRes.status(200).send(await r.text());
+}));
+
+app.get("/update/endpoint/", jsonParser, validateToken(async (serverReq: any, serverRes: any) => {
+  apiEndpoint = serverReq.query.endpoint;
+  return serverRes.status(200).send("OK");
+}));
+
+app.get("/get/endpoint/", jsonParser, validateToken(async (serverReq: any, serverRes: any) => {
+  return serverRes.status(200).send(apiEndpoint);
 }));
 
 app.use(express.static("static"));
