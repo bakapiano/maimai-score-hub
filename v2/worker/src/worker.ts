@@ -9,11 +9,34 @@ import {
 } from "./crawler.ts";
 
 import { CookieExpiredError } from "./util.ts";
-import fs from "fs";
 import { loadCookie } from "./cookie.ts";
 import { parseFriendVsSongs } from "./friend-vs-parser.ts";
-import path from "path";
 import { state } from "./state.ts";
+
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+
+async function dumpFriendVsHtmlIfEnabled(
+  html: string,
+  meta: { type: number; diff: number }
+) {
+  if (process.env.DUMP_FRIEND_VS_HTML !== "1") return;
+
+  try {
+    const dir =
+      process.env.FRIEND_VS_HTML_DIR || join(process.cwd(), "debug-html");
+    await mkdir(dir, { recursive: true });
+
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `friend-vs-${ts}-type${meta.type}-diff${meta.diff}-${randomUUID()}.html`;
+    const path = join(dir, filename);
+
+    await writeFile(path, html, "utf8");
+  } catch {
+    // Best-effort debug logging; ignore failures.
+  }
+}
 
 export function startWorker() {
   let processing = false;
@@ -109,6 +132,21 @@ async function handleJob(initialJob: Job) {
         await applyPatch({ updatedAt: new Date() });
       }
     } else if (job.stage === "update_score") {
+      if (job.skipUpdateScore) {
+        console.log(
+          `[Worker] Job ${job.id}: Skipping update_score (skipUpdateScore=true).`
+        );
+        await applyPatch({
+          status: "completed",
+          retryCount: 0,
+          nextRetryAt: null,
+          executing: false,
+          error: null,
+          updatedAt: new Date(),
+        });
+        return;
+      }
+
       console.log(`[Worker] Job ${job.id}: Updating scores...`);
       await favoriteOnFriend(cj, job.friendCode);
 
@@ -119,18 +157,24 @@ async function handleJob(initialJob: Job) {
 
       for (const diff of diffs) {
         promises.push(
-          getFriendVS(cj, job.friendCode, 1, diff).then((result) => ({
-            diff,
-            type: 1,
-            result,
-          }))
+          getFriendVS(cj, job.friendCode, 1, diff).then(async (result) => {
+            await dumpFriendVsHtmlIfEnabled(result, { type: 1, diff });
+            return {
+              diff,
+              type: 1,
+              result,
+            };
+          })
         );
         promises.push(
-          getFriendVS(cj, job.friendCode, 2, diff).then((result) => ({
-            diff,
-            type: 2,
-            result,
-          }))
+          getFriendVS(cj, job.friendCode, 2, diff).then(async (result) => {
+            await dumpFriendVsHtmlIfEnabled(result, { type: 2, diff });
+            return {
+              diff,
+              type: 2,
+              result,
+            };
+          })
         );
       }
 
@@ -204,15 +248,20 @@ async function handleJob(initialJob: Job) {
 
 type AggregatedResult = Record<
   string,
-  Record<
-    string,
+  Partial<
     Record<
-      number,
-      {
-        level: string;
-        dxScore?: string | null;
-        score?: string | null;
-      }
+      "dx" | "sd",
+      Record<
+        string,
+        Record<
+          number,
+          {
+            level: string;
+            dxScore?: string | null;
+            score?: string | null;
+          }
+        >
+      >
     >
   >
 >;
@@ -229,21 +278,28 @@ function aggregateSongResults(
   for (const result of results) {
     for (const song of result.songs) {
       const category = song.category ?? "unknown";
+      const kind = song.kind;
       if (!aggregated[category]) {
         aggregated[category] = {};
       }
 
-      if (!aggregated[category][song.name]) {
-        aggregated[category][song.name] = {};
+      if (!aggregated[category][kind]) {
+        aggregated[category][kind] = {};
       }
 
-      if (!aggregated[category][song.name][result.diff]) {
-        aggregated[category][song.name][result.diff] = {
+      const songsByKind = aggregated[category][kind]!;
+
+      if (!songsByKind[song.name]) {
+        songsByKind[song.name] = {};
+      }
+
+      if (!songsByKind[song.name][result.diff]) {
+        songsByKind[song.name][result.diff] = {
           level: song.level,
         };
       }
 
-      const entry = aggregated[category][song.name][result.diff];
+      const entry = songsByKind[song.name][result.diff];
       if (result.type === 1) {
         entry.dxScore = song.score ?? null;
       } else if (result.type === 2) {

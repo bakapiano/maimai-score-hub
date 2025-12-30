@@ -3,6 +3,7 @@ export interface FriendVsSong {
   name: string;
   score: string | null;
   category: string | null;
+  kind: "dx" | "sd";
 }
 
 const songBlockAnchor =
@@ -24,12 +25,6 @@ export function parseFriendVsSongs(html: string): FriendVsSong[] {
       categoryIndex + 1 < categories.length &&
       categories[categoryIndex + 1].start <= songStart
     ) {
-      //   console.log(
-      //     "friend-vs: switching category from",
-      //     currentCategory,
-      //     "to",
-      //     categories[categoryIndex + 1].name
-      //   );
       categoryIndex += 1;
       currentCategory = categories[categoryIndex].name;
     }
@@ -42,27 +37,23 @@ export function parseFriendVsSongs(html: string): FriendVsSong[] {
     const scoreMatches = [...content.matchAll(cloneRegex(scoreCellPattern))];
 
     if (!levelMatch || !nameMatch || scoreMatches.length < 2) {
-      //   console.log("friend-vs: skip block", idx, "missing fields");
       return;
     }
 
     const level = normalizeText(levelMatch[1]);
     const name = normalizeText(nameMatch[1]);
+    const kind: FriendVsSong["kind"] = /music_dx\.png/i.test(content)
+      ? "dx"
+      : "sd";
     // First score cell is the player's value; second is the opponent's.
     const opponentScore = normalizeScore(scoreMatches[1][1]);
-
-    // console.log("friend-vs: parsed", idx, {
-    //   level,
-    //   name,
-    //   score: rawScore,
-    //   category: currentCategory,
-    // });
 
     songs.push({
       level,
       name,
       score: opponentScore,
       category: currentCategory,
+      kind,
     });
   });
 
@@ -81,8 +72,6 @@ function collectCategories(
       start: match.index ?? 0,
       name: normalizeText(match[1]),
     });
-
-    // console.log("friend-vs: found category", categories[categories.length - 1]);
   }
   return categories;
 }

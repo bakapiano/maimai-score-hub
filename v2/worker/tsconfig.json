@@ -1,5 +1,5 @@
 {
-  "extends": "../tsconfig.json",
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "../dist-v2",
     "rootDir": ".",
@@ -9,6 +9,6 @@
     "allowImportingTsExtensions": true
   },
   "include": [
-    "worker/src/**/*"
+    "src/**/*"
   ]
 }

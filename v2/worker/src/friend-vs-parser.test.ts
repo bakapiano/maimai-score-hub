@@ -8,7 +8,7 @@ import { readFile } from "node:fs/promises";
 const [, , inputArg] = process.argv;
 const here = dirname(fileURLToPath(import.meta.url));
 const defaultSample =
-  "../friend-vs/7beb8c63-656e-40fe-a823-94f23bf5fcc1-413252453611467-type1-diff0.html";
+  "../debug-html/friend-vs-2025-12-30T09-44-52-838Z-db44f055-fd47-457d-b626-32cd15a18770.html";
 const target = resolve(here, inputArg ?? defaultSample);
 
 const html = await readFile(target, "utf-8");

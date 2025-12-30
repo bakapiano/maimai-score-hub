@@ -6,6 +6,7 @@ export type JobStage = "send_request" | "wait_acceptance" | "update_score";
 export interface Job {
   id: string;
   friendCode: string;
+  skipUpdateScore?: boolean;
   botUserFriendCode?: string | null;
   status: JobStatus;
   stage: JobStage;

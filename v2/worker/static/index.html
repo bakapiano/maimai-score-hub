@@ -108,6 +108,8 @@
                 return;
             }
 
+            const skipUpdateScore = document.getElementById('skipUpdateScore')?.checked ?? false;
+
             let base;
             try {
                 base = await resolveJobServiceBase();
@@ -120,7 +122,7 @@
                 const res = await fetch(`${base}/api/job/create`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ friendCode })
+                    body: JSON.stringify({ friendCode, skipUpdateScore })
                 });
                 const data = await res.json();
                 document.getElementById('createJobResult').innerText = JSON.stringify(data, null, 2);
@@ -197,6 +199,11 @@
         <div class="row">
             <label>Friend Code: <input type="text" id="friendCode" placeholder="Enter Friend Code" value="634142510810999"></label>
             <button onclick="createJob()">Create Job</button>
+        </div>
+        <div class="row">
+            <label>
+                <input type="checkbox" id="skipUpdateScore"> Skip Update Score
+            </label>
         </div>
         <pre id="createJobResult">Job creation result will appear here...</pre>
 

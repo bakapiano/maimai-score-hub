@@ -28,9 +28,14 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.post("/api/job/create", (req, res) => {
-  const { friendCode } = req.body ?? {};
+  const { friendCode, skipUpdateScore } = req.body ?? {};
   if (!friendCode || typeof friendCode !== "string") {
     res.status(400).json({ error: "friendCode is required" });
+    return;
+  }
+
+  if (skipUpdateScore !== undefined && typeof skipUpdateScore !== "boolean") {
+    res.status(400).json({ error: "skipUpdateScore must be a boolean" });
     return;
   }
 
@@ -39,6 +44,7 @@ app.post("/api/job/create", (req, res) => {
   const job: Job = {
     id,
     friendCode,
+    skipUpdateScore: skipUpdateScore ?? false,
     botUserFriendCode: null,
     status: "queued",
     stage: "send_request",
