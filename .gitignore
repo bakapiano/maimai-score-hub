@@ -69,3 +69,9 @@ package-lock.json
 # lowdb
 db.json
 .db.json.tmp
+
+# downloaded covers
+v2/web/backend/covers/
+
+# backend dist
+v2/web/backend/dist

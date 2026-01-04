@@ -1,3 +1,5 @@
+import "./env.ts";
+
 import config from "./config.ts";
 import { proxy } from "./proxy.ts";
 import { startServer } from "./api.ts";

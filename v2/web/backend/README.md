@@ -25,6 +25,12 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Music data sync job
+
+- Scheduled with `@nestjs/schedule`; cron expression comes from `MUSIC_SYNC_CRON` (default `0 */6 * * *`).
+- Fetches `MUSIC_DATA_URL` (defaults to the official diving-fish music_data endpoint) and upserts into the `musics` collection.
+- Each chart merges `cid` + `ds` + `level` with the chart payload so `cid` is the chart key and `id` is the music key.
+
 ## Project setup
 
 ```bash

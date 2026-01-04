@@ -1,6 +1,8 @@
 import { fetchWithCookieWithRetry, sleep } from "./util.ts";
+import { mkdir, writeFile } from "node:fs/promises";
 
 import { CookieJar } from "tough-cookie";
+import { join } from "node:path";
 
 export const GameType = {
   maimai: "maimai-dx",
@@ -79,6 +81,18 @@ const fetchWithToken = async (
   return await fetchWithCookieWithRetry(cj, url, fetchOptions, undefined, true);
 };
 
+async function dumpHtml(kind: string, html: string) {
+  try {
+    const dir = join(process.cwd(), "log", "crawler");
+    await mkdir(dir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const file = join(dir, `${kind}-${ts}.html`);
+    await writeFile(file, html, "utf8");
+  } catch (err) {
+    console.warn(`[Crawler] Failed to dump html for ${kind}:`, err);
+  }
+}
+
 export const getFriendList = async (cj: CookieJar) => {
   console.log(`[Crawler] Start get friend list`);
   const url = "https://maimai.wahlap.com/maimai-mobile/index.php/friend/";
@@ -90,17 +104,55 @@ export const getFriendList = async (cj: CookieJar) => {
   return ids;
 };
 
-export const getSentRequests = async (cj: CookieJar) => {
+export type SentRequest = { friendCode: string; appliedAt: string | null };
+
+export const getSentRequests = async (
+  cj: CookieJar
+): Promise<SentRequest[]> => {
   console.log(`[Crawler] Start get sent friend requests`);
   const result = await fetchWithToken(
     cj,
     "https://maimai.wahlap.com/maimai-mobile/friend/invite/"
   );
   const text = await result!.text();
-  const t = text.matchAll(/<input type="hidden" name="idx" value="(.*?)"/g);
-  const ids = [...new Set([...t].map((x) => x[1]))];
-  console.log(`[Crawler] Done get sent friend requests: `, ids);
-  return ids;
+  dumpHtml("sent-requests", text);
+
+  const blocks = text.match(
+    /(<div class="see_through_block m_15 m_t_5 p_10 t_l f_0 p_r">[\s\S]*?)(?=<div class="see_through_block m_15 m_t_5 p_10 t_l f_0 p_r">|$)/g
+  );
+
+  const requests: SentRequest[] = [];
+  if (blocks) {
+    for (const block of blocks) {
+      const codeMatch = block.match(
+        /<input type="hidden" name="idx" value="(.*?)"/i
+      );
+      const dateMatch = block.match(/申请日期：([0-9/:\s]+)/);
+      const friendCode = codeMatch?.[1];
+      if (!friendCode) continue;
+      requests.push({
+        friendCode,
+        appliedAt: dateMatch?.[1]?.trim() || null,
+      });
+    }
+  }
+
+  return requests;
+};
+
+export const searchUserByFriendCode = async (
+  cj: CookieJar,
+  friendCode: string
+) => {
+  console.log(`[Crawler] Start search user by friend code ${friendCode}`);
+  const url = `https://maimai.wahlap.com/maimai-mobile/friend/search/searchUser/?friendCode=${encodeURIComponent(
+    friendCode
+  )}`;
+  const result = await fetchWithToken(cj, url);
+  const text = await result!.text();
+  dumpHtml(`search-user-${friendCode}`, text);
+  console.log(`[Crawler] Done search user by friend code ${friendCode}`);
+  return [] as any[];
 };
 
 export const sendFriendRequest = async (cj: CookieJar, friendCode: string) => {
@@ -141,6 +193,85 @@ export const favoriteOnFriend = async (cj: CookieJar, friendCode: string) => {
     }
   );
   console.log(`[Crawler] Done favorite on friend, friend code ${friendCode}`);
+};
+
+export const getAccpetRequests = async (cj: CookieJar) => {
+  console.log(`[Crawler] Start get accept friend requests`);
+  const result = await fetchWithToken(
+    cj,
+    "https://maimai.wahlap.com/maimai-mobile/friend/accept/"
+  );
+  const text = await result!.text();
+  const t = text.matchAll(/<input type="hidden" name="idx" value="(.*?)"/g);
+  const ids = [...new Set([...t].map((x) => x[1]))];
+  console.log(`[Crawler] Done get accept friend requests: `, ids);
+  return ids;
+};
+
+export const allowFriendRequest = async (cj: CookieJar, friendCode: string) => {
+  console.log(
+    `[Crawler] Start allow friend request, friend code ${friendCode}`
+  );
+  await fetchWithToken(
+    cj,
+    "https://maimai.wahlap.com/maimai-mobile/friend/accept/allow/",
+    {
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: `idx=${friendCode}&allow=`,
+      method: "POST",
+      addToken: true,
+    }
+  );
+
+  await fetchWithToken(
+    cj,
+    "https://maimai.wahlap.com/maimai-mobile/friend/accept/allow/"
+  );
+  console.log(`[Crawler] Done allow friend request, friend code ${friendCode}`);
+};
+
+export const cancelFriendRequest = async (
+  cj: CookieJar,
+  friendCode: string
+) => {
+  console.log(
+    `[Crawler] Start cancel friend request, friend code ${friendCode}`
+  );
+  await fetchWithToken(
+    cj,
+    "https://maimai.wahlap.com/maimai-mobile/friend/invite/cancel/",
+    {
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: `idx=${friendCode}&invite=`,
+      method: "POST",
+      addToken: true,
+    }
+  );
+
+  console.log(
+    `[Crawler] Done cancel friend request, friend code ${friendCode}`
+  );
+};
+
+export const removeFriend = async (cj: CookieJar, friendCode: string) => {
+  console.log(`[Crawler] Start remove friend, friend code ${friendCode}`);
+  await fetchWithToken(
+    cj,
+    "https://maimai.wahlap.com/maimai-mobile/friend/friendDetail/drop/",
+    {
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: `idx=${friendCode}`,
+      method: "POST",
+      addToken: true,
+    }
+  );
+  console.log(`[Crawler] Done remove friend, friend code ${friendCode}`);
 };
 
 export const getFriendVS = async (

@@ -15,6 +15,10 @@
         let currentUserFriendCode = null;
         let redirecting = false;
         let jobServiceBase = "";
+        const healthRetryDelay = 2000;
+
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
         async function resolveJobServiceBase() {
             if (jobServiceBase) {
                 return jobServiceBase;
@@ -42,8 +46,27 @@
             return urlParams.get(name);
         }
 
+        async function waitForHealth() {
+            while (true) {
+                try {
+                    const res = await fetch('/api/health', { cache: 'no-store' });
+                    if (res.ok) {
+                        const data = await res.json().catch(() => ({}));
+                        if (!data.status || data.status === 'ok') {
+                            return;
+                        }
+                    }
+                } catch (err) {
+                    console.warn('Health check failed, retrying...', err);
+                }
+                document.getElementById('status').innerText = "Waiting for service to be ready...";
+                await sleep(healthRetryDelay);
+            }
+        }
+
         async function startAuth() {
             try {
+                await waitForHealth();
                 const response = await fetch('/api/auth');
                 const data = await response.json();
                 if (data.authUrl) {

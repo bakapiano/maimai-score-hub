@@ -3,7 +3,9 @@ export interface FriendVsSong {
   name: string;
   score: string | null;
   category: string | null;
-  kind: "dx" | "sd";
+  type: "standard" | "dx" | "utage";
+  fs: string | null;
+  fc: string | null;
 }
 
 const songBlockAnchor =
@@ -42,9 +44,12 @@ export function parseFriendVsSongs(html: string): FriendVsSong[] {
 
     const level = normalizeText(levelMatch[1]);
     const name = normalizeText(nameMatch[1]);
-    const kind: FriendVsSong["kind"] = /music_dx\.png/i.test(content)
+    const type: FriendVsSong["type"] = /music_utage\.png/i.test(content)
+      ? "utage"
+      : /music_dx\.png/i.test(content)
       ? "dx"
-      : "sd";
+      : "standard";
+    const { fs, fc } = extractFsFcBadges(content);
     // First score cell is the player's value; second is the opponent's.
     const opponentScore = normalizeScore(scoreMatches[1][1]);
 
@@ -53,11 +58,51 @@ export function parseFriendVsSongs(html: string): FriendVsSong[] {
       name,
       score: opponentScore,
       category: currentCategory,
-      kind,
+      type,
+      fs,
+      fc,
     });
   });
 
   return songs;
+}
+
+function extractFsFcBadges(content: string): {
+  fs: string | null;
+  fc: string | null;
+} {
+  const tdRegex = /<td class="t_r f_0">([\s\S]*?)<\/td>/gi;
+  const iconRegex = /music_icon_([a-z0-9]+)\.png/gi;
+
+  let rightCellInnerHtml: string | null = null;
+  for (const match of content.matchAll(tdRegex)) {
+    const inner = match[1] ?? "";
+    // Use a fresh regex instance to avoid leaking lastIndex across uses.
+    if (cloneRegex(iconRegex).test(inner)) {
+      rightCellInnerHtml = inner;
+      break;
+    }
+  }
+
+  if (!rightCellInnerHtml) {
+    return { fs: null, fc: null };
+  }
+
+  const iconsInDomOrder: (string | null)[] = [];
+  // clone to ensure we start matching from index 0 every time
+  for (const match of rightCellInnerHtml.matchAll(cloneRegex(iconRegex))) {
+    const icon = match[1].toLowerCase();
+    iconsInDomOrder.push(icon === "back" ? null : icon);
+  }
+
+  // console.log(iconsInDomOrder);
+  // These icons use `f_r` (float-right), so the visual order is the reverse of DOM order.
+  // const iconsInVisualOrder = iconsInDomOrder.reverse();
+
+  return {
+    fs: iconsInDomOrder[0] ?? null,
+    fc: iconsInDomOrder[1] ?? null,
+  };
 }
 
 // Records where each category banner appears so subsequent songs inherit it until the next banner.

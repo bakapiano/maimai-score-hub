@@ -1,15 +1,15 @@
 {
     "dev": {
-        "host": "127.0.0.1",
+        "host": "192.168.6.165",
         "port": 3999,
         "fetchTimeOut": 300000,
         "fetchRetryCount": 3,
-        "redirectUrl": "http://127.0.0.1:3999/",
+        "redirectUrl": "http://192.168.6.165:3999/",
         "httpProxy": {
             "port": 2560
         },
         "jobService": {
-            "baseUrl": "http://127.0.0.1:3000"
+            "baseUrl": "http://192.168.6.165:3000"
         }
     },
     "production": {

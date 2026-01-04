@@ -1,6 +1,11 @@
 import config from "./config.ts";
 
-export type JobStatus = "queued" | "processing" | "completed" | "failed";
+export type JobStatus =
+  | "queued"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "canceled";
 export type JobStage = "send_request" | "wait_acceptance" | "update_score";
 
 export interface Job {
@@ -8,32 +13,29 @@ export interface Job {
   friendCode: string;
   skipUpdateScore?: boolean;
   botUserFriendCode?: string | null;
+  friendRequestSentAt?: string | null;
   status: JobStatus;
   stage: JobStage;
   result?: any;
   error?: string | null;
   executing?: boolean;
-  retryCount: number;
-  nextRetryAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
-type JobResponse = Omit<Job, "createdAt" | "updatedAt" | "nextRetryAt"> & {
+type JobResponse = Omit<Job, "createdAt" | "updatedAt"> & {
   createdAt: string;
   updatedAt: string;
-  nextRetryAt?: string | null;
 };
 
 export interface JobPatch {
   botUserFriendCode?: string | null;
+  friendRequestSentAt?: string | null;
   status?: JobStatus;
   stage?: JobStage;
   result?: any;
   error?: string | null;
   executing?: boolean;
-  retryCount?: number;
-  nextRetryAt?: Date | null;
   updatedAt?: Date;
 }
 
@@ -55,7 +57,6 @@ function deserializeJob(payload: JobResponse): Job {
     ...payload,
     createdAt: new Date(payload.createdAt),
     updatedAt: new Date(payload.updatedAt),
-    nextRetryAt: payload.nextRetryAt ? new Date(payload.nextRetryAt) : null,
   };
 }
 
@@ -64,6 +65,9 @@ function serializePatch(patch: JobPatch) {
 
   if (patch.botUserFriendCode !== undefined) {
     body.botUserFriendCode = patch.botUserFriendCode;
+  }
+  if (patch.friendRequestSentAt !== undefined) {
+    body.friendRequestSentAt = patch.friendRequestSentAt;
   }
   if (patch.status !== undefined) {
     body.status = patch.status;
@@ -80,25 +84,18 @@ function serializePatch(patch: JobPatch) {
   if (patch.executing !== undefined) {
     body.executing = patch.executing;
   }
-  if (patch.retryCount !== undefined) {
-    body.retryCount = patch.retryCount;
-  }
-  if (patch.nextRetryAt !== undefined) {
-    body.nextRetryAt = patch.nextRetryAt
-      ? patch.nextRetryAt.toISOString()
-      : null;
-  }
   body.updatedAt = (patch.updatedAt ?? new Date()).toISOString();
 
   return body;
 }
 
-export async function claimNextJob(signal?: AbortSignal): Promise<Job | null> {
+export async function claimNextJob(
+  botUserFriendCode?: string
+): Promise<Job | null> {
   const response = await fetch(buildUrl("/api/job/next"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: "{}",
-    signal,
+    body: JSON.stringify({ botUserFriendCode }),
   });
 
   if (response.status === 204) {
