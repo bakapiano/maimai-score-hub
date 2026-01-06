@@ -39,6 +39,11 @@ const skipCleanUpFriend =
 const heartbeatIntervalMs = Number(
   process.env.JOB_HEARTBEAT_INTERVAL_MS ?? 20_000
 );
+const maxProcessJobsRaw = Number(process.env.MAX_PROCESS_JOBS);
+const maxProcessJobs =
+  Number.isFinite(maxProcessJobsRaw) && maxProcessJobsRaw > 0
+    ? Math.floor(maxProcessJobsRaw)
+    : 4;
 
 async function dumpFriendVsHtmlIfEnabled(
   html: string,
@@ -76,31 +81,41 @@ async function loadMockAggregatedResult() {
 }
 
 export function startWorker() {
-  let processing = false;
+  let processingCount = 0;
+  let botIndex = 0;
 
-  setInterval(async () => {
-    if (processing) return;
-    processing = true;
+  const tick = async () => {
+    if (processingCount >= maxProcessJobs) return;
 
-    try {
-      const botFriendCode = Array.from(state.cookieJars.keys())[0];
-      if (!botFriendCode) {
-        return;
+    const availableBots = Array.from(state.cookieJars.keys());
+    if (!availableBots.length) return;
+
+    while (processingCount < maxProcessJobs) {
+      const botFriendCode = availableBots[botIndex % availableBots.length];
+      botIndex++;
+
+      try {
+        const job = await claimNextJob(botFriendCode);
+        if (!job) {
+          break;
+        }
+
+        processingCount++;
+        handleJob(job)
+          .catch((err) => {
+            console.error("[Worker] Failed to process job:", err);
+          })
+          .finally(() => {
+            processingCount--;
+          });
+      } catch (err) {
+        console.error("[Worker] Failed to claim job:", err);
+        break;
       }
-
-      const job = await claimNextJob(botFriendCode);
-      if (!job) {
-        return;
-      }
-
-      await handleJob(job);
-    } catch (err) {
-      console.error("[Worker] Failed to process job loop:", err);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    } finally {
-      processing = false;
     }
-  }, 100);
+  };
+
+  setInterval(tick, 500);
 }
 
 async function cleanUpFriend(
@@ -178,7 +193,7 @@ async function handleJob(initialJob: Job) {
   if (!availableBots.length) {
     await applyPatch({
       status: "failed",
-      error: "No bots available",
+      error: "没有可用的 Bot",
     });
     return;
   }
@@ -197,15 +212,22 @@ async function handleJob(initialJob: Job) {
   if (!cj) {
     await applyPatch({
       status: "failed",
-      error: `Cookie not found for bot ${botFriendCode}`,
+      error: `Bot ${botFriendCode} 的 Cookie 未找到`,
     });
     return;
   }
 
-  console.log(await getUserProfile(cj, job.friendCode));
-
   try {
     startHeartbeat();
+
+    const profile = await getUserProfile(cj, job.friendCode);
+    if (!profile) {
+      throw new Error("未找到该好友代码对应的用户，请检查好友代码是否正确!");
+    }
+    await applyPatch({
+      profile,
+      updatedAt: new Date(),
+    });
 
     if (job.stage === "send_request") {
       console.log(`[Worker] Job ${job.id}: Checking friend list...`);
@@ -220,11 +242,11 @@ async function handleJob(initialJob: Job) {
 
       const sentRequests = await getSentRequests(cj);
       const match = sentRequests.find((s) => s.friendCode === job.friendCode);
-      if (!match) {
-        throw new Error("Failed to send friend request");
+      if (!skipCleanUpFriend && !match) {
+        throw new Error("发送好友请求失败");
       }
       await applyPatch({
-        friendRequestSentAt: match.appliedAt ?? new Date().toISOString(),
+        friendRequestSentAt: match?.appliedAt ?? new Date().toISOString(),
         updatedAt: new Date(),
       });
     } else if (job.stage === "wait_acceptance") {
@@ -245,7 +267,7 @@ async function handleJob(initialJob: Job) {
         const elapsed = Date.now() - job.createdAt.getTime();
         console.log(job.createdAt.getTime());
         if (elapsed > 1000 * 60 * 1) {
-          throw new Error("Timeout waiting for friend acceptance");
+          throw new Error("等待好友接受请求超时");
         }
         await applyPatch({ updatedAt: new Date() });
       }
@@ -364,8 +386,7 @@ async function handleJob(initialJob: Job) {
     console.error(`[Worker] Job ${job.id} failed:`, e);
     job = await applyPatch({
       status: "failed",
-      error:
-        e instanceof CookieExpiredError ? e.message : e?.message || String(e),
+      error: e?.message || String(e),
       updatedAt: new Date(),
     });
   } finally {

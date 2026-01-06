@@ -171,7 +171,7 @@ export const searchUserByFriendCode = async (
 export const getUserProfile = async (
   cj: CookieJar,
   friendCode: string
-): Promise<UserProfile> => {
+): Promise<UserProfile | null> => {
   console.log(`[Crawler] Start get user profile by friend code ${friendCode}`);
   const url = `https://maimai.wahlap.com/maimai-mobile/friend/search/searchUser/?friendCode=${encodeURIComponent(
     friendCode
@@ -200,6 +200,10 @@ export const getUserProfile = async (
   const username = firstMatch(
     /<div class="name_block f_l f_16">([\s\S]*?)<\/div>/i
   );
+
+  if (username === null) {
+    return null;
+  }
 
   const ratingBgUrl = firstMatch(
     /<img[^>]+src="([^"]+rating_base[^"]*)"[^>]*class="h_30 f_r"/i

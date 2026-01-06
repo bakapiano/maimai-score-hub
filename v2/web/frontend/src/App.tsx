@@ -18,7 +18,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
 function App() {
   return (
     <MantineProvider defaultColorScheme="dark">
-      <Notifications />
+      <Notifications position="top-center" />
       <BrowserRouter>
         <AuthProvider>
           <Routes>

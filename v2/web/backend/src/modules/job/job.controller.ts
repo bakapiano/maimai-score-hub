@@ -58,6 +58,7 @@ export class JobController {
       res.status(204).send();
       return;
     }
+
     res.json(job);
   }
 

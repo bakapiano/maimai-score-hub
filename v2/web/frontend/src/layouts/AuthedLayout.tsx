@@ -1,6 +1,7 @@
 import { AppShell, Button, Group, NavLink, Text } from "@mantine/core";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 
+import { ColorSchemeToggle } from "../components/ColorSchemeToggle";
 import { useAuth } from "../providers/AuthProvider";
 
 const links = [
@@ -27,9 +28,12 @@ export default function AuthedLayout() {
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
           <Text fw={700}>NetBot 控制台</Text>
-          <Button variant="light" onClick={handleLogout} size="xs">
-            退出登录
-          </Button>
+          <Group>
+            <ColorSchemeToggle />
+            <Button variant="light" onClick={handleLogout} size="xs">
+              退出登录
+            </Button>
+          </Group>
         </Group>
       </AppShell.Header>
 

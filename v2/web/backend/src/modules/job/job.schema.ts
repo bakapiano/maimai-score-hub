@@ -1,4 +1,4 @@
-import type { JobStage, JobStatus } from './job.types';
+import type { JobStage, JobStatus, UserProfile } from './job.types';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
 import type { HydratedDocument } from 'mongoose';
@@ -29,6 +29,9 @@ export class JobEntity {
 
   @Prop({ type: MongooseSchema.Types.Mixed, default: undefined })
   result?: any;
+
+  @Prop({ type: MongooseSchema.Types.Mixed, default: undefined })
+  profile?: UserProfile;
 
   @Prop({ type: String, default: null })
   error!: string | null;

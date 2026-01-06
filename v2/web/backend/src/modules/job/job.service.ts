@@ -14,9 +14,9 @@ import { JobEntity } from './job.schema';
 const DEAD_JOB_TIMEOUT_MS = Number(
   process.env.DEAD_JOB_TIMEOUT_MS ?? 1 * 60 * 1000,
 );
-const MIN_CREATE_INTERVAL_MS = Number(
-  process.env.MIN_CREATE_INTERVAL_MS ?? 60 * 1000,
-);
+
+// [TODO] Change this to 1min
+const MIN_CREATE_INTERVAL_MS = Number(process.env.MIN_CREATE_INTERVAL_MS ?? 1);
 
 function toJobResponse(job: JobEntity): JobResponse {
   return {
@@ -28,6 +28,7 @@ function toJobResponse(job: JobEntity): JobResponse {
     status: job.status,
     stage: job.stage,
     result: job.result,
+    profile: job.profile,
     error: job.error ?? null,
     executing: job.executing,
     createdAt: job.createdAt.toISOString(),
@@ -124,9 +125,11 @@ export class JobService {
     );
 
     // 1) Prefer already-processing job for this bot
-    const processing = await this.jobModel
-      .findOne({ status: 'processing', botUserFriendCode, executing: false })
-      .sort({ createdAt: 1 });
+    const processing = await this.jobModel.findOneAndUpdate(
+      { status: 'processing', botUserFriendCode, executing: false },
+      { $set: { executing: true, updatedAt: now } },
+      { new: true, sort: { createdAt: 1 } },
+    );
     if (processing) {
       return toJobResponse(processing.toObject() as JobEntity);
     }
@@ -181,6 +184,10 @@ export class JobService {
 
     if (body.result !== undefined) {
       update.result = body.result;
+    }
+
+    if (body.profile !== undefined) {
+      update.profile = body.profile;
     }
 
     if (body.error !== undefined) {

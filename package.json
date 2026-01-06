@@ -27,6 +27,7 @@
   },
   "homepage": "https://github.com/bakapiano/maimaidx-prober-updater#readme",
   "dependencies": {
+    "@tabler/icons-react": "^3.36.1",
     "@types/bluebird": "^3.5.38",
     "bluebird": "^3.7.2",
     "body-parser": "^1.20.0",

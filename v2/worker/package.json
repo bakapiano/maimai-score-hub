@@ -6,7 +6,7 @@
     "type": "module",
     "scripts": {
         "start": "cross-env NODE_ENV=production node --enable-source-maps --experimental-strip-types src/index.ts",
-        "start:dev": "cross-env NODE_ENV=dev DUMP_FRIEND_VS_HTML=1 node --watch --watch-path=.env --watch-path=config.json --enable-source-maps --experimental-strip-types src/index.ts"
+        "start:dev": "cross-env NODE_ENV=dev DUMP_FRIEND_VS_HTML=1 node --watch --watch-path=.env --watch-path=config.json --watch-path=src --enable-source-maps --experimental-strip-types src/index.ts"
     },
     "engines": {
         "node": ">=22.6.0"
