@@ -1,57 +1,58 @@
-import { fetchWithCookieWithRetry } from "./util.ts";
-import fs from "fs";
+/**
+ * Cookie 管理工具函数
+ * 提供向后兼容的 cookie 操作接口
+ */
+
+import { CookieJar } from "tough-cookie";
 import lodash from "lodash";
-import { state } from "./state.ts";
+
+import { cookieStore } from "./state.ts";
+import { MaimaiHttpClient } from "./services/maimai-client.ts";
+import { WECHAT_USER_AGENT, DEFAULT_HEADERS } from "./constants.ts";
+import type { MaimaiCookieValues } from "./types/index.ts";
 
 const { throttle } = lodash;
 
-export async function loadCookie(friendCode: string) {
-  return state.cookieJars.get(friendCode);
+/**
+ * 加载指定 friendCode 的 CookieJar
+ * @deprecated 使用 cookieStore.get() 替代
+ */
+export async function loadCookie(friendCode: string): Promise<CookieJar | undefined> {
+  return cookieStore.get(friendCode);
 }
 
-export async function saveCookie(cj: any, friendCode: string) {
-  const value = getCookieValue(cj);
-  Object.keys(value).forEach((key) => {
-    // Set cookie expire day to 2099, or will lose this value when save cookie to file
-    // This may be a bug(or by design) for CookieJar from node-fetch-cookies
-    const value = cj?.cookies?.get("maimai.wahlap.com")?.get(key);
-    if (value) value.expiry = new Date().setFullYear(2099);
-  });
-  state.cookieJars.set(friendCode, cj);
+/**
+ * 保存 CookieJar
+ * @deprecated 使用 cookieStore.set() 替代
+ */
+export async function saveCookie(cj: CookieJar, friendCode: string): Promise<void> {
+  cookieStore.set(friendCode, cj);
 }
 
-export function getCookieValue(cj: any) {
-  return {
-    _t: cj.cookies?.get("maimai.wahlap.com")?.get("_t")?.value,
-    userId: cj.cookies?.get("maimai.wahlap.com")?.get("userId")?.value,
-    friendCodeList: cj.cookies?.get("maimai.wahlap.com")?.get("friendCodeList")
-      ?.value,
-  };
+/**
+ * 获取 Cookie 中的关键值
+ * @deprecated 使用 cookieStore.extractValues() 替代
+ */
+export function getCookieValue(cj: CookieJar): MaimaiCookieValues {
+  return cookieStore.extractValues(cj);
 }
 
-export const testCookieExpired = throttle(async (cj: any): Promise<boolean> => {
-  // console.log("[Bot] Start test cookie expired: ", getCookieValue(cj));
+/**
+ * 测试 Cookie 是否已过期
+ * 使用节流避免频繁请求
+ */
+export const testCookieExpired = throttle(async (cj: CookieJar): Promise<boolean> => {
   try {
-    const result = await fetchWithCookieWithRetry(
-      cj,
+    const client = new MaimaiHttpClient(cj);
+    const result = await client.fetch(
       "https://maimai.wahlap.com/maimai-mobile/home/",
-      {
-        headers: {
-          Host: "maimai.wahlap.com",
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x6307001e)",
-        },
-      },
+      { headers: DEFAULT_HEADERS },
       undefined,
       true
     );
-    const body = await result!.text();
-    // fs.writeFileSync("test_cookie_expired.html", body);
-    const testReuslt = body.indexOf("登录失败") !== -1;
-    // console.log("[Bot] Done test cookie expired: ", testReuslt);
-    return testReuslt;
+    const body = await result.text();
+    return body.indexOf("登录失败") !== -1;
   } catch (err) {
-    // console.log("[Bot] Done test cookie expired with error: ", err);
     return true;
   }
-});
+}, 5000);

@@ -1,6 +1,7 @@
+import { IconChevronDown, IconChevronUp } from "@tabler/icons-react";
 import {
-  Badge,
   Button,
+  Card,
   Divider,
   Group,
   Select,
@@ -9,12 +10,16 @@ import {
   Title,
 } from "@mantine/core";
 import {
-  MinimalMusicScoreCard,
-  renderRank,
-} from "../../components/MusicScoreCard";
+  calculateAverageScore,
+  CombinedBadges,
+  ScoreSummaryCard,
+  summarizeRanks,
+  summarizeStatuses,
+} from "../../components/ScoreSummaryBadges";
 import type { MusicChartPayload, MusicRow } from "../../types/music";
 import { useMemo, useState } from "react";
 
+import { MinimalMusicScoreCard } from "../../components/MusicScoreCard";
 import type { SyncScore } from "../../types/syncScore";
 
 type ChartEntry = {
@@ -122,59 +127,6 @@ const buildBuckets = (
   return buckets;
 };
 
-const rankOrder = ["SSS+", "SSS", "SS+", "SS", "S+", "S"] as const;
-type RankBucket = (typeof rankOrder)[number];
-
-const emptyCounts = (): Record<RankBucket, number> => ({
-  "SSS+": 0,
-  SSS: 0,
-  "SS+": 0,
-  SS: 0,
-  "S+": 0,
-  S: 0,
-});
-
-const scoreToRank = (scoreText?: string | null): RankBucket | null => {
-  if (!scoreText) return null;
-  const val = parseFloat(scoreText.replace("%", ""));
-  if (!Number.isFinite(val)) return null;
-  if (val >= 100.5) return "SSS+";
-  if (val >= 100) return "SSS";
-  if (val >= 99.5) return "SS+";
-  if (val >= 99) return "SS";
-  if (val >= 98) return "S+";
-  if (val >= 97) return "S";
-  return null;
-};
-
-const summarizeRanks = (entries: ChartEntry[]) => {
-  const counts = emptyCounts();
-  for (const entry of entries) {
-    const rank = scoreToRank(
-      entry.score?.score ?? entry.score?.dxScore ?? null
-    );
-    if (!rank) continue;
-    const idx = rankOrder.indexOf(rank);
-    for (let i = idx; i < rankOrder.length; i++) {
-      counts[rankOrder[i]] += 1;
-    }
-  }
-  return { counts, total: entries.length };
-};
-
-const renderRankBadges = (
-  summary: { counts: Record<RankBucket, number>; total: number },
-  size: "xs" | "sm" = "xs"
-) => (
-  <Group gap={6} wrap="wrap">
-    {rankOrder.map((r) => (
-      <Badge key={r} size={size} variant="light" color="blue" radius="sm">
-        {renderRank(r, { compact: true })} {summary.counts[r]}/{summary.total}
-      </Badge>
-    ))}
-  </Group>
-);
-
 type VersionScoresTabProps = {
   musics: MusicRow[];
   scores: SyncScore[];
@@ -227,7 +179,7 @@ export function VersionScoresTab({
     <Stack gap="md">
       <Group justify="space-between" align="center">
         <Group gap={8} align="center">
-          <Title order={4} size="h4">
+          <Title order={4} size="h5">
             按版本查看
           </Title>
         </Group>
@@ -238,7 +190,7 @@ export function VersionScoresTab({
           data={versionOptions}
           value={current?.versionKey ?? null}
           onChange={setSelectedVersion}
-          label="选择版本"
+          // label="选择版本"
           placeholder="选择要查看的版本"
           clearable={false}
           searchable
@@ -253,7 +205,12 @@ export function VersionScoresTab({
         </Text>
       ) : (
         <Stack gap="lg">
-          {renderRankBadges(summarizeRanks(currentVisibleEntries), "sm")}
+          <ScoreSummaryCard
+            rankSummary={summarizeRanks(currentVisibleEntries)}
+            statusSummary={summarizeStatuses(currentVisibleEntries)}
+            averageScore={calculateAverageScore(currentVisibleEntries)}
+          />
+
           {current.levels.map((level, idx) => {
             const visibleItems = showAllLevels
               ? level.items
@@ -275,15 +232,20 @@ export function VersionScoresTab({
             })();
 
             return (
-              <Stack key={`${current.versionKey}-${level.levelKey}`} gap="sm">
+              <Stack key={`${current.versionKey}-${level.levelKey}`} gap="xs">
                 <Group justify="space-between" align="center">
                   <Text fw={700}>{level.levelKey}</Text>
-                  <Badge variant="light" color="gray">
-                    {visibleItems.length} 首
-                  </Badge>
                 </Group>
-                {renderRankBadges(summarizeRanks(visibleItems))}
-                <Group gap="4" align="stretch" wrap="wrap">
+                <CombinedBadges
+                  rankSummary={summarizeRanks(visibleItems)}
+                  statusSummary={summarizeStatuses(visibleItems)}
+                />
+                <Group
+                  gap="4"
+                  align="stretch"
+                  wrap="wrap"
+                  style={{ width: "100%" }}
+                >
                   {visibleItems.map((entry) => (
                     <MinimalMusicScoreCard
                       key={`${entry.music.id}-${entry.chartIndex}`}
@@ -296,7 +258,7 @@ export function VersionScoresTab({
                     />
                   ))}
                 </Group>
-                {!isLastVisible && <Divider />}
+                {!isLastVisible && <Divider variant="dashed" mt="md" mb="0" />}
               </Stack>
             );
           })}
@@ -306,8 +268,15 @@ export function VersionScoresTab({
               size="xs"
               variant="light"
               onClick={() => setShowAllLevels((v) => !v)}
+              leftSection={
+                showAllLevels ? (
+                  <IconChevronUp size={16} />
+                ) : (
+                  <IconChevronDown size={16} />
+                )
+              }
             >
-              {showAllLevels ? "只看 13+" : "显示全部等级"}
+              {showAllLevels ? "隐藏低难度" : "显示全部"}
             </Button>
           </Group>
         </Stack>

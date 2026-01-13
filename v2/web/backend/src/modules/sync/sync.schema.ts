@@ -1,15 +1,12 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
 import type { HydratedDocument } from 'mongoose';
-import type { ChartPayload, SongMetadata } from '../music/music.schema';
 
 export type SyncScore = {
   musicId: string;
   cid: number;
   chartIndex: number;
   type: string;
-  chartPayload: ChartPayload | null;
-  songMetadata: SongMetadata | null;
   dxScore: string | null;
   score: string | null;
   fs: string | null;

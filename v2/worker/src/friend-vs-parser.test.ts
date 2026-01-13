@@ -2,7 +2,7 @@ import { dirname, resolve } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 
 import { fileURLToPath } from "node:url";
-import { parseFriendVsSongs } from "./friend-vs-parser.ts";
+import { parseFriendVsSongs } from "./parsers/index.ts";
 
 // Quick smoke test: read a Friend VS HTML page and dump the parsed songs.
 const [, , inputArg] = process.argv;

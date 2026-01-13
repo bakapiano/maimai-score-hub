@@ -1,30 +1,26 @@
 import {
-  ActionIcon,
-  Badge,
-  Button,
+  Box,
   Card,
   Divider,
   Group,
+  LoadingOverlay,
+  SegmentedControl,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
 import {
-  CompactMusicScoreCard,
-  MinimalMusicScoreCard,
-  renderRank,
-} from "../../components/MusicScoreCard";
+  calculateAverageScore,
+  CombinedBadges,
+  ScoreSummaryCard,
+  summarizeRanks,
+  summarizeStatuses,
+} from "../../components/ScoreSummaryBadges";
 import type { MusicChartPayload, MusicRow } from "../../types/music";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 
+import { MinimalMusicScoreCard } from "../../components/MusicScoreCard";
 import type { SyncScore } from "../../types/syncScore";
-
-const formatDateTime = (value: string | null) => {
-  if (!value) return "暂无同步信息";
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return "暂无同步信息";
-  return dt.toLocaleString();
-};
 
 type ChartEntry = {
   music: MusicRow;
@@ -128,204 +124,6 @@ const buildBuckets = (
   return buckets;
 };
 
-const rankOrder = ["SSS+", "SSS", "SS+", "SS", "S+", "S"] as const;
-type RankBucket = (typeof rankOrder)[number];
-
-const fcOrder = ["ap+", "ap", "fc+", "fc"] as const; // highest to lowest
-const fsOrder = ["fsd+", "fsd", "fs+", "fs"] as const;
-type FcBucket = (typeof fcOrder)[number];
-type FsBucket = (typeof fsOrder)[number];
-
-const emptyCounts = (): Record<RankBucket, number> => ({
-  "SSS+": 0,
-  SSS: 0,
-  "SS+": 0,
-  SS: 0,
-  "S+": 0,
-  S: 0,
-});
-
-const emptyStatusCounts = () => ({
-  fc: fcOrder.reduce<Record<FcBucket, number>>((acc, key) => {
-    acc[key] = 0;
-    return acc;
-  }, {} as Record<FcBucket, number>),
-  fs: fsOrder.reduce<Record<FsBucket, number>>((acc, key) => {
-    acc[key] = 0;
-    return acc;
-  }, {} as Record<FsBucket, number>),
-});
-
-const scoreToRank = (scoreText?: string | null): RankBucket | null => {
-  if (!scoreText) return null;
-  const val = parseFloat(scoreText.replace("%", ""));
-  if (!Number.isFinite(val)) return null;
-  if (val >= 100.5) return "SSS+";
-  if (val >= 100) return "SSS";
-  if (val >= 99.5) return "SS+";
-  if (val >= 99) return "SS";
-  if (val >= 98) return "S+";
-  if (val >= 97) return "S";
-  return null;
-};
-
-const summarizeRanks = (entries: ChartEntry[]) => {
-  const counts = emptyCounts();
-  for (const entry of entries) {
-    const rank = scoreToRank(
-      entry.score?.score ?? entry.score?.dxScore ?? null
-    );
-    if (!rank) continue;
-    const idx = rankOrder.indexOf(rank);
-    for (let i = idx; i < rankOrder.length; i++) {
-      counts[rankOrder[i]] += 1;
-    }
-  }
-  return { counts, total: entries.length };
-};
-
-const summarizeStatuses = (entries: ChartEntry[]) => {
-  const { fc, fs } = emptyStatusCounts();
-  for (const entry of entries) {
-    const fcVal = entry.score?.fc?.toLowerCase?.() as FcBucket | undefined;
-    const fsVal = entry.score?.fs?.toLowerCase?.() as FsBucket | undefined;
-    if (fcVal && fcVal in fc) fc[fcVal] += 1;
-    if (fsVal && fsVal in fs) fs[fsVal] += 1;
-  }
-  return { fc, fs, total: entries.length };
-};
-
-const buildRankBadges = (
-  summary: { counts: Record<RankBucket, number>; total: number },
-  size: "xs" | "sm" = "xs",
-  expanded = false
-) => {
-  const list = expanded ? rankOrder : (["SSS+", "SSS"] as RankBucket[]);
-  return list.map((r) => (
-    <Badge key={r} size={size} variant="light" color="blue" radius="sm">
-      <Text size="xs" fw={600} style={{ lineHeight: 1 }}>
-        {summary.counts[r]}/{summary.total} {renderRank(r, { compact: true })}
-      </Text>
-    </Badge>
-  ));
-};
-
-const buildStatusBadges = (
-  summary: {
-    fc: Record<FcBucket, number>;
-    fs: Record<FsBucket, number>;
-    total: number;
-  },
-  size: "xs" | "sm" = "xs",
-  expanded = false
-) => {
-  const fcColor = (key: FcBucket) =>
-    key === "ap+" || key === "ap" ? "orange" : "green";
-  const fsColor = (key: FsBucket) =>
-    key === "fsd+" || key === "fsd" ? "orange" : "blue";
-
-  const label = (key: FcBucket | FsBucket) => key.toUpperCase();
-
-  const fcList = expanded
-    ? fcOrder
-    : (["ap+", "ap", "fc+", "fc"] as FcBucket[]);
-  const fsList = expanded ? fsOrder : ([] as FsBucket[]);
-
-  const allBadges: JSX.Element[] = [];
-  fcList.forEach((key) => {
-    allBadges.push(
-      <Badge
-        key={`fc-${key}`}
-        size={size}
-        variant="light"
-        color="blue"
-        radius="sm"
-      >
-        <Group gap={4} align="center">
-          <Text size="xs" fw={600} style={{ lineHeight: 1 }}>
-            {summary.fc[key]}/{summary.total}
-          </Text>
-          <Text size="xs" fw={600} c={fcColor(key)} style={{ lineHeight: 1 }}>
-            {label(key)}
-          </Text>
-        </Group>
-      </Badge>
-    );
-  });
-  fsList.forEach((key) => {
-    allBadges.push(
-      <Badge
-        key={`fs-${key}`}
-        size={size}
-        variant="light"
-        color="blue"
-        radius="sm"
-      >
-        <Group gap={4} align="center">
-          <Text size="xs" fw={600} style={{ lineHeight: 1 }}>
-            {summary.fs[key]}/{summary.total}
-          </Text>
-          <Text size="xs" fw={600} c={fsColor(key)} style={{ lineHeight: 1 }}>
-            {label(key)}
-          </Text>
-        </Group>
-      </Badge>
-    );
-  });
-
-  return allBadges;
-};
-
-const renderCombinedBadges = (
-  rankSummary: { counts: Record<RankBucket, number>; total: number },
-  statusSummary: {
-    fc: Record<FcBucket, number>;
-    fs: Record<FsBucket, number>;
-    total: number;
-  },
-  size: "xs" | "sm" = "xs",
-  expanded = false,
-  onToggle: () => void
-) => (
-  <Group gap={6} wrap="wrap" align="center">
-    {buildRankBadges(rankSummary, size, expanded)}
-    {buildStatusBadges(statusSummary, size, expanded)}
-    <ActionIcon
-      size="18"
-      variant="light"
-      color="blue"
-      radius="999"
-      onClick={onToggle}
-      aria-label={expanded ? "折叠" : "展开"}
-    >
-      <Text size="sm" fw={800} style={{ lineHeight: 1 }}>
-        {expanded ? "−" : "+"}
-      </Text>
-    </ActionIcon>
-  </Group>
-);
-
-const CombinedBadges = ({
-  rankSummary,
-  statusSummary,
-  size = "xs",
-  defaultExpanded = false,
-}: {
-  rankSummary: { counts: Record<RankBucket, number>; total: number };
-  statusSummary: {
-    fc: Record<FcBucket, number>;
-    fs: Record<FsBucket, number>;
-    total: number;
-  };
-  size?: "xs" | "sm";
-  defaultExpanded?: boolean;
-}) => {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-
-  return renderCombinedBadges(rankSummary, statusSummary, size, expanded, () =>
-    setExpanded((prev) => !prev)
-  );
-};
 type LevelScoresTabProps = {
   musics: MusicRow[];
   scores: SyncScore[];
@@ -336,10 +134,10 @@ type LevelScoresTabProps = {
 export function LevelScoresTab({
   musics,
   scores,
-  lastSyncAt,
   loading,
 }: LevelScoresTabProps) {
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   const filteredMusics = useMemo(
     () => musics.filter((m) => m.type !== "utage"),
@@ -357,100 +155,107 @@ export function LevelScoresTab({
   const current =
     buckets.find((b) => b.levelKey === selectedLevel) ?? buckets[0];
 
-  const overallSummary = useMemo(() => {
-    const allEntries = buckets.flatMap((lvl) =>
-      lvl.details.flatMap((d) => d.items)
-    );
-    return summarizeRanks(allEntries);
-  }, [buckets]);
+  const currentAllItems = useMemo(() => {
+    if (!current) return [];
+    return current.details.flatMap((d) => d.items);
+  }, [current]);
 
   return (
     <Stack gap="md">
-      <Card shadow="sm" radius="md" p="md">
-        <Stack gap="md">
-          <Group justify="space-between" align="center">
-            <Group gap={8} align="center">
-              <Title order={4} size="h4">
-                按定数查看：
-              </Title>
-            </Group>
-          </Group>
+      <Box>
+        <Group justify="space-between" align="center" mb="sm">
+          <Title order={4} size="h5">
+            按详细定数查看
+          </Title>
+        </Group>
 
-          {buckets.length > 0 && (
-            <Stack gap={4}>
-              <Group gap="xs" wrap="wrap">
-                {buckets.map((b) => (
-                  <Button
-                    key={b.levelKey}
-                    size="xs"
-                    variant={
-                      current?.levelKey === b.levelKey ? "filled" : "light"
-                    }
-                    style={{ width: 72 }}
-                    onClick={() => setSelectedLevel(b.levelKey)}
-                  >
-                    {b.levelKey}
-                  </Button>
-                ))}
-              </Group>
-            </Stack>
-          )}
-        </Stack>
-      </Card>
+        {buckets.length > 0 && (
+          <Box style={{ overflowX: "auto" }}>
+            <SegmentedControl
+              value={current?.levelKey ?? ""}
+              onChange={(value) =>
+                startTransition(() => setSelectedLevel(value))
+              }
+              data={buckets.map((b) => ({
+                value: b.levelKey,
+                label: b.levelKey,
+              }))}
+              disabled={isPending}
+              size="md"
+              color="blue"
+              styles={{
+                label: { minWidth: 48, textAlign: "center" },
+              }}
+            />
+          </Box>
+        )}
+      </Box>
 
-      {loading ? (
-        <Text size="sm">加载中...</Text>
-      ) : !current ? (
-        <Text size="sm" c="dimmed">
-          暂无数据
-        </Text>
-      ) : (
-        <Stack gap="lg">
-          {current.details.map((detail, idx) => (
-            <Stack key={`${current.levelKey}-${detail.detailKey}`} gap="xs">
-              <Group align="center">
-                <Text fw={700}>{detail.detailKey}</Text>
-              </Group>
-              <CombinedBadges
-                rankSummary={summarizeRanks(detail.items)}
-                statusSummary={summarizeStatuses(detail.items)}
-              />
-              <Group gap="sm" align="stretch" wrap="wrap">
-                {detail.items.map((entry) => (
-                  <MinimalMusicScoreCard
-                    key={`${entry.music.id}-${entry.chartIndex}`}
-                    musicId={entry.music.id}
-                    chartIndex={entry.chartIndex}
-                    type={entry.music.type}
-                    rating={entry.score?.rating ?? null}
-                    score={entry.score?.score || entry.score?.dxScore || null}
-                    fs={entry.score?.fs ?? null}
-                    fc={entry.score?.fc ?? null}
-                    chartPayload={{
-                      level: entry.chart.level,
-                      detailLevel:
-                        typeof entry.chart.detailLevel === "number"
-                          ? entry.chart.detailLevel
-                          : null,
-                      charter: entry.chart.charter ?? null,
-                    }}
-                    songMetadata={{
-                      title: entry.music.title,
-                      artist: entry.music.artist ?? undefined,
-                      category: entry.music.category ?? undefined,
-                      isNew: entry.music.isNew ?? undefined,
-                      bpm: entry.music.bpm ?? null,
-                    }}
-                  />
-                ))}
-              </Group>
-              {idx < current.details.length - 1 && (
-                <Divider variant="dashed" mt="md" mb="0" />
-              )}
-            </Stack>
-          ))}
-        </Stack>
+      {current && currentAllItems.length > 0 && (
+        <ScoreSummaryCard
+          rankSummary={summarizeRanks(currentAllItems)}
+          statusSummary={summarizeStatuses(currentAllItems)}
+          averageScore={calculateAverageScore(currentAllItems)}
+        />
       )}
+
+      <Box pos="relative" mih={200}>
+        <LoadingOverlay
+          visible={isPending}
+          zIndex={10}
+          overlayProps={{ radius: "sm", blur: 2 }}
+          loaderProps={{
+            style: {
+              position: "absolute",
+              top: 80,
+              left: "50%",
+              transform: "translateX(-50%)",
+            },
+          }}
+        />
+        {loading ? (
+          <Text size="sm">加载中...</Text>
+        ) : !current ? (
+          <Text size="sm" c="dimmed">
+            暂无数据
+          </Text>
+        ) : (
+          <Stack gap="lg">
+            {current.details.map((detail, idx) => (
+              <Stack key={`${current.levelKey}-${detail.detailKey}`} gap="xs">
+                <Group align="center">
+                  <Text fw={700}>{detail.detailKey}</Text>
+                </Group>
+                <CombinedBadges
+                  rankSummary={summarizeRanks(detail.items)}
+                  statusSummary={summarizeStatuses(detail.items)}
+                />
+                <Group
+                  gap="sm"
+                  align="stretch"
+                  wrap="wrap"
+                  style={{ width: "100%" }}
+                >
+                  {detail.items.map((entry) => (
+                    <MinimalMusicScoreCard
+                      key={`${entry.music.id}-${entry.chartIndex}`}
+                      musicId={entry.music.id}
+                      chartIndex={entry.chartIndex}
+                      type={entry.music.type}
+                      score={entry.score?.score || entry.score?.dxScore || null}
+                      fs={entry.score?.fs ?? null}
+                      fc={entry.score?.fc ?? null}
+                    />
+                  ))}
+                </Group>
+                {idx < current.details.length - 1 && (
+                  <Divider variant="dashed" mt="md" mb="0" />
+                )}
+              </Stack>
+            ))}
+          </Stack>
+        )}
+      </Box>
     </Stack>
   );
 }

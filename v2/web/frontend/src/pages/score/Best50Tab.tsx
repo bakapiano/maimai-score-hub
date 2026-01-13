@@ -4,8 +4,10 @@ import {
   MusicScoreCard,
 } from "../../components/MusicScoreCard";
 
+import { IconTrophy } from "@tabler/icons-react";
 import type { SyncScore } from "../../types/syncScore";
 import { useMemo } from "react";
+import { useMusic } from "../../providers/MusicProvider";
 
 type RatingSummary = {
   newTop: SyncScore[];
@@ -13,6 +15,10 @@ type RatingSummary = {
   newSum: number;
   oldSum: number;
   totalSum: number;
+  newMax: number | null;
+  newMin: number | null;
+  oldMax: number | null;
+  oldMin: number | null;
 };
 
 const buildRatingSummary = (scores: SyncScore[]): RatingSummary | null => {
@@ -33,12 +39,23 @@ const buildRatingSummary = (scores: SyncScore[]): RatingSummary | null => {
   const newSum = newTop.reduce((sum, s) => sum + (s.rating ?? 0), 0);
   const oldSum = oldTop.reduce((sum, s) => sum + (s.rating ?? 0), 0);
 
+  const newMax = newTop.length > 0 ? newTop[0].rating ?? null : null;
+  const newMin =
+    newTop.length > 0 ? newTop[newTop.length - 1].rating ?? null : null;
+  const oldMax = oldTop.length > 0 ? oldTop[0].rating ?? null : null;
+  const oldMin =
+    oldTop.length > 0 ? oldTop[oldTop.length - 1].rating ?? null : null;
+
   return {
     newTop,
     oldTop,
     newSum,
     oldSum,
     totalSum: newSum + oldSum,
+    newMax,
+    newMin,
+    oldMax,
+    oldMin,
   };
 };
 
@@ -48,39 +65,69 @@ type Best50TabProps = {
 };
 
 export function Best50Tab({ scores, loading }: Best50TabProps) {
+  const { musicMap, chartMap } = useMusic();
   const ratingSummary = useMemo(() => buildRatingSummary(scores), [scores]);
 
   return (
     <Stack gap="md">
-      <Card withBorder shadow="xs" padding="md">
-        <Stack gap={6}>
-          <Group gap="sm" wrap="wrap">
-            <Text fw={700}>B50 Rating</Text>
-            {ratingSummary ? (
-              <>
-                <Badge color="blue" variant="light">
-                  总分 {ratingSummary.totalSum.toFixed(2)}
+      <Card withBorder shadow="none" padding="lg" radius="md">
+        {ratingSummary ? (
+          <Group justify="space-between" align="center" wrap="wrap">
+            <Stack gap={4}>
+              <Group gap={6} align="center">
+                <IconTrophy size={14} color="var(--mantine-color-dimmed)" />
+                <Text size="xs" tt="uppercase" fw={600} c="dimmed">
+                  Rating
+                </Text>
+              </Group>
+              <Text
+                size="xl"
+                fw={700}
+                variant="gradient"
+                gradient={{ from: "blue", to: "grape", deg: 90 }}
+              >
+                {ratingSummary.totalSum.toFixed(0)}
+              </Text>
+            </Stack>
+
+            <Group gap="xl">
+              <Stack gap={4} align="center">
+                <Text size="xs" c="dimmed" fw={500}>
+                  B35
+                </Text>
+                <Badge size="lg" variant="light" radius="sm">
+                  {ratingSummary.oldSum.toFixed(0)}
                 </Badge>
-                <Badge color="green" variant="light">
-                  新曲 {ratingSummary.newSum.toFixed(2)}
+                <Group gap={4}>
+                  <Text size="xs" c="dimmed">
+                    {ratingSummary.oldMax?.toFixed(0) ?? "-"} ~{" "}
+                    {ratingSummary.oldMin?.toFixed(0) ?? "-"}
+                  </Text>
+                </Group>
+              </Stack>
+              <Stack gap={4} align="center">
+                <Text size="xs" c="dimmed" fw={500}>
+                  B15
+                </Text>
+                <Badge size="lg" color="teal" variant="light" radius="sm">
+                  {ratingSummary.newSum.toFixed(0)}
                 </Badge>
-                <Badge color="grape" variant="light">
-                  旧曲 {ratingSummary.oldSum.toFixed(2)}
-                </Badge>
-              </>
-            ) : (
-              <Badge color="gray" variant="light">
-                {loading ? "加载中" : "暂无 rating 数据"}
-              </Badge>
-            )}
+                <Group gap={4}>
+                  <Text size="xs" c="dimmed">
+                    {ratingSummary.newMax?.toFixed(0) ?? "-"} ~{" "}
+                    {ratingSummary.newMin?.toFixed(0) ?? "-"}
+                  </Text>
+                </Group>
+              </Stack>
+            </Group>
           </Group>
-          {ratingSummary && (
-            <Text size="sm" c="dimmed">
-              组成：新曲 {ratingSummary.newTop.length} 首 + 旧曲{" "}
-              {ratingSummary.oldTop.length} 首
+        ) : (
+          <Group justify="center" py="xs">
+            <Text c="dimmed" size="sm">
+              {loading ? "加载中..." : "暂无 rating 数据"}
             </Text>
-          )}
-        </Stack>
+          </Group>
+        )}
       </Card>
 
       {ratingSummary ? (
@@ -89,27 +136,38 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
             <Title size="h3" order={5}>
               现版本 Best 15
             </Title>
-            <Group gap="md" align="stretch" wrap="wrap">
-              {ratingSummary.newTop.slice(0, 15).map((score) => (
-                <CompactMusicScoreCard
-                  key={`new-${score.musicId}-${score.type}-${score.chartIndex}`}
-                  musicId={score.musicId}
-                  chartIndex={score.chartIndex}
-                  type={score.type}
-                  rating={score.rating ?? null}
-                  score={score.score || null}
-                  fs={score.fs || null}
-                  fc={score.fc || null}
-                  chartPayload={score.chartPayload}
-                  songMetadata={score.songMetadata}
-                  bpm={
-                    typeof score.songMetadata?.bpm === "number"
-                      ? score.songMetadata.bpm
-                      : parseInt(score.songMetadata?.bpm as string) || null
-                  }
-                  noteDesigner={score.chartPayload?.charter || null}
-                />
-              ))}
+            <Group
+              gap="md"
+              align="stretch"
+              wrap="wrap"
+              style={{ width: "100%" }}
+            >
+              {ratingSummary.newTop.slice(0, 15).map((score) => {
+                const music = musicMap.get(score.musicId);
+                const chart = chartMap.get(
+                  `${score.musicId}:${score.chartIndex}`
+                );
+                return (
+                  <CompactMusicScoreCard
+                    key={`new-${score.musicId}-${score.type}-${score.chartIndex}`}
+                    musicId={score.musicId}
+                    chartIndex={score.chartIndex}
+                    type={score.type}
+                    rating={score.rating ?? null}
+                    score={score.score || null}
+                    fs={score.fs || null}
+                    fc={score.fc || null}
+                    chartPayload={chart || null}
+                    songMetadata={music || null}
+                    bpm={
+                      typeof music?.bpm === "number"
+                        ? music.bpm
+                        : parseInt(music?.bpm as string) || null
+                    }
+                    noteDesigner={chart?.charter || null}
+                  />
+                );
+              })}
               {ratingSummary.newTop.length === 0 && (
                 <Text c="dimmed">暂无新曲</Text>
               )}
@@ -121,27 +179,38 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
             <Title size={"h3"} order={5}>
               旧版本 Best 35
             </Title>
-            <Group gap="md" align="stretch" wrap="wrap">
-              {ratingSummary.oldTop.slice(0, 35).map((score) => (
-                <MusicScoreCard
-                  key={`old-${score.musicId}-${score.type}-${score.chartIndex}`}
-                  musicId={score.musicId}
-                  chartIndex={score.chartIndex}
-                  type={score.type}
-                  rating={score.rating ?? null}
-                  score={score.score || null}
-                  fs={score.fs || null}
-                  fc={score.fc || null}
-                  chartPayload={score.chartPayload}
-                  songMetadata={score.songMetadata}
-                  bpm={
-                    typeof score.songMetadata?.bpm === "number"
-                      ? score.songMetadata.bpm
-                      : parseInt(score.songMetadata?.bpm as string) || null
-                  }
-                  noteDesigner={score.chartPayload?.charter || null}
-                />
-              ))}
+            <Group
+              gap="md"
+              align="stretch"
+              wrap="wrap"
+              style={{ width: "100%" }}
+            >
+              {ratingSummary.oldTop.slice(0, 35).map((score) => {
+                const music = musicMap.get(score.musicId);
+                const chart = chartMap.get(
+                  `${score.musicId}:${score.chartIndex}`
+                );
+                return (
+                  <CompactMusicScoreCard
+                    key={`old-${score.musicId}-${score.type}-${score.chartIndex}`}
+                    musicId={score.musicId}
+                    chartIndex={score.chartIndex}
+                    type={score.type}
+                    rating={score.rating ?? null}
+                    score={score.score || null}
+                    fs={score.fs || null}
+                    fc={score.fc || null}
+                    chartPayload={chart || null}
+                    songMetadata={music || null}
+                    bpm={
+                      typeof music?.bpm === "number"
+                        ? music.bpm
+                        : parseInt(music?.bpm as string) || null
+                    }
+                    noteDesigner={chart?.charter || null}
+                  />
+                );
+              })}
               {ratingSummary.oldTop.length === 0 && (
                 <Text c="dimmed">暂无旧曲</Text>
               )}

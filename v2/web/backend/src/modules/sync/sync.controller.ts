@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Controller,
   Get,
-  Param,
   Post,
   Req,
   UseGuards,
@@ -41,26 +40,14 @@ export class SyncController {
     private readonly users: UsersService,
   ) {}
 
-  @Get()
-  async list(@Req() req: AuthedRequest) {
-    const friendCode = requireFriendCode(req);
-    return this.syncs.listByFriendCode(friendCode);
-  }
-
   @Get('latest')
   async latest(@Req() req: AuthedRequest) {
     const friendCode = requireFriendCode(req);
     return this.syncs.getLatestWithScores(friendCode);
   }
 
-  @Get(':id')
-  async detail(@Param('id') id: string, @Req() req: AuthedRequest) {
-    const friendCode = requireFriendCode(req);
-    return this.syncs.getWithScores(id, friendCode);
-  }
-
-  @Post(':id/diving-fish')
-  async exportToDivingFish(@Param('id') id: string, @Req() req: AuthedRequest) {
+  @Post('latest/diving-fish')
+  async exportToDivingFish(@Req() req: AuthedRequest) {
     const friendCode = requireFriendCode(req);
     const userId = requireUserId(req);
 
@@ -70,11 +57,11 @@ export class SyncController {
       throw new BadRequestException('User missing divingFishImportToken');
     }
 
-    return this.syncs.exportToDivingFish(id, friendCode, token);
+    return this.syncs.exportToDivingFish(friendCode, token);
   }
 
-  @Post(':id/lxns')
-  async exportToLxns(@Param('id') id: string, @Req() req: AuthedRequest) {
+  @Post('latest/lxns')
+  async exportToLxns(@Req() req: AuthedRequest) {
     const friendCode = requireFriendCode(req);
     const userId = requireUserId(req);
 
@@ -84,6 +71,6 @@ export class SyncController {
       throw new BadRequestException('User missing lxnsImportToken');
     }
 
-    return this.syncs.exportToLxns(id, friendCode, token);
+    return this.syncs.exportToLxns(friendCode, token);
   }
 }

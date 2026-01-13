@@ -70,6 +70,7 @@ export default function AuthedLayout() {
             maxWidth: 1225,
             margin: "0 auto",
             width: "100%",
+            overflowX: "hidden",
           }}
         >
           <Outlet />

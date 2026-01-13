@@ -97,13 +97,10 @@ function DebugPage() {
   const [profileLxnsTokenInput, setProfileLxnsTokenInput] =
     useState<string>("");
   const [syncsResp, setSyncsResp] = useState<string>("");
-  const [syncDetail, setSyncDetail] = useState<string>("");
   const [, setSyncDetailObj] = useState<SyncDetail | null>(null);
   const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(
     null
   );
-  const [syncs, setSyncs] = useState<any[]>([]);
-  const [selectedSyncId, setSelectedSyncId] = useState<string>("");
   const [exportResp, setExportResp] = useState<string>("");
   const [exportLxnsResp, setExportLxnsResp] = useState<string>("");
   const [coverSyncResp, setCoverSyncResp] = useState<string>("");
@@ -214,9 +211,8 @@ function DebugPage() {
     );
   };
 
-  const loadSyncs = async () => {
+  const loadLatestSync = async () => {
     setSyncsResp("");
-    setSyncDetail("");
     setSyncDetailObj(null);
     setRatingSummary(null);
     setExportResp("");
@@ -224,41 +220,18 @@ function DebugPage() {
     const headers: HeadersInit | undefined = token
       ? { Authorization: `Bearer ${token}` }
       : undefined;
-    const res = await fetchJson<any[]>("/api/sync", { headers });
+    const res = await fetchJson<any>("/api/sync/latest", { headers });
     if (res.ok) {
-      setSyncs(res.data ?? []);
       setSyncsResp(JSON.stringify(res.data, null, 2));
-      setSelectedSyncId(res.data?.[0]?.id ?? "");
-    } else {
-      setSyncsResp(`HTTP ${res.status}`);
-      setSyncs([]);
-      setSelectedSyncId("");
-    }
-  };
-
-  const loadSyncDetail = async () => {
-    if (!selectedSyncId) return;
-    setSyncDetail("");
-    setSyncDetailObj(null);
-    setRatingSummary(null);
-    setExportResp("");
-    setExportLxnsResp("");
-    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-    const res = await fetchJson<any>(`/api/sync/${selectedSyncId}`, {
-      headers,
-    });
-    if (res.ok) {
-      setSyncDetail(JSON.stringify(res.data, null, 2));
       const detail = res.data as SyncDetail;
       setSyncDetailObj(detail);
       setRatingSummary(buildRatingSummary(detail));
     } else {
-      setSyncDetail(`HTTP ${res.status}`);
+      setSyncsResp(`HTTP ${res.status}`);
     }
   };
 
   const exportDivingFish = async () => {
-    if (!selectedSyncId) return;
     setExportResp("Running...");
     const headers: HeadersInit = token
       ? {
@@ -267,13 +240,10 @@ function DebugPage() {
         }
       : { "Content-Type": "application/json" };
 
-    const res = await fetchJson<any>(
-      `/api/sync/${selectedSyncId}/diving-fish`,
-      {
-        method: "POST",
-        headers,
-      }
-    );
+    const res = await fetchJson<any>("/api/sync/latest/diving-fish", {
+      method: "POST",
+      headers,
+    });
 
     setExportResp(
       res.ok ? JSON.stringify(res.data, null, 2) : `HTTP ${res.status}`
@@ -281,7 +251,6 @@ function DebugPage() {
   };
 
   const exportLxns = async () => {
-    if (!selectedSyncId) return;
     setExportLxnsResp("Running...");
     const headers: HeadersInit = token
       ? {
@@ -290,7 +259,7 @@ function DebugPage() {
         }
       : { "Content-Type": "application/json" };
 
-    const res = await fetchJson<any>(`/api/sync/${selectedSyncId}/lxns`, {
+    const res = await fetchJson<any>("/api/sync/latest/lxns", {
       method: "POST",
       headers,
     });
@@ -535,57 +504,31 @@ function DebugPage() {
             }}
           >
             <button
-              onClick={loadSyncs}
+              onClick={loadLatestSync}
               disabled={!token}
               style={{ minWidth: 140 }}
             >
-              Load my syncs
-            </button>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              Sync ID
-              <select
-                value={selectedSyncId}
-                onChange={(e) => setSelectedSyncId(e.target.value)}
-                disabled={!syncs.length}
-              >
-                {syncs.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.id} (scores: {s.scoreCount ?? "?"})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              onClick={loadSyncDetail}
-              disabled={!token || !selectedSyncId}
-            >
-              Load detail
+              Load latest sync
             </button>
             <button
               onClick={exportDivingFish}
-              disabled={!token || !selectedSyncId}
+              disabled={!token}
               style={{ minWidth: 200 }}
             >
               Export to diving-fish
             </button>
             <button
               onClick={exportLxns}
-              disabled={!token || !selectedSyncId}
+              disabled={!token}
               style={{ minWidth: 200 }}
             >
               Export to LXNS
             </button>
           </div>
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>Sync list</div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Latest Sync</div>
             <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>
               {syncsResp || "No data"}
-            </pre>
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>Sync detail</div>
-            <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>
-              {syncDetail || "No data"}
             </pre>
           </div>
           <div style={{ marginTop: 12 }}>

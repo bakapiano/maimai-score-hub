@@ -1,68 +1,25 @@
+/**
+ * Job Service 客户端
+ * 与后端 Job Service 通信的 API 客户端
+ */
+
 import config from "./config.ts";
+import type { Job, JobPatch, JobResponse } from "./types/index.ts";
 
-export type JobStatus =
-  | "queued"
-  | "processing"
-  | "completed"
-  | "failed"
-  | "canceled";
-export type JobStage = "send_request" | "wait_acceptance" | "update_score";
-
-export interface UserProfile {
-  avatarUrl: string | null;
-  title: string | null;
-  titleColor: string | null;
-  username: string | null;
-  rating: number | null;
-  ratingBgUrl: string | null;
-  courseRankUrl: string | null;
-  classRankUrl: string | null;
-  awakeningCount: number | null;
-}
-
-export interface Job {
-  id: string;
-  friendCode: string;
-  skipUpdateScore?: boolean;
-  botUserFriendCode?: string | null;
-  friendRequestSentAt?: string | null;
-  status: JobStatus;
-  stage: JobStage;
-  result?: any;
-  profile?: UserProfile;
-  error?: string | null;
-  executing?: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-type JobResponse = Omit<Job, "createdAt" | "updatedAt"> & {
-  createdAt: string;
-  updatedAt: string;
-};
-
-export interface JobPatch {
-  botUserFriendCode?: string | null;
-  friendRequestSentAt?: string | null;
-  status?: JobStatus;
-  stage?: JobStage;
-  result?: any;
-  profile?: UserProfile;
-  error?: string | null;
-  executing?: boolean;
-  updatedAt?: Date;
-}
+// Re-export types for backward compatibility
+export type { Job, JobPatch, JobResponse };
+export type { JobStatus, JobStage, UserProfile } from "./types/index.ts";
 
 const baseUrl = (config.jobService?.baseUrl ?? "").replace(/\/$/, "");
 
-function ensureBaseUrl() {
+function ensureBaseUrl(): string {
   if (!baseUrl) {
     throw new Error("Job service baseUrl is not configured");
   }
   return baseUrl;
 }
 
-function buildUrl(path: string) {
+function buildUrl(path: string): string {
   return `${ensureBaseUrl()}${path}`;
 }
 
@@ -74,7 +31,7 @@ function deserializeJob(payload: JobResponse): Job {
   };
 }
 
-function serializePatch(patch: JobPatch) {
+function serializePatch(patch: JobPatch): Record<string, unknown> {
   const body: Record<string, unknown> = {};
 
   if (patch.botUserFriendCode !== undefined) {
@@ -106,6 +63,16 @@ function serializePatch(patch: JobPatch) {
   return body;
 }
 
+/**
+ * 获取 Job Service 基础 URL
+ */
+export function getJobServiceBaseUrl(): string {
+  return baseUrl;
+}
+
+/**
+ * 领取下一个待处理的任务
+ */
 export async function claimNextJob(
   botUserFriendCode?: string
 ): Promise<Job | null> {
@@ -130,6 +97,9 @@ export async function claimNextJob(
   return deserializeJob(payload);
 }
 
+/**
+ * 更新任务状态
+ */
 export async function updateJob(
   jobId: string,
   patch: JobPatch,
@@ -153,6 +123,9 @@ export async function updateJob(
   return deserializeJob(payload);
 }
 
+/**
+ * 获取任务详情
+ */
 export async function getJob(jobId: string): Promise<Job> {
   const response = await fetch(buildUrl(`/api/job/${jobId}`));
   if (!response.ok) {

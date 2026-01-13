@@ -6,6 +6,7 @@ import DebugPage from "./pages/DebugPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import { MantineProvider } from "@mantine/core";
+import { MusicProvider } from "./providers/MusicProvider";
 import { Notifications } from "@mantine/notifications";
 import type { ReactNode } from "react";
 import ScorePage from "./pages/ScorePage";
@@ -27,21 +28,23 @@ function App() {
       <Notifications position="top-center" />
       <BrowserRouter>
         <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route
-              element={
-                <RequireAuth>
-                  <AuthedLayout />
-                </RequireAuth>
-              }
-            >
-              <Route path="/app" element={<HomePage />} />
-              <Route path="/app/scores" element={<ScorePage />} />
-              <Route path="/app/debug" element={<DebugPage />} />
-            </Route>
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
+          <MusicProvider>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route
+                element={
+                  <RequireAuth>
+                    <AuthedLayout />
+                  </RequireAuth>
+                }
+              >
+                <Route path="/app" element={<HomePage />} />
+                <Route path="/app/scores" element={<ScorePage />} />
+                <Route path="/app/debug" element={<DebugPage />} />
+              </Route>
+              <Route path="*" element={<Navigate to="/login" replace />} />
+            </Routes>
+          </MusicProvider>
         </AuthProvider>
       </BrowserRouter>
     </MantineProvider>

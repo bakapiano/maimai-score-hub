@@ -4,7 +4,6 @@ import {
   Button,
   Center,
   Container,
-  Divider,
   Group,
   Loader,
   Paper,
@@ -54,9 +53,9 @@ export default function LoginPage() {
     }
   });
   const [skipUpdateScore, setSkipUpdateScore] = useState(true);
-  const [health, setHealth] = useState("");
+  const [_health, setHealth] = useState("");
   const [jobId, setJobId] = useState("");
-  const [jobStatus, setJobStatus] = useState("");
+  const [_jobStatus, setJobStatus] = useState("");
   const [polling, setPolling] = useState(false);
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -212,7 +211,7 @@ export default function LoginPage() {
 
       <AppShell.Main>
         <Center h="100%">
-          <Container size="sm" py="xl" style={{ minWidth: 520 }}>
+          <Container size="sm" py="xl" style={{ maxWidth: 480, width: "100%" }}>
             <Stack gap="lg">
               <div>
                 {jobStage === "wait_acceptance" ? (

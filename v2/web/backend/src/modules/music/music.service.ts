@@ -16,12 +16,7 @@ import { URL } from 'node:url';
 import type { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
-import type {
-  ChartNotes,
-  ChartPayload,
-  MusicDocument,
-  SongMetadata,
-} from './music.schema';
+import type { MusicDocument } from './music.schema';
 import { MusicEntity } from './music.schema';
 import {
   getDivingFishSourceUrl,

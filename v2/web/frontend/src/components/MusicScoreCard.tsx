@@ -4,13 +4,14 @@ import { Badge, Box, Card, Group, Image, Stack, Text } from "@mantine/core";
 export interface ChartPayload {
   level?: string;
   detailLevel?: number | null;
+  charter?: string | null;
 }
 
 export interface SongMetadata {
   title?: string;
-  artist?: string;
-  category?: string;
-  isNew?: boolean;
+  artist?: string | null;
+  category?: string | null;
+  isNew?: boolean | null;
 }
 
 export interface MusicScoreCardProps {
@@ -60,10 +61,17 @@ function getRank(scoreVal: number) {
   return "F";
 }
 
-export function renderRank(r: string, opts?: { compact?: boolean }) {
+export function renderRank(
+  r: string,
+  opts?: { compact?: boolean; stroke?: boolean }
+) {
   const isCompact = opts?.compact === true;
-  const textShadow = isCompact ? "none" : TEXT_STROKE_GOLD_BLACK;
-  const letterSpacing = isCompact ? 0 : 1;
+  const hasStroke = opts?.stroke === true;
+  const textShadow =
+    isCompact && !hasStroke
+      ? "none"
+      : "-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000";
+  const letterSpacing = isCompact ? (hasStroke ? 1 : 0) : 1;
 
   if (r === "SSS" || r === "SSS+") {
     const parts = [
@@ -136,8 +144,8 @@ export function MusicScoreCard({
   fc,
   chartPayload,
   songMetadata,
-  bpm,
-  noteDesigner,
+  bpm: _bpm,
+  noteDesigner: _noteDesigner,
 }: MusicScoreCardProps) {
   const difficultyColor = LEVEL_COLORS[chartIndex] || "#888";
   const difficultyName =
@@ -701,7 +709,7 @@ export function CompactMusicScoreCard({
 export function MinimalMusicScoreCard({
   musicId,
   chartIndex,
-  type,
+  type: _type,
   score,
   fs,
   fc,
@@ -742,7 +750,7 @@ export function MinimalMusicScoreCard({
             w={MINIMAL_COVER_SIZE}
             h={MINIMAL_COVER_SIZE}
             radius="sm"
-            loading="lazy"
+            // loading="lazy"
             style={{
               display: "block",
             }}

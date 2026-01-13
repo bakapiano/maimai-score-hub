@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -10,11 +9,7 @@ import type { Model } from 'mongoose';
 import { randomUUID } from 'crypto';
 
 import { MusicEntity } from '../music/music.schema';
-import type {
-  ChartPayload,
-  MusicDocument,
-  SongMetadata,
-} from '../music/music.schema';
+import type { ChartPayload, MusicDocument } from '../music/music.schema';
 import { SyncEntity } from './sync.schema';
 import type { SyncDocument, SyncScore } from './sync.schema';
 import { getRating, normalizeAchievement } from '../../common/rating';
@@ -33,20 +28,7 @@ type MusicRow = MusicEntity & {
   charts?: ChartPayload[];
 };
 
-type ScoreSnapshot = {
-  musicId: string;
-  cid: number;
-  chartIndex: number;
-  type: string;
-  chartPayload: ChartPayload | null;
-  songMetadata: SongMetadata | null;
-  dxScore: string | null;
-  score: string | null;
-  fs: string | null;
-  fc: string | null;
-  rating: number | null;
-  isNew: boolean | null;
-};
+type ScoreSnapshot = SyncScore;
 
 const DIVING_FISH_ENDPOINT =
   'https://www.diving-fish.com/api/maimaidxprober/player/update_records';
@@ -75,6 +57,9 @@ export class SyncService {
       return null;
     }
 
+    // Delete previous syncs for this friendCode (keep only the latest)
+    await this.syncModel.deleteMany({ friendCode: job.friendCode });
+
     const sync = await this.syncModel.create({
       id: syncId,
       jobId: job.id,
@@ -83,35 +68,6 @@ export class SyncService {
     });
 
     return sync.toObject();
-  }
-
-  async listByFriendCode(friendCode: string) {
-    const syncs = await this.syncModel
-      .find({ friendCode })
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .lean();
-
-    if (!syncs.length) return [];
-
-    return syncs.map((s) => ({
-      ...s,
-      scoreCount: Array.isArray(s.scores) ? s.scores.length : 0,
-      scores: [],
-    }));
-  }
-
-  async getWithScores(id: string, friendCode: string) {
-    const sync = await this.syncModel.findOne({ id }).lean();
-    if (!sync) {
-      throw new NotFoundException('Sync not found');
-    }
-    if (sync.friendCode !== friendCode) {
-      throw new ForbiddenException('Cannot access this sync');
-    }
-
-    const scores = Array.isArray(sync.scores) ? sync.scores : [];
-    return { ...sync, scores };
   }
 
   async getLatestWithScores(friendCode: string) {
@@ -125,7 +81,12 @@ export class SyncService {
     }
 
     const scores = Array.isArray(sync.scores) ? sync.scores : [];
-    return scores;
+    return {
+      id: sync.id,
+      createdAt: sync.createdAt,
+      updatedAt: sync.updatedAt,
+      scores,
+    };
   }
 
   private async mapResultToScores(result: any): Promise<ScoreSnapshot[]> {
@@ -140,21 +101,35 @@ export class SyncService {
 
     const scores: ScoreSnapshot[] = [];
 
-    for (const [category, typeMap] of Object.entries(result)) {
+    for (const [category, typeMap] of Object.entries(
+      result as Record<
+        string,
+        Record<string, Record<string, Record<string, unknown>>>
+      >,
+    )) {
       if (!typeMap || typeof typeMap !== 'object') continue;
 
       for (const [type, songs] of Object.entries(
-        typeMap as Record<string, any>,
+        typeMap as Record<string, Record<string, Record<string, unknown>>>,
       )) {
         if (!songs || typeof songs !== 'object') continue;
 
-        for (let [title, charts] of Object.entries(
-          songs as Record<string, any>,
+        for (const [title, charts] of Object.entries(
+          songs as Record<string, Record<string, unknown>>,
         )) {
           if (!charts || typeof charts !== 'object') continue;
+          let resolvedTitle = title;
 
           for (const [indexStr, payload] of Object.entries(
-            charts as Record<string, any>,
+            charts as Record<
+              string,
+              {
+                dxScore?: string | null;
+                score?: string | null;
+                fs?: string | null;
+                fc?: string | null;
+              }
+            >,
           )) {
             const chartIndex = Number(indexStr);
             if (Number.isNaN(chartIndex)) continue;
@@ -166,14 +141,16 @@ export class SyncService {
             }
 
             // Fix for 11422, title is single space
-            if (title.length === 0) {
-              title = ' ';
+            if (resolvedTitle.length === 0) {
+              resolvedTitle = ' ';
             }
 
-            const music = musicMap.get(`${category || ''}::${title}::${type}`);
+            const music = musicMap.get(
+              `${category || ''}::${resolvedTitle}::${type}`,
+            );
             if (!music) {
               this.logger.warn(
-                `No music found for score: category="${category}", type="${type}", title="${title}, key="${category || ''}::${title}::${type}"`,
+                `No music found for score: category="${category}", type="${type}", title="${resolvedTitle}, key="${category || ''}::${resolvedTitle}::${type}"`,
               );
               continue;
             }
@@ -202,15 +179,6 @@ export class SyncService {
               cid: chart.cid,
               chartIndex,
               type,
-              chartPayload: chart ?? null,
-              songMetadata: {
-                title: music.title,
-                artist: music.artist ?? undefined,
-                category: music.category ?? undefined,
-                bpm: music.bpm ?? undefined,
-                from: null,
-                isNew: music.isNew ?? undefined,
-              },
               dxScore,
               score,
               fs: payload?.fs ?? null,
@@ -226,22 +194,16 @@ export class SyncService {
     return scores;
   }
 
-  async exportToDivingFish(
-    id: string,
-    friendCode: string,
-    importToken: string,
-  ) {
-    const sync = await this.syncModel.findOne({ id }).lean();
+  async exportToDivingFish(friendCode: string, importToken: string) {
+    const sync = await this.syncModel
+      .findOne({ friendCode })
+      .sort({ createdAt: -1 })
+      .lean();
     if (!sync) {
       throw new NotFoundException('Sync not found');
     }
-    if (sync.friendCode !== friendCode) {
-      throw new ForbiddenException('Cannot access this sync');
-    }
 
-    const scores: SyncScore[] = Array.isArray(sync.scores)
-      ? (sync.scores as SyncScore[])
-      : [];
+    const scores: SyncScore[] = Array.isArray(sync.scores) ? sync.scores : [];
     if (!scores.length) {
       return { status: 'skipped', reason: 'no scores to export' };
     }
@@ -278,18 +240,16 @@ export class SyncService {
     };
   }
 
-  async exportToLxns(id: string, friendCode: string, importToken: string) {
-    const sync = await this.syncModel.findOne({ id }).lean();
+  async exportToLxns(friendCode: string, importToken: string) {
+    const sync = await this.syncModel
+      .findOne({ friendCode })
+      .sort({ createdAt: -1 })
+      .lean();
     if (!sync) {
       throw new NotFoundException('Sync not found');
     }
-    if (sync.friendCode !== friendCode) {
-      throw new ForbiddenException('Cannot access this sync');
-    }
 
-    const scores: SyncScore[] = Array.isArray(sync.scores)
-      ? (sync.scores as SyncScore[])
-      : [];
+    const scores: SyncScore[] = Array.isArray(sync.scores) ? sync.scores : [];
     if (!scores.length) {
       return { status: 'skipped', reason: 'no scores to export' };
     }

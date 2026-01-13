@@ -1,12 +1,12 @@
-export interface FriendVsSong {
-  level: string;
-  name: string;
-  score: string | null;
-  category: string | null;
-  type: "standard" | "dx" | "utage";
-  fs: string | null;
-  fc: string | null;
-}
+/**
+ * Friend VS 页面解析器
+ * 从 Friend VS HTML 页面中提取歌曲成绩信息
+ */
+
+import type { FriendVsSong, ChartType } from "../types/index.ts";
+
+// Re-export type for backward compatibility
+export type { FriendVsSong };
 
 const songBlockAnchor =
   /<div class="music_(?:basic|advanced|expert|master|remaster|utage)_score_back/gi;
@@ -14,6 +14,9 @@ const categoryPattern = /<div class="screw_block[^>]*>([\s\S]*?)<\/div>/g;
 const scoreCellPattern =
   /<td class="p_r (?:basic|advanced|expert|master|remaster|utage)_score_label w_120 f_b">\s*(?:<img[^>]*>\s*)*([0-9][0-9,]*(?:\.[0-9]+)?%?|―(?:\s*%)?)\s*<\/td>/gi;
 
+/**
+ * 解析 Friend VS 页面中的歌曲列表
+ */
 export function parseFriendVsSongs(html: string): FriendVsSong[] {
   const songs: FriendVsSong[] = [];
   const categories = collectCategories(html);
@@ -21,7 +24,7 @@ export function parseFriendVsSongs(html: string): FriendVsSong[] {
   let currentCategory: string | null = null;
   const blocks = collectSongBlocks(html);
 
-  blocks.forEach(({ start, content }, idx) => {
+  blocks.forEach(({ start, content }) => {
     const songStart = start;
     while (
       categoryIndex + 1 < categories.length &&
@@ -44,7 +47,7 @@ export function parseFriendVsSongs(html: string): FriendVsSong[] {
 
     const level = normalizeText(levelMatch[1]);
     const name = normalizeText(nameMatch[1]);
-    const type: FriendVsSong["type"] = /music_utage\.png/i.test(content)
+    const type: ChartType = /music_utage\.png/i.test(content)
       ? "utage"
       : /music_dx\.png/i.test(content)
       ? "dx"
@@ -94,10 +97,6 @@ function extractFsFcBadges(content: string): {
     const icon = match[1].toLowerCase();
     iconsInDomOrder.push(icon === "back" ? null : icon);
   }
-
-  // console.log(iconsInDomOrder);
-  // These icons use `f_r` (float-right), so the visual order is the reverse of DOM order.
-  // const iconsInVisualOrder = iconsInDomOrder.reverse();
 
   return {
     fs: iconsInDomOrder[0] ?? null,
