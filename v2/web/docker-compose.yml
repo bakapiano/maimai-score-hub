@@ -2,13 +2,34 @@ services:
   mongo:
     image: mongo:7
     restart: unless-stopped
-    ports:
-      - "27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: example
     volumes:
       - mongo_data:/data/db
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8848:9050"
+    depends_on:
+      - mongo
+    environment:
+      PORT: 9050
+      MONGO_HOST: mongo
+      MONGO_PORT: 27017
+      MONGO_DB: maimai_web
+      MONGO_USER: root
+      MONGO_PASSWORD: example
+      MONGO_AUTH_SOURCE: admin
+      MUSIC_DATA_URL: https://www.diving-fish.com/api/maimaidxprober/music_data
+      MUSIC_SYNC_CRON: "0 */6 * * *"
+      AUTH_JWT_SECRET: change-me-in-production
+    volumes:
+      - ./covers:/app/covers
 
 volumes:
   mongo_data:

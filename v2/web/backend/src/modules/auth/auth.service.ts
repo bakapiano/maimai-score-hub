@@ -38,8 +38,12 @@ export class AuthService {
   async checkStatus(jobId: string) {
     const job = await this.jobs.get(jobId);
     const status = job.status;
+    const stage = job.stage;
 
-    if (status === 'completed') {
+    if (
+      status === 'completed' ||
+      (status === 'processing' && stage === 'update_score')
+    ) {
       const user = await this.users.findByFriendCode(job.friendCode);
       if (!user) {
         throw new NotFoundException('User not found for job');
@@ -57,7 +61,7 @@ export class AuthService {
         iat: now,
       };
       const token = await this.jwt.signAsync(payload, {
-        expiresIn: '7d',
+        expiresIn: '30d',
       });
       return { status, token, user };
     }

@@ -27,17 +27,17 @@ type Props = {
 
 export function ProfileCard({ profile }: Props) {
   return (
-    <Card withBorder shadow="xs" padding="sm">
+    <Card withBorder shadow="xs" padding="sm" radius="md">
       <Group align="flex-start" gap="md" wrap="nowrap">
         {profile.avatarUrl && (
-          <Card shadow="xs" padding={4} radius="md" style={{ flexShrink: 0 }}>
+          <Box p={4} style={{ flexShrink: 0 }}>
             <Image
               src={profile.avatarUrl}
               alt={profile.username ?? "avatar"}
               width={128}
               height={128}
             />
-          </Card>
+          </Box>
         )}
 
         <Stack
@@ -89,8 +89,10 @@ export function ProfileCard({ profile }: Props) {
             <Text
               fw={700}
               size="lg"
+              lineClamp={1}
               style={{
-                minWidth: 160,
+                flex: 1,
+                minWidth: 0,
                 padding: "6px 10px",
               }}
             >
@@ -98,7 +100,12 @@ export function ProfileCard({ profile }: Props) {
             </Text>
 
             {profile.rating !== null && (
-              <Badge size="md" variant="filled" color="orange">
+              <Badge
+                size="md"
+                variant="filled"
+                color="orange"
+                style={{ flexShrink: 0 }}
+              >
                 {profile.rating}
               </Badge>
             )}
@@ -113,7 +120,7 @@ export function ProfileCard({ profile }: Props) {
               display: "flex",
               alignItems: "center",
               justifyContent: "flex-start",
-              gap: 6,
+              gap: 0,
               minHeight: 0,
               overflow: "visible",
             }}

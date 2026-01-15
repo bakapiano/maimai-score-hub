@@ -80,7 +80,7 @@ export const TIMEOUTS = {
   /** Friend VS 页面请求超时 (ms) */
   friendVS: 5 * 60 * 1000,
   /** 好友请求接受等待超时 (ms) */
-  friendAcceptWait: 60_000,
+  friendAcceptWait: 3 * 60_000,
 } as const;
 
 export const RETRY = {

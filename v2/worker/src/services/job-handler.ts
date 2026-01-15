@@ -145,6 +145,14 @@ export class JobHandler {
       console.log(`[JobHandler] Job ${this.job.id}: Friend accepted!`);
       await this.applyPatch({ stage: "update_score", updatedAt: new Date() });
     } else {
+      const sentRequests = await this.friendManager.getSentRequests();
+      const match = sentRequests.find(
+        (s) => s.friendCode === this.job.friendCode
+      );
+      if (!match) {
+        throw new Error("好友请求已被取消或删除");
+      }
+
       const elapsed = Date.now() - this.job.createdAt.getTime();
       if (elapsed > TIMEOUTS.friendAcceptWait) {
         throw new Error("等待好友接受请求超时");

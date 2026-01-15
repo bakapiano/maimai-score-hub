@@ -10,6 +10,7 @@ import {
   Group,
   Image,
   Loader,
+  LoadingOverlay,
   MultiSelect,
   NumberInput,
   Pagination,
@@ -35,10 +36,21 @@ import {
   summarizeRanks,
   summarizeStatuses,
 } from "../../components/ScoreSummaryBadges";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { getVersionSortIndex, sortVersions } from "../../constants/versions";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 
 import type { SyncScore } from "../../types/syncScore";
-import { renderRank } from "../../components/MusicScoreCard";
+import {
+  renderRank,
+  type DetailedMusicScoreCardProps,
+} from "../../components/MusicScoreCard";
+import { ScoreDetailModal } from "../../components/ScoreDetailModal";
 import { useMusic } from "../../providers/MusicProvider";
 
 const FALLBACK_COVER =
@@ -69,7 +81,9 @@ type SortKey =
   | "detailLevel"
   | "score"
   | "dxScore"
-  | "rating";
+  | "rating"
+  | "rank"
+  | "musicVersion";
 type SortOrder = "asc" | "desc";
 
 type AllScoresTabProps = {
@@ -107,11 +121,11 @@ function SortableHeader({
   const isActive = currentSortKey === sortKey;
   return (
     <Table.Th
-      style={{ cursor: "pointer", userSelect: "none" }}
+      style={{ cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}
       onClick={() => onSort(sortKey)}
     >
       <Group gap={4} wrap="nowrap">
-        <Text size="sm" fw={600}>
+        <Text size="sm" fw={600} style={{ whiteSpace: "nowrap" }}>
           {label}
         </Text>
         {isActive ? (
@@ -135,6 +149,44 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
   const [sortKey, setSortKey] = useState<SortKey>("rating");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  // Modal state
+  const [modalOpened, setModalOpened] = useState(false);
+  const [selectedScore, setSelectedScore] =
+    useState<DetailedMusicScoreCardProps | null>(null);
+
+  const handleScoreClick = (score: SyncScore) => {
+    const music = musicMap.get(score.musicId);
+    const chart = score.cid != null ? chartMap.get(score.cid) : undefined;
+    setSelectedScore({
+      musicId: score.musicId,
+      chartIndex: score.chartIndex,
+      type: score.type,
+      rating: score.rating ?? null,
+      score: score.score || null,
+      fs: score.fs || null,
+      fc: score.fc || null,
+      dxScore: score.dxScore || null,
+      chartPayload: chart || null,
+      songMetadata: music
+        ? {
+            title: music.title,
+            artist: music.artist,
+            category: music.category,
+            isNew: music.isNew,
+            bpm: music.bpm,
+            version: music.version,
+          }
+        : null,
+      bpm:
+        typeof music?.bpm === "number"
+          ? music.bpm
+          : parseInt(music?.bpm as string) || null,
+      noteDesigner: chart?.charter || null,
+    });
+    setModalOpened(true);
+  };
 
   // Filters
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
@@ -200,7 +252,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
     return {
       categories: Array.from(categories).sort(),
       versions: Array.from(versions).sort(),
-      musicVersions: Array.from(musicVersions).sort(),
+      musicVersions: sortVersions(Array.from(musicVersions)),
       difficulties: Object.values(DIFFICULTY_NAMES),
       designers: Array.from(designers).sort(),
     };
@@ -308,6 +360,39 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
           cmp = ratingA - ratingB;
           break;
         }
+        case "rank": {
+          // Rank order: SSS+ > SSS > SS+ > SS > S+ > S > AAA > AA > A > BBB > BB > B > C > D
+          const rankOrder: Record<string, number> = {
+            "SSS+": 14,
+            SSS: 13,
+            "SS+": 12,
+            SS: 11,
+            "S+": 10,
+            S: 9,
+            AAA: 8,
+            AA: 7,
+            A: 6,
+            BBB: 5,
+            BB: 4,
+            B: 3,
+            C: 2,
+            D: 1,
+          };
+          const scoreA = a.score ? parseFloat(a.score.replace("%", "")) : 0;
+          const scoreB = b.score ? parseFloat(b.score.replace("%", "")) : 0;
+          const rankA = getRank(scoreA);
+          const rankB = getRank(scoreB);
+          cmp = (rankOrder[rankA] ?? 0) - (rankOrder[rankB] ?? 0);
+          break;
+        }
+        case "musicVersion": {
+          const musicA = musicMap.get(a.musicId);
+          const musicB = musicMap.get(b.musicId);
+          const versionA = musicA?.version || "";
+          const versionB = musicB?.version || "";
+          cmp = getVersionSortIndex(versionA) - getVersionSortIndex(versionB);
+          break;
+        }
       }
       return sortOrder === "asc" ? cmp : -cmp;
     });
@@ -393,6 +478,11 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
 
   return (
     <Stack gap="md">
+      <ScoreDetailModal
+        opened={modalOpened}
+        onClose={() => setModalOpened(false)}
+        scoreData={selectedScore}
+      />
       {error && (
         <Alert
           color="red"
@@ -455,7 +545,9 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                   placeholder="全部"
                   data={filterOptions.categories}
                   value={categoryFilter}
-                  onChange={setCategoryFilter}
+                  onChange={(value) =>
+                    startTransition(() => setCategoryFilter(value))
+                  }
                   clearable
                   searchable
                   size="xs"
@@ -465,7 +557,9 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                   placeholder="全部"
                   data={filterOptions.versions}
                   value={versionFilter}
-                  onChange={setVersionFilter}
+                  onChange={(value) =>
+                    startTransition(() => setVersionFilter(value))
+                  }
                   clearable
                   size="xs"
                 />
@@ -474,7 +568,9 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                   placeholder="全部"
                   data={filterOptions.difficulties}
                   value={difficultyFilter}
-                  onChange={setDifficultyFilter}
+                  onChange={(value) =>
+                    startTransition(() => setDifficultyFilter(value))
+                  }
                   clearable
                   size="xs"
                 />
@@ -483,7 +579,9 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                   placeholder="全部"
                   data={filterOptions.musicVersions}
                   value={musicVersionFilter}
-                  onChange={setMusicVersionFilter}
+                  onChange={(value) =>
+                    startTransition(() => setMusicVersionFilter(value))
+                  }
                   clearable
                   searchable
                   size="xs"
@@ -493,7 +591,9 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                   placeholder="全部"
                   data={filterOptions.designers}
                   value={designerFilter}
-                  onChange={setDesignerFilter}
+                  onChange={(value) =>
+                    startTransition(() => setDesignerFilter(value))
+                  }
                   clearable
                   searchable
                   size="xs"
@@ -503,7 +603,9 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                     label="定数范围"
                     placeholder="下限"
                     value={detailLevelMin}
-                    onChange={setDetailLevelMin}
+                    onChange={(value) =>
+                      startTransition(() => setDetailLevelMin(value))
+                    }
                     min={1}
                     max={15}
                     step={0.1}
@@ -517,7 +619,9 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                   <NumberInput
                     placeholder="上限"
                     value={detailLevelMax}
-                    onChange={setDetailLevelMax}
+                    onChange={(value) =>
+                      startTransition(() => setDetailLevelMax(value))
+                    }
                     min={1}
                     max={15}
                     step={0.1}
@@ -706,360 +810,386 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
         />
       )}
 
-      <Box style={{ overflowX: "auto", maxWidth: "100%" }}>
-        <Table>
-          <Table.Thead>
-            <Table.Tr>
-              {showCover && <Table.Th>封面</Table.Th>}
-              {showTitle && (
-                <SortableHeader
-                  label="曲名"
-                  sortKey="title"
-                  currentSortKey={sortKey}
-                  sortOrder={sortOrder}
-                  onSort={handleSort}
-                />
-              )}
-              {showCategory && <Table.Th>分类</Table.Th>}
-              {showVersion && <Table.Th>铺面类型</Table.Th>}
-              {showMusicVersion && <Table.Th>铺面版本</Table.Th>}
-              {showDifficulty && (
-                <SortableHeader
-                  label="难度"
-                  sortKey="level"
-                  currentSortKey={sortKey}
-                  sortOrder={sortOrder}
-                  onSort={handleSort}
-                />
-              )}
-              {showDetailLevel && (
-                <SortableHeader
-                  label="定数"
-                  sortKey="detailLevel"
-                  currentSortKey={sortKey}
-                  sortOrder={sortOrder}
-                  onSort={handleSort}
-                />
-              )}
-              {showDesigner && <Table.Th>谱师</Table.Th>}
-              {showScore && (
-                <SortableHeader
-                  label="达成率"
-                  sortKey="score"
-                  currentSortKey={sortKey}
-                  sortOrder={sortOrder}
-                  onSort={handleSort}
-                />
-              )}
-              {showRank && <Table.Th>评级</Table.Th>}
-              {showFc && <Table.Th>FC</Table.Th>}
-              {showFs && <Table.Th>FS</Table.Th>}
-              {showDxScore && (
-                <SortableHeader
-                  label="DX分数"
-                  sortKey="dxScore"
-                  currentSortKey={sortKey}
-                  sortOrder={sortOrder}
-                  onSort={handleSort}
-                />
-              )}
-              {showRating && (
-                <SortableHeader
-                  label="Rating"
-                  sortKey="rating"
-                  currentSortKey={sortKey}
-                  sortOrder={sortOrder}
-                  onSort={handleSort}
-                />
-              )}
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {paginatedScores.map((score, idx) => {
-              const music = musicMap.get(score.musicId);
-              const chart =
-                score.cid != null ? chartMap.get(score.cid) : undefined;
-              if (!chart) {
-                console.log("Missing chart for score:", score);
-              }
-              const name = music?.title || score.musicId;
-              const artist = music?.artist;
-              const coverUrl = `/api/cover/${score.musicId}`;
-              const level = chart?.level || "-";
-              const detailLevel =
-                typeof chart?.detailLevel === "number"
-                  ? chart.detailLevel.toFixed(1)
-                  : "-";
-              const scoreValue = score.score ?? "-";
-              const safeScore = score.score
-                ? parseFloat(score.score.replace("%", ""))
-                : null;
-              const rank =
-                safeScore !== null && !Number.isNaN(safeScore)
-                  ? getRank(safeScore)
+      <Box pos="relative" mih={200}>
+        <LoadingOverlay
+          visible={isPending}
+          zIndex={10}
+          overlayProps={{ radius: "sm", blur: 2 }}
+        />
+        <Box style={{ overflowX: "auto", maxWidth: "100%" }}>
+          <Table>
+            <Table.Thead>
+              <Table.Tr>
+                {showCover && <Table.Th>封面</Table.Th>}
+                {showTitle && (
+                  <SortableHeader
+                    label="曲名"
+                    sortKey="title"
+                    currentSortKey={sortKey}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                )}
+                {showCategory && <Table.Th>分类</Table.Th>}
+                {showVersion && <Table.Th>铺面类型</Table.Th>}
+                {showMusicVersion && (
+                  <SortableHeader
+                    label="铺面版本"
+                    sortKey="musicVersion"
+                    currentSortKey={sortKey}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                )}
+                {showDifficulty && (
+                  <SortableHeader
+                    label="难度"
+                    sortKey="level"
+                    currentSortKey={sortKey}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                )}
+                {showDetailLevel && (
+                  <SortableHeader
+                    label="定数"
+                    sortKey="detailLevel"
+                    currentSortKey={sortKey}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                )}
+                {showDesigner && <Table.Th>谱师</Table.Th>}
+                {showScore && (
+                  <SortableHeader
+                    label="达成率"
+                    sortKey="score"
+                    currentSortKey={sortKey}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                )}
+                {showRank && (
+                  <SortableHeader
+                    label="评级"
+                    sortKey="rank"
+                    currentSortKey={sortKey}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                )}
+                {showFc && <Table.Th>FC</Table.Th>}
+                {showFs && <Table.Th>FS</Table.Th>}
+                {showDxScore && (
+                  <SortableHeader
+                    label="DX分数"
+                    sortKey="dxScore"
+                    currentSortKey={sortKey}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                )}
+                {showRating && (
+                  <SortableHeader
+                    label="Rating"
+                    sortKey="rating"
+                    currentSortKey={sortKey}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                )}
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {paginatedScores.map((score, idx) => {
+                const music = musicMap.get(score.musicId);
+                const chart =
+                  score.cid != null ? chartMap.get(score.cid) : undefined;
+                if (!chart) {
+                  console.log("Missing chart for score:", score);
+                }
+                const name = music?.title || score.musicId;
+                const artist = music?.artist;
+                const coverUrl = `/api/cover/${score.musicId}`;
+                const level = chart?.level || "-";
+                const detailLevel =
+                  typeof chart?.detailLevel === "number"
+                    ? chart.detailLevel.toFixed(1)
+                    : "-";
+                const scoreValue = score.score ?? "-";
+                const safeScore = score.score
+                  ? parseFloat(score.score.replace("%", ""))
                   : null;
-              const ratingValue =
-                typeof score.rating === "number"
-                  ? Math.round(score.rating)
-                  : "-";
-              const difficultyColor = LEVEL_COLORS[score.chartIndex] || "#888";
-              const difficultyName =
-                DIFFICULTY_NAMES[score.chartIndex] || "Unknown";
+                const rank =
+                  safeScore !== null && !Number.isNaN(safeScore)
+                    ? getRank(safeScore)
+                    : null;
+                const ratingValue =
+                  typeof score.rating === "number"
+                    ? Math.round(score.rating)
+                    : "-";
+                const difficultyColor =
+                  LEVEL_COLORS[score.chartIndex] || "#888";
+                const difficultyName =
+                  DIFFICULTY_NAMES[score.chartIndex] || "Unknown";
 
-              return (
-                <Table.Tr
-                  key={`${score.musicId}-${score.chartIndex}-${score.cid}-${idx}`}
-                  style={{
-                    backgroundColor: `${difficultyColor}30`,
-                  }}
-                >
-                  {/* 封面 */}
-                  {showCover && (
-                    <Table.Td style={{ padding: 4 }}>
-                      <Image
-                        src={coverUrl}
-                        alt={name}
-                        h={48}
-                        w={48}
-                        fit="cover"
-                        radius="sm"
-                        fallbackSrc={FALLBACK_COVER}
-                      />
-                    </Table.Td>
-                  )}
+                return (
+                  <Table.Tr
+                    key={`${score.musicId}-${score.chartIndex}-${score.cid}-${idx}`}
+                    style={{
+                      backgroundColor: `${difficultyColor}30`,
+                      cursor: "pointer",
+                    }}
+                    onClick={() => handleScoreClick(score)}
+                  >
+                    {/* 封面 */}
+                    {showCover && (
+                      <Table.Td style={{ padding: 4 }}>
+                        <Image
+                          src={coverUrl}
+                          alt={name}
+                          h={48}
+                          w={48}
+                          fit="cover"
+                          radius="sm"
+                          fallbackSrc={FALLBACK_COVER}
+                        />
+                      </Table.Td>
+                    )}
 
-                  {/* 曲名 + Artist */}
-                  {showTitle && (
-                    <Table.Td>
-                      <Stack gap={0}>
-                        <Text fw={600} size="sm" lineClamp={1} title={name}>
-                          {name}
+                    {/* 曲名 + Artist */}
+                    {showTitle && (
+                      <Table.Td>
+                        <Stack gap={0}>
+                          <Text fw={600} size="sm" lineClamp={1} title={name}>
+                            {name}
+                          </Text>
+                          {artist && (
+                            <Text size="xs" c="dimmed" lineClamp={1}>
+                              {artist}
+                            </Text>
+                          )}
+                        </Stack>
+                      </Table.Td>
+                    )}
+
+                    {/* 分类 */}
+                    {showCategory && (
+                      <Table.Td>
+                        <Text size="xs">{music?.category || "-"}</Text>
+                      </Table.Td>
+                    )}
+
+                    {/* 铺面类型 */}
+                    {showVersion && (
+                      <Table.Td>
+                        <Text size="xs" fw={600}>
+                          {score.type?.toUpperCase?.() || "-"}
                         </Text>
-                        {artist && (
-                          <Text size="xs" c="dimmed" lineClamp={1}>
-                            {artist}
+                      </Table.Td>
+                    )}
+
+                    {/* 铺面版本 */}
+                    {showMusicVersion && (
+                      <Table.Td>
+                        <Text size="xs">{music?.version || "-"}</Text>
+                      </Table.Td>
+                    )}
+
+                    {/* 难度 */}
+                    {showDifficulty && (
+                      <Table.Td>
+                        <Box
+                          style={{
+                            display: "inline-block",
+                            padding: "2px 8px",
+                            borderRadius: 4,
+                            backgroundColor: difficultyColor,
+                            color: "white",
+                            fontWeight: 600,
+                            fontSize: 12,
+                          }}
+                        >
+                          {difficultyName}
+                        </Box>
+                      </Table.Td>
+                    )}
+
+                    {/* 定数 */}
+                    {showDetailLevel && (
+                      <Table.Td>
+                        <Group gap={4} wrap="nowrap">
+                          <Text size="sm" fw={600}>
+                            {level}
+                          </Text>
+                          <Text size="xs" c="dimmed">
+                            ({detailLevel})
+                          </Text>
+                        </Group>
+                      </Table.Td>
+                    )}
+
+                    {/* 谱师 */}
+                    {showDesigner && (
+                      <Table.Td>
+                        <Text size="xs" lineClamp={1}>
+                          {chart?.charter || "-"}
+                        </Text>
+                      </Table.Td>
+                    )}
+
+                    {/* 达成率 */}
+                    {showScore && (
+                      <Table.Td>
+                        <Text
+                          fw={700}
+                          size="sm"
+                          // c="#f5d142"
+                          // style={{
+                          //   textShadow:
+                          //     "-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000",
+                          // }}
+                        >
+                          {scoreValue}
+                        </Text>
+                      </Table.Td>
+                    )}
+
+                    {/* 评级 */}
+                    {showRank && (
+                      <Table.Td>
+                        {rank && (
+                          <Text fw={700} size="sm">
+                            {renderRank(rank, { compact: true, stroke: true })}
                           </Text>
                         )}
-                      </Stack>
-                    </Table.Td>
-                  )}
+                      </Table.Td>
+                    )}
 
-                  {/* 分类 */}
-                  {showCategory && (
-                    <Table.Td>
-                      <Text size="xs">{music?.category || "-"}</Text>
-                    </Table.Td>
-                  )}
+                    {/* FC */}
+                    {showFc && (
+                      <Table.Td style={{ padding: 4 }}>
+                        {score.fc ? (
+                          <Image
+                            src={`https://maimai.wahlap.com/maimai-mobile/img/music_icon_${score.fc}.png`}
+                            w={24}
+                            h={24}
+                          />
+                        ) : (
+                          <Box
+                            w={20}
+                            h={20}
+                            style={{
+                              borderRadius: "50%",
+                              backgroundColor: "white",
+                              border: "1px solid #ccc",
+                            }}
+                          />
+                        )}
+                      </Table.Td>
+                    )}
 
-                  {/* 铺面类型 */}
-                  {showVersion && (
-                    <Table.Td>
-                      <Text size="xs" fw={600}>
-                        {score.type?.toUpperCase?.() || "-"}
-                      </Text>
-                    </Table.Td>
-                  )}
+                    {/* FS */}
+                    {showFs && (
+                      <Table.Td style={{ padding: 4 }}>
+                        {score.fs ? (
+                          <Image
+                            src={`https://maimai.wahlap.com/maimai-mobile/img/music_icon_${score.fs}.png`}
+                            w={24}
+                            h={24}
+                          />
+                        ) : (
+                          <Box
+                            w={20}
+                            h={20}
+                            style={{
+                              borderRadius: "50%",
+                              backgroundColor: "white",
+                              border: "1px solid #ccc",
+                            }}
+                          />
+                        )}
+                      </Table.Td>
+                    )}
 
-                  {/* 铺面版本 */}
-                  {showMusicVersion && (
-                    <Table.Td>
-                      <Text size="xs">{music?.version || "-"}</Text>
-                    </Table.Td>
-                  )}
-
-                  {/* 难度 */}
-                  {showDifficulty && (
-                    <Table.Td>
-                      <Box
-                        style={{
-                          display: "inline-block",
-                          padding: "2px 8px",
-                          borderRadius: 4,
-                          backgroundColor: difficultyColor,
-                          color: "white",
-                          fontWeight: 600,
-                          fontSize: 12,
-                        }}
-                      >
-                        {difficultyName}
-                      </Box>
-                    </Table.Td>
-                  )}
-
-                  {/* 定数 */}
-                  {showDetailLevel && (
-                    <Table.Td>
-                      <Group gap={4} wrap="nowrap">
+                    {/* DX分数 */}
+                    {showDxScore && (
+                      <Table.Td>
                         <Text size="sm" fw={600}>
-                          {level}
+                          {score.dxScore || "-"}
                         </Text>
-                        <Text size="xs" c="dimmed">
-                          ({detailLevel})
-                        </Text>
-                      </Group>
-                    </Table.Td>
-                  )}
+                      </Table.Td>
+                    )}
 
-                  {/* 谱师 */}
-                  {showDesigner && (
-                    <Table.Td>
-                      <Text size="xs" lineClamp={1}>
-                        {chart?.charter || "-"}
-                      </Text>
-                    </Table.Td>
-                  )}
-
-                  {/* 达成率 */}
-                  {showScore && (
-                    <Table.Td>
-                      <Text
-                        fw={700}
-                        size="sm"
-                        // c="#f5d142"
-                        // style={{
-                        //   textShadow:
-                        //     "-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000",
-                        // }}
-                      >
-                        {scoreValue}
-                      </Text>
-                    </Table.Td>
-                  )}
-
-                  {/* 评级 */}
-                  {showRank && (
-                    <Table.Td>
-                      {rank && (
+                    {/* Rating */}
+                    {showRating && (
+                      <Table.Td>
                         <Text fw={700} size="sm">
-                          {renderRank(rank, { compact: true, stroke: true })}
+                          {ratingValue}
                         </Text>
-                      )}
-                    </Table.Td>
-                  )}
-
-                  {/* FC */}
-                  {showFc && (
-                    <Table.Td style={{ padding: 4 }}>
-                      {score.fc ? (
-                        <Image
-                          src={`https://maimai.wahlap.com/maimai-mobile/img/music_icon_${score.fc}.png`}
-                          w={24}
-                          h={24}
-                        />
-                      ) : (
-                        <Box
-                          w={20}
-                          h={20}
-                          style={{
-                            borderRadius: "50%",
-                            backgroundColor: "white",
-                            border: "1px solid #ccc",
-                          }}
-                        />
-                      )}
-                    </Table.Td>
-                  )}
-
-                  {/* FS */}
-                  {showFs && (
-                    <Table.Td style={{ padding: 4 }}>
-                      {score.fs ? (
-                        <Image
-                          src={`https://maimai.wahlap.com/maimai-mobile/img/music_icon_${score.fs}.png`}
-                          w={24}
-                          h={24}
-                        />
-                      ) : (
-                        <Box
-                          w={20}
-                          h={20}
-                          style={{
-                            borderRadius: "50%",
-                            backgroundColor: "white",
-                            border: "1px solid #ccc",
-                          }}
-                        />
-                      )}
-                    </Table.Td>
-                  )}
-
-                  {/* DX分数 */}
-                  {showDxScore && (
-                    <Table.Td>
-                      <Text size="sm" fw={600}>
-                        {score.dxScore || "-"}
-                      </Text>
-                    </Table.Td>
-                  )}
-
-                  {/* Rating */}
-                  {showRating && (
-                    <Table.Td>
-                      <Text fw={700} size="sm">
-                        {ratingValue}
-                      </Text>
-                    </Table.Td>
-                  )}
+                      </Table.Td>
+                    )}
+                  </Table.Tr>
+                );
+              })}
+              {sortedScores.length === 0 && !loading && (
+                <Table.Tr>
+                  <Table.Td colSpan={totalColumns}>
+                    <Text c="dimmed" ta="center">
+                      暂无成绩数据。
+                    </Text>
+                  </Table.Td>
                 </Table.Tr>
-              );
-            })}
-            {sortedScores.length === 0 && !loading && (
-              <Table.Tr>
-                <Table.Td colSpan={totalColumns}>
-                  <Text c="dimmed" ta="center">
-                    暂无成绩数据。
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-            )}
-            {loading && (
-              <Table.Tr>
-                <Table.Td colSpan={totalColumns}>
-                  <Group justify="center" py="md">
-                    <Loader size="sm" />
-                    <Text c="dimmed">加载中...</Text>
-                  </Group>
-                </Table.Td>
-              </Table.Tr>
-            )}
-          </Table.Tbody>
-        </Table>
+              )}
+              {loading && (
+                <Table.Tr>
+                  <Table.Td colSpan={totalColumns}>
+                    <Group justify="center" py="md">
+                      <Loader size="sm" />
+                      <Text c="dimmed">加载中...</Text>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              )}
+            </Table.Tbody>
+          </Table>
 
-        <Group justify="space-between" px="md" py="sm" align="center">
-          <Text size="sm" c="dimmed">
-            {summary.total > 0 ? (page - 1) * pageSize + 1 : 0} -
-            {Math.min(page * pageSize, summary.total)} / {summary.total}
-          </Text>
-          <Group gap="sm" align="center">
-            <Pagination
-              total={Math.max(1, Math.ceil(summary.total / pageSize))}
-              value={page}
-              onChange={setPage}
-              size="sm"
-              radius="md"
-              disabled={loading || summary.total === 0}
-            />
+          <Group justify="space-between" px="md" py="sm" align="center">
             <Text size="sm" c="dimmed">
-              每页
+              {summary.total > 0 ? (page - 1) * pageSize + 1 : 0} -
+              {Math.min(page * pageSize, summary.total)} / {summary.total}
             </Text>
-            <Select
-              size="xs"
-              value={String(pageSize)}
-              onChange={(value) => {
-                const next = Number(value ?? "20");
-                setPageSize(next);
-                setPage(1);
-              }}
-              data={[
-                { value: "10", label: "10" },
-                { value: "20", label: "20" },
-                { value: "50", label: "50" },
-                { value: "100", label: "100" },
-              ]}
-              styles={{ input: { width: 72 } }}
-            />
+            <Group gap="sm" align="center">
+              <Pagination
+                total={Math.max(1, Math.ceil(summary.total / pageSize))}
+                value={page}
+                onChange={setPage}
+                size="sm"
+                radius="md"
+                disabled={loading || summary.total === 0}
+              />
+              <Text size="sm" c="dimmed">
+                每页
+              </Text>
+              <Select
+                size="xs"
+                value={String(pageSize)}
+                onChange={(value) => {
+                  const next = Number(value ?? "20");
+                  setPageSize(next);
+                  setPage(1);
+                }}
+                data={[
+                  { value: "10", label: "10" },
+                  { value: "20", label: "20" },
+                  { value: "50", label: "50" },
+                  { value: "100", label: "100" },
+                ]}
+                styles={{ input: { width: 72 } }}
+              />
+            </Group>
           </Group>
-        </Group>
+        </Box>
       </Box>
     </Stack>
   );

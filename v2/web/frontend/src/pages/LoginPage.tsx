@@ -1,8 +1,8 @@
 import {
   Alert,
   AppShell,
+  Box,
   Button,
-  Center,
   Container,
   Group,
   Loader,
@@ -12,13 +12,14 @@ import {
   Stack,
   Text,
   TextInput,
-  Title,
+  useMantineColorScheme,
 } from "@mantine/core";
 import { IconInfoCircle } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
 import { ColorSchemeToggle } from "../components/ColorSchemeToggle";
+import { PageHeader } from "../components/PageHeader";
 import { notifications } from "@mantine/notifications";
 import { useAuth } from "../providers/AuthProvider";
 import { useNavigate } from "react-router-dom";
@@ -54,9 +55,21 @@ export default function LoginPage() {
   });
   const [skipUpdateScore, setSkipUpdateScore] = useState(true);
   const [_health, setHealth] = useState("");
-  const [jobId, setJobId] = useState("");
+  const [jobId, setJobId] = useState(() => {
+    try {
+      return localStorage.getItem("pendingLoginJobId") || "";
+    } catch {
+      return "";
+    }
+  });
   const [_jobStatus, setJobStatus] = useState("");
-  const [polling, setPolling] = useState(false);
+  const [polling, setPolling] = useState(() => {
+    try {
+      return !!localStorage.getItem("pendingLoginJobId");
+    } catch {
+      return false;
+    }
+  });
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [jobStage, setJobStage] = useState("");
@@ -64,7 +77,7 @@ export default function LoginPage() {
   const [jobCreatedAd, setJobCreatedAt] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
 
-  const totalWaitSeconds = 60;
+  const totalWaitSeconds = 3 * 60;
   const remainingPercent = Math.min(
     100,
     Math.max(0, (timeLeft / totalWaitSeconds) * 100)
@@ -98,6 +111,14 @@ export default function LoginPage() {
 
       if (!res.ok) {
         setJobStatus(`HTTP ${res.status}`);
+        // If job not found (404), clear localStorage
+        if (res.status === 404) {
+          setPolling(false);
+          setJobId("");
+          try {
+            localStorage.removeItem("pendingLoginJobId");
+          } catch {}
+        }
         return;
       }
 
@@ -123,9 +144,12 @@ export default function LoginPage() {
       if (res.data?.status === "completed" && res.data?.token) {
         setToken(res.data.token);
         setPolling(false);
+        try {
+          localStorage.removeItem("pendingLoginJobId");
+        } catch {}
         notifications.show({
           title: "登录成功",
-          message: "欢迎使用 maimai DX Copilot！",
+          message: "欢迎使用 maimai Score Hub！",
           color: "green",
         });
         navigate("/app", { replace: true });
@@ -133,6 +157,9 @@ export default function LoginPage() {
         setPolling(false);
         setJobStage("");
         setProfile(null);
+        try {
+          localStorage.removeItem("pendingLoginJobId");
+        } catch {}
         notifications.show({
           title: "登录失败",
           message: String(res.data?.job?.error || "未知错误"),
@@ -153,7 +180,7 @@ export default function LoginPage() {
     const interval = setInterval(() => {
       const now = Date.now();
       const created = new Date(jobCreatedAd).getTime();
-      const end = created + 60 * 1000;
+      const end = created + totalWaitSeconds * 1000;
       const left = Math.max(0, Math.ceil((end - now) / 1000));
       setTimeLeft(left);
     }, 500);
@@ -189,44 +216,60 @@ export default function LoginPage() {
     if (res.ok && res.data) {
       setJobId(res.data.jobId);
       setPolling(true);
-      // notifications.show({
-      //   title: "登录请求已创建",
-      //   message: `好友代码：${trimmedCode}，正在轮询登录状态...`,
-      // });
+      try {
+        localStorage.setItem("pendingLoginJobId", res.data.jobId);
+      } catch {}
     } else {
-      setJobStatus(`Login request failed (HTTP ${res.status})`);
+      const errorData = res.data as { message?: string; error?: string } | null;
+      const errorMessage =
+        errorData?.message || errorData?.error || `HTTP ${res.status}`;
+      notifications.show({
+        title: "创建登录任务失败",
+        message: errorMessage,
+        color: "red",
+      });
     }
 
     setLoading(false);
   };
 
+  const { colorScheme } = useMantineColorScheme();
+
+  const headerBg =
+    colorScheme === "dark"
+      ? "var(--mantine-color-dark-6)"
+      : "var(--mantine-color-gray-0)";
+
   return (
-    <AppShell header={{ height: 56 }} padding="md">
+    <AppShell header={{ height: 56 }} padding={0}>
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
-          <Text fw={700}>maimai DX Copilot</Text>
+          <Text fw={700}>maimai Score Hub</Text>
           <ColorSchemeToggle />
         </Group>
       </AppShell.Header>
 
       <AppShell.Main>
-        <Center h="100%">
-          <Container size="sm" py="xl" style={{ maxWidth: 480, width: "100%" }}>
-            <Stack gap="lg">
-              <div>
-                {jobStage === "wait_acceptance" ? (
-                  <Title order={2}>欢迎回来！</Title>
-                ) : (
-                  <>
-                    <Title order={2}>登录</Title>
-                    {/* <Text c="dimmed" size="sm">
-                      输入 friendCode，创建登录任务并轮询状态，拿到 token
-                      后会自动保存并跳转。
-                    </Text> */}
-                  </>
-                )}
-              </div>
+        <Box
+          py="lg"
+          px="md"
+          style={{
+            backgroundColor: headerBg,
+          }}
+        >
+          <Container size="sm" style={{ maxWidth: 480, width: "100%" }}>
+            <PageHeader
+              title={"欢迎！"}
+              description={
+                "使用 maimai DX NET 好友代码登录以同步和查看成绩数据"
+              }
+            />
+          </Container>
+        </Box>
 
+        <Box p="md">
+          <Container size="sm" style={{ maxWidth: 480, width: "100%" }}>
+            <Stack gap="lg">
               {profile && <ProfileCard profile={profile} />}
 
               {jobStage === "wait_acceptance" ? (
@@ -238,7 +281,6 @@ export default function LoginPage() {
                       color="blue"
                       title="好友请求已发送！"
                       icon={<IconInfoCircle size={18} />}
-                      mt="sm"
                     >
                       <Stack gap="sm">
                         <Text size="sm">
@@ -254,7 +296,6 @@ export default function LoginPage() {
                             animated
                             value={remainingPercent}
                             title={`${timeLeft} 秒后过期`}
-                            // radius=""
                           >
                             <Progress.Label>{timeLeft} 秒后过期</Progress.Label>
                           </Progress.Section>
@@ -294,7 +335,7 @@ export default function LoginPage() {
                     />
 
                     <Checkbox
-                      label="更新成绩数据"
+                      label="同时更新成绩"
                       checked={!skipUpdateScore}
                       onChange={(e) =>
                         setSkipUpdateScore(!e.currentTarget.checked)
@@ -316,7 +357,7 @@ export default function LoginPage() {
               )}
             </Stack>
           </Container>
-        </Center>
+        </Box>
       </AppShell.Main>
     </AppShell>
   );

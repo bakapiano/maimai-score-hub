@@ -16,7 +16,9 @@ const DEAD_JOB_TIMEOUT_MS = Number(
 );
 
 // [TODO] Change this to 1min
-const MIN_CREATE_INTERVAL_MS = Number(process.env.MIN_CREATE_INTERVAL_MS ?? 1);
+const MIN_CREATE_INTERVAL_MS = Number(
+  process.env.MIN_CREATE_INTERVAL_MS ?? 1000 * 60,
+);
 
 function toJobResponse(job: JobEntity): JobResponse {
   return {

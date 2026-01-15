@@ -1,10 +1,10 @@
-import { Group, Loader, Stack, Tabs, Text } from "@mantine/core";
 import {
   IconChartBar,
   IconList,
   IconTrophy,
   IconVersions,
 } from "@tabler/icons-react";
+import { Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { AllScoresTab } from "./score/AllScoresTab";

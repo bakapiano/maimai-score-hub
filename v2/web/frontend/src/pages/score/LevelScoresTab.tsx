@@ -1,7 +1,6 @@
 import {
   ActionIcon,
   Box,
-  Card,
   Divider,
   Group,
   LoadingOverlay,
@@ -21,7 +20,11 @@ import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import type { MusicChartPayload, MusicRow } from "../../types/music";
 import { useMemo, useRef, useState, useTransition } from "react";
 
-import { MinimalMusicScoreCard } from "../../components/MusicScoreCard";
+import {
+  MinimalMusicScoreCard,
+  type DetailedMusicScoreCardProps,
+} from "../../components/MusicScoreCard";
+import { ScoreDetailModal } from "../../components/ScoreDetailModal";
 import type { SyncScore } from "../../types/syncScore";
 import classes from "./LevelScoresTab.module.css";
 
@@ -142,6 +145,39 @@ export function LevelScoresTab({
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // Modal state
+  const [modalOpened, setModalOpened] = useState(false);
+  const [selectedScore, setSelectedScore] =
+    useState<DetailedMusicScoreCardProps | null>(null);
+
+  const handleScoreClick = (entry: ChartEntry) => {
+    setSelectedScore({
+      musicId: entry.music.id,
+      chartIndex: entry.chartIndex,
+      type: entry.music.type,
+      rating: entry.score?.rating ?? null,
+      score: entry.score?.score || entry.score?.dxScore || null,
+      fs: entry.score?.fs ?? null,
+      fc: entry.score?.fc ?? null,
+      dxScore: entry.score?.dxScore || null,
+      chartPayload: entry.chart || null,
+      songMetadata: {
+        title: entry.music.title,
+        artist: entry.music.artist,
+        category: entry.music.category,
+        isNew: entry.music.isNew,
+        bpm: entry.music.bpm,
+        version: entry.music.version,
+      },
+      bpm:
+        typeof entry.music.bpm === "number"
+          ? entry.music.bpm
+          : parseInt(entry.music.bpm as string) || null,
+      noteDesigner: entry.chart?.charter || null,
+    });
+    setModalOpened(true);
+  };
+
   const filteredMusics = useMemo(
     () => musics.filter((m) => m.type !== "utage"),
     [musics]
@@ -212,6 +248,11 @@ export function LevelScoresTab({
 
   return (
     <Stack gap="md">
+      <ScoreDetailModal
+        opened={modalOpened}
+        onClose={() => setModalOpened(false)}
+        scoreData={selectedScore}
+      />
       <Box>
         <Group justify="space-between" align="center" mb="sm">
           <Title order={4} size="h5">
@@ -340,15 +381,22 @@ export function LevelScoresTab({
                   style={{ width: "100%" }}
                 >
                   {detail.items.map((entry) => (
-                    <MinimalMusicScoreCard
+                    <div
                       key={`${entry.music.id}-${entry.chartIndex}`}
-                      musicId={entry.music.id}
-                      chartIndex={entry.chartIndex}
-                      type={entry.music.type}
-                      score={entry.score?.score || entry.score?.dxScore || null}
-                      fs={entry.score?.fs ?? null}
-                      fc={entry.score?.fc ?? null}
-                    />
+                      style={{ cursor: "pointer" }}
+                      onClick={() => handleScoreClick(entry)}
+                    >
+                      <MinimalMusicScoreCard
+                        musicId={entry.music.id}
+                        chartIndex={entry.chartIndex}
+                        type={entry.music.type}
+                        score={
+                          entry.score?.score || entry.score?.dxScore || null
+                        }
+                        fs={entry.score?.fs ?? null}
+                        fc={entry.score?.fc ?? null}
+                      />
+                    </div>
                   ))}
                 </Group>
                 {idx < current.details.length - 1 && (

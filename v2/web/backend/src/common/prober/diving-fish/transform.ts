@@ -1,4 +1,7 @@
-import type { ChartPayload, SongMetadata } from '../../../modules/music/music.schema';
+import type {
+  ChartPayload,
+  SongMetadata,
+} from '../../../modules/music/music.schema';
 import {
   getDivingFishMusicSourceUrl,
   mapDivingFishCategory,
@@ -6,6 +9,34 @@ import {
 } from './music';
 
 import type { ConfigService } from '@nestjs/config';
+
+// Version name mapping from diving-fish to display names
+const VERSION_MAP: Record<string, string> = {
+  maimai: 'maimai',
+  'maimai PLUS': 'maimai+',
+  'maimai GreeN': 'green',
+  'maimai GreeN PLUS': 'green+',
+  'maimai ORANGE': 'orange',
+  'maimai ORANGE PLUS': 'orange+',
+  'maimai PiNK': 'pink',
+  'maimai PiNK PLUS': 'pink+',
+  'maimai MURASAKi': 'murasaki',
+  'maimai MURASAKi PLUS': 'murasaki+',
+  'maimai MiLK': 'milk',
+  'MiLK PLUS': 'milk+',
+  'maimai FiNALE': 'finale',
+  'maimai でらっくす': '舞萌DX',
+  'maimai でらっくす Splash': '舞萌DX 2021',
+  'maimai でらっくす UNiVERSE': '舞萌DX 2022',
+  'maimai でらっくす FESTiVAL': '舞萌DX 2023',
+  'maimai でらっくす BUDDiES': '舞萌DX 2024',
+  'maimai でらっくす PRiSM': '舞萌DX 2025',
+};
+
+function mapVersion(version: string | null | undefined): string | null {
+  if (!version) return null;
+  return VERSION_MAP[version] ?? version;
+}
 
 function normalizeTitle(title: string | undefined): string | undefined {
   return title?.replace(/\u3000/g, ' ');
@@ -133,6 +164,8 @@ export function convertDivingFishItemToDocument(item: any, now: Date) {
   const category = override?.category ?? fallbackCategory;
   const mappedType = override?.type ?? mapDivingFishType(item.type, category);
   const title = normalizeTitle(item.title) ?? item.title;
+  const rawVersion = metadata?.from ?? null;
+  const version = mapVersion(rawVersion);
 
   const base = {
     id,
@@ -142,7 +175,7 @@ export function convertDivingFishItemToDocument(item: any, now: Date) {
     artist: metadata?.artist ?? null,
     category,
     bpm: metadata?.bpm ?? null,
-    version: metadata?.from ?? null,
+    version,
     isNew: metadata?.isNew ?? null,
     sync: {
       createdAt: now,

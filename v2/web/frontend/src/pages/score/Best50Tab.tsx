@@ -1,12 +1,13 @@
 import { Badge, Card, Divider, Group, Stack, Text, Title } from "@mantine/core";
 import {
   CompactMusicScoreCard,
-  MusicScoreCard,
+  type DetailedMusicScoreCardProps,
 } from "../../components/MusicScoreCard";
 
 import { IconTrophy } from "@tabler/icons-react";
+import { ScoreDetailModal } from "../../components/ScoreDetailModal";
 import type { SyncScore } from "../../types/syncScore";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useMusic } from "../../providers/MusicProvider";
 
 type RatingSummary = {
@@ -68,8 +69,56 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
   const { musicMap, chartMap } = useMusic();
   const ratingSummary = useMemo(() => buildRatingSummary(scores), [scores]);
 
+  // Modal state
+  const [modalOpened, setModalOpened] = useState(false);
+  const [selectedScore, setSelectedScore] =
+    useState<DetailedMusicScoreCardProps | null>(null);
+
+  const handleScoreClick = (
+    score: SyncScore,
+    ranking: number,
+    isNew: boolean
+  ) => {
+    const music = musicMap.get(score.musicId);
+    const chart = score.cid != null ? chartMap.get(score.cid) : undefined;
+    setSelectedScore({
+      musicId: score.musicId,
+      chartIndex: score.chartIndex,
+      type: score.type,
+      rating: score.rating ?? null,
+      score: score.score || null,
+      fs: score.fs || null,
+      fc: score.fc || null,
+      dxScore: score.dxScore || null,
+      chartPayload: chart || null,
+      songMetadata: music
+        ? {
+            title: music.title,
+            artist: music.artist,
+            category: music.category,
+            isNew: music.isNew,
+            bpm: music.bpm,
+            version: music.version,
+          }
+        : null,
+      bpm:
+        typeof music?.bpm === "number"
+          ? music.bpm
+          : parseInt(music?.bpm as string) || null,
+      noteDesigner: chart?.charter || null,
+      ranking,
+      isNew,
+    });
+    setModalOpened(true);
+  };
+
   return (
     <Stack gap="md">
+      <ScoreDetailModal
+        opened={modalOpened}
+        onClose={() => setModalOpened(false)}
+        scoreData={selectedScore}
+      />
       <Card withBorder shadow="none" padding="lg" radius="md">
         {ratingSummary ? (
           <Group justify="space-between" align="center" wrap="wrap">
@@ -142,29 +191,34 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
               wrap="wrap"
               style={{ width: "100%" }}
             >
-              {ratingSummary.newTop.slice(0, 15).map((score) => {
+              {ratingSummary.newTop.slice(0, 15).map((score, idx) => {
                 const music = musicMap.get(score.musicId);
                 const chart =
                   score.cid != null ? chartMap.get(score.cid) : undefined;
                 return (
-                  <CompactMusicScoreCard
+                  <div
                     key={`new-${score.musicId}-${score.type}-${score.chartIndex}`}
-                    musicId={score.musicId}
-                    chartIndex={score.chartIndex}
-                    type={score.type}
-                    rating={score.rating ?? null}
-                    score={score.score || null}
-                    fs={score.fs || null}
-                    fc={score.fc || null}
-                    chartPayload={chart || null}
-                    songMetadata={music || null}
-                    bpm={
-                      typeof music?.bpm === "number"
-                        ? music.bpm
-                        : parseInt(music?.bpm as string) || null
-                    }
-                    noteDesigner={chart?.charter || null}
-                  />
+                    style={{ cursor: "pointer" }}
+                    onClick={() => handleScoreClick(score, idx + 1, true)}
+                  >
+                    <CompactMusicScoreCard
+                      musicId={score.musicId}
+                      chartIndex={score.chartIndex}
+                      type={score.type}
+                      rating={score.rating ?? null}
+                      score={score.score || null}
+                      fs={score.fs || null}
+                      fc={score.fc || null}
+                      chartPayload={chart || null}
+                      songMetadata={music || null}
+                      bpm={
+                        typeof music?.bpm === "number"
+                          ? music.bpm
+                          : parseInt(music?.bpm as string) || null
+                      }
+                      noteDesigner={chart?.charter || null}
+                    />
+                  </div>
                 );
               })}
               {ratingSummary.newTop.length === 0 && (
@@ -184,29 +238,34 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
               wrap="wrap"
               style={{ width: "100%" }}
             >
-              {ratingSummary.oldTop.slice(0, 35).map((score) => {
+              {ratingSummary.oldTop.slice(0, 35).map((score, idx) => {
                 const music = musicMap.get(score.musicId);
                 const chart =
                   score.cid != null ? chartMap.get(score.cid) : undefined;
                 return (
-                  <CompactMusicScoreCard
+                  <div
                     key={`old-${score.musicId}-${score.type}-${score.chartIndex}`}
-                    musicId={score.musicId}
-                    chartIndex={score.chartIndex}
-                    type={score.type}
-                    rating={score.rating ?? null}
-                    score={score.score || null}
-                    fs={score.fs || null}
-                    fc={score.fc || null}
-                    chartPayload={chart || null}
-                    songMetadata={music || null}
-                    bpm={
-                      typeof music?.bpm === "number"
-                        ? music.bpm
-                        : parseInt(music?.bpm as string) || null
-                    }
-                    noteDesigner={chart?.charter || null}
-                  />
+                    style={{ cursor: "pointer" }}
+                    onClick={() => handleScoreClick(score, idx + 1, false)}
+                  >
+                    <CompactMusicScoreCard
+                      musicId={score.musicId}
+                      chartIndex={score.chartIndex}
+                      type={score.type}
+                      rating={score.rating ?? null}
+                      score={score.score || null}
+                      fs={score.fs || null}
+                      fc={score.fc || null}
+                      chartPayload={chart || null}
+                      songMetadata={music || null}
+                      bpm={
+                        typeof music?.bpm === "number"
+                          ? music.bpm
+                          : parseInt(music?.bpm as string) || null
+                      }
+                      noteDesigner={chart?.charter || null}
+                    />
+                  </div>
                 );
               })}
               {ratingSummary.oldTop.length === 0 && (

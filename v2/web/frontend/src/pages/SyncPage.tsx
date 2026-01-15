@@ -256,7 +256,10 @@ export default function SyncPage() {
       setSyncStatus(res.data.job);
     } else {
       setSyncing(false);
-      setSyncError(`创建同步任务失败 (HTTP ${res.status})`);
+      const errorData = res.data as { message?: string; error?: string } | null;
+      const errorMessage =
+        errorData?.message || errorData?.error || `HTTP ${res.status}`;
+      setSyncError(`创建同步任务失败: ${errorMessage}`);
     }
   };
 
@@ -399,6 +402,24 @@ export default function SyncPage() {
           </Card>
         )}
 
+        {!lastSync && !syncStatus && (
+          <Card withBorder padding="md" radius="md">
+            <Stack gap="sm" align="center">
+              <Text size="sm" c="dimmed" ta="center">
+                暂无同步记录，点击下方按钮开始首次同步。
+              </Text>
+              <Button
+                onClick={startSync}
+                loading={syncing}
+                disabled={!profile?.friendCode || syncing}
+                variant="filled"
+              >
+                {syncing ? "同步中..." : "开始同步"}
+              </Button>
+            </Stack>
+          </Card>
+        )}
+
         {syncError && <Alert color="red">{syncError}</Alert>}
 
         {syncStatus && (
@@ -516,12 +537,16 @@ export default function SyncPage() {
 
               {syncing && syncStatus.stage === "wait_acceptance" && (
                 <Alert
-                  color="yellow"
-                  variant="light"
-                  title="需要操作"
+                  variant="outline"
                   radius="md"
+                  color="blue"
+                  title="好友请求已发送！"
                 >
-                  请在 maimai DX NET 中接受好友请求
+                  <Stack gap="sm">
+                    <Text size="sm">
+                      Bot 已发送好友申请，请登录 NET 并同意好友申请。
+                    </Text>
+                  </Stack>
                 </Alert>
               )}
             </Stack>
