@@ -26,4 +26,4 @@ jobs:
             else
               sudo docker compose -f backend/docker-compose.yml up -d --build
             fi
-            curl -fsS http://localhost:3999/api/health
+            curl -fsS http://localhost:8080/api/health
