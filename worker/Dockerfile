@@ -8,7 +8,7 @@ RUN npm install --omit=dev
 
 COPY worker/ ./
 
-ENV NODE_ENV=production
+# ENV NODE_ENV=production
 
 EXPOSE 3999 2222
 
