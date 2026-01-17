@@ -230,7 +230,12 @@ proxyServer.on(
 );
 
 proxyServer.on("clientError", (err, clientSocket) => {
+  const rawPacket = (err as { rawPacket?: Buffer }).rawPacket;
+  const rawPreview = rawPacket
+    ? rawPacket.toString("utf8", 0, 200)
+    : "<no rawPacket>";
   console.log("[Proxy] Client error: " + err);
+  console.log("[Proxy] Client error raw: " + rawPreview);
   (clientSocket as net.Socket).end("HTTP/1.1 400 Bad Request\r\n\r\n");
 });
 
