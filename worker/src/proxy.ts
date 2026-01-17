@@ -90,15 +90,15 @@ async function handleHttpRequest(
 
   const reqUrl = url.parse(clientReq.url || "");
 
-  if (!checkHostInWhiteList(reqUrl.host ?? null)) {
-    try {
-      clientRes.writeHead(400, { "Access-Control-Allow-Origin": "*" });
-      clientRes.end("HTTP/1.1 400 Bad Request\r\n\r\n");
-    } catch (err) {
-      console.log("[Proxy] Error:", err);
-    }
-    return;
-  }
+  // if (!checkHostInWhiteList(reqUrl.host ?? null)) {
+  //   try {
+  //     clientRes.writeHead(400, { "Access-Control-Allow-Origin": "*" });
+  //     clientRes.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+  //   } catch (err) {
+  //     console.log("[Proxy] Error:", err);
+  //   }
+  //   return;
+  // }
 
   // 拦截 OAuth 回调
   if (
@@ -151,20 +151,20 @@ proxyServer.on(
 
     const reqUrl = url.parse("https://" + clientReq.url);
 
-    // 检查白名单，排除舞萌/中二网站的直接 HTTPS 连接
-    if (
-      !checkHostInWhiteList(reqUrl.host ?? null) ||
-      (reqUrl.href &&
-        (reqUrl.href.startsWith("https://maimai.wahlap.com/") ||
-          reqUrl.href.startsWith("https://chunithm.wahlap.com/")))
-    ) {
-      try {
-        clientSocket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
-      } catch (err) {
-        console.log("[Proxy] Error:", err);
-      }
-      return;
-    }
+    // // 检查白名单，排除舞萌/中二网站的直接 HTTPS 连接
+    // if (
+    //   !checkHostInWhiteList(reqUrl.host ?? null) ||
+    //   (reqUrl.href &&
+    //     (reqUrl.href.startsWith("https://maimai.wahlap.com/") ||
+    //       reqUrl.href.startsWith("https://chunithm.wahlap.com/")))
+    // ) {
+    //   try {
+    //     clientSocket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+    //   } catch (err) {
+    //     console.log("[Proxy] Error:", err);
+    //   }
+    //   return;
+    // }
 
     // 特殊处理 OAuth 回调
     if (reqUrl.host === "tgk-wcaime.wahlap.com:80") {
