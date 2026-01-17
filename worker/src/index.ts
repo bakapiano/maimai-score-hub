@@ -19,4 +19,5 @@ startWorker();
 // 启动 HTTP/HTTPS 代理服务
 proxy.listen(config.httpProxy.port);
 proxy.on("error", (error: Error) => console.log(`[Main] Proxy error ${error}`));
+
 console.log(`[Main] V2 Proxy server listen on ${config.httpProxy.port}`);
