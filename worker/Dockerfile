@@ -1,4 +1,4 @@
-FROM node:22.6.0-slim
+FROM node:20-alpine
 
 WORKDIR /app/worker
 
