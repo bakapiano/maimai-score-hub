@@ -16,8 +16,13 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             cd ${{ secrets.BACKEND_PATH }}
+            sudo chown -R "$USER:$USER" "$(pwd)" || true
             git config --global --add safe.directory "$(pwd)"
             git fetch --all
             git checkout main
             git pull
-            (docker compose -f /backend/docker-compose.yml up -d --build) || (docker-compose -f /backend/docker-compose.yml up -d --build)
+            if command -v docker-compose >/dev/null 2>&1; then
+              docker-compose -f v2/web/backend/docker-compose.yml up -d --build
+            else
+              docker compose -f v2/web/backend/docker-compose.yml up -d --build
+            fi
