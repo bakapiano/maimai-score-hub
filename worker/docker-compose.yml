@@ -1,0 +1,12 @@
+services:
+  worker:
+    build:
+      context: ..
+      dockerfile: worker/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3999:3999"
+      - "2560:2560"
+    volumes:
+      - ./config.json:/app/worker/config.json:ro
+      - ./debug-html:/app/worker/debug-html

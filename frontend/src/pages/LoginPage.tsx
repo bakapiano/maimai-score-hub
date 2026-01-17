@@ -257,9 +257,7 @@ export default function LoginPage() {
           <Container size="sm" style={{ maxWidth: 600, width: "100%" }}>
             <PageHeader
               title={"欢迎！"}
-              description={
-                "输入 maimai DX Net 好友代码登录以同步和查看成绩数据"
-              }
+              description={"输入 maimai DX Net 好友代码以继续"}
             />
           </Container>
         </Box>

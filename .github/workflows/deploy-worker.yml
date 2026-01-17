@@ -1,0 +1,29 @@
+name: deploy worker
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.WORKER_HOST }}
+          username: ${{ secrets.WORKER_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd ${{ secrets.WORKER_PATH }}
+            sudo chown -R "$USER:$USER" "$(pwd)" || true
+            git config --global --add safe.directory "$(pwd)"
+            git fetch --all
+            git checkout main
+            git pull
+            if command -v docker-compose >/dev/null 2>&1; then
+              sudo docker-compose -f worker/docker-compose.yml up -d --build
+            else
+              sudo docker compose -f worker/docker-compose.yml up -d --build
+            fi
+            curl -fsS http://localhost:3999/api/health
