@@ -3,6 +3,8 @@ name: deploy worker
 on:
   push:
     branches: [main]
+    paths:
+      - "worker/**"
   workflow_dispatch:
 
 concurrency:

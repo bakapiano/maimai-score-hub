@@ -3,6 +3,8 @@ name: deploy backend
 on:
   push:
     branches: [main]
+    paths:
+      - "backend/**"
   workflow_dispatch:
 
 concurrency:
