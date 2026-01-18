@@ -27,4 +27,13 @@ jobs:
             else
               sudo docker compose -f worker/docker-compose.yml up -d --build
             fi
-            curl -fsS http://localhost:3999/api/health
+            for i in 1 2 3 4 5; do
+              if curl -fsS http://localhost:3999/api/health; then
+                echo "Health check passed"
+                exit 0
+              fi
+              echo "Attempt $i failed, retrying in 5 seconds..."
+              sleep 5
+            done
+            echo "Health check failed after 5 attempts"
+            exit 1
