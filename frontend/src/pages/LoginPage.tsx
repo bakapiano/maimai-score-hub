@@ -369,7 +369,7 @@ export default function LoginPage() {
                             onClick={() => {
                               navigator.clipboard.writeText(quickLoginUrl);
                               notifications.show({
-                                title: "快速登录链接已复制！",
+                                title: "链接已复制",
                                 message: "从此链接进入可自动填写好友代码",
                                 color: "teal",
                               });
