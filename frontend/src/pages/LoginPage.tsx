@@ -294,7 +294,7 @@ export default function LoginPage() {
           </Container>
         </Box>
 
-        <Box p="md">
+        <Box p="0" mt="lg">
           <Container size="sm" style={{ maxWidth: 600, width: "100%" }}>
             <Stack gap="lg">
               {profile && <ProfileCard profile={profile} />}
