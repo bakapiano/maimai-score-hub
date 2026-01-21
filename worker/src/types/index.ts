@@ -69,6 +69,7 @@ export interface Job {
   error?: string | null;
   executing?: boolean;
   scoreProgress?: ScoreProgress | null;
+  updateScoreDuration?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -88,6 +89,8 @@ export interface JobPatch {
   error?: string | null;
   executing?: boolean;
   scoreProgress?: ScoreProgress | null;
+  /** 更新分数所耗时间（毫秒） */
+  updateScoreDuration?: number | null;
   /** 原子操作：向 completedDiffs 添加一个难度（使用 MongoDB $addToSet） */
   addCompletedDiff?: number;
   updatedAt?: Date;

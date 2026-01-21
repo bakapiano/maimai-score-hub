@@ -1,5 +1,6 @@
 import { Badge, Box, Group, Image, Text } from "@mantine/core";
 import { type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { HeaderProfileCard, type MiniProfile } from "./MiniProfileCard";
 
@@ -16,6 +17,8 @@ export function AppHeader({
   showProfile = true,
   rightSection,
 }: AppHeaderProps) {
+  const navigate = useNavigate();
+
   return (
     <Group
       h="100%"
@@ -27,7 +30,13 @@ export function AppHeader({
       <Group
         gap="sm"
         wrap="nowrap"
-        style={{ minWidth: 0, overflow: "hidden", flex: 1 }}
+        style={{
+          minWidth: 0,
+          overflow: "hidden",
+          flex: 1,
+          cursor: "pointer",
+        }}
+        onClick={() => navigate("/")}
       >
         <Box w={36} h={36}>
           <Image

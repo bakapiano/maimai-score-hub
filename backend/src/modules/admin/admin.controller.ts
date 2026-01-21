@@ -13,6 +13,16 @@ export class AdminController {
     return this.adminService.getStats();
   }
 
+  @Get('job-stats')
+  async getJobStats() {
+    return await this.adminService.getJobStats();
+  }
+
+  @Get('job-trend')
+  async getJobTrend() {
+    return await this.adminService.getJobTrend();
+  }
+
   @Get('users')
   async getAllUsers() {
     return this.adminService.getAllUsers();

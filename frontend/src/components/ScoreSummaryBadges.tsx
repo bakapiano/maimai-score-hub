@@ -38,14 +38,20 @@ const emptyStatusCounts = (): {
   fc: Record<FcBucket, number>;
   fs: Record<FsBucket, number>;
 } => ({
-  fc: fcOrder.reduce<Record<FcBucket, number>>((acc, key) => {
-    acc[key] = 0;
-    return acc;
-  }, {} as Record<FcBucket, number>),
-  fs: fsOrder.reduce<Record<FsBucket, number>>((acc, key) => {
-    acc[key] = 0;
-    return acc;
-  }, {} as Record<FsBucket, number>),
+  fc: fcOrder.reduce<Record<FcBucket, number>>(
+    (acc, key) => {
+      acc[key] = 0;
+      return acc;
+    },
+    {} as Record<FcBucket, number>,
+  ),
+  fs: fsOrder.reduce<Record<FsBucket, number>>(
+    (acc, key) => {
+      acc[key] = 0;
+      return acc;
+    },
+    {} as Record<FsBucket, number>,
+  ),
 });
 
 const scoreToRank = (scoreText?: string | null): RankBucket | null => {
@@ -68,12 +74,12 @@ type ScoreEntry = {
 
 // Summarize functions
 export const summarizeRanks = <T extends ScoreEntry>(
-  entries: T[]
+  entries: T[],
 ): RankSummary => {
   const counts = emptyCounts();
   for (const entry of entries) {
     const rank = scoreToRank(
-      entry.score?.score ?? entry.score?.dxScore ?? null
+      entry.score?.score ?? entry.score?.dxScore ?? null,
     );
     if (!rank) continue;
     const idx = rankOrder.indexOf(rank);
@@ -85,7 +91,7 @@ export const summarizeRanks = <T extends ScoreEntry>(
 };
 
 export const summarizeStatuses = <T extends ScoreEntry>(
-  entries: T[]
+  entries: T[],
 ): StatusSummary => {
   const { fc, fs } = emptyStatusCounts();
   for (const entry of entries) {
@@ -99,7 +105,7 @@ export const summarizeStatuses = <T extends ScoreEntry>(
 
 // Calculate average score
 export const calculateAverageScore = <T extends ScoreEntry>(
-  entries: T[]
+  entries: T[],
 ): number | null => {
   if (entries.length === 0) return null;
   let sum = 0;
@@ -277,11 +283,11 @@ export function ScoreSummaryCard({
   const fsList = statusExpanded ? fsOrder : ([] as FsBucket[]);
 
   return (
-    <Card shadow="none" radius="md" p="md" withBorder>
+    <Card shadow="none" radius="md" p="sm" withBorder>
       <Stack gap="sm">
         {/* 达成率统计 */}
         <Box>
-          <Group gap={6} wrap="wrap">
+          <Group gap={4} wrap="wrap">
             {rankList.map((r) => (
               <StatItem
                 key={r}
@@ -292,6 +298,7 @@ export function ScoreSummaryCard({
                     {renderRank(r, { compact: true })}
                   </Text>
                 }
+                compact
               />
             ))}
             <ExpandButton
@@ -303,7 +310,7 @@ export function ScoreSummaryCard({
 
         {/* FC / FS 统计 */}
         <Box>
-          <Group gap={6} wrap="wrap">
+          <Group gap={4} wrap="wrap">
             {fcList.map((key) => (
               <StatItem
                 key={`fc-${key}`}
@@ -314,6 +321,7 @@ export function ScoreSummaryCard({
                     {statusLabel(key)}
                   </Text>
                 }
+                compact
               />
             ))}
             {fsList.map((key) => (
@@ -326,6 +334,7 @@ export function ScoreSummaryCard({
                     {statusLabel(key)}
                   </Text>
                 }
+                compact
               />
             ))}
             <ExpandButton

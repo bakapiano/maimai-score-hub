@@ -1,4 +1,16 @@
 import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   Box,
   Button,
   Card,
@@ -9,10 +21,13 @@ import {
   PasswordInput,
   Stack,
   Table,
+  Tabs,
   Text,
   Title,
 } from "@mantine/core";
 import {
+  IconArrowsExchange,
+  IconChartBar,
   IconDatabase,
   IconMusic,
   IconPhoto,
@@ -26,6 +41,38 @@ interface AdminStats {
   musicCount: number;
   syncCount: number;
   coverCount: number;
+}
+
+interface JobStatsTimeRange {
+  label: string;
+  totalCount: number;
+  completedCount: number;
+  failedCount: number;
+  successRate: number;
+}
+
+interface JobStatsWithDuration extends JobStatsTimeRange {
+  avgDuration: number | null;
+  minDuration: number | null;
+  maxDuration: number | null;
+}
+
+interface JobStats {
+  skipUpdateScore: JobStatsTimeRange[];
+  withUpdateScore: JobStatsWithDuration[];
+}
+
+interface JobTrendPoint {
+  hour: string;
+  totalCount: number;
+  completedCount: number;
+  failedCount: number;
+  avgDuration: number | null;
+}
+
+interface JobTrend {
+  skipUpdateScore: JobTrendPoint[];
+  withUpdateScore: JobTrendPoint[];
 }
 
 interface AdminUser {
@@ -134,6 +181,12 @@ export default function AdminPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
+  const [jobStats, setJobStats] = useState<JobStats | null>(null);
+  const [jobStatsLoading, setJobStatsLoading] = useState(false);
+
+  const [jobTrend, setJobTrend] = useState<JobTrend | null>(null);
+  const [jobTrendLoading, setJobTrendLoading] = useState(false);
+
   const [coverSyncing, setCoverSyncing] = useState(false);
   const [coverSyncResult, setCoverSyncResult] = useState<string>("");
 
@@ -185,6 +238,26 @@ export default function AdminPage() {
     setStatsLoading(false);
     if (res.ok) {
       setStats(res.data ?? null);
+    }
+  }, [password]);
+
+  const loadJobStats = useCallback(async () => {
+    if (!password) return;
+    setJobStatsLoading(true);
+    const res = await adminFetch<JobStats>("/api/admin/job-stats", password);
+    setJobStatsLoading(false);
+    if (res.ok) {
+      setJobStats(res.data ?? null);
+    }
+  }, [password]);
+
+  const loadJobTrend = useCallback(async () => {
+    if (!password) return;
+    setJobTrendLoading(true);
+    const res = await adminFetch<JobTrend>("/api/admin/job-trend", password);
+    setJobTrendLoading(false);
+    if (res.ok) {
+      setJobTrend(res.data ?? null);
     }
   }, [password]);
 
@@ -265,6 +338,20 @@ export default function AdminPage() {
     }
   }, [verified, password, users.length, loadUsers]);
 
+  // Load job stats when verified
+  useEffect(() => {
+    if (verified && password && !jobStats) {
+      void loadJobStats();
+    }
+  }, [verified, password, jobStats, loadJobStats]);
+
+  // Load job trend when verified
+  useEffect(() => {
+    if (verified && password && !jobTrend) {
+      void loadJobTrend();
+    }
+  }, [verified, password, jobTrend, loadJobTrend]);
+
   if (!verified) {
     return (
       <Container size="xs" py="xl">
@@ -316,70 +403,12 @@ export default function AdminPage() {
           </Button>
         </Group>
 
-        <div>
-          <Group justify="space-between" align="center" mb="sm">
-            <Text fw={600}>统计数据</Text>
-            <Button
-              variant="light"
-              size="xs"
-              leftSection={<IconRefresh size={14} />}
-              onClick={loadStats}
-              loading={statsLoading}
-            >
-              刷新
-            </Button>
-          </Group>
-          <Grid>
-            <Grid.Col span={{ base: 6, md: 3 }}>
-              <StatCard
-                title="用户数"
-                value={stats?.userCount ?? "-"}
-                icon={
-                  <IconUsers size={20} color="var(--mantine-color-blue-6)" />
-                }
-                color="blue"
-              />
-            </Grid.Col>
-            <Grid.Col span={{ base: 6, md: 3 }}>
-              <StatCard
-                title="歌曲数"
-                value={stats?.musicCount ?? "-"}
-                icon={
-                  <IconMusic size={20} color="var(--mantine-color-teal-6)" />
-                }
-                color="teal"
-              />
-            </Grid.Col>
-            <Grid.Col span={{ base: 6, md: 3 }}>
-              <StatCard
-                title="同步记录"
-                value={stats?.syncCount ?? "-"}
-                icon={
-                  <IconDatabase
-                    size={20}
-                    color="var(--mantine-color-grape-6)"
-                  />
-                }
-                color="grape"
-              />
-            </Grid.Col>
-            <Grid.Col span={{ base: 6, md: 3 }}>
-              <StatCard
-                title="封面数"
-                value={stats?.coverCount ?? "-"}
-                icon={
-                  <IconPhoto size={20} color="var(--mantine-color-orange-6)" />
-                }
-                color="orange"
-              />
-            </Grid.Col>
-          </Grid>
-        </div>
-
         <Card withBorder shadow="sm" padding="lg" radius="md">
-          <Stack gap="md">
+          <Group gap="xs" mb="md">
+            <IconArrowsExchange size={20} />
             <Text fw={600}>数据同步</Text>
-
+          </Group>
+          <Group gap="md">
             <div>
               <Group gap="sm" mb={4}>
                 <Button
@@ -415,13 +444,219 @@ export default function AdminPage() {
                 </Text>
               )}
             </div>
+          </Group>
+        </Card>
+
+        <Card withBorder shadow="sm" padding="lg" radius="md">
+          <Stack gap="md">
+            <Group justify="space-between" align="center">
+              <Group gap="xs">
+                <IconChartBar size={20} />
+                <Text fw={600}>任务统计</Text>
+              </Group>
+              <Button
+                variant="light"
+                size="xs"
+                leftSection={<IconRefresh size={14} />}
+                onClick={loadJobStats}
+                loading={jobStatsLoading}
+              >
+                刷新
+              </Button>
+            </Group>
+
+            {jobStats ? (
+              <Tabs defaultValue="charts">
+                <Tabs.List>
+                  <Tabs.Tab value="charts">图表</Tabs.Tab>
+                  <Tabs.Tab value="withUpdate">包含分数更新</Tabs.Tab>
+                  <Tabs.Tab value="skipUpdate">跳过分数更新</Tabs.Tab>
+                </Tabs.List>
+
+                <Tabs.Panel value="withUpdate" pt="md">
+                  <Table striped highlightOnHover withTableBorder>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>时间范围</Table.Th>
+                        <Table.Th ta="right">总数</Table.Th>
+                        <Table.Th ta="right">成功</Table.Th>
+                        <Table.Th ta="right">失败</Table.Th>
+                        <Table.Th ta="right">成功率</Table.Th>
+                        <Table.Th ta="right">平均耗时</Table.Th>
+                        <Table.Th ta="right">最短耗时</Table.Th>
+                        <Table.Th ta="right">最长耗时</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {jobStats.withUpdateScore.map((row) => (
+                        <Table.Tr key={row.label}>
+                          <Table.Td>{row.label}</Table.Td>
+                          <Table.Td ta="right">{row.totalCount}</Table.Td>
+                          <Table.Td ta="right">{row.completedCount}</Table.Td>
+                          <Table.Td ta="right">{row.failedCount}</Table.Td>
+                          <Table.Td ta="right">{row.successRate}%</Table.Td>
+                          <Table.Td ta="right">
+                            {row.avgDuration != null
+                              ? `${(row.avgDuration / 1000).toFixed(1)}s`
+                              : "-"}
+                          </Table.Td>
+                          <Table.Td ta="right">
+                            {row.minDuration != null
+                              ? `${(row.minDuration / 1000).toFixed(1)}s`
+                              : "-"}
+                          </Table.Td>
+                          <Table.Td ta="right">
+                            {row.maxDuration != null
+                              ? `${(row.maxDuration / 1000).toFixed(1)}s`
+                              : "-"}
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </Tabs.Panel>
+
+                <Tabs.Panel value="skipUpdate" pt="md">
+                  <Table striped highlightOnHover withTableBorder>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>时间范围</Table.Th>
+                        <Table.Th ta="right">总数</Table.Th>
+                        <Table.Th ta="right">成功</Table.Th>
+                        <Table.Th ta="right">失败</Table.Th>
+                        <Table.Th ta="right">成功率</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {jobStats.skipUpdateScore.map((row) => (
+                        <Table.Tr key={row.label}>
+                          <Table.Td>{row.label}</Table.Td>
+                          <Table.Td ta="right">{row.totalCount}</Table.Td>
+                          <Table.Td ta="right">{row.completedCount}</Table.Td>
+                          <Table.Td ta="right">{row.failedCount}</Table.Td>
+                          <Table.Td ta="right">{row.successRate}%</Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </Tabs.Panel>
+
+                <Tabs.Panel value="charts" pt="md">
+                  {jobTrend ? (
+                    <Stack gap="lg">
+                      <div>
+                        <Text size="sm" fw={500} mb="xs">
+                          过去 24 小时任务数量走势
+                        </Text>
+                        <ResponsiveContainer width="100%" height={280}>
+                          <BarChart
+                            data={jobTrend.withUpdateScore.map((row, idx) => ({
+                              hour: new Date(row.hour).toLocaleTimeString(
+                                "zh-CN",
+                                { hour: "2-digit", minute: "2-digit" },
+                              ),
+                              "包含更新-成功": row.completedCount,
+                              "包含更新-失败": row.failedCount,
+                              "跳过更新-成功":
+                                jobTrend.skipUpdateScore[idx]?.completedCount ??
+                                0,
+                              "跳过更新-失败":
+                                jobTrend.skipUpdateScore[idx]?.failedCount ?? 0,
+                            }))}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis
+                              dataKey="hour"
+                              tick={{ fontSize: 11 }}
+                              interval="preserveStartEnd"
+                            />
+                            <YAxis allowDecimals={false} />
+                            <Tooltip />
+                            <Legend />
+                            <Bar
+                              dataKey="包含更新-成功"
+                              stackId="a"
+                              fill="#12b886"
+                            />
+                            <Bar
+                              dataKey="包含更新-失败"
+                              stackId="a"
+                              fill="#fa5252"
+                            />
+                            <Bar
+                              dataKey="跳过更新-成功"
+                              stackId="b"
+                              fill="#15aabf"
+                            />
+                            <Bar
+                              dataKey="跳过更新-失败"
+                              stackId="b"
+                              fill="#fd7e14"
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      <div>
+                        <Text size="sm" fw={500} mb="xs">
+                          过去 24 小时更新分数耗时走势 (秒)
+                        </Text>
+                        <ResponsiveContainer width="100%" height={280}>
+                          <LineChart
+                            data={jobTrend.withUpdateScore.map((row) => ({
+                              hour: new Date(row.hour).toLocaleTimeString(
+                                "zh-CN",
+                                { hour: "2-digit", minute: "2-digit" },
+                              ),
+                              平均耗时:
+                                row.avgDuration != null
+                                  ? Number((row.avgDuration / 1000).toFixed(1))
+                                  : null,
+                            }))}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis
+                              dataKey="hour"
+                              tick={{ fontSize: 11 }}
+                              interval="preserveStartEnd"
+                            />
+                            <YAxis />
+                            <Tooltip formatter={(value) => `${value}s`} />
+                            <Legend />
+                            <Line
+                              type="monotone"
+                              dataKey="平均耗时"
+                              stroke="#228be6"
+                              strokeWidth={2}
+                              connectNulls
+                              dot={{ r: 3 }}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </Stack>
+                  ) : (
+                    <Text size="sm" c="dimmed" ta="center">
+                      {jobTrendLoading ? "加载中..." : "暂无走势数据"}
+                    </Text>
+                  )}
+                </Tabs.Panel>
+              </Tabs>
+            ) : (
+              <Text size="sm" c="dimmed" ta="center">
+                {jobStatsLoading ? "加载中..." : "暂无任务统计数据"}
+              </Text>
+            )}
           </Stack>
         </Card>
 
         <Card withBorder shadow="sm" padding="lg" radius="md">
           <Stack gap="md">
             <Group justify="space-between" align="center">
-              <Text fw={600}>用户列表 ({users.length})</Text>
+              <Group gap="xs">
+                <IconUsers size={20} />
+                <Text fw={600}>用户列表 ({users.length})</Text>
+              </Group>
               <Button
                 variant="light"
                 size="xs"

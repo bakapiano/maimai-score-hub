@@ -6,7 +6,7 @@ export type FetchResult<T> = {
 
 export async function fetchJson<T>(
   input: RequestInfo | URL,
-  init?: RequestInit
+  init?: RequestInit,
 ): Promise<FetchResult<T>> {
   const res = await fetch(input, init);
   const text = await res.text();

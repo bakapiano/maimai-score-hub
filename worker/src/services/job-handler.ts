@@ -98,7 +98,7 @@ export class JobHandler {
         } catch (releaseErr) {
           console.error(
             `[JobHandler] Job ${this.job.id}: failed to release execution flag`,
-            releaseErr
+            releaseErr,
           );
         }
       }
@@ -121,7 +121,7 @@ export class JobHandler {
 
     const sentRequests = await this.friendManager.getSentRequests();
     const match = sentRequests.find(
-      (s) => s.friendCode === this.job.friendCode
+      (s) => s.friendCode === this.job.friendCode,
     );
 
     if (!this.config.skipCleanUpFriend && !match) {
@@ -149,21 +149,18 @@ export class JobHandler {
     if (isFriend) {
       console.log(`[JobHandler] Job ${this.job.id}: Friend accepted!`);
       await this.applyPatch({ stage: "update_score", updatedAt: new Date() });
-    } else 
-      {
+    } else {
       const elapsed = Date.now() - this.job.createdAt.getTime();
       if (elapsed > TIMEOUTS.friendAcceptWait) {
         throw new Error("等待好友接受请求超时");
       }
-      
+
       // Check if the friend request is still pending
       let match: SentFriendRequest | undefined;
 
       for (let attempt = 1; attempt <= 3; attempt++) {
         const sentRequests = await this.friendManager.getSentRequests();
-        match = sentRequests.find(
-          (s) => s.friendCode === this.job.friendCode
-        );
+        match = sentRequests.find((s) => s.friendCode === this.job.friendCode);
 
         if (match) {
           break;
@@ -176,11 +173,14 @@ export class JobHandler {
 
       if (!match) {
         const isFriendAfterRetry = await this.friendManager.isFriend(
-          this.job.friendCode
+          this.job.friendCode,
         );
         if (isFriendAfterRetry) {
           console.log(`[JobHandler] Job ${this.job.id}: Friend accepted!`);
-          await this.applyPatch({ stage: "update_score", updatedAt: new Date() });
+          await this.applyPatch({
+            stage: "update_score",
+            updatedAt: new Date(),
+          });
           return;
         }
         throw new Error("好友请求已被取消或删除");
@@ -196,13 +196,14 @@ export class JobHandler {
   private async handleUpdateScore(): Promise<void> {
     if (this.job.skipUpdateScore) {
       console.log(
-        `[JobHandler] Job ${this.job.id}: Skipping update_score (skipUpdateScore=true).`
+        `[JobHandler] Job ${this.job.id}: Skipping update_score (skipUpdateScore=true).`,
       );
       await this.completeJob();
       return;
     }
 
     console.log(`[JobHandler] Job ${this.job.id}: Updating scores...`);
+    const updateScoreStartTime = Date.now();
 
     // 初始化进度跟踪
     const totalDiffs = DIFFICULTIES.length;
@@ -218,7 +219,7 @@ export class JobHandler {
 
     if (this.config.useMockResult) {
       console.log(
-        `[JobHandler] Job ${this.job.id}: Using mock result (MOCK_RESULT_PATH=${this.config.mockResultPath}).`
+        `[JobHandler] Job ${this.job.id}: Using mock result (MOCK_RESULT_PATH=${this.config.mockResultPath}).`,
       );
       aggregated = await this.loadMockResult();
       // Mock 模式下直接标记所有难度完成
@@ -228,7 +229,7 @@ export class JobHandler {
       });
     } else {
       console.log(
-        `[JobHandler] Job ${this.job.id}: Fetching scores for all diffs...`
+        `[JobHandler] Job ${this.job.id}: Fetching scores for all diffs...`,
       );
       aggregated = await this.scoreAggregator.fetchAndAggregate(
         this.job.friendCode,
@@ -239,7 +240,7 @@ export class JobHandler {
           onDiffCompleted: async (diff: number) => {
             completedCount++;
             console.log(
-              `[JobHandler] Job ${this.job.id}: Diff ${diff} completed (${completedCount}/${totalDiffs})`
+              `[JobHandler] Job ${this.job.id}: Diff ${diff} completed (${completedCount}/${totalDiffs})`,
             );
             // 使用 addCompletedDiff 原子操作，避免并发冲突
             await this.applyPatch({
@@ -247,7 +248,7 @@ export class JobHandler {
               updatedAt: new Date(),
             });
           },
-        }
+        },
       );
 
       if (this.config.dumpResultToMock) {
@@ -255,10 +256,12 @@ export class JobHandler {
       }
     }
 
+    const updateScoreDuration = Date.now() - updateScoreStartTime;
     await this.applyPatch({
       result: aggregated,
       status: "completed",
       error: null,
+      updateScoreDuration,
       updatedAt: new Date(),
     });
 
@@ -299,22 +302,22 @@ export class JobHandler {
    * 导出结果到 Mock 文件
    */
   private async dumpMockResult(
-    aggregated: AggregatedScoreResult
+    aggregated: AggregatedScoreResult,
   ): Promise<void> {
     try {
       await mkdir(dirname(this.config.mockResultPath), { recursive: true });
       await writeFile(
         this.config.mockResultPath,
         JSON.stringify({ result: aggregated }, null, 2),
-        "utf8"
+        "utf8",
       );
       console.log(
-        `[JobHandler] Job ${this.job.id}: Dumped aggregated result to ${this.config.mockResultPath}.`
+        `[JobHandler] Job ${this.job.id}: Dumped aggregated result to ${this.config.mockResultPath}.`,
       );
     } catch (err) {
       console.warn(
         `[JobHandler] Job ${this.job.id}: Failed to dump aggregated result:`,
-        err
+        err,
       );
     }
   }
@@ -324,7 +327,7 @@ export class JobHandler {
    */
   private async dumpFriendVsHtml(
     html: string,
-    meta: { type: number; diff: number }
+    meta: { type: number; diff: number },
   ): Promise<void> {
     try {
       const dir = this.config.friendVsHtmlDir;

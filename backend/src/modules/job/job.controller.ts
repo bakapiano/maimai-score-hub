@@ -38,6 +38,11 @@ export class JobController {
     });
   }
 
+  @Get('stats/recent')
+  async getRecentStats() {
+    return this.jobs.getRecentStats();
+  }
+
   @Get(':jobId')
   async get(@Param('jobId') jobId: string) {
     return this.jobs.get(jobId);

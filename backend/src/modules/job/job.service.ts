@@ -11,6 +11,14 @@ import { SyncService } from '../sync/sync.service';
 import type { JobResponse, JobStage, JobStatus } from './job.types';
 import { JobEntity } from './job.schema';
 
+export interface RecentJobStats {
+  totalCount: number;
+  completedCount: number;
+  failedCount: number;
+  successRate: number;
+  avgDuration: number | null;
+}
+
 const DEAD_JOB_TIMEOUT_MS = Number(
   process.env.DEAD_JOB_TIMEOUT_MS ?? 1 * 60 * 1000,
 );
@@ -274,5 +282,54 @@ export class JobService {
     }
 
     return toJobResponse(updated.toObject() as JobEntity);
+  }
+
+  async getRecentStats(): Promise<RecentJobStats> {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    const filter = {
+      skipUpdateScore: false,
+      createdAt: { $gte: oneHourAgo },
+    };
+
+    const [totalCount, completedCount, failedCount] = await Promise.all([
+      this.jobModel.countDocuments(filter),
+      this.jobModel.countDocuments({ ...filter, status: 'completed' }),
+      this.jobModel.countDocuments({ ...filter, status: 'failed' }),
+    ]);
+
+    // 获取有 updateScoreDuration 的已完成任务的平均时长
+    const durationStats = await this.jobModel.aggregate<{
+      avgDuration: number;
+    }>([
+      {
+        $match: {
+          ...filter,
+          status: 'completed',
+          updateScoreDuration: { $ne: null, $gt: 0 },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          avgDuration: { $avg: '$updateScoreDuration' },
+        },
+      },
+    ]);
+
+    const avgDuration = durationStats[0]
+      ? Math.round(durationStats[0].avgDuration)
+      : null;
+
+    return {
+      totalCount,
+      completedCount,
+      failedCount,
+      successRate:
+        totalCount > 0
+          ? Math.round((completedCount / totalCount) * 10000) / 100
+          : 0,
+      avgDuration,
+    };
   }
 }

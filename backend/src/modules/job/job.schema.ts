@@ -43,6 +43,9 @@ export class JobEntity {
   @Prop({ type: MongooseSchema.Types.Mixed, default: null })
   scoreProgress!: ScoreProgress | null;
 
+  @Prop({ type: Number, default: null })
+  updateScoreDuration!: number | null;
+
   @Prop({ required: true })
   createdAt!: Date;
 

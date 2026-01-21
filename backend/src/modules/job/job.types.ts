@@ -34,6 +34,7 @@ export interface JobResponse {
   error?: string | null;
   executing?: boolean;
   scoreProgress?: ScoreProgress | null;
+  updateScoreDuration?: number | null;
   createdAt: string;
   updatedAt: string;
 }
