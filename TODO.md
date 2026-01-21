@@ -7,3 +7,5 @@
 - [] 添加 deploy 的时候 worker 自动丢回 job
 - [] 离线模式 - 仅使用前端 cache 在服务器挂了的时候
 - [] 保护 job upsert 相关 API
+- [] 后台管理 worker / bot 状态/ graceful shutdown worker & bot
+- [] 后台直接 upsert TODO list
