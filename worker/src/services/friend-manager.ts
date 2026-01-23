@@ -20,12 +20,27 @@ export class FriendManager {
    * 包括取消待处理的好友请求和删除已有好友
    */
   async cleanUpFriend(friendCode: string): Promise<void> {
-    let [sent, friends] = await Promise.all([
+    let [sent, friends, accepted] = await Promise.all([
       this.client.getSentRequests(),
       this.client.getFriendList(),
+      this.client.getAcceptRequests(),
     ]);
 
     const sentCodes = sent.map((s) => s.friendCode);
+
+    if (accepted.includes(friendCode)) {
+      console.log(
+        `[FriendManager] Cleanup: declining accepted request for ${friendCode}`,
+      );
+      try {
+        await this.client.blockFriendRequest(friendCode);
+      } catch (e) {
+        accepted = await this.client.getAcceptRequests();
+        if (accepted.includes(friendCode)) {
+          throw e;
+        }
+      }
+    }
 
     if (sentCodes.includes(friendCode)) {
       console.log(

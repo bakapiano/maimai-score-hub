@@ -19,25 +19,40 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { MusicDocument } from './music.schema';
 import { MusicEntity } from './music.schema';
 import {
+  MusicConfigEntity,
+  type MusicConfigDocument,
+  type MusicDataSource,
+} from './music-config.schema';
+import {
   getDivingFishSourceUrl,
   convertDivingFishItemToDocument,
 } from '../../common/prober/diving-fish/transform';
+import {
+  getLxnsSongListUrl,
+  convertLxnsSongToDocument,
+  buildGenreMap,
+  buildVersionMap,
+  type LxnsApiResponse,
+} from '../../common/prober/lxns/transform';
+
+export type { MusicDataSource };
+
+const CONFIG_KEY = 'default';
 
 @Injectable()
 export class MusicService implements OnModuleInit {
   private readonly logger = new Logger(MusicService.name);
-  private readonly sourceUrl: string;
 
   constructor(
     @InjectModel(MusicEntity.name)
     private readonly musicModel: Model<MusicDocument>,
+    @InjectModel(MusicConfigEntity.name)
+    private readonly configModel: Model<MusicConfigDocument>,
     private readonly configService: ConfigService,
     private readonly schedulerRegistry: SchedulerRegistry,
     @Inject(CACHE_MANAGER)
     private readonly cache: Cache,
-  ) {
-    this.sourceUrl = getDivingFishSourceUrl(this.configService);
-  }
+  ) {}
 
   private async fetchJson(url: string) {
     if (typeof fetch === 'function') {
@@ -68,6 +83,7 @@ export class MusicService implements OnModuleInit {
       req.end();
     });
   }
+
   async onModuleInit() {
     const cronExpression =
       this.configService.get<string>('MUSIC_SYNC_CRON') ??
@@ -115,12 +131,44 @@ export class MusicService implements OnModuleInit {
     return result;
   }
 
+  async getDataSource(): Promise<MusicDataSource> {
+    const config = await this.configModel.findOne({ key: CONFIG_KEY }).lean();
+    return config?.dataSource ?? 'diving-fish';
+  }
+
+  async setDataSource(source: MusicDataSource): Promise<void> {
+    await this.configModel.updateOne(
+      { key: CONFIG_KEY },
+      { $set: { dataSource: source } },
+      { upsert: true },
+    );
+    this.logger.log(`Music data source updated to: ${source}`);
+  }
+
+  private getSourceUrl(dataSource: MusicDataSource): string {
+    if (dataSource === 'lxns') {
+      return getLxnsSongListUrl();
+    }
+    return getDivingFishSourceUrl(this.configService);
+  }
+
   async syncMusicData() {
-    this.logger.log(`Syncing music data from ${this.sourceUrl} ...`);
+    const dataSource = await this.getDataSource();
+    const sourceUrl = this.getSourceUrl(dataSource);
+    this.logger.log(`Syncing music data from ${dataSource} (${sourceUrl}) ...`);
+
+    if (dataSource === 'lxns') {
+      return this.syncFromLxns(sourceUrl);
+    } else {
+      return this.syncFromDivingFish(sourceUrl);
+    }
+  }
+
+  private async syncFromDivingFish(sourceUrl: string) {
     let items: any[];
 
     try {
-      const response = await this.fetchJson(this.sourceUrl);
+      const response = await this.fetchJson(sourceUrl);
       if (!response.ok) {
         throw new Error(`Remote responded with status ${response.status}`);
       }
@@ -131,7 +179,7 @@ export class MusicService implements OnModuleInit {
       items = payload;
     } catch (error) {
       this.logger.error(
-        'Failed to fetch music data',
+        'Failed to fetch music data from diving-fish',
         error instanceof Error ? error.stack : String(error),
       );
       throw new InternalServerErrorException('Fetch music data failed');
@@ -152,8 +200,66 @@ export class MusicService implements OnModuleInit {
       convertDivingFishItemToDocument(item, now),
     );
 
-    console.log(documents[0]);
+    return this.persistDocuments(documents, items.length);
+  }
 
+  private async syncFromLxns(sourceUrl: string) {
+    let lxnsData: LxnsApiResponse;
+
+    try {
+      const response = await this.fetchJson(sourceUrl);
+      if (!response.ok) {
+        throw new Error(`Remote responded with status ${response.status}`);
+      }
+      const payload = await response.json();
+
+      // Validate LXNS response structure
+      if (
+        !payload ||
+        typeof payload !== 'object' ||
+        !Array.isArray(payload.songs)
+      ) {
+        throw new Error(
+          'Unexpected LXNS payload structure (missing songs array)',
+        );
+      }
+      lxnsData = payload as LxnsApiResponse;
+    } catch (error) {
+      this.logger.error(
+        'Failed to fetch music data from LXNS',
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new InternalServerErrorException('Fetch music data failed');
+    }
+
+    const { songs, genres, versions } = lxnsData;
+
+    if (!songs.length) {
+      this.logger.warn('LXNS music data list is empty; skipping write');
+      return {
+        matchedCount: 0,
+        upsertedCount: 0,
+        modifiedCount: 0,
+        total: 0,
+      };
+    }
+
+    // Build genre map and version map from the response
+    const genreMap = buildGenreMap(genres || []);
+    const versionMap = buildVersionMap(versions || []);
+    this.logger.log(
+      `Built genre map with ${genreMap.size} entries, version map with ${versionMap.size} entries`,
+    );
+
+    const now = new Date();
+    const documents = songs.map((song) =>
+      convertLxnsSongToDocument(song, genreMap, versionMap, now),
+    );
+
+    return this.persistDocuments(documents, songs.length);
+  }
+
+  private async persistDocuments(documents: any[], total: number) {
     try {
       await this.musicModel.deleteMany({});
       const result = await this.musicModel.insertMany(documents, {
@@ -161,7 +267,7 @@ export class MusicService implements OnModuleInit {
       });
       const summary = {
         upsertedCount: result.length,
-        total: items.length,
+        total,
       };
       this.logger.log(
         `Music data sync finished: inserted ${summary.upsertedCount} items (full overwrite).`,

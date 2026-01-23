@@ -38,6 +38,7 @@ export const MAIMAI_URLS = {
   friendInvite: `${MAIMAI_BASE_URL}/friend/invite/`,
   friendAccept: `${MAIMAI_BASE_URL}/friend/accept/`,
   friendAcceptAllow: `${MAIMAI_BASE_URL}/friend/accept/allow/`,
+  friendAcceptBlock: `${MAIMAI_BASE_URL}/friend/accept/block/`,
   friendInviteCancel: `${MAIMAI_BASE_URL}/friend/invite/cancel/`,
   friendDetail: `${MAIMAI_BASE_URL}/friend/friendDetail/drop/`,
   friendFavoriteOn: `${MAIMAI_BASE_URL}/friend/favoriteOn/`,

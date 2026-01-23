@@ -17,7 +17,7 @@ export type ChartNotesDX = ChartNotesSD & {
 export type ChartNotes = ChartNotesSD | ChartNotesDX;
 
 export type ChartPayload = {
-  cid?: number;
+  cid?: string;
   level?: string;
   detailLevel?: number;
   notes?: unknown;

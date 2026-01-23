@@ -78,7 +78,16 @@ export class SyncService {
       throw new NotFoundException('No sync found');
     }
 
-    const scores = Array.isArray(sync.scores) ? sync.scores : [];
+    const scores = (Array.isArray(sync.scores) ? sync.scores : []).map(
+      (score) => ({
+        ...score,
+        cid:
+          score.musicId +
+          '_' +
+          (score.chartIndex === 10 ? 0 : score.chartIndex),
+      }),
+    );
+
     return {
       id: sync.id,
       createdAt: sync.createdAt,
@@ -174,7 +183,7 @@ export class SyncService {
 
             scores.push({
               musicId: music.id,
-              cid: chart.cid,
+              cid: music.id + '_' + (chartIndex === 10 ? 0 : chartIndex),
               chartIndex,
               type,
               dxScore,

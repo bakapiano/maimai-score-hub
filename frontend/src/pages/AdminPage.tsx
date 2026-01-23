@@ -26,6 +26,7 @@ import {
 import {
   IconArrowsExchange,
   IconChartBar,
+  IconDatabase,
   IconMusic,
   IconPhoto,
   IconRefresh,
@@ -171,6 +172,12 @@ export default function AdminPage() {
   const [musicSyncing, setMusicSyncing] = useState(false);
   const [musicSyncResult, setMusicSyncResult] = useState<string>("");
 
+  const [dataSource, setDataSource] = useState<"diving-fish" | "lxns" | null>(
+    null,
+  );
+  const [dataSourceLoading, setDataSourceLoading] = useState(false);
+  const [dataSourceSwitching, setDataSourceSwitching] = useState(false);
+
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [userPage, setUserPage] = useState(1);
@@ -295,6 +302,41 @@ export default function AdminPage() {
     }
   }, [password, loadStats]);
 
+  const loadDataSource = useCallback(async () => {
+    setDataSourceLoading(true);
+    try {
+      const res = await fetch("/api/music/source");
+      if (res.ok) {
+        const data = await res.json();
+        setDataSource(data.source);
+      }
+    } catch {
+      // ignore
+    }
+    setDataSourceLoading(false);
+  }, []);
+
+  const switchDataSource = useCallback(
+    async (newSource: "diving-fish" | "lxns") => {
+      if (!password) return;
+      setDataSourceSwitching(true);
+      const res = await adminFetch<{ ok: boolean; source: string }>(
+        "/api/music/source",
+        password,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: newSource }),
+        },
+      );
+      setDataSourceSwitching(false);
+      if (res.ok && res.data) {
+        setDataSource(res.data.source as "diving-fish" | "lxns");
+      }
+    },
+    [password],
+  );
+
   const loadUsers = useCallback(async () => {
     if (!password) return;
     setUsersLoading(true);
@@ -349,6 +391,13 @@ export default function AdminPage() {
       void loadJobErrorStats();
     }
   }, [verified, password, jobErrorStats, loadJobErrorStats]);
+
+  // Load data source when verified
+  useEffect(() => {
+    if (verified && dataSource === null) {
+      void loadDataSource();
+    }
+  }, [verified, dataSource, loadDataSource]);
 
   if (!verified) {
     return (
@@ -442,6 +491,58 @@ export default function AdminPage() {
                 </Text>
               )}
             </div>
+          </Group>
+        </Card>
+
+        <Card withBorder shadow="sm" padding="lg" radius="md">
+          <Group gap="xs" mb="md">
+            <IconDatabase size={20} />
+            <Text fw={600}>歌曲数据源</Text>
+          </Group>
+          <Group gap="md" align="center">
+            <Group gap="xs">
+              <Text size="sm" c="dimmed">
+                当前数据源:
+              </Text>
+              {dataSourceLoading ? (
+                <Text size="sm">加载中...</Text>
+              ) : (
+                <Text size="sm" fw={600}>
+                  {dataSource === "diving-fish"
+                    ? "Diving-Fish (水鱼)"
+                    : dataSource === "lxns"
+                      ? "落雪 (LXNS)"
+                      : "未知"}
+                </Text>
+              )}
+            </Group>
+            <Button
+              variant="light"
+              size="xs"
+              leftSection={<IconRefresh size={14} />}
+              onClick={loadDataSource}
+              loading={dataSourceLoading}
+            >
+              刷新
+            </Button>
+            <Button
+              variant={dataSource === "diving-fish" ? "filled" : "outline"}
+              size="xs"
+              onClick={() => switchDataSource("diving-fish")}
+              loading={dataSourceSwitching}
+              disabled={dataSource === "diving-fish"}
+            >
+              Diving-Fish
+            </Button>
+            <Button
+              variant={dataSource === "lxns" ? "filled" : "outline"}
+              size="xs"
+              onClick={() => switchDataSource("lxns")}
+              loading={dataSourceSwitching}
+              disabled={dataSource === "lxns"}
+            >
+              落雪 (LXNS)
+            </Button>
           </Group>
         </Card>
 

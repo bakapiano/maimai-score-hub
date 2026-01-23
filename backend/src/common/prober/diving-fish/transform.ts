@@ -66,18 +66,14 @@ function getOverrideForItem(id: string | number): ItemOverride | undefined {
 export function buildChartsFromDivingFishItem(item: any): ChartPayload[] {
   const levels = Array.isArray(item.level) ? item.level : [];
   const detailLevels = Array.isArray(item.ds) ? item.ds : [];
-  const cids = Array.isArray(item.cids) ? item.cids : [];
   const charts = Array.isArray(item.charts) ? item.charts : [];
 
-  const maxLen = Math.max(
-    levels.length,
-    detailLevels.length,
-    cids.length,
-    charts.length,
-  );
+  const maxLen = Math.max(levels.length, detailLevels.length, charts.length);
   if (!maxLen) return [];
 
   const normalized: ChartPayload[] = [];
+
+  const musicId = String(item.id);
 
   for (let i = 0; i < maxLen; i++) {
     const rawChart = charts[i];
@@ -91,17 +87,12 @@ export function buildChartsFromDivingFishItem(item: any): ChartPayload[] {
           ? Number(detailLevelRaw)
           : undefined;
 
-    const cid = cids[i];
+    const cid = `${musicId}_${i}`;
     const level = levels[i];
     const detailLevel = Number.isFinite(detailLevelParsed)
       ? detailLevelParsed
       : undefined;
 
-    if (cid === undefined || cid === null) {
-      throw new Error(
-        `Missing cid for chart index ${i} of song ${item.title ?? item.id ?? 'unknown'}`,
-      );
-    }
     if (level === undefined || level === null) {
       throw new Error(
         `Missing level for chart index ${i} of song ${item.title ?? item.id ?? 'unknown'}`,

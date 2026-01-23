@@ -278,6 +278,26 @@ export class MaimaiHttpClient {
   }
 
   /**
+   * 拒绝好友请求
+   */
+  async blockFriendRequest(friendCode: string): Promise<void> {
+    console.log(
+      `[MaimaiClient] Start block friend request, friend code ${friendCode}`,
+    );
+    await this.fetchWithToken(MAIMAI_URLS.friendAcceptBlock, {
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: `idx=${friendCode}&block=`,
+      method: "POST",
+      addToken: true,
+    });
+
+    await this.fetchWithToken(MAIMAI_URLS.friendAccept);
+    console.log(
+      `[MaimaiClient] Done block friend request, friend code ${friendCode}`,
+    );
+  }
+
+  /**
    * 取消好友请求
    */
   async cancelFriendRequest(friendCode: string): Promise<void> {

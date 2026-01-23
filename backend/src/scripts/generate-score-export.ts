@@ -23,7 +23,6 @@ async function run() {
   await writeFile(join(outputDir, 'version.png'), version);
 
   await app.close();
-  console.log(`Images saved to ${outputDir}`);
 }
 
 run().catch((err) => {

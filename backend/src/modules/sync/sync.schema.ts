@@ -4,7 +4,7 @@ import type { HydratedDocument } from 'mongoose';
 
 export type SyncScore = {
   musicId: string;
-  cid: number;
+  cid: string;
   chartIndex: number;
   type: string;
   dxScore: string | null;

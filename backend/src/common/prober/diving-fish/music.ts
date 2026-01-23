@@ -25,5 +25,5 @@ export function mapDivingFishType(
 export function getDivingFishMusicSourceUrl(
   configService: ConfigService,
 ): string {
-  return configService.get<string>('MUSIC_DATA_URL', DEFAULT_SOURCE_URL);
+  return 'https://www.diving-fish.com/api/maimaidxprober/music_data';
 }

@@ -64,6 +64,7 @@ async function onAuthHook(href: string): Promise<string> {
     const friendCode = await client.getUserFriendCode();
 
     if (friendCode) {
+      console.log(JSON.stringify(cj.toJSON(), null, 2));
       cookieStore.set(friendCode, cj);
       console.log(`[Proxy] Cookie updated successfully for ${friendCode}.`);
       return `${config.redirectUrl}?friendCode=${friendCode}`;
