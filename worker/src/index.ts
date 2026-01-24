@@ -10,6 +10,22 @@ import { proxy } from "./proxy.ts";
 import { startServer } from "./api.ts";
 import { startWorker } from "./services/index.ts";
 
+// 全局异常处理
+process.on("uncaughtException", (error) => {
+  console.error("[Main] Uncaught Exception:", error);
+  console.error("[Main] Stack:", error.stack);
+  process.exit(1); // 退出让容器重启
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[Main] Unhandled Rejection at:", promise);
+  console.error("[Main] Reason:", reason);
+  process.exit(1); // 退出让容器重启
+});
+
+
+
+
 // 启动 HTTP API 服务
 startServer();
 

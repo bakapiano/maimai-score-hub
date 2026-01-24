@@ -12,4 +12,4 @@ COPY worker/ ./
 
 EXPOSE 3999 2222
 
-CMD ["npm", "run", "start:dev"]
+CMD ["npm", "run", "start"]
