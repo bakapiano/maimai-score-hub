@@ -318,6 +318,25 @@ export class JobService {
     return jobs.map((job) => job.friendCode);
   }
 
+  /**
+   * 根据 friendCode 获取当前正在执行的任务（queued 或 processing 状态，且 skipUpdateScore 为 false）
+   */
+  async getActiveByFriendCode(friendCode: string): Promise<JobResponse | null> {
+    const job = await this.jobModel
+      .findOne({
+        friendCode,
+        skipUpdateScore: false,
+        status: { $in: ['queued', 'processing'] },
+      })
+      .sort({ createdAt: -1 });
+
+    if (!job) {
+      return null;
+    }
+
+    return toJobResponse(job.toObject() as JobEntity);
+  }
+
   async getRecentStats(): Promise<RecentJobStats> {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 

@@ -89,7 +89,6 @@ export class MaimaiHttpClient {
     url: string,
     options: FetchOptions = {},
     timeout?: number,
-    throwOnCookieExpire = false,
   ): Promise<Response> {
     const fetchWithCookie = makeFetchCookie(global.fetch, this.cookieJar);
     const retryCount = config.fetchRetryCount ?? RETRY.defaultCount;
@@ -102,26 +101,26 @@ export class MaimaiHttpClient {
           ...options,
         })) as Response;
 
-        if (throwOnCookieExpire) {
-          const location = result.url;
-          const clone = result.clone();
-          const body = await clone.text();
+        const location = result.url;
+        const clone = result.clone();
+        const body = await clone.text();
 
-          const isCookieExpireBody =
-            body.includes(COOKIE_EXPIRE_MARKERS.line1) &&
-            body.includes(COOKIE_EXPIRE_MARKERS.line2);
+        const isCookieExpireBody =
+          (body.includes(COOKIE_EXPIRE_MARKERS.line1) &&
+            body.includes(COOKIE_EXPIRE_MARKERS.line2)) ||
+          body.includes(COOKIE_EXPIRE_MARKERS.errorCode100001) ||
+          body.includes(COOKIE_EXPIRE_MARKERS.errorCode200002);
 
-          if (
-            COOKIE_EXPIRE_LOCATIONS.has(location as any) &&
-            isCookieExpireBody
-          ) {
-            throw new CookieExpiredError();
-          }
+        if (
+          COOKIE_EXPIRE_LOCATIONS.has(location as any) &&
+          isCookieExpireBody
+        ) {
+          throw new CookieExpiredError();
+        }
 
-          const containerMsg = extractContainerRedMessage(body);
-          if (containerMsg) {
-            throw new Error(containerMsg);
-          }
+        const containerMsg = extractContainerRedMessage(body);
+        if (containerMsg) {
+          throw new Error(containerMsg);
         }
 
         return result;
@@ -177,7 +176,7 @@ export class MaimaiHttpClient {
       },
     };
 
-    return this.fetch(url, fetchOptions, undefined, true);
+    return this.fetch(url, fetchOptions);
   }
 
   // =========================================================================
@@ -363,7 +362,6 @@ export class MaimaiHttpClient {
       url,
       { headers: DEFAULT_HEADERS },
       TIMEOUTS.friendVS,
-      true,
     );
     const text = await result.text();
     const cost = Date.now() - startTime;

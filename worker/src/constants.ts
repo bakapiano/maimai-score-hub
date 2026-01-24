@@ -69,6 +69,8 @@ export const COOKIE_EXPIRE_MARKERS = {
   line1:
     '<div class="p_5 f_12 gray break">连接时间已过期。<br>请于稍后重新尝试。</div>',
   line2: '<div class="p_5 f_12 gray break">再见！</div>',
+  errorCode100001: '<div class="p_5 f_14 ">错误码：100001</div>',
+  errorCode200002: '<div class="p_5 f_14 ">错误码：200002</div>',
 } as const;
 
 // ============================================================================

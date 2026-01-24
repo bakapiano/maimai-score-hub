@@ -10,3 +10,6 @@
 - [] 后台管理 worker / bot 状态/ graceful shutdown worker & bot
 - [] 后台直接 upsert TODO list
 - [] fix lynx 数据源（线上 version 没法正确map， why？）(落雪的 dx 谱 id 和水鱼的有出入)
+- [] add "https://dxrating.net/search" as source
+- [] Support for internal ver?
+- [] https://userjot.com/ - track user feedback

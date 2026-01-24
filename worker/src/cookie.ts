@@ -3,13 +3,16 @@
  * 提供向后兼容的 cookie 操作接口
  */
 
-import { CookieJar } from "tough-cookie";
-import lodash from "lodash";
+import {
+  CookieExpiredError,
+  MaimaiHttpClient,
+} from "./services/maimai-client.ts";
+import { DEFAULT_HEADERS, WECHAT_USER_AGENT } from "./constants.ts";
 
-import { cookieStore } from "./state.ts";
-import { MaimaiHttpClient } from "./services/maimai-client.ts";
-import { WECHAT_USER_AGENT, DEFAULT_HEADERS } from "./constants.ts";
+import { CookieJar } from "tough-cookie";
 import type { MaimaiCookieValues } from "./types/index.ts";
+import { cookieStore } from "./state.ts";
+import lodash from "lodash";
 
 const { throttle } = lodash;
 
@@ -17,7 +20,9 @@ const { throttle } = lodash;
  * 加载指定 friendCode 的 CookieJar
  * @deprecated 使用 cookieStore.get() 替代
  */
-export async function loadCookie(friendCode: string): Promise<CookieJar | undefined> {
+export async function loadCookie(
+  friendCode: string,
+): Promise<CookieJar | undefined> {
   return cookieStore.get(friendCode);
 }
 
@@ -25,7 +30,10 @@ export async function loadCookie(friendCode: string): Promise<CookieJar | undefi
  * 保存 CookieJar
  * @deprecated 使用 cookieStore.set() 替代
  */
-export async function saveCookie(cj: CookieJar, friendCode: string): Promise<void> {
+export async function saveCookie(
+  cj: CookieJar,
+  friendCode: string,
+): Promise<void> {
   cookieStore.set(friendCode, cj);
 }
 
@@ -41,18 +49,22 @@ export function getCookieValue(cj: CookieJar): MaimaiCookieValues {
  * 测试 Cookie 是否已过期
  * 使用节流避免频繁请求
  */
-export const testCookieExpired = throttle(async (cj: CookieJar): Promise<boolean> => {
-  try {
-    const client = new MaimaiHttpClient(cj);
-    const result = await client.fetch(
-      "https://maimai.wahlap.com/maimai-mobile/home/",
-      { headers: DEFAULT_HEADERS },
-      undefined,
-      true
-    );
-    const body = await result.text();
-    return body.indexOf("登录失败") !== -1;
-  } catch (err) {
-    return true;
-  }
-}, 5000);
+export const testCookieExpired = throttle(
+  async (cj: CookieJar): Promise<boolean> => {
+    try {
+      const client = new MaimaiHttpClient(cj);
+      await client.fetch(
+        "https://maimai.wahlap.com/maimai-mobile/home/",
+        { headers: DEFAULT_HEADERS },
+        undefined,
+      );
+      return false;
+    } catch (err) {
+      if (err instanceof CookieExpiredError) {
+        return true;
+      }
+      throw err;
+    }
+  },
+  5000,
+);

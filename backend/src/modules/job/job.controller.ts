@@ -7,12 +7,19 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 
+import { AuthGuard } from '../auth/auth.guard';
 import { JobService } from './job.service';
 import type { JobPatchBody } from './job.types';
+
+type AuthedRequest = Request & {
+  user?: { friendCode?: string; sub?: string };
+};
 
 @Controller('job')
 export class JobController {
@@ -42,6 +49,20 @@ export class JobController {
   @Get('stats/recent')
   async getRecentStats() {
     return this.jobs.getRecentStats();
+  }
+
+  @Get('by-friend-code/:friendCode/active')
+  @UseGuards(AuthGuard)
+  async getActiveByFriendCode(
+    @Param('friendCode') friendCode: string,
+    @Req() req: AuthedRequest,
+  ) {
+    // 只能查询自己的任务
+    if (req.user?.friendCode !== friendCode) {
+      throw new BadRequestException('Cannot access jobs for other users');
+    }
+    const job = await this.jobs.getActiveByFriendCode(friendCode);
+    return { job };
   }
 
   @Get('active/:botUserFriendCode')

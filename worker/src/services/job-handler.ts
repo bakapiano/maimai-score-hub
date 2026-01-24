@@ -9,12 +9,12 @@ import type {
   JobPatch,
   SentFriendRequest,
 } from "../types/index.ts";
+import { CookieExpiredError, MaimaiHttpClient } from "./maimai-client.ts";
 import { DIFFICULTIES, TIMEOUTS } from "../constants.ts";
 import { dirname, join } from "node:path";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
 import { FriendManager } from "./friend-manager.ts";
-import { MaimaiHttpClient } from "./maimai-client.ts";
 import { ScoreAggregator } from "./score-aggregator.ts";
 import { randomUUID } from "node:crypto";
 import { updateJob } from "../job-service-client.ts";
@@ -83,6 +83,14 @@ export class JobHandler {
           break;
       }
     } catch (e: unknown) {
+      // CookieExpiredError 不标记为 failed，让任务可以重试
+      if (e instanceof CookieExpiredError) {
+        console.warn(
+          `[JobHandler] Job ${this.job.id}: Cookie expired, will retry later`,
+        );
+        return;
+      }
+
       const error = e as Error;
       console.error(`[JobHandler] Job ${this.job.id} failed:`, error);
       await this.applyPatch({
