@@ -1,4 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+
 import type { HydratedDocument } from 'mongoose';
 
 /**
@@ -27,8 +28,8 @@ export type JobTempCacheDocument = HydratedDocument<JobTempCacheEntity>;
 export const JobTempCacheSchema =
   SchemaFactory.createForClass(JobTempCacheEntity);
 
-// 设置 12 小时 TTL 索引，自动清理过期数据
-JobTempCacheSchema.index({ createdAt: 1 }, { expireAfterSeconds: 12 * 60 * 60 });
+// 设置 1 小时 TTL 索引，自动清理过期数据
+JobTempCacheSchema.index({ createdAt: 1 }, { expireAfterSeconds: 1 * 60 * 60 });
 
 // 创建复合索引以支持快速查询
 JobTempCacheSchema.index({ jobId: 1, diff: 1, type: 1 }, { unique: true });
