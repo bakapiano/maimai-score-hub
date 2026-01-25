@@ -13,3 +13,7 @@
 - [] add "https://dxrating.net/search" as source
 - [] Support for internal ver?
 - [] https://userjot.com/ - track user feedback
+- [] 加一个 dev 环境用的 bot
+- [] proxy 登陆用前端独立出来（proxy 项目独立出来）
+- [] worker log 后台监控
+- [] job cancel

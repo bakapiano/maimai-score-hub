@@ -7,10 +7,6 @@ on:
       - "worker/**"
   workflow_dispatch:
 
-concurrency:
-  group: deploy-worker-${{ matrix.instance }}
-  cancel-in-progress: false
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -19,6 +15,9 @@ jobs:
         instance: [1, 2] # 添加更多实例编号
       fail-fast: false # 一个失败不影响其他部署
       max-parallel: 3 # 同时部署的最大数量
+    concurrency:
+      group: deploy-worker-${{ matrix.instance }}
+      cancel-in-progress: false
     steps:
       - name: Deploy to Worker Instance ${{ matrix.instance }}
         uses: appleboy/ssh-action@v1.0.3
