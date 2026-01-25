@@ -89,7 +89,8 @@ async function handleHttpRequest(
     console.log("[Proxy] Client socket error: " + e);
   });
 
-  const reqUrl = url.parse(clientReq.url || "");
+  const requestUrl = clientReq.url || "";
+  const reqUrl = url.parse(requestUrl);
 
   // if (!checkHostInWhiteList(reqUrl.host ?? null)) {
   //   try {
@@ -102,7 +103,7 @@ async function handleHttpRequest(
   // }
 
   // 拦截 http://example.com 请求用于测试代理配置
-  if (reqUrl.href && reqUrl.href.startsWith("http://example.com")) {
+  if (requestUrl.startsWith("http://example.com")) {
     try {
       console.log("[Proxy] Intercepted test request to example.com");
 
@@ -139,13 +140,12 @@ async function handleHttpRequest(
 
   // 拦截 OAuth 回调
   if (
-    reqUrl.href &&
-    reqUrl.href.startsWith(
+    requestUrl.startsWith(
       "http://tgk-wcaime.wahlap.com/wc_auth/oauth/callback",
     )
   ) {
     try {
-      const redirectResult = await onAuthHook(reqUrl.href);
+      const redirectResult = await onAuthHook(requestUrl);
       clientRes.writeHead(302, { location: redirectResult });
       clientRes.end();
     } catch (err) {
