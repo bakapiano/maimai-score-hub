@@ -28,18 +28,69 @@ jobs:
             git fetch --all
             git checkout main
             git pull
+
+            # Build new image
             if command -v docker-compose >/dev/null 2>&1; then
-              sudo docker-compose -f backend/docker-compose.yml up -d --build || exit 1
+              COMPOSE_CMD="docker-compose"
             else
-              sudo docker compose -f backend/docker-compose.yml up -d --build || exit 1
+              COMPOSE_CMD="docker compose"
             fi
+
+            cd backend
+            sudo $COMPOSE_CMD build
+
+            # Clean up any unhealthy containers from previous failed deployments
+            echo "Cleaning up unhealthy containers..."
+            UNHEALTHY_IDS=$(sudo $COMPOSE_CMD ps -q --filter "health=unhealthy" backend || true)
+            if [ -n "$UNHEALTHY_IDS" ]; then
+              echo "Found unhealthy containers, removing them..."
+              echo "$UNHEALTHY_IDS" | xargs -r sudo docker rm -f
+            fi
+
+            # Rolling update with zero downtime
+            sudo $COMPOSE_CMD up -d --no-deps --scale backend=2 backend
+            echo "Waiting for new containers to be healthy..."
+            sleep 30
+
+            # Check container health status
+            echo "Checking container health status..."
+            UNHEALTHY_COUNT=$(sudo $COMPOSE_CMD ps backend | grep -c "unhealthy" || true)
+            STARTING_COUNT=$(sudo $COMPOSE_CMD ps backend | grep -c "starting" || true)
+
+            if [ "$UNHEALTHY_COUNT" -gt 0 ]; then
+              echo "❌ Deployment failed: $UNHEALTHY_COUNT unhealthy container(s) detected"
+              echo "Container logs:"
+              sudo $COMPOSE_CMD logs --tail=100 backend
+              echo "Rolling back to previous version..."
+              sudo $COMPOSE_CMD ps backend
+              exit 1
+            fi
+
+            if [ "$STARTING_COUNT" -gt 0 ]; then
+              echo "⚠️ Warning: $STARTING_COUNT container(s) still starting, waiting longer..."
+              sleep 20
+              UNHEALTHY_COUNT=$(sudo $COMPOSE_CMD ps backend | grep -c "unhealthy" || true)
+              if [ "$UNHEALTHY_COUNT" -gt 0 ]; then
+                echo "❌ Deployment failed after extended wait"
+                sudo $COMPOSE_CMD logs --tail=100 backend
+                exit 1
+              fi
+            fi
+
+            # Remove old containers
+            sudo $COMPOSE_CMD up -d --no-deps --scale backend=2 --remove-orphans backend
+
+            # Final health check via Nginx
+            echo "Running final health check via Nginx..."
             for i in 1 2 3 4 5; do
               if curl -fsS http://localhost:8080/api/health; then
-                echo "Health check passed"
+                echo "✅ Deployment successful - all health checks passed"
+                sudo $COMPOSE_CMD ps backend
                 exit 0
               fi
               echo "Attempt $i failed, retrying in 5 seconds..."
               sleep 5
             done
-            echo "Health check failed after 5 attempts"
+            echo "❌ Final health check failed after 5 attempts"
+            sudo $COMPOSE_CMD logs --tail=100 backend
             exit 1

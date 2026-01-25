@@ -13,8 +13,21 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
     depends_on:
-      - mongo
+      mongo:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9050/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     environment:
       PORT: ${PORT:-9050}
       MONGO_HOST: mongo
