@@ -86,7 +86,7 @@ export default function LoginPage() {
   const [jobPickedAt, setJobPickedAt] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
 
-  const totalWaitSeconds = 3 * 60;
+  const totalWaitSeconds = 5 * 60;
   const remainingPercent = Math.min(
     100,
     Math.max(0, (timeLeft / totalWaitSeconds) * 100),
