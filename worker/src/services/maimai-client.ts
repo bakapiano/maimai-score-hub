@@ -103,9 +103,9 @@ export class MaimaiHttpClient {
     url: string,
     options: FetchOptions = {},
     timeout?: number,
+    retryCount: number = RETRY.defaultCount,
   ): Promise<Response> {
     const fetchWithCookie = makeFetchCookie(global.fetch, this.cookieJar);
-    const retryCount = RETRY.defaultCount;
     const fetchTimeout = timeout ?? config.fetchTimeOut ?? TIMEOUTS.default;
 
     for (let i = 0; i < retryCount; i++) {
@@ -385,6 +385,7 @@ export class MaimaiHttpClient {
       url,
       { headers: DEFAULT_HEADERS },
       TIMEOUTS.friendVS,
+      RETRY.friendVSCount,
     );
     const text = await result.text();
     const cost = Date.now() - startTime;

@@ -88,7 +88,9 @@ export const TIMEOUTS = {
 
 export const RETRY = {
   /** 默认重试次数 */
-  defaultCount: 10,
+  defaultCount: 3,
+  /** Friend VS 重试次数 */
+  friendVSCount: 10,
   /** 基础重试间隔 (ms)，实际间隔为 min(baseDelayMs * 2^attempt, maxDelayMs) + jitter */
   baseDelayMs: 1000,
   /** 最大重试间隔 (ms) */
