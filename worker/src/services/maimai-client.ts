@@ -105,7 +105,7 @@ export class MaimaiHttpClient {
     timeout?: number,
   ): Promise<Response> {
     const fetchWithCookie = makeFetchCookie(global.fetch, this.cookieJar);
-    const retryCount = config.fetchRetryCount ?? RETRY.defaultCount;
+    const retryCount = RETRY.defaultCount;
     const fetchTimeout = timeout ?? config.fetchTimeOut ?? TIMEOUTS.default;
 
     for (let i = 0; i < retryCount; i++) {
@@ -157,7 +157,10 @@ export class MaimaiHttpClient {
           throw e;
         }
 
-        const baseDelay = RETRY.baseDelayMs * Math.pow(2, i);
+        const baseDelay = Math.min(
+          RETRY.baseDelayMs * Math.pow(2, i),
+          RETRY.maxDelayMs,
+        );
         const jitter = Math.random() * baseDelay * 0.5;
         const delay = Math.round(baseDelay + jitter);
         console.log(
