@@ -1,4 +1,4 @@
-import { Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
@@ -19,8 +19,11 @@ export class AdminController {
   }
 
   @Get('job-trend')
-  async getJobTrend() {
-    return await this.adminService.getJobTrend();
+  async getJobTrend(@Query('hours') hoursStr?: string) {
+    const hours = hoursStr
+      ? Math.min(Math.max(parseInt(hoursStr, 10) || 24, 1), 720)
+      : 24;
+    return await this.adminService.getJobTrend(hours);
   }
 
   @Get('job-error-stats')

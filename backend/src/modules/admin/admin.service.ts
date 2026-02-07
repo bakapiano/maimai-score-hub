@@ -269,38 +269,72 @@ export class AdminService {
     };
   }
 
-  async getJobTrend(): Promise<JobTrend> {
+  async getJobTrend(hours = 24): Promise<JobTrend> {
     const now = new Date();
-    const hours24Ago = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const startTime = new Date(now.getTime() - hours * 60 * 60 * 1000);
 
-    // 生成过去 24 小时的每个小时时间点
-    const hourPoints: Date[] = [];
-    for (let i = 23; i >= 0; i--) {
-      const hour = new Date(now);
-      hour.setMinutes(0, 0, 0);
-      hour.setHours(hour.getHours() - i);
-      hourPoints.push(hour);
+    // 根据时间范围决定粒度
+    // <=48h → 每小时, <=168h(7天) → 每6小时, >168h → 每天
+    let granularityHours: number;
+    if (hours <= 48) {
+      granularityHours = 1;
+    } else if (hours <= 168) {
+      granularityHours = 6;
+    } else {
+      granularityHours = 24;
     }
+    const granularityMs = granularityHours * 60 * 60 * 1000;
+
+    // 生成时间点
+    const timePoints: Date[] = [];
+    const firstPoint = new Date(
+      Math.floor(startTime.getTime() / granularityMs) * granularityMs,
+    );
+    for (let t = firstPoint.getTime(); t <= now.getTime(); t += granularityMs) {
+      timePoints.push(new Date(t));
+    }
+
+    // 构建 MongoDB $group 的 _id 字段
+    const buildGroupId = () => {
+      if (granularityHours < 24) {
+        return {
+          year: { $year: '$createdAt' },
+          month: { $month: '$createdAt' },
+          day: { $dayOfMonth: '$createdAt' },
+          bucket: {
+            $multiply: [
+              {
+                $floor: {
+                  $divide: [{ $hour: '$createdAt' }, granularityHours],
+                },
+              },
+              granularityHours,
+            ],
+          },
+        };
+      }
+      // 按天分组
+      return {
+        year: { $year: '$createdAt' },
+        month: { $month: '$createdAt' },
+        day: { $dayOfMonth: '$createdAt' },
+        bucket: { $literal: 0 },
+      };
+    };
 
     const buildTrendForType = async (
       skipUpdateScore: boolean,
     ): Promise<JobTrendPoint[]> => {
-      // 使用 MongoDB 聚合按小时分组
       const pipeline = [
         {
           $match: {
             skipUpdateScore,
-            createdAt: { $gte: hours24Ago },
+            createdAt: { $gte: startTime },
           },
         },
         {
           $group: {
-            _id: {
-              year: { $year: '$createdAt' },
-              month: { $month: '$createdAt' },
-              day: { $dayOfMonth: '$createdAt' },
-              hour: { $hour: '$createdAt' },
-            },
+            _id: buildGroupId(),
             totalCount: { $sum: 1 },
             completedCount: {
               $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] },
@@ -326,31 +360,40 @@ export class AdminService {
           },
         },
         {
-          $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1, '_id.hour': 1 },
+          $sort: {
+            '_id.year': 1,
+            '_id.month': 1,
+            '_id.day': 1,
+            '_id.bucket': 1,
+          },
         },
       ];
 
       const results = await this.jobModel.aggregate<{
-        _id: { year: number; month: number; day: number; hour: number };
+        _id: { year: number; month: number; day: number; bucket: number };
         totalCount: number;
         completedCount: number;
         failedCount: number;
         avgDuration: number | null;
       }>(pipeline as never);
 
-      // 将结果映射到每个小时点
+      // 将结果映射到时间点
       const resultMap = new Map<string, (typeof results)[0]>();
       for (const r of results) {
-        const key = `${r._id.year}-${r._id.month}-${r._id.day}-${r._id.hour}`;
+        const key = `${r._id.year}-${r._id.month}-${r._id.day}-${r._id.bucket}`;
         resultMap.set(key, r);
       }
 
-      return hourPoints.map((hour) => {
-        const key = `${hour.getFullYear()}-${hour.getMonth() + 1}-${hour.getDate()}-${hour.getHours()}`;
+      return timePoints.map((tp) => {
+        const bucket =
+          granularityHours < 24
+            ? Math.floor(tp.getUTCHours() / granularityHours) * granularityHours
+            : 0;
+        const key = `${tp.getUTCFullYear()}-${tp.getUTCMonth() + 1}-${tp.getUTCDate()}-${bucket}`;
         const data = resultMap.get(key);
 
         return {
-          hour: hour.toISOString(),
+          hour: tp.toISOString(),
           totalCount: data?.totalCount ?? 0,
           completedCount: data?.completedCount ?? 0,
           failedCount: data?.failedCount ?? 0,

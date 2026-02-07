@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Worker (Dev)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/worker",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--enable-source-maps",
+        "--experimental-strip-types",
+        "src/index.ts"
+      ],
+      "env": {
+        "NODE_ENV": "dev",
+        "DUMP_FRIEND_VS_HTML": "1"
+      },
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import {
   Group,
   Pagination,
   PasswordInput,
+  SegmentedControl,
   Stack,
   Switch,
   Table,
@@ -182,6 +183,7 @@ export default function AdminPage() {
 
   const [jobTrend, setJobTrend] = useState<JobTrend | null>(null);
   const [jobTrendLoading, setJobTrendLoading] = useState(false);
+  const [trendHours, setTrendHours] = useState("24");
 
   const [jobErrorStats, setJobErrorStats] = useState<JobErrorStats[] | null>(
     null,
@@ -263,15 +265,22 @@ export default function AdminPage() {
     }
   }, [password]);
 
-  const loadJobTrend = useCallback(async () => {
-    if (!password) return;
-    setJobTrendLoading(true);
-    const res = await adminFetch<JobTrend>("/api/admin/job-trend", password);
-    setJobTrendLoading(false);
-    if (res.ok) {
-      setJobTrend(res.data ?? null);
-    }
-  }, [password]);
+  const loadJobTrend = useCallback(
+    async (hours?: string) => {
+      if (!password) return;
+      setJobTrendLoading(true);
+      const h = hours ?? trendHours;
+      const res = await adminFetch<JobTrend>(
+        `/api/admin/job-trend?hours=${h}`,
+        password,
+      );
+      setJobTrendLoading(false);
+      if (res.ok) {
+        setJobTrend(res.data ?? null);
+      }
+    },
+    [password, trendHours],
+  );
 
   const loadJobErrorStats = useCallback(async () => {
     if (!password) return;
@@ -883,25 +892,68 @@ export default function AdminPage() {
                 <Tabs.Panel value="charts" pt="md">
                   {jobTrend ? (
                     <Stack gap="lg">
+                      <Group justify="space-between" align="center">
+                        <Text size="sm" fw={500}>
+                          时间范围
+                        </Text>
+                        <SegmentedControl
+                          size="xs"
+                          value={trendHours}
+                          onChange={(val) => {
+                            setTrendHours(val);
+                            void loadJobTrend(val);
+                          }}
+                          data={[
+                            { label: "24小时", value: "24" },
+                            { label: "48小时", value: "48" },
+                            { label: "7天", value: "168" },
+                            { label: "30天", value: "720" },
+                          ]}
+                        />
+                      </Group>
                       <div>
                         <Text size="sm" fw={500} mb="xs">
-                          过去 24 小时任务数量走势
+                          过去{" "}
+                          {trendHours === "24"
+                            ? "24 小时"
+                            : trendHours === "48"
+                              ? "48 小时"
+                              : trendHours === "168"
+                                ? "7 天"
+                                : "30 天"}{" "}
+                          包含分数更新任务走势
                         </Text>
                         <ResponsiveContainer width="100%" height={280}>
                           <BarChart
-                            data={jobTrend.withUpdateScore.map((row, idx) => ({
-                              hour: new Date(row.hour).toLocaleTimeString(
-                                "zh-CN",
-                                { hour: "2-digit", minute: "2-digit" },
-                              ),
-                              "包含更新-成功": row.completedCount,
-                              "包含更新-失败": row.failedCount,
-                              "跳过更新-成功":
-                                jobTrend.skipUpdateScore[idx]?.completedCount ??
-                                0,
-                              "跳过更新-失败":
-                                jobTrend.skipUpdateScore[idx]?.failedCount ?? 0,
-                            }))}
+                            data={jobTrend.withUpdateScore.map((row) => {
+                              const d = new Date(row.hour);
+                              const h = Number(trendHours);
+                              const label =
+                                h > 168
+                                  ? d.toLocaleDateString("zh-CN", {
+                                      month: "2-digit",
+                                      day: "2-digit",
+                                    })
+                                  : h > 48
+                                    ? d.toLocaleDateString("zh-CN", {
+                                        month: "2-digit",
+                                        day: "2-digit",
+                                      }) +
+                                      " " +
+                                      d.toLocaleTimeString("zh-CN", {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })
+                                    : d.toLocaleTimeString("zh-CN", {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      });
+                              return {
+                                hour: label,
+                                成功: row.completedCount,
+                                失败: row.failedCount,
+                              };
+                            })}
                           >
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis
@@ -912,46 +964,118 @@ export default function AdminPage() {
                             <YAxis allowDecimals={false} />
                             <Tooltip />
                             <Legend />
-                            <Bar
-                              dataKey="包含更新-成功"
-                              stackId="a"
-                              fill="#12b886"
-                            />
-                            <Bar
-                              dataKey="包含更新-失败"
-                              stackId="a"
-                              fill="#fa5252"
-                            />
-                            <Bar
-                              dataKey="跳过更新-成功"
-                              stackId="b"
-                              fill="#15aabf"
-                            />
-                            <Bar
-                              dataKey="跳过更新-失败"
-                              stackId="b"
-                              fill="#fd7e14"
-                            />
+                            <Bar dataKey="成功" stackId="a" fill="#12b886" />
+                            <Bar dataKey="失败" stackId="a" fill="#fa5252" />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
 
                       <div>
                         <Text size="sm" fw={500} mb="xs">
-                          过去 24 小时更新分数耗时走势 (秒)
+                          过去{" "}
+                          {trendHours === "24"
+                            ? "24 小时"
+                            : trendHours === "48"
+                              ? "48 小时"
+                              : trendHours === "168"
+                                ? "7 天"
+                                : "30 天"}{" "}
+                          跳过分数更新任务走势
+                        </Text>
+                        <ResponsiveContainer width="100%" height={280}>
+                          <BarChart
+                            data={jobTrend.skipUpdateScore.map((row) => {
+                              const d = new Date(row.hour);
+                              const h = Number(trendHours);
+                              const label =
+                                h > 168
+                                  ? d.toLocaleDateString("zh-CN", {
+                                      month: "2-digit",
+                                      day: "2-digit",
+                                    })
+                                  : h > 48
+                                    ? d.toLocaleDateString("zh-CN", {
+                                        month: "2-digit",
+                                        day: "2-digit",
+                                      }) +
+                                      " " +
+                                      d.toLocaleTimeString("zh-CN", {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })
+                                    : d.toLocaleTimeString("zh-CN", {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      });
+                              return {
+                                hour: label,
+                                成功: row.completedCount,
+                                失败: row.failedCount,
+                              };
+                            })}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis
+                              dataKey="hour"
+                              tick={{ fontSize: 11 }}
+                              interval="preserveStartEnd"
+                            />
+                            <YAxis allowDecimals={false} />
+                            <Tooltip />
+                            <Legend />
+                            <Bar dataKey="成功" stackId="a" fill="#15aabf" />
+                            <Bar dataKey="失败" stackId="a" fill="#fd7e14" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      <div>
+                        <Text size="sm" fw={500} mb="xs">
+                          过去{" "}
+                          {trendHours === "24"
+                            ? "24 小时"
+                            : trendHours === "48"
+                              ? "48 小时"
+                              : trendHours === "168"
+                                ? "7 天"
+                                : "30 天"}{" "}
+                          更新分数耗时走势 (秒)
                         </Text>
                         <ResponsiveContainer width="100%" height={280}>
                           <LineChart
-                            data={jobTrend.withUpdateScore.map((row) => ({
-                              hour: new Date(row.hour).toLocaleTimeString(
-                                "zh-CN",
-                                { hour: "2-digit", minute: "2-digit" },
-                              ),
-                              平均耗时:
-                                row.avgDuration != null
-                                  ? Number((row.avgDuration / 1000).toFixed(1))
-                                  : null,
-                            }))}
+                            data={jobTrend.withUpdateScore.map((row) => {
+                              const d = new Date(row.hour);
+                              const h = Number(trendHours);
+                              const label =
+                                h > 168
+                                  ? d.toLocaleDateString("zh-CN", {
+                                      month: "2-digit",
+                                      day: "2-digit",
+                                    })
+                                  : h > 48
+                                    ? d.toLocaleDateString("zh-CN", {
+                                        month: "2-digit",
+                                        day: "2-digit",
+                                      }) +
+                                      " " +
+                                      d.toLocaleTimeString("zh-CN", {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })
+                                    : d.toLocaleTimeString("zh-CN", {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      });
+                              return {
+                                hour: label,
+                                平均耗时:
+                                  row.avgDuration != null
+                                    ? Number(
+                                        (row.avgDuration / 1000).toFixed(1),
+                                      )
+                                    : null,
+                              };
+                            })}
                           >
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis

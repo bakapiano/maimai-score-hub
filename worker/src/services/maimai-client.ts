@@ -120,8 +120,8 @@ export class MaimaiHttpClient {
         const body = await clone.text();
 
         const isCookieExpireBody =
-          (body.includes(COOKIE_EXPIRE_MARKERS.line1) &&
-            body.includes(COOKIE_EXPIRE_MARKERS.line2)) ||
+          body.includes(COOKIE_EXPIRE_MARKERS.line1) ||
+          body.includes(COOKIE_EXPIRE_MARKERS.line2) ||
           body.includes(COOKIE_EXPIRE_MARKERS.errorCode100001) ||
           body.includes(COOKIE_EXPIRE_MARKERS.errorCode200002);
 
