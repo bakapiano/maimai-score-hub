@@ -88,9 +88,9 @@ export const TIMEOUTS = {
 
 export const RETRY = {
   /** 默认重试次数 */
-  defaultCount: 3,
-  /** 重试间隔 (ms) */
-  delayMs: 1000,
+  defaultCount: 5,
+  /** 基础重试间隔 (ms)，实际间隔为 baseDelayMs * 2^attempt */
+  baseDelayMs: 1000,
 } as const;
 
 // ============================================================================

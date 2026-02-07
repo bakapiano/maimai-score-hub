@@ -143,7 +143,9 @@ export class MaimaiHttpClient {
           throw e;
         }
 
-        await sleep(RETRY.delayMs);
+        const delay = RETRY.baseDelayMs * Math.pow(2, i);
+        console.log(`Retrying in ${delay}ms...`);
+        await sleep(delay);
       }
     }
 
