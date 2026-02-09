@@ -15,16 +15,13 @@ export interface ApiLogEntry {
 /** 每个 job 维护一个待上报的日志缓冲区 */
 const logBuffers = new Map<string, ApiLogEntry[]>();
 
-/** Response body 最大截断长度 */
-const MAX_BODY_LENGTH = 4096;
+/** Response body 最大截断长度 (1 MB，确保 HTML 页面不被截断) */
+const MAX_BODY_LENGTH = 1024 * 1024;
 
 /**
  * 记录一条 API 调用日志
  */
-export function recordApiLog(
-  jobId: string,
-  entry: ApiLogEntry,
-): void {
+export function recordApiLog(jobId: string, entry: ApiLogEntry): void {
   let buffer = logBuffers.get(jobId);
   if (!buffer) {
     buffer = [];
@@ -62,10 +59,7 @@ export async function flushApiLogs(jobId: string): Promise<void> {
       );
     }
   } catch (err) {
-    console.warn(
-      `[ApiLogClient] Error flushing logs for job ${jobId}:`,
-      err,
-    );
+    console.warn(`[ApiLogClient] Error flushing logs for job ${jobId}:`, err);
   }
 }
 

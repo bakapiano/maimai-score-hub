@@ -203,7 +203,10 @@ export class AdminService {
       startTime: Date | null,
       skipUpdateScore: boolean,
     ) => {
-      const filter: Record<string, unknown> = { skipUpdateScore };
+      const filter: Record<string, unknown> = {
+        skipUpdateScore,
+        status: { $in: ['completed', 'failed'] },
+      };
       if (startTime) {
         filter.createdAt = { $gte: startTime };
       }
@@ -487,8 +490,14 @@ export class AdminService {
   async searchJobs(params: {
     friendCode?: string;
     status?: string;
-    limit: number;
-  }): Promise<SearchJobResult[]> {
+    page: number;
+    pageSize: number;
+  }): Promise<{
+    data: SearchJobResult[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
     const filter: Record<string, unknown> = {};
 
     if (params.friendCode) {
@@ -506,26 +515,37 @@ export class AdminService {
       filter.status = params.status;
     }
 
-    const jobs = await this.jobModel
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .limit(params.limit)
-      .lean();
+    const skip = (params.page - 1) * params.pageSize;
 
-    return jobs.map((job) => ({
-      id: job.id,
-      friendCode: job.friendCode,
-      skipUpdateScore: job.skipUpdateScore,
-      botUserFriendCode: job.botUserFriendCode ?? null,
-      status: job.status,
-      stage: job.stage,
-      error: job.error ?? null,
-      executing: job.executing,
-      scoreProgress: job.scoreProgress ?? null,
-      updateScoreDuration: job.updateScoreDuration ?? null,
-      createdAt: job.createdAt.toISOString(),
-      updatedAt: job.updatedAt.toISOString(),
-      pickedAt: job.pickedAt?.toISOString() ?? null,
-    }));
+    const [jobs, total] = await Promise.all([
+      this.jobModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(params.pageSize)
+        .lean(),
+      this.jobModel.countDocuments(filter),
+    ]);
+
+    return {
+      data: jobs.map((job) => ({
+        id: job.id,
+        friendCode: job.friendCode,
+        skipUpdateScore: job.skipUpdateScore,
+        botUserFriendCode: job.botUserFriendCode ?? null,
+        status: job.status,
+        stage: job.stage,
+        error: job.error ?? null,
+        executing: job.executing,
+        scoreProgress: job.scoreProgress ?? null,
+        updateScoreDuration: job.updateScoreDuration ?? null,
+        createdAt: job.createdAt.toISOString(),
+        updatedAt: job.updatedAt.toISOString(),
+        pickedAt: job.pickedAt?.toISOString() ?? null,
+      })),
+      total,
+      page: params.page,
+      pageSize: params.pageSize,
+    };
   }
 }

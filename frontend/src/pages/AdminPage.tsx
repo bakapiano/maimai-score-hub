@@ -1,10 +1,13 @@
 import {
+  ActionIcon,
   Badge,
   Button,
   Card,
   Code,
   Container,
   Group,
+  Tooltip as MantineTooltip,
+  Modal,
   Pagination,
   PasswordInput,
   ScrollArea,
@@ -35,7 +38,10 @@ import {
   IconBug,
   IconChartBar,
   IconClock,
+  IconCode,
   IconDatabase,
+  IconExternalLink,
+  IconEye,
   IconMusic,
   IconPhoto,
   IconRefresh,
@@ -257,11 +263,18 @@ export default function AdminPage() {
   const [debugStatus, setDebugStatus] = useState<string | null>(null);
   const [debugJobs, setDebugJobs] = useState<SearchJobResult[]>([]);
   const [debugJobsLoading, setDebugJobsLoading] = useState(false);
+  const [debugJobsPage, setDebugJobsPage] = useState(1);
+  const [debugJobsTotal, setDebugJobsTotal] = useState(0);
   const [debugSelectedJobId, setDebugSelectedJobId] = useState<string | null>(
     null,
   );
   const [debugApiLogs, setDebugApiLogs] = useState<ApiLogEntry[]>([]);
   const [debugApiLogsLoading, setDebugApiLogsLoading] = useState(false);
+  const [responseViewerOpen, setResponseViewerOpen] = useState(false);
+  const [responseViewerContent, setResponseViewerContent] = useState("");
+  const [responseViewerRenderHtml, setResponseViewerRenderHtml] =
+    useState(true);
+  const [responseViewerUrl, setResponseViewerUrl] = useState("");
 
   const paginatedUsers = useMemo(() => {
     const start = (userPage - 1) * usersPerPage;
@@ -461,26 +474,34 @@ export default function AdminPage() {
     }
   }, [password]);
 
-  const searchDebugJobs = useCallback(async () => {
-    if (!password) return;
-    setDebugJobsLoading(true);
-    const params = new URLSearchParams();
-    if (debugFriendCode.trim()) {
-      params.set("friendCode", debugFriendCode.trim());
-    }
-    if (debugStatus) {
-      params.set("status", debugStatus);
-    }
-    params.set("limit", "50");
-    const res = await adminFetch<SearchJobResult[]>(
-      `/api/admin/jobs?${params.toString()}`,
-      password,
-    );
-    setDebugJobsLoading(false);
-    if (res.ok && res.data) {
-      setDebugJobs(res.data);
-    }
-  }, [password, debugFriendCode, debugStatus]);
+  const searchDebugJobs = useCallback(
+    async (page = 1) => {
+      if (!password) return;
+      setDebugJobsLoading(true);
+      const params = new URLSearchParams();
+      if (debugFriendCode.trim()) {
+        params.set("friendCode", debugFriendCode.trim());
+      }
+      if (debugStatus) {
+        params.set("status", debugStatus);
+      }
+      params.set("page", String(page));
+      params.set("pageSize", "10");
+      const res = await adminFetch<{
+        data: SearchJobResult[];
+        total: number;
+        page: number;
+        pageSize: number;
+      }>(`/api/admin/jobs?${params.toString()}`, password);
+      setDebugJobsLoading(false);
+      if (res.ok && res.data) {
+        setDebugJobs(res.data.data);
+        setDebugJobsTotal(res.data.total);
+        setDebugJobsPage(res.data.page);
+      }
+    },
+    [password, debugFriendCode, debugStatus],
+  );
 
   const loadDebugApiLogs = useCallback(
     async (jobId: string) => {
@@ -1350,7 +1371,7 @@ export default function AdminPage() {
               <Button
                 variant="light"
                 size="sm"
-                onClick={searchDebugJobs}
+                onClick={() => searchDebugJobs(1)}
                 loading={debugJobsLoading}
               >
                 搜索
@@ -1358,98 +1379,111 @@ export default function AdminPage() {
             </Group>
 
             {debugJobs.length > 0 && (
-              <Table striped highlightOnHover withTableBorder>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>好友码</Table.Th>
-                    <Table.Th>状态</Table.Th>
-                    <Table.Th>阶段</Table.Th>
-                    <Table.Th>Bot</Table.Th>
-                    <Table.Th>错误</Table.Th>
-                    <Table.Th>创建时间</Table.Th>
-                    <Table.Th>操作</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {debugJobs.map((job) => (
-                    <Table.Tr
-                      key={job.id}
-                      bg={
-                        debugSelectedJobId === job.id
-                          ? "var(--mantine-color-blue-light)"
-                          : undefined
-                      }
-                    >
-                      <Table.Td>
-                        <Text size="sm" ff="monospace">
-                          {job.friendCode}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Badge
-                          color={
-                            job.status === "completed"
-                              ? "green"
-                              : job.status === "failed"
-                                ? "red"
-                                : job.status === "processing"
-                                  ? "blue"
-                                  : job.status === "canceled"
-                                    ? "gray"
-                                    : "yellow"
-                          }
-                          variant="light"
-                          size="sm"
-                        >
-                          {job.status}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">{job.stage}</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm" ff="monospace" c="dimmed">
-                          {job.botUserFriendCode ?? "-"}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text
-                          size="sm"
-                          c={job.error ? "red" : "dimmed"}
-                          lineClamp={1}
-                          style={{ maxWidth: 200 }}
-                        >
-                          {job.error ?? "-"}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm" c="dimmed">
-                          {new Date(job.createdAt).toLocaleString("zh-CN", {
-                            month: "2-digit",
-                            day: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          })}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Button
-                          variant="subtle"
-                          size="xs"
-                          onClick={() => loadDebugApiLogs(job.id)}
-                          loading={
-                            debugApiLogsLoading &&
-                            debugSelectedJobId === job.id
-                          }
-                        >
-                          调试
-                        </Button>
-                      </Table.Td>
+              <>
+                <Table striped highlightOnHover withTableBorder>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>好友码</Table.Th>
+                      <Table.Th>状态</Table.Th>
+                      <Table.Th>阶段</Table.Th>
+                      <Table.Th>Bot</Table.Th>
+                      <Table.Th>错误</Table.Th>
+                      <Table.Th>创建时间</Table.Th>
+                      <Table.Th>操作</Table.Th>
                     </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {debugJobs.map((job) => (
+                      <Table.Tr
+                        key={job.id}
+                        bg={
+                          debugSelectedJobId === job.id
+                            ? "var(--mantine-color-blue-light)"
+                            : undefined
+                        }
+                      >
+                        <Table.Td>
+                          <Text size="sm" ff="monospace">
+                            {job.friendCode}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Badge
+                            color={
+                              job.status === "completed"
+                                ? "green"
+                                : job.status === "failed"
+                                  ? "red"
+                                  : job.status === "processing"
+                                    ? "blue"
+                                    : job.status === "canceled"
+                                      ? "gray"
+                                      : "yellow"
+                            }
+                            variant="light"
+                            size="sm"
+                          >
+                            {job.status}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="sm">{job.stage}</Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="sm" ff="monospace" c="dimmed">
+                            {job.botUserFriendCode ?? "-"}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text
+                            size="sm"
+                            c={job.error ? "red" : "dimmed"}
+                            lineClamp={1}
+                            style={{ maxWidth: 200 }}
+                          >
+                            {job.error ?? "-"}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="sm" c="dimmed">
+                            {new Date(job.createdAt).toLocaleString("zh-CN", {
+                              month: "2-digit",
+                              day: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                            })}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Button
+                            variant="subtle"
+                            size="xs"
+                            onClick={() => loadDebugApiLogs(job.id)}
+                            loading={
+                              debugApiLogsLoading &&
+                              debugSelectedJobId === job.id
+                            }
+                          >
+                            调试
+                          </Button>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+                <Group justify="space-between" align="center">
+                  <Text size="sm" c="dimmed">
+                    共 {debugJobsTotal} 条记录
+                  </Text>
+                  <Pagination
+                    value={debugJobsPage}
+                    onChange={(p) => searchDebugJobs(p)}
+                    total={Math.ceil(debugJobsTotal / 10)}
+                    size="sm"
+                  />
+                </Group>
+              </>
             )}
 
             {debugSelectedJobId && (
@@ -1529,20 +1563,61 @@ export default function AdminPage() {
                               </Table.Td>
                               <Table.Td>
                                 {log.responseBody ? (
-                                  <Code
-                                    block
-                                    style={{
-                                      maxHeight: 100,
-                                      overflow: "auto",
-                                      maxWidth: 300,
-                                      fontSize: 10,
-                                    }}
-                                  >
-                                    {log.responseBody.slice(0, 500)}
-                                    {log.responseBody.length > 500
-                                      ? "..."
-                                      : ""}
-                                  </Code>
+                                  <Group gap={4} wrap="nowrap">
+                                    <Code
+                                      block
+                                      style={{
+                                        maxHeight: 60,
+                                        overflow: "hidden",
+                                        maxWidth: 200,
+                                        fontSize: 10,
+                                      }}
+                                    >
+                                      {log.responseBody.slice(0, 200)}
+                                      {log.responseBody.length > 200
+                                        ? "..."
+                                        : ""}
+                                    </Code>
+                                    <Stack gap={2}>
+                                      <MantineTooltip label="查看完整响应">
+                                        <ActionIcon
+                                          variant="subtle"
+                                          size="xs"
+                                          onClick={() => {
+                                            setResponseViewerContent(
+                                              log.responseBody ?? "",
+                                            );
+                                            setResponseViewerUrl(log.url);
+                                            setResponseViewerRenderHtml(
+                                              log.responseBody
+                                                ?.trimStart()
+                                                .startsWith("<") ?? false,
+                                            );
+                                            setResponseViewerOpen(true);
+                                          }}
+                                        >
+                                          <IconEye size={14} />
+                                        </ActionIcon>
+                                      </MantineTooltip>
+                                      <MantineTooltip label="新窗口打开">
+                                        <ActionIcon
+                                          variant="subtle"
+                                          size="xs"
+                                          onClick={() => {
+                                            const w = window.open("", "_blank");
+                                            if (w) {
+                                              w.document.write(
+                                                log.responseBody ?? "",
+                                              );
+                                              w.document.close();
+                                            }
+                                          }}
+                                        >
+                                          <IconExternalLink size={14} />
+                                        </ActionIcon>
+                                      </MantineTooltip>
+                                    </Stack>
+                                  </Group>
                                 ) : (
                                   <Text size="xs" c="dimmed">
                                     -
@@ -1568,6 +1643,91 @@ export default function AdminPage() {
                 输入好友码或选择状态后点击搜索
               </Text>
             )}
+
+            <Modal
+              opened={responseViewerOpen}
+              onClose={() => setResponseViewerOpen(false)}
+              title={
+                <Group gap="sm">
+                  <Text fw={600} size="sm">
+                    响应内容
+                  </Text>
+                  <Text size="xs" c="dimmed" ff="monospace" lineClamp={1}>
+                    {responseViewerUrl}
+                  </Text>
+                </Group>
+              }
+              size="90vw"
+              styles={{
+                body: { padding: 0 },
+                header: { padding: "8px 16px" },
+              }}
+            >
+              <Group
+                gap="xs"
+                px="md"
+                py={6}
+                style={{
+                  borderBottom: "1px solid var(--mantine-color-default-border)",
+                }}
+              >
+                <Button
+                  variant={responseViewerRenderHtml ? "filled" : "light"}
+                  size="xs"
+                  leftSection={<IconEye size={14} />}
+                  onClick={() => setResponseViewerRenderHtml(true)}
+                >
+                  渲染 HTML
+                </Button>
+                <Button
+                  variant={!responseViewerRenderHtml ? "filled" : "light"}
+                  size="xs"
+                  leftSection={<IconCode size={14} />}
+                  onClick={() => setResponseViewerRenderHtml(false)}
+                >
+                  源代码
+                </Button>
+                <Button
+                  variant="light"
+                  size="xs"
+                  leftSection={<IconExternalLink size={14} />}
+                  onClick={() => {
+                    const w = window.open("", "_blank");
+                    if (w) {
+                      w.document.write(responseViewerContent);
+                      w.document.close();
+                    }
+                  }}
+                >
+                  新窗口打开
+                </Button>
+              </Group>
+              {responseViewerRenderHtml ? (
+                <iframe
+                  srcDoc={responseViewerContent}
+                  style={{
+                    width: "100%",
+                    height: "75vh",
+                    border: "none",
+                  }}
+                  sandbox="allow-same-origin"
+                  title="Response HTML Preview"
+                />
+              ) : (
+                <ScrollArea h="75vh" p="md">
+                  <Code
+                    block
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-all",
+                      fontSize: 12,
+                    }}
+                  >
+                    {responseViewerContent}
+                  </Code>
+                </ScrollArea>
+              )}
+            </Modal>
           </Stack>
         </Card>
 

@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Param,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
@@ -97,12 +105,19 @@ export class AdminController {
   async searchJobs(
     @Query('friendCode') friendCode?: string,
     @Query('status') status?: string,
-    @Query('limit') limitStr?: string,
+    @Query('page') pageStr?: string,
+    @Query('pageSize') pageSizeStr?: string,
   ) {
-    const limit = limitStr
-      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
-      : 50;
-    return await this.adminService.searchJobs({ friendCode, status, limit });
+    const page = pageStr ? Math.max(parseInt(pageStr, 10) || 1, 1) : 1;
+    const pageSize = pageSizeStr
+      ? Math.min(Math.max(parseInt(pageSizeStr, 10) || 10, 1), 100)
+      : 10;
+    return await this.adminService.searchJobs({
+      friendCode,
+      status,
+      page,
+      pageSize,
+    });
   }
 
   @Get('jobs/:jobId/api-logs')
