@@ -95,12 +95,14 @@ export const RETRY = {
   baseDelayMs: 1000,
   /** 最大重试间隔 (ms) */
   maxDelayMs: 30_000,
-  /** 限流 (567) 最大重试次数 */
+  /** 限流 (567) 默认最大重试次数 */
   rateLimitMaxCount: 5,
+  /** 限流 (567) Friend VS 最大重试次数 */
+  rateLimitFriendVSMaxCount: 10,
   /** 限流重试最小间隔 (ms) */
-  rateLimitMinDelayMs: 3_000,
+  rateLimitMinDelayMs: 5_000,
   /** 限流重试最大间隔 (ms) */
-  rateLimitMaxDelayMs: 15_000,
+  rateLimitMaxDelayMs: 30_000,
 } as const;
 
 // ============================================================================

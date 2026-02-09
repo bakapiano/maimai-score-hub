@@ -107,6 +107,7 @@ export class MaimaiHttpClient {
     options: FetchOptions = {},
     timeout?: number,
     retryCount: number = RETRY.defaultCount,
+    rateLimitMaxCount: number = RETRY.rateLimitMaxCount,
   ): Promise<Response> {
     const fetchWithCookie = makeFetchCookie(global.fetch, this.cookieJar);
     const fetchTimeout = timeout ?? config.fetchTimeOut ?? TIMEOUTS.default;
@@ -145,9 +146,9 @@ export class MaimaiHttpClient {
         if (result.status === 567) {
           rateLimitCount++;
           console.log(
-            `[MaimaiClient] 限流 (567) ${url}, 限流重试 ${rateLimitCount}/${RETRY.rateLimitMaxCount}`,
+            `[MaimaiClient] 限流 (567) ${url}, 限流重试 ${rateLimitCount}/${rateLimitMaxCount}`,
           );
-          if (rateLimitCount >= RETRY.rateLimitMaxCount) {
+          if (rateLimitCount >= rateLimitMaxCount) {
             throw new Error(
               `请求被限流 (HTTP 567)，已重试 ${rateLimitCount} 次仍未成功`,
             );
@@ -439,6 +440,7 @@ export class MaimaiHttpClient {
       { headers: DEFAULT_HEADERS },
       TIMEOUTS.friendVS,
       RETRY.friendVSCount,
+      RETRY.rateLimitFriendVSMaxCount,
     );
     const text = await result.text();
     const cost = Date.now() - startTime;
