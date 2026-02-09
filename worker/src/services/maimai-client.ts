@@ -110,6 +110,7 @@ export class MaimaiHttpClient {
   ): Promise<Response> {
     const fetchWithCookie = makeFetchCookie(global.fetch, this.cookieJar);
     const fetchTimeout = timeout ?? config.fetchTimeOut ?? TIMEOUTS.default;
+    let rateLimitCount = 0;
 
     for (let i = 0; i < retryCount; i++) {
       try {
@@ -133,6 +134,41 @@ export class MaimaiHttpClient {
           isCookieExpireBody
         ) {
           throw new CookieExpiredError();
+        }
+
+        // 401/403 认证错误视为 Cookie 过期
+        if (result.status === 401 || result.status === 403) {
+          throw new CookieExpiredError(`Cookie 已失效 (HTTP ${result.status})`);
+        }
+
+        // 567 限流：单独计算重试次数，不消耗普通重试次数
+        if (result.status === 567) {
+          rateLimitCount++;
+          console.log(
+            `[MaimaiClient] 限流 (567) ${url}, 限流重试 ${rateLimitCount}/${RETRY.rateLimitMaxCount}`,
+          );
+          if (rateLimitCount >= RETRY.rateLimitMaxCount) {
+            throw new Error(
+              `请求被限流 (HTTP 567)，已重试 ${rateLimitCount} 次仍未成功`,
+            );
+          }
+          const delay =
+            RETRY.rateLimitMinDelayMs +
+            Math.random() *
+              (RETRY.rateLimitMaxDelayMs - RETRY.rateLimitMinDelayMs);
+          console.log(
+            `[MaimaiClient] 限流等待 ${Math.round(delay)}ms 后重试...`,
+          );
+          await sleep(delay);
+          i--; // 不消耗普通重试次数
+          continue;
+        }
+
+        // 其他非成功状态码直接抛出错误，附带响应体
+        if (!result.ok) {
+          throw new Error(
+            `请求失败 (HTTP ${result.status}): ${body.slice(0, 500)}`,
+          );
         }
 
         const containerMsg = extractContainerRedMessage(body);
