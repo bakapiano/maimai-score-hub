@@ -16,6 +16,7 @@ import type { Request, Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { JobService } from './job.service';
 import { JobTempCacheService } from './job-temp-cache.service';
+import { JobApiLogService, type ApiLogEntry } from './job-api-log.service';
 import type { JobPatchBody } from './job.types';
 
 type AuthedRequest = Request & {
@@ -27,6 +28,7 @@ export class JobController {
   constructor(
     private readonly jobs: JobService,
     private readonly tempCache: JobTempCacheService,
+    private readonly apiLog: JobApiLogService,
   ) {}
 
   @Post('create')
@@ -152,6 +154,48 @@ export class JobController {
     }
 
     await this.tempCache.set(jobId, diff, type, body.html);
+    return { success: true };
+  }
+
+  /**
+   * Worker 上报 API 调用日志
+   */
+  @Post(':jobId/api-logs')
+  @HttpCode(201)
+  async addApiLogs(
+    @Param('jobId') jobId: string,
+    @Body() body: { logs?: unknown },
+  ) {
+    if (!Array.isArray(body.logs)) {
+      throw new BadRequestException('logs must be an array');
+    }
+
+    const logs: ApiLogEntry[] = [];
+    for (let i = 0; i < body.logs.length; i++) {
+      const entry = body.logs[i];
+      if (
+        typeof entry !== 'object' ||
+        entry === null ||
+        typeof entry.url !== 'string' ||
+        typeof entry.method !== 'string' ||
+        typeof entry.statusCode !== 'number'
+      ) {
+        throw new BadRequestException(
+          `Invalid log entry at index ${i}: url, method (string) and statusCode (number) are required`,
+        );
+      }
+      logs.push({
+        url: entry.url,
+        method: entry.method,
+        statusCode: entry.statusCode,
+        responseBody:
+          typeof entry.responseBody === 'string'
+            ? entry.responseBody
+            : null,
+      });
+    }
+
+    await this.apiLog.saveLogs(jobId, logs);
     return { success: true };
   }
 }

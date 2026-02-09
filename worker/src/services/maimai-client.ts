@@ -30,6 +30,7 @@ import {
 import { CookieJar } from "tough-cookie";
 import config from "../config.ts";
 import makeFetchCookie from "fetch-cookie";
+import { recordApiLog } from "../job-api-log-client.ts";
 
 /**
  * 配置全局 HTTP Keep-Alive Agent
@@ -76,6 +77,8 @@ export function extractContainerRedMessage(body: string): string | null {
  */
 export class MaimaiHttpClient {
   private cookieJar: CookieJar;
+  /** 当前关联的 jobId，用于记录 API 调用日志 */
+  jobId: string | null = null;
 
   constructor(cookieJar: CookieJar) {
     this.cookieJar = cookieJar;
@@ -135,6 +138,20 @@ export class MaimaiHttpClient {
         const containerMsg = extractContainerRedMessage(body);
         if (containerMsg) {
           throw new Error(containerMsg);
+        }
+
+        // 记录 API 调用日志
+        if (this.jobId) {
+          try {
+            recordApiLog(this.jobId, {
+              url,
+              method: options.method ?? "GET",
+              statusCode: result.status,
+              responseBody: body,
+            });
+          } catch {
+            // Best-effort logging; don't impact main request flow
+          }
         }
 
         return result;

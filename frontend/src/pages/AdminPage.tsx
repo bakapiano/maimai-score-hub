@@ -2,16 +2,20 @@ import {
   Badge,
   Button,
   Card,
+  Code,
   Container,
   Group,
   Pagination,
   PasswordInput,
+  ScrollArea,
   SegmentedControl,
+  Select,
   Stack,
   Switch,
   Table,
   Tabs,
   Text,
+  TextInput,
   Title,
 } from "@mantine/core";
 import {
@@ -28,6 +32,7 @@ import {
 } from "recharts";
 import {
   IconArrowsExchange,
+  IconBug,
   IconChartBar,
   IconClock,
   IconDatabase,
@@ -122,6 +127,30 @@ interface AdminUser {
   rating: number | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface SearchJobResult {
+  id: string;
+  friendCode: string;
+  skipUpdateScore: boolean;
+  botUserFriendCode: string | null;
+  status: string;
+  stage: string;
+  error: string | null;
+  executing: boolean;
+  scoreProgress: { completedDiffs: number[]; totalDiffs: number } | null;
+  updateScoreDuration: number | null;
+  createdAt: string;
+  updatedAt: string;
+  pickedAt: string | null;
+}
+
+interface ApiLogEntry {
+  url: string;
+  method: string;
+  statusCode: number;
+  responseBody: string | null;
+  createdAt: string;
 }
 
 const ADMIN_PASSWORD_KEY = "admin_password";
@@ -222,6 +251,17 @@ export default function AdminPage() {
 
   const [botStatuses, setBotStatuses] = useState<BotStatus[] | null>(null);
   const [botStatusesLoading, setBotStatusesLoading] = useState(false);
+
+  // Job Debug state
+  const [debugFriendCode, setDebugFriendCode] = useState("");
+  const [debugStatus, setDebugStatus] = useState<string | null>(null);
+  const [debugJobs, setDebugJobs] = useState<SearchJobResult[]>([]);
+  const [debugJobsLoading, setDebugJobsLoading] = useState(false);
+  const [debugSelectedJobId, setDebugSelectedJobId] = useState<string | null>(
+    null,
+  );
+  const [debugApiLogs, setDebugApiLogs] = useState<ApiLogEntry[]>([]);
+  const [debugApiLogsLoading, setDebugApiLogsLoading] = useState(false);
 
   const paginatedUsers = useMemo(() => {
     const start = (userPage - 1) * usersPerPage;
@@ -420,6 +460,46 @@ export default function AdminPage() {
       setBotStatuses(res.data);
     }
   }, [password]);
+
+  const searchDebugJobs = useCallback(async () => {
+    if (!password) return;
+    setDebugJobsLoading(true);
+    const params = new URLSearchParams();
+    if (debugFriendCode.trim()) {
+      params.set("friendCode", debugFriendCode.trim());
+    }
+    if (debugStatus) {
+      params.set("status", debugStatus);
+    }
+    params.set("limit", "50");
+    const res = await adminFetch<SearchJobResult[]>(
+      `/api/admin/jobs?${params.toString()}`,
+      password,
+    );
+    setDebugJobsLoading(false);
+    if (res.ok && res.data) {
+      setDebugJobs(res.data);
+    }
+  }, [password, debugFriendCode, debugStatus]);
+
+  const loadDebugApiLogs = useCallback(
+    async (jobId: string) => {
+      if (!password) return;
+      setDebugSelectedJobId(jobId);
+      setDebugApiLogsLoading(true);
+      const res = await adminFetch<ApiLogEntry[]>(
+        `/api/admin/jobs/${jobId}/api-logs`,
+        password,
+      );
+      setDebugApiLogsLoading(false);
+      if (res.ok && res.data) {
+        setDebugApiLogs(res.data);
+      } else {
+        setDebugApiLogs([]);
+      }
+    },
+    [password],
+  );
 
   // Auto verify if password is stored
   useEffect(() => {
@@ -1230,6 +1310,262 @@ export default function AdminPage() {
             ) : (
               <Text size="sm" c="dimmed" ta="center">
                 {jobStatsLoading ? "加载中..." : "暂无任务统计数据"}
+              </Text>
+            )}
+          </Stack>
+        </Card>
+
+        <Card withBorder shadow="sm" padding="lg" radius="md">
+          <Stack gap="md">
+            <Group gap="xs">
+              <IconBug size={20} />
+              <Text fw={600}>任务调试</Text>
+            </Group>
+
+            <Group gap="sm" align="flex-end">
+              <TextInput
+                label="好友码"
+                placeholder="输入好友码筛选"
+                size="sm"
+                value={debugFriendCode}
+                onChange={(e) => setDebugFriendCode(e.currentTarget.value)}
+                style={{ flex: 1 }}
+              />
+              <Select
+                label="状态"
+                placeholder="全部"
+                size="sm"
+                clearable
+                value={debugStatus}
+                onChange={setDebugStatus}
+                data={[
+                  { value: "queued", label: "排队中" },
+                  { value: "processing", label: "处理中" },
+                  { value: "completed", label: "已完成" },
+                  { value: "failed", label: "失败" },
+                  { value: "canceled", label: "已取消" },
+                ]}
+                style={{ width: 140 }}
+              />
+              <Button
+                variant="light"
+                size="sm"
+                onClick={searchDebugJobs}
+                loading={debugJobsLoading}
+              >
+                搜索
+              </Button>
+            </Group>
+
+            {debugJobs.length > 0 && (
+              <Table striped highlightOnHover withTableBorder>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>好友码</Table.Th>
+                    <Table.Th>状态</Table.Th>
+                    <Table.Th>阶段</Table.Th>
+                    <Table.Th>Bot</Table.Th>
+                    <Table.Th>错误</Table.Th>
+                    <Table.Th>创建时间</Table.Th>
+                    <Table.Th>操作</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {debugJobs.map((job) => (
+                    <Table.Tr
+                      key={job.id}
+                      bg={
+                        debugSelectedJobId === job.id
+                          ? "var(--mantine-color-blue-light)"
+                          : undefined
+                      }
+                    >
+                      <Table.Td>
+                        <Text size="sm" ff="monospace">
+                          {job.friendCode}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge
+                          color={
+                            job.status === "completed"
+                              ? "green"
+                              : job.status === "failed"
+                                ? "red"
+                                : job.status === "processing"
+                                  ? "blue"
+                                  : job.status === "canceled"
+                                    ? "gray"
+                                    : "yellow"
+                          }
+                          variant="light"
+                          size="sm"
+                        >
+                          {job.status}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm">{job.stage}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" ff="monospace" c="dimmed">
+                          {job.botUserFriendCode ?? "-"}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text
+                          size="sm"
+                          c={job.error ? "red" : "dimmed"}
+                          lineClamp={1}
+                          style={{ maxWidth: 200 }}
+                        >
+                          {job.error ?? "-"}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" c="dimmed">
+                          {new Date(job.createdAt).toLocaleString("zh-CN", {
+                            month: "2-digit",
+                            day: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Button
+                          variant="subtle"
+                          size="xs"
+                          onClick={() => loadDebugApiLogs(job.id)}
+                          loading={
+                            debugApiLogsLoading &&
+                            debugSelectedJobId === job.id
+                          }
+                        >
+                          调试
+                        </Button>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            )}
+
+            {debugSelectedJobId && (
+              <Card withBorder padding="md" radius="sm">
+                <Stack gap="sm">
+                  <Group justify="space-between" align="center">
+                    <Text fw={600} size="sm">
+                      API 调用日志 (Job: {debugSelectedJobId.slice(0, 8)}...)
+                    </Text>
+                    <Badge variant="light" size="sm">
+                      {debugApiLogs.length} 条记录
+                    </Badge>
+                  </Group>
+
+                  {debugApiLogsLoading ? (
+                    <Text size="sm" c="dimmed">
+                      加载中...
+                    </Text>
+                  ) : debugApiLogs.length > 0 ? (
+                    <ScrollArea h={400}>
+                      <Table striped highlightOnHover withTableBorder>
+                        <Table.Thead>
+                          <Table.Tr>
+                            <Table.Th>时间</Table.Th>
+                            <Table.Th>方法</Table.Th>
+                            <Table.Th>URL</Table.Th>
+                            <Table.Th>状态码</Table.Th>
+                            <Table.Th>响应</Table.Th>
+                          </Table.Tr>
+                        </Table.Thead>
+                        <Table.Tbody>
+                          {debugApiLogs.map((log, idx) => (
+                            <Table.Tr key={idx}>
+                              <Table.Td>
+                                <Text size="xs" c="dimmed">
+                                  {new Date(log.createdAt).toLocaleTimeString(
+                                    "zh-CN",
+                                    {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                      second: "2-digit",
+                                    },
+                                  )}
+                                </Text>
+                              </Table.Td>
+                              <Table.Td>
+                                <Badge variant="outline" size="xs">
+                                  {log.method}
+                                </Badge>
+                              </Table.Td>
+                              <Table.Td>
+                                <Text
+                                  size="xs"
+                                  ff="monospace"
+                                  lineClamp={1}
+                                  style={{ maxWidth: 300 }}
+                                >
+                                  {log.url}
+                                </Text>
+                              </Table.Td>
+                              <Table.Td>
+                                <Badge
+                                  color={
+                                    log.statusCode >= 200 &&
+                                    log.statusCode < 300
+                                      ? "green"
+                                      : log.statusCode >= 300 &&
+                                          log.statusCode < 400
+                                        ? "yellow"
+                                        : "red"
+                                  }
+                                  variant="light"
+                                  size="xs"
+                                >
+                                  {log.statusCode}
+                                </Badge>
+                              </Table.Td>
+                              <Table.Td>
+                                {log.responseBody ? (
+                                  <Code
+                                    block
+                                    style={{
+                                      maxHeight: 100,
+                                      overflow: "auto",
+                                      maxWidth: 300,
+                                      fontSize: 10,
+                                    }}
+                                  >
+                                    {log.responseBody.slice(0, 500)}
+                                    {log.responseBody.length > 500
+                                      ? "..."
+                                      : ""}
+                                  </Code>
+                                ) : (
+                                  <Text size="xs" c="dimmed">
+                                    -
+                                  </Text>
+                                )}
+                              </Table.Td>
+                            </Table.Tr>
+                          ))}
+                        </Table.Tbody>
+                      </Table>
+                    </ScrollArea>
+                  ) : (
+                    <Text size="sm" c="dimmed" ta="center">
+                      暂无 API 调用日志（日志会在 24 小时后自动过期）
+                    </Text>
+                  )}
+                </Stack>
+              </Card>
+            )}
+
+            {!debugJobsLoading && debugJobs.length === 0 && (
+              <Text size="sm" c="dimmed" ta="center">
+                输入好友码或选择状态后点击搜索
               </Text>
             )}
           </Stack>

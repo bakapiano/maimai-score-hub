@@ -78,6 +78,22 @@ export interface ActiveJobsStats {
   jobs: ActiveJob[];
 }
 
+export interface SearchJobResult {
+  id: string;
+  friendCode: string;
+  skipUpdateScore: boolean;
+  botUserFriendCode: string | null;
+  status: string;
+  stage: string;
+  error: string | null;
+  executing: boolean;
+  scoreProgress: { completedDiffs: number[]; totalDiffs: number } | null;
+  updateScoreDuration: number | null;
+  createdAt: string;
+  updatedAt: string;
+  pickedAt: string | null;
+}
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -466,5 +482,50 @@ export class AdminService {
     }
 
     return errorStats;
+  }
+
+  async searchJobs(params: {
+    friendCode?: string;
+    status?: string;
+    limit: number;
+  }): Promise<SearchJobResult[]> {
+    const filter: Record<string, unknown> = {};
+
+    if (params.friendCode) {
+      filter.friendCode = params.friendCode;
+    }
+
+    const validStatuses = [
+      'queued',
+      'processing',
+      'completed',
+      'failed',
+      'canceled',
+    ];
+    if (params.status && validStatuses.includes(params.status)) {
+      filter.status = params.status;
+    }
+
+    const jobs = await this.jobModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(params.limit)
+      .lean();
+
+    return jobs.map((job) => ({
+      id: job.id,
+      friendCode: job.friendCode,
+      skipUpdateScore: job.skipUpdateScore,
+      botUserFriendCode: job.botUserFriendCode ?? null,
+      status: job.status,
+      stage: job.stage,
+      error: job.error ?? null,
+      executing: job.executing,
+      scoreProgress: job.scoreProgress ?? null,
+      updateScoreDuration: job.updateScoreDuration ?? null,
+      createdAt: job.createdAt.toISOString(),
+      updatedAt: job.updatedAt.toISOString(),
+      pickedAt: job.pickedAt?.toISOString() ?? null,
+    }));
   }
 }

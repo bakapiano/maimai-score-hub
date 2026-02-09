@@ -1,14 +1,16 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Param, Query, UseGuards } from '@nestjs/common';
 
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
 import { BotStatusService } from './bot-status.service';
+import { JobApiLogService } from '../job/job-api-log.service';
 
 @Controller('admin')
 export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly botStatusService: BotStatusService,
+    private readonly apiLogService: JobApiLogService,
   ) {}
 
   /**
@@ -88,5 +90,24 @@ export class AdminController {
   @UseGuards(AdminGuard)
   async getActiveJobs() {
     return await this.adminService.getActiveJobs();
+  }
+
+  @Get('jobs')
+  @UseGuards(AdminGuard)
+  async searchJobs(
+    @Query('friendCode') friendCode?: string,
+    @Query('status') status?: string,
+    @Query('limit') limitStr?: string,
+  ) {
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
+      : 50;
+    return await this.adminService.searchJobs({ friendCode, status, limit });
+  }
+
+  @Get('jobs/:jobId/api-logs')
+  @UseGuards(AdminGuard)
+  async getJobApiLogs(@Param('jobId') jobId: string) {
+    return await this.apiLogService.getLogsByJobId(jobId);
   }
 }

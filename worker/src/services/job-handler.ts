@@ -19,6 +19,7 @@ import { ScoreAggregator } from "./score-aggregator.ts";
 import { cookieStore } from "./cookie-store.ts";
 import { randomUUID } from "node:crypto";
 import { updateJob } from "../job-service-client.ts";
+import { flushApiLogs, clearApiLogBuffer } from "../job-api-log-client.ts";
 
 export interface JobHandlerConfig {
   /** 是否跳过好友清理 */
@@ -63,6 +64,7 @@ export class JobHandler {
   async execute(): Promise<void> {
     try {
       this.startHeartbeat();
+      this.client.jobId = this.job.id;
 
       // 获取用户资料
       const profile = await this.client.getUserProfile(this.job.friendCode);
@@ -105,6 +107,17 @@ export class JobHandler {
       });
     } finally {
       this.stopHeartbeat();
+
+      // 上报并清理 API 日志
+      await flushApiLogs(this.job.id).catch((err) => {
+        console.warn(
+          `[JobHandler] Job ${this.job.id}: Failed to flush API logs`,
+          err,
+        );
+      });
+      clearApiLogBuffer(this.job.id);
+      this.client.jobId = null;
+
       if (this.job.executing) {
         try {
           await this.applyPatch({ executing: false });
