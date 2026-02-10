@@ -19,7 +19,7 @@ import { FriendManager } from "./friend-manager.ts";
 import { ScoreAggregator } from "./score-aggregator.ts";
 import { cookieStore } from "./cookie-store.ts";
 import { randomUUID } from "node:crypto";
-import { updateJob } from "../job-service-client.ts";
+import { updateJob, markIdleUpdateReady } from "../job-service-client.ts";
 
 export interface JobHandlerConfig {
   /** 是否跳过好友清理 */
@@ -72,6 +72,28 @@ export class JobHandler {
         throw new Error("未找到该好友代码对应的用户，请检查好友代码是否正确!");
       }
       await this.applyPatch({ profile, updatedAt: new Date() });
+
+      const jobType = this.job.jobType ?? "immediate";
+
+      // idle_update_score: 直接跳到更新分数步骤
+      if (jobType === "idle_update_score") {
+        // 检查是否已经是好友
+        const isFriend = await this.friendManager.isFriend(this.job.friendCode);
+        if (!isFriend) {
+          console.log(
+            `[JobHandler] Job ${this.job.id}: idle_update_score - not a friend, skipping`,
+          );
+          await this.applyPatch({
+            status: "failed",
+            error: "闲时更新：用户不是好友，跳过",
+            updatedAt: new Date(),
+          });
+          return;
+        }
+        await this.applyPatch({ stage: "update_score", updatedAt: new Date() });
+        await this.handleUpdateScore();
+        return;
+      }
 
       // 根据当前阶段处理
       switch (this.job.stage) {
@@ -137,7 +159,10 @@ export class JobHandler {
   private async handleSendRequest(): Promise<void> {
     console.log(`[JobHandler] Job ${this.job.id}: Checking friend list...`);
 
-    if (!this.config.skipCleanUpFriend) {
+    const jobType = this.job.jobType ?? "immediate";
+
+    // 对于立即更新和闲时更新分数 job，如果用户有闲时更新的 bot 好友关系也需要先删除
+    if (!this.config.skipCleanUpFriend && jobType !== "idle_add_friend") {
       await this.friendManager.cleanUpFriend(this.job.friendCode);
     }
 
@@ -249,6 +274,8 @@ export class JobHandler {
    * 处理更新成绩阶段
    */
   private async handleUpdateScore(): Promise<void> {
+    const jobType = this.job.jobType ?? "immediate";
+
     if (this.job.skipUpdateScore) {
       console.log(
         `[JobHandler] Job ${this.job.id}: Skipping update_score (skipUpdateScore=true).`,
@@ -322,7 +349,10 @@ export class JobHandler {
     });
 
     // 清理好友关系（不等待完成）
-    if (!this.config.skipCleanUpFriend) {
+    // idle_update_score job 完成后也清理好友（因为调度器已清除 user 标记）
+    const shouldSkipCleanup =
+      this.config.skipCleanUpFriend || jobType === "idle_add_friend";
+    if (!shouldSkipCleanup) {
       this.friendManager.cleanUpFriend(this.job.friendCode).catch(() => {});
     }
 
@@ -334,11 +364,33 @@ export class JobHandler {
    * 完成任务（不更新成绩）
    */
   private async completeJob(): Promise<void> {
+    const jobType = this.job.jobType ?? "immediate";
+
     await this.applyPatch({
       status: "completed",
       error: null,
       updatedAt: new Date(),
     });
+
+    // idle_add_friend job 完成后通知后端标记用户已 ready
+    if (jobType === "idle_add_friend" && this.job.botUserFriendCode) {
+      try {
+        await markIdleUpdateReady(
+          this.job.friendCode,
+          this.job.botUserFriendCode,
+        );
+        console.log(
+          `[JobHandler] Job ${this.job.id}: Marked user ${this.job.friendCode} as idle update ready with bot ${this.job.botUserFriendCode}`,
+        );
+      } catch (err) {
+        console.warn(
+          `[JobHandler] Job ${this.job.id}: Failed to mark idle update ready:`,
+          err,
+        );
+      }
+      // Don't clean up friend for idle_add_friend jobs
+      return;
+    }
 
     if (!this.config.skipCleanUpFriend) {
       this.friendManager.cleanUpFriend(this.job.friendCode).catch(() => {});

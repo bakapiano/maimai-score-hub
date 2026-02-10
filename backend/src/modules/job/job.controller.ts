@@ -17,6 +17,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { JobService } from './job.service';
 import { JobTempCacheService } from './job-temp-cache.service';
 import { JobApiLogService, type ApiLogEntry } from './job-api-log.service';
+import { UsersService } from '../users/users.service';
 import type { JobPatchBody } from './job.types';
 
 type AuthedRequest = Request & {
@@ -29,6 +30,7 @@ export class JobController {
     private readonly jobs: JobService,
     private readonly tempCache: JobTempCacheService,
     private readonly apiLog: JobApiLogService,
+    private readonly users: UsersService,
   ) {}
 
   @Post('create')
@@ -55,6 +57,46 @@ export class JobController {
   @Get('stats/recent')
   async getRecentStats() {
     return this.jobs.getRecentStats();
+  }
+
+  /**
+   * Worker 调用：标记用户已 ready for 闲时更新
+   */
+  @Post('idle-update/mark-ready')
+  @HttpCode(200)
+  async markIdleUpdateReady(
+    @Body() body: { friendCode?: unknown; botFriendCode?: unknown },
+  ) {
+    if (typeof body.friendCode !== 'string' || !body.friendCode) {
+      throw new BadRequestException('friendCode is required');
+    }
+    if (typeof body.botFriendCode !== 'string' || !body.botFriendCode) {
+      throw new BadRequestException('botFriendCode is required');
+    }
+
+    const user = await this.users.findByFriendCode(body.friendCode);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    await this.users.update(String(user._id), {
+      idleUpdateBotFriendCode: body.botFriendCode,
+    });
+
+    return { ok: true };
+  }
+
+  /**
+   * 获取指定 bot 的闲时更新 friendCode 列表
+   */
+  @Get('idle-update/friends/:botFriendCode')
+  async getIdleUpdateFriendCodes(
+    @Param('botFriendCode') botFriendCode: string,
+  ) {
+    const users = await this.users.getIdleUpdateUsers();
+    return users
+      .filter((u) => u.idleUpdateBotFriendCode === botFriendCode)
+      .map((u) => u.friendCode);
   }
 
   @Get('by-friend-code/:friendCode/active')

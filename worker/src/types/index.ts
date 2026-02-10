@@ -44,6 +44,7 @@ export type JobStatus =
   | "canceled";
 
 export type JobStage = "send_request" | "wait_acceptance" | "update_score";
+export type JobType = "immediate" | "idle_add_friend" | "idle_update_score";
 
 /**
  * 成绩更新进度
@@ -59,6 +60,7 @@ export interface ScoreProgress {
 export interface Job {
   id: string;
   friendCode: string;
+  jobType?: JobType;
   skipUpdateScore?: boolean;
   botUserFriendCode?: string | null;
   friendRequestSentAt?: string | null;

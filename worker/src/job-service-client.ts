@@ -168,3 +168,46 @@ export async function getActiveFriendCodes(
 
   return (await response.json()) as string[];
 }
+
+/**
+ * 通知后端标记用户已 ready for 闲时更新
+ */
+export async function markIdleUpdateReady(
+  friendCode: string,
+  botFriendCode: string,
+): Promise<void> {
+  const response = await fetch(buildUrl("/api/job/idle-update/mark-ready"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ friendCode, botFriendCode }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `Failed to mark idle update ready. Status: ${response.status}. Body: ${text}`,
+    );
+  }
+}
+
+/**
+ * 获取指定 bot 的闲时更新 friendCode 列表
+ */
+export async function getIdleUpdateFriendCodes(
+  botFriendCode: string,
+): Promise<string[]> {
+  const response = await fetch(
+    buildUrl(
+      `/api/job/idle-update/friends/${encodeURIComponent(botFriendCode)}`,
+    ),
+  );
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `Failed to fetch idle update friend codes. Status: ${response.status}. Body: ${text}`,
+    );
+  }
+
+  return (await response.json()) as string[];
+}

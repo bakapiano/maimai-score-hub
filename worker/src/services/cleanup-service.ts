@@ -6,7 +6,7 @@
 import { MaimaiHttpClient } from "./maimai-client.ts";
 import { WORKER_DEFAULTS } from "../constants.ts";
 import { cookieStore } from "./cookie-store.ts";
-import { getActiveFriendCodes } from "../job-service-client.ts";
+import { getActiveFriendCodes, getIdleUpdateFriendCodes } from "../job-service-client.ts";
 
 /**
  * 清理服务类
@@ -123,15 +123,19 @@ export class CleanupService {
         `[CleanupService] Bot ${botFriendCode} has ${sentRequests.length} sent requests and ${friends.length} friends`,
       );
 
-      // 2. 获取活跃的 friendCode 列表
-      const activeFriendCodes = await getActiveFriendCodes(botFriendCode);
+      // 2. 获取活跃的 friendCode 列表和闲时更新的 friendCode 列表
+      const [activeFriendCodes, idleUpdateFriendCodes] = await Promise.all([
+        getActiveFriendCodes(botFriendCode),
+        getIdleUpdateFriendCodes(botFriendCode).catch(() => [] as string[]),
+      ]);
       const activeSet = new Set(activeFriendCodes);
+      const idleUpdateSet = new Set(idleUpdateFriendCodes);
 
       console.log(
-        `[CleanupService] Bot ${botFriendCode} has ${activeFriendCodes.length} active jobs`,
+        `[CleanupService] Bot ${botFriendCode} has ${activeFriendCodes.length} active jobs, ${idleUpdateFriendCodes.length} idle update friends`,
       );
 
-      // 3. 取消不在活跃列表中的好友请求
+      // 3. 取消不在活跃列表中的好友请求（好友请求仍然定期清理）
       const requestsToCancel = sentRequests.filter(
         (req) => !activeSet.has(req.friendCode),
       );
@@ -149,9 +153,10 @@ export class CleanupService {
         }
       }
 
-      // 4. 删除不在活跃列表中的好友
+      // 4. 删除不在活跃列表中且不在闲时更新列表中的好友
       const friendsToRemove = friends.filter(
-        (friendCode) => !activeSet.has(friendCode),
+        (friendCode) =>
+          !activeSet.has(friendCode) && !idleUpdateSet.has(friendCode),
       );
       for (const friendCode of friendsToRemove) {
         try {
