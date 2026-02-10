@@ -447,6 +447,14 @@ export class MaimaiHttpClient {
     console.log(
       `[MaimaiClient] getFriendVS friendCode=${friendCode} scoreType=${scoreType} diff=${diff} cost=${cost}ms`,
     );
+
+    // 断言 Friend VS 页面包含有效的 friend_vs_block 内容
+    if (!text.includes("friend_vs_block")) {
+      throw new Error(
+        "获取 Friend VS 页面失败：页面不包含 friend_vs_block，可能是好友没有添加成功",
+      );
+    }
+
     return text;
   }
 
