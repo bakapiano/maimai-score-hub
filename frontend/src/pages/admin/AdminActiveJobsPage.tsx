@@ -242,6 +242,7 @@ export default function AdminActiveJobsPage() {
                 <Table.Tr>
                   <Table.Th>Bot 好友码</Table.Th>
                   <Table.Th>状态</Table.Th>
+                  <Table.Th ta="right">好友数量</Table.Th>
                   <Table.Th>最近上报时间</Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -261,6 +262,11 @@ export default function AdminActiveJobsPage() {
                       >
                         {bot.available ? "可用" : "不可用"}
                       </Badge>
+                    </Table.Td>
+                    <Table.Td ta="right">
+                      <Text size="sm">
+                        {bot.friendCount != null ? bot.friendCount : "-"}
+                      </Text>
                     </Table.Td>
                     <Table.Td>
                       <Text size="sm" c="dimmed">

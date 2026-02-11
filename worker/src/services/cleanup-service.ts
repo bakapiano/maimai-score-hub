@@ -3,10 +3,14 @@
  * 负责清理不在活跃任务列表中的好友请求和好友
  */
 
+import {
+  getActiveFriendCodes,
+  getIdleUpdateFriendCodes,
+} from "../clients/job-service-client.ts";
+
 import { MaimaiHttpClient } from "./maimai-client.ts";
 import { WORKER_DEFAULTS } from "../constants.ts";
 import { cookieStore } from "./cookie-store.ts";
-import { getActiveFriendCodes, getIdleUpdateFriendCodes } from "../job-service-client.ts";
 
 /**
  * 清理服务类

@@ -3,13 +3,13 @@
  * 与后端 Job Service 通信的 API 客户端
  */
 
-import type { Job, JobPatch, JobResponse } from "./types/index.ts";
+import type { Job, JobPatch, JobResponse } from "../types/index.ts";
 
-import config from "./config.ts";
+import config from "../config.ts";
 
 // Re-export types for backward compatibility
 export type { Job, JobPatch, JobResponse };
-export type { JobStatus, JobStage, UserProfile } from "./types/index.ts";
+export type { JobStatus, JobStage, UserProfile } from "../types/index.ts";
 
 const baseUrl = (config.jobService?.baseUrl ?? "").replace(/\/$/, "");
 

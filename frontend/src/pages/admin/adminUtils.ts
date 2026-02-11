@@ -8,6 +8,7 @@ export interface BotStatus {
   friendCode: string;
   available: boolean;
   lastReportedAt: string;
+  friendCount: number | null;
 }
 
 export interface AdminStats {

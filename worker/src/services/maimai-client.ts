@@ -32,7 +32,7 @@ import {
 import { CookieJar } from "tough-cookie";
 import config from "../config.ts";
 import makeFetchCookie from "fetch-cookie";
-import { recordApiLog } from "../job-api-log-client.ts";
+import { recordApiLog } from "../clients/job-api-log-client.ts";
 
 /**
  * 配置全局 HTTP Keep-Alive Agent

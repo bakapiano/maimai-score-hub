@@ -9,9 +9,12 @@ import type {
   ParsedScoreResult,
 } from "../types/index.ts";
 import { DIFFICULTIES, WORKER_DEFAULTS } from "../constants.ts";
-import { getCachedHtml, setCachedHtml } from "../job-temp-cache-client.ts";
-
 import { MaimaiHttpClient, sleep } from "./maimai-client.ts";
+import {
+  getCachedHtml,
+  setCachedHtml,
+} from "../clients/job-temp-cache-client.ts";
+
 import { parseFriendVsSongs } from "../parsers/index.ts";
 
 export interface ScoreFetchOptions {

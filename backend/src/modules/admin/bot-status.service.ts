@@ -7,6 +7,7 @@ export interface BotStatus {
   friendCode: string;
   available: boolean;
   lastReportedAt: string;
+  friendCount: number | null;
 }
 
 /**
@@ -49,7 +50,9 @@ export class BotStatusService implements OnModuleDestroy {
   /**
    * Worker 上报 Bot 状态
    */
-  report(bots: { friendCode: string; available: boolean; friendCount?: number }[]): void {
+  report(
+    bots: { friendCode: string; available: boolean; friendCount?: number }[],
+  ): void {
     const now = new Date();
     for (const bot of bots) {
       this.botMap.set(bot.friendCode, {
@@ -78,6 +81,7 @@ export class BotStatusService implements OnModuleDestroy {
         friendCode,
         available: timedOut ? false : status.available,
         lastReportedAt: status.lastReportedAt.toISOString(),
+        friendCount: status.friendCount,
       });
     }
 

@@ -9,7 +9,11 @@ import type { Job } from "../types/index.ts";
 import { cookieStore } from "./cookie-store.ts";
 import { CookieExpiredError, MaimaiHttpClient } from "./maimai-client.ts";
 import { JobHandler, type JobHandlerConfig } from "./job-handler.ts";
-import { buildUrl, claimNextJob, updateJob } from "../job-service-client.ts";
+import {
+  buildUrl,
+  claimNextJob,
+  updateJob,
+} from "../clients/job-service-client.ts";
 import { DEFAULT_HEADERS, WORKER_DEFAULTS } from "../constants.ts";
 import { cleanupService } from "./cleanup-service.ts";
 

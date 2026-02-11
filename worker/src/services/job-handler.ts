@@ -11,7 +11,15 @@ import type {
 } from "../types/index.ts";
 import { CookieExpiredError, MaimaiHttpClient } from "./maimai-client.ts";
 import { DIFFICULTIES, TIMEOUTS } from "../constants.ts";
-import { clearApiLogBuffer, flushApiLogs } from "../job-api-log-client.ts";
+import {
+  checkIsIdleUpdateBot,
+  markIdleUpdateReady,
+  updateJob,
+} from "../clients/job-service-client.ts";
+import {
+  clearApiLogBuffer,
+  flushApiLogs,
+} from "../clients/job-api-log-client.ts";
 import { dirname, join } from "node:path";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
@@ -19,7 +27,6 @@ import { FriendManager } from "./friend-manager.ts";
 import { ScoreAggregator } from "./score-aggregator.ts";
 import { cookieStore } from "./cookie-store.ts";
 import { randomUUID } from "node:crypto";
-import { updateJob, markIdleUpdateReady, checkIsIdleUpdateBot } from "../job-service-client.ts";
 
 export interface JobHandlerConfig {
   /** 是否跳过好友清理 */
@@ -72,28 +79,6 @@ export class JobHandler {
         throw new Error("未找到该好友代码对应的用户，请检查好友代码是否正确!");
       }
       await this.applyPatch({ profile, updatedAt: new Date() });
-
-      const jobType = this.job.jobType ?? "immediate";
-
-      // idle_update_score: 直接跳到更新分数步骤
-      if (jobType === "idle_update_score") {
-        // 检查是否已经是好友
-        const isFriend = await this.friendManager.isFriend(this.job.friendCode);
-        if (!isFriend) {
-          console.log(
-            `[JobHandler] Job ${this.job.id}: idle_update_score - not a friend, skipping`,
-          );
-          await this.applyPatch({
-            status: "failed",
-            error: "闲时更新：用户不是好友，跳过",
-            updatedAt: new Date(),
-          });
-          return;
-        }
-        await this.applyPatch({ stage: "update_score", updatedAt: new Date() });
-        await this.handleUpdateScore();
-        return;
-      }
 
       // 根据当前阶段处理
       switch (this.job.stage) {
@@ -171,6 +156,17 @@ export class JobHandler {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       await this.friendManager.sendFriendRequest(this.job.friendCode);
 
+      // 发送后检查是否已经是好友（可能对方已接受或自动成为好友）
+      const alreadyFriend = await this.friendManager.isFriend(
+        this.job.friendCode,
+      );
+      if (alreadyFriend) {
+        console.log(
+          `[JobHandler] Job ${this.job.id}: Already friends after sending request, treating as success`,
+        );
+        break;
+      }
+
       const sentRequests = await this.friendManager.getSentRequests();
       match = sentRequests.find((s) => s.friendCode === this.job.friendCode);
 
@@ -186,8 +182,19 @@ export class JobHandler {
       }
     }
 
-    if (!this.config.skipCleanUpFriend && !match) {
+    // 发送后再次确认是否已经是好友
+    const isFriendAfterSend = await this.friendManager.isFriend(
+      this.job.friendCode,
+    );
+
+    if (!this.config.skipCleanUpFriend && !match && !isFriendAfterSend) {
       throw new Error("发送好友请求失败");
+    }
+
+    // 如果已经是好友，直接跳到 update_score 阶段
+    if (isFriendAfterSend) {
+      await this.applyPatch({ stage: "update_score", updatedAt: new Date() });
+      return;
     }
 
     await this.applyPatch({ stage: "wait_acceptance", updatedAt: new Date() });
@@ -273,6 +280,22 @@ export class JobHandler {
   private async handleUpdateScore(): Promise<void> {
     const jobType = this.job.jobType ?? "immediate";
 
+    // idle_update_score: 需要确认用户仍是好友
+    if (jobType === "idle_update_score") {
+      const isFriend = await this.friendManager.isFriend(this.job.friendCode);
+      if (!isFriend) {
+        console.log(
+          `[JobHandler] Job ${this.job.id}: idle_update_score - not a friend, skipping`,
+        );
+        await this.applyPatch({
+          status: "failed",
+          error: "闲时更新：用户不是好友，跳过",
+          updatedAt: new Date(),
+        });
+        return;
+      }
+    }
+
     if (this.job.skipUpdateScore) {
       console.log(
         `[JobHandler] Job ${this.job.id}: Skipping update_score (skipUpdateScore=true).`,
@@ -354,7 +377,11 @@ export class JobHandler {
     let shouldSkipCleanup =
       this.config.skipCleanUpFriend || jobType === "idle_add_friend";
 
-    if (!shouldSkipCleanup && jobType === "immediate" && this.job.botUserFriendCode) {
+    if (
+      !shouldSkipCleanup &&
+      jobType === "immediate" &&
+      this.job.botUserFriendCode
+    ) {
       try {
         const isIdleBot = await checkIsIdleUpdateBot(
           this.job.friendCode,

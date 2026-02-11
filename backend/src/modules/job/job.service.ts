@@ -115,6 +115,9 @@ export class JobService {
       },
     );
 
+    const resolvedStage: 'send_request' | 'update_score' =
+      resolvedJobType === 'idle_update_score' ? 'update_score' : 'send_request';
+
     const created = await this.jobModel.create({
       id,
       friendCode: input.friendCode,
@@ -123,7 +126,7 @@ export class JobService {
       botUserFriendCode: null,
       friendRequestSentAt: null,
       status: 'queued',
-      stage: 'send_request',
+      stage: resolvedStage,
       executing: false,
       error: null,
       result: undefined,
@@ -163,12 +166,13 @@ export class JobService {
     }
 
     // 2) Claim the oldest queued job atomically via findOneAndUpdate
+    //    Don't overwrite `stage` — it was already set correctly at creation
+    //    (e.g. idle_update_score starts at 'update_score').
     const claimed = await this.jobModel.findOneAndUpdate(
       { status: 'queued', executing: false },
       {
         $set: {
           status: 'processing',
-          stage: 'send_request',
           executing: true,
           botUserFriendCode,
           pickedAt: now,
