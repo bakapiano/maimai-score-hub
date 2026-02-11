@@ -20,13 +20,14 @@ export class FriendManager {
    * 包括取消待处理的好友请求和删除已有好友
    */
   async cleanUpFriend(friendCode: string): Promise<void> {
-    let [sent, friends, accepted] = await Promise.all([
+    let [sent, friendInfos, accepted] = await Promise.all([
       this.client.getSentRequests(),
       this.client.getFriendList(),
       this.client.getAcceptRequests(),
     ]);
 
     const sentCodes = sent.map((s) => s.friendCode);
+    let friends = friendInfos.map((f) => f.friendCode);
 
     if (accepted.includes(friendCode)) {
       console.log(
@@ -61,7 +62,7 @@ export class FriendManager {
       try {
         await this.client.removeFriend(friendCode);
       } catch (e) {
-        friends = await this.client.getFriendList();
+        friends = (await this.client.getFriendList()).map((f) => f.friendCode);
         if (friends.includes(friendCode)) {
           throw e;
         }
@@ -96,7 +97,7 @@ export class FriendManager {
    */
   async isFriend(friendCode: string): Promise<boolean> {
     const friends = await this.client.getFriendList();
-    return friends.includes(friendCode);
+    return friends.some((f) => f.friendCode === friendCode);
   }
 
   /**
@@ -118,5 +119,12 @@ export class FriendManager {
    */
   async favoriteOnFriend(friendCode: string): Promise<void> {
     await this.client.favoriteOnFriend(friendCode);
+  }
+
+  /**
+   * 取消收藏好友
+   */
+  async favoriteOffFriend(friendCode: string): Promise<void> {
+    await this.client.favoriteOffFriend(friendCode);
   }
 }

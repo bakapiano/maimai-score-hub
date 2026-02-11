@@ -44,6 +44,7 @@ export const MAIMAI_URLS = {
   friendInviteCancel: `${MAIMAI_BASE_URL}/friend/invite/cancel/`,
   friendDetail: `${MAIMAI_BASE_URL}/friend/friendDetail/drop/`,
   friendFavoriteOn: `${MAIMAI_BASE_URL}/friend/favoriteOn/`,
+  friendFavoriteOff: `${MAIMAI_BASE_URL}/friend/favoriteOff/`,
   friendSearch: (code: string) =>
     `${MAIMAI_BASE_URL}/friend/search/searchUser/?friendCode=${encodeURIComponent(
       code,

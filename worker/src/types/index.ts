@@ -109,6 +109,11 @@ export interface SentFriendRequest {
   appliedAt: string | null;
 }
 
+export interface FriendInfo {
+  friendCode: string;
+  isFavorite: boolean;
+}
+
 // ============================================================================
 // Score Types
 // ============================================================================

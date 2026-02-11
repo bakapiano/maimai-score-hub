@@ -114,10 +114,11 @@ export class CleanupService {
 
     try {
       // 1. 获取当前已发送的好友请求和好友列表
-      const [sentRequests, friends] = await Promise.all([
+      const [sentRequests, friendInfos] = await Promise.all([
         client.getSentRequests(),
         client.getFriendList(),
       ]);
+      const friends = friendInfos.map((f) => f.friendCode);
 
       console.log(
         `[CleanupService] Bot ${botFriendCode} has ${sentRequests.length} sent requests and ${friends.length} friends`,
@@ -170,8 +171,29 @@ export class CleanupService {
         }
       }
 
+      // 5. 取消收藏闲时更新好友中不在活跃列表中且已收藏的好友
+      const idleFriendsToUnfavorite = friendInfos.filter(
+        (f) =>
+          f.isFavorite &&
+          idleUpdateSet.has(f.friendCode) &&
+          !activeSet.has(f.friendCode),
+      );
+      for (const f of idleFriendsToUnfavorite) {
+        try {
+          console.log(
+            `[CleanupService] Unfavoriting idle update friend ${f.friendCode}`,
+          );
+          await client.favoriteOffFriend(f.friendCode);
+        } catch (err) {
+          console.error(
+            `[CleanupService] Failed to unfavorite friend ${f.friendCode}:`,
+            err,
+          );
+        }
+      }
+
       console.log(
-        `[CleanupService] Bot ${botFriendCode} cleanup done: canceled ${requestsToCancel.length} requests, removed ${friendsToRemove.length} friends`,
+        `[CleanupService] Bot ${botFriendCode} cleanup done: canceled ${requestsToCancel.length} requests, removed ${friendsToRemove.length} friends, unfavorited ${idleFriendsToUnfavorite.length} idle friends`,
       );
     } catch (err) {
       console.error(

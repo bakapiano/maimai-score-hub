@@ -3,7 +3,7 @@
  * 从 HTML 页面中提取用户信息
  */
 
-import type { UserProfile } from "../types/index.ts";
+import type { FriendInfo, UserProfile } from "../types/index.ts";
 
 /**
  * 解析用户个人资料页面
@@ -78,13 +78,25 @@ export function parseFriendCount(html: string): number | null {
 }
 
 /**
- * 解析好友列表页面，提取好友代码列表
+ * 解析好友列表页面，提取好友代码及收藏状态
+ * 每个好友对应一个 form，如果 form 的 action 包含 favoriteOff 则说明已收藏
  */
-export function parseFriendList(html: string): string[] {
-  const matches = html.matchAll(
-    /<input type="hidden" name="idx" value="(.*?)"/g,
-  );
-  return [...new Set([...matches].map((x) => x[1]))];
+export function parseFriendList(html: string): FriendInfo[] {
+  const formRegex =
+    /<form[^>]*action="([^"]*)"[^>]*>[\s\S]*?<input type="hidden" name="idx" value="(.*?)"[\s\S]*?<\/form>/g;
+  const seen = new Set<string>();
+  const results: FriendInfo[] = [];
+  for (const m of html.matchAll(formRegex)) {
+    const action = m[1];
+    const friendCode = m[2];
+    if (seen.has(friendCode)) continue;
+    seen.add(friendCode);
+    results.push({
+      friendCode,
+      isFavorite: action.includes("favoriteOff"),
+    });
+  }
+  return results;
 }
 
 /**

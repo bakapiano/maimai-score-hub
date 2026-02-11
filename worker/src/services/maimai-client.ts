@@ -15,6 +15,7 @@ import {
 } from "../constants.ts";
 import type {
   FetchOptions,
+  FriendInfo,
   GameType,
   SentFriendRequest,
   UserProfile,
@@ -304,20 +305,20 @@ export class MaimaiHttpClient {
    * 获取完整好友列表（自动翻页）
    * 第一页返回最多 10 个好友，通过好友数计算总页数后逐页获取
    */
-  async getFriendList(): Promise<string[]> {
+  async getFriendList(): Promise<FriendInfo[]> {
     console.log(`[MaimaiClient] Start get friend list`);
 
     // 获取第一页
     const firstResult = await this.fetchWithToken(MAIMAI_URLS.friendList);
     const firstText = await firstResult.text();
-    const ids = parseFriendList(firstText);
+    const friends = parseFriendList(firstText);
     const friendCount = parseFriendCount(firstText);
 
     if (friendCount === null || friendCount <= 10) {
       console.log(
-        `[MaimaiClient] Done get friend list (single page), count=${ids.length}`,
+        `[MaimaiClient] Done get friend list (single page), count=${friends.length}`,
       );
-      return ids;
+      return friends;
     }
 
     // 计算需要翻页的页数: 第 2 页到第 ceil(friendCount/10)+1 页
@@ -331,16 +332,21 @@ export class MaimaiHttpClient {
         MAIMAI_URLS.friendListPage(page),
       );
       const pageText = await pageResult.text();
-      const pageIds = parseFriendList(pageText);
-      ids.push(...pageIds);
+      const pageFriends = parseFriendList(pageText);
+      friends.push(...pageFriends);
     }
 
     // 去重
-    const uniqueIds = [...new Set(ids)];
+    const seen = new Set<string>();
+    const uniqueFriends = friends.filter((f) => {
+      if (seen.has(f.friendCode)) return false;
+      seen.add(f.friendCode);
+      return true;
+    });
     console.log(
-      `[MaimaiClient] Done get friend list (${totalPages} pages), count=${uniqueIds.length}`,
+      `[MaimaiClient] Done get friend list (${totalPages} pages), count=${uniqueFriends.length}`,
     );
-    return uniqueIds;
+    return uniqueFriends;
   }
 
   /**
@@ -493,6 +499,24 @@ export class MaimaiHttpClient {
     });
     console.log(
       `[MaimaiClient] Done favorite on friend, friend code ${friendCode}`,
+    );
+  }
+
+  /**
+   * 取消收藏好友
+   */
+  async favoriteOffFriend(friendCode: string): Promise<void> {
+    console.log(
+      `[MaimaiClient] Start favorite off friend, friend code ${friendCode}`,
+    );
+    await this.fetchWithToken(MAIMAI_URLS.friendFavoriteOff, {
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: `idx=${friendCode}`,
+      method: "POST",
+      addToken: true,
+    });
+    console.log(
+      `[MaimaiClient] Done favorite off friend, friend code ${friendCode}`,
     );
   }
 
