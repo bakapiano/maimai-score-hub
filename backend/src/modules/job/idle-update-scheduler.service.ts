@@ -106,6 +106,7 @@ export class IdleUpdateSchedulerService
             friendCode: user.friendCode,
             skipUpdateScore: false,
             jobType: 'idle_update_score',
+            botUserFriendCode: user.idleUpdateBotFriendCode,
           });
 
           // 清除用户的闲时更新标记

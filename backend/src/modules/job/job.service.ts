@@ -84,6 +84,7 @@ export class JobService {
     friendCode: string;
     skipUpdateScore: boolean;
     jobType?: JobType;
+    botUserFriendCode?: string | null;
   }) {
     const id = randomUUID();
     const now = new Date();
@@ -123,7 +124,7 @@ export class JobService {
       friendCode: input.friendCode,
       jobType: resolvedJobType,
       skipUpdateScore: input.skipUpdateScore,
-      botUserFriendCode: null,
+      botUserFriendCode: input.botUserFriendCode ?? null,
       friendRequestSentAt: null,
       status: 'queued',
       stage: resolvedStage,
@@ -165,11 +166,29 @@ export class JobService {
       return toJobResponse(processing.toObject() as JobEntity);
     }
 
-    // 2) Claim the oldest queued job atomically via findOneAndUpdate
+    // 2) Claim queued jobs that are pre-assigned to this bot
+    //    (e.g. idle_update_score jobs locked to a specific bot)
+    const preAssigned = await this.jobModel.findOneAndUpdate(
+      { status: 'queued', executing: false, botUserFriendCode },
+      {
+        $set: {
+          status: 'processing',
+          executing: true,
+          pickedAt: now,
+          updatedAt: now,
+        },
+      },
+      { new: true, sort: { createdAt: 1 } },
+    );
+    if (preAssigned) {
+      return toJobResponse(preAssigned.toObject() as JobEntity);
+    }
+
+    // 3) Claim the oldest unassigned queued job atomically via findOneAndUpdate
     //    Don't overwrite `stage` — it was already set correctly at creation
     //    (e.g. idle_update_score starts at 'update_score').
     const claimed = await this.jobModel.findOneAndUpdate(
-      { status: 'queued', executing: false },
+      { status: 'queued', executing: false, botUserFriendCode: null },
       {
         $set: {
           status: 'processing',

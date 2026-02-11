@@ -148,6 +148,12 @@ export class MaimaiHttpClient {
     let rateLimitCount = 0;
 
     for (let i = 0; i < retryCount; i++) {
+      // 提到 try 外层，以便 finally 中记录日志时能拿到实际的 statusCode 和 responseBody
+      let logStatusCode = 0;
+      let logResponseBody: string | null = null;
+      let logError: string | null = null;
+      let shouldLog = true;
+
       try {
         // 等待限流间隔后再发起请求（不串行，仅控制发起时间间隔）
         await MaimaiHttpClient.waitForSlot();
@@ -159,6 +165,10 @@ export class MaimaiHttpClient {
         const location = result.url;
         const clone = result.clone();
         const body = await clone.text();
+
+        // 保存实际的响应信息，供 finally 日志使用
+        logStatusCode = result.status;
+        logResponseBody = body;
 
         const isCookieExpireBody =
           body.includes(COOKIE_EXPIRE_MARKERS.line1) ||
@@ -218,36 +228,9 @@ export class MaimaiHttpClient {
           responseAssertion(body);
         }
 
-        // 记录 API 调用日志
-        if (this.jobId) {
-          try {
-            recordApiLog(this.jobId, {
-              url,
-              method: options.method ?? "GET",
-              statusCode: result.status,
-              responseBody: body,
-            });
-          } catch {
-            // Best-effort logging; don't impact main request flow
-          }
-        }
-
         return result;
       } catch (e: unknown) {
-        // 记录错误日志
-        if (this.jobId) {
-          try {
-            const error = e as Error;
-            recordApiLog(this.jobId, {
-              url,
-              method: options.method ?? "GET",
-              statusCode: 0,
-              responseBody: error.message ?? String(e),
-            });
-          } catch {
-            // Best-effort logging; don't impact main request flow
-          }
-        }
+        logError = e instanceof Error ? e.message : String(e);
 
         if (e instanceof CookieExpiredError) {
           throw e;
@@ -277,6 +260,22 @@ export class MaimaiHttpClient {
           `Retrying in ${delay}ms (attempt ${i + 1}/${retryCount})...`,
         );
         await sleep(delay);
+      } finally {
+        // 统一记录 API 调用日志，能拿到实际的 statusCode 和 responseBody
+        if (shouldLog && this.jobId) {
+          try {
+            recordApiLog(this.jobId, {
+              url,
+              method: options.method ?? "GET",
+              statusCode: logStatusCode,
+              responseBody: logError
+                ? `[Error] ${logError}\n\n${logResponseBody ?? ""}`
+                : logResponseBody,
+            });
+          } catch {
+            // Best-effort logging; don't impact main request flow
+          }
+        }
       }
     }
 

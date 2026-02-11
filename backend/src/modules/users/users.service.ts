@@ -68,8 +68,7 @@ export class UsersService {
       updateDoc.profile = input.profile ?? null;
     }
     if ('idleUpdateBotFriendCode' in input) {
-      updateDoc.idleUpdateBotFriendCode =
-        input.idleUpdateBotFriendCode ?? null;
+      updateDoc.idleUpdateBotFriendCode = input.idleUpdateBotFriendCode ?? null;
     }
 
     const updated = await this.userModel.findByIdAndUpdate(id, updateDoc, {
