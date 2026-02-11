@@ -18,6 +18,7 @@
     <script>
         let statusCheckInterval;
         let cookieCheckInterval;
+        let autoRefreshInterval;
         const healthRetryDelay = 2000;
         let backendHealthy = false;
         let proxyConfigured = false;
@@ -110,6 +111,14 @@
             if (!statusCheckInterval) {
                 statusCheckInterval = setInterval(checkSystemStatus, 5_000);
             }
+            // Auto-refresh page every 5 minutes when backend is healthy
+            if (!autoRefreshInterval) {
+                autoRefreshInterval = setInterval(() => {
+                    if (backendHealthy) {
+                        location.reload();
+                    }
+                }, 5 * 60_000);
+            }
         }
 
         async function waitForHealth(timeout = 30000) {
@@ -145,11 +154,11 @@
                 if (data.authUrl) {
                     window.location.href = data.authUrl;
                 } else {
-                    alert("Failed to get auth URL");
+                    document.getElementById('status').innerText = "Failed to get auth URL";
                 }
             } catch (e) {
                 console.error(e);
-                alert("Error starting auth");
+                document.getElementById('status').innerText = "Error starting auth: " + e.message;
             }
         }
 

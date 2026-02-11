@@ -345,6 +345,9 @@ export class JobHandler {
       updatedAt: new Date(),
     });
 
+    // 取消收藏好友（不等待完成，默认都进行）
+    this.friendManager.favoriteOffFriend(this.job.friendCode).catch(() => {});
+
     // 清理好友关系（不等待完成）
     // idle_update_score job 完成后也清理好友（因为调度器已清除 user 标记）
     // 对于 immediate job，如果当前 bot 是用户的闲时更新 bot，跳过删除好友

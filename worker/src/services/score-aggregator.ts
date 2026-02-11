@@ -11,7 +11,7 @@ import type {
 import { DIFFICULTIES, WORKER_DEFAULTS } from "../constants.ts";
 import { getCachedHtml, setCachedHtml } from "../job-temp-cache-client.ts";
 
-import { MaimaiHttpClient } from "./maimai-client.ts";
+import { MaimaiHttpClient, sleep } from "./maimai-client.ts";
 import { parseFriendVsSongs } from "../parsers/index.ts";
 
 export interface ScoreFetchOptions {
@@ -52,8 +52,28 @@ export class ScoreAggregator {
       onDiffCompleted,
     } = options;
 
-    // 收藏好友以解锁 Friend VS 功能
-    await this.client.favoriteOnFriend(friendCode);
+    // 收藏好友以解锁 Friend VS 功能，并验证收藏状态
+    const maxFavoriteRetries = 3;
+    for (let attempt = 1; attempt <= maxFavoriteRetries; attempt++) {
+      await this.client.favoriteOnFriend(friendCode);
+
+      const friends = await this.client.getFriendList();
+      const friendInfo = friends.find((f) => f.friendCode === friendCode);
+      if (friendInfo?.isFavorite) {
+        break;
+      }
+
+      if (attempt < maxFavoriteRetries) {
+        console.warn(
+          `[ScoreAggregator] Friend ${friendCode} not favorited after attempt ${attempt}/${maxFavoriteRetries}, retrying...`,
+        );
+        await sleep(10_000);
+      } else {
+        console.warn(
+          `[ScoreAggregator] Friend ${friendCode} not confirmed as favorited after ${maxFavoriteRetries} attempts, proceeding anyway`,
+        );
+      }
+    }
 
     // 跟踪每个难度的完成状态（需要两种类型都完成）
     const diffCompletionCount = new Map<number, number>();
