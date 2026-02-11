@@ -21,7 +21,6 @@
         const healthRetryDelay = 2000;
         let backendHealthy = false;
         let proxyConfigured = false;
-        let authTriggered = false;
 
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -83,21 +82,18 @@
                 if (data.authOngoing) {
                     indicator.className = 'status-indicator status-checking';
                     status.innerText = 'Auth in progress...';
-                    authTriggered = true;
                 } else if (data.expired) {
                     indicator.className = 'status-indicator status-unhealthy';
                     status.innerText = data.friendCode
                         ? `Expired - Bot ${data.friendCode}`
                         : 'No bot cookie found';
                     // Auto-start auth when cookie is expired and system is ready
-                    if (backendHealthy && proxyConfigured && !authTriggered) {
-                        authTriggered = true;
+                    if (backendHealthy && proxyConfigured) {
                         startAuth();
                     }
                 } else {
                     indicator.className = 'status-indicator status-healthy';
                     status.innerText = `Valid - Bot ${data.friendCode}`;
-                    authTriggered = false;
                 }
             } catch (err) {
                 document.getElementById('cookieStatusIndicator').className = 'status-indicator status-unhealthy';
@@ -116,8 +112,9 @@
             }
         }
 
-        async function waitForHealth() {
-            while (true) {
+        async function waitForHealth(timeout = 30000) {
+            const deadline = Date.now() + timeout;
+            while (Date.now() < deadline) {
                 try {
                     const res = await fetch('/api/health', { cache: 'no-store' });
                     if (res.ok) {
@@ -132,6 +129,7 @@
                 document.getElementById('status').innerText = "Waiting for service to be ready...";
                 await sleep(healthRetryDelay);
             }
+            throw new Error('Health check timed out');
         }
 
         async function startAuth() {
@@ -140,7 +138,6 @@
                 return;
             }
 
-            authTriggered = true;
             try {
                 await waitForHealth();
                 const response = await fetch('/api/auth');
@@ -148,11 +145,9 @@
                 if (data.authUrl) {
                     window.location.href = data.authUrl;
                 } else {
-                    authTriggered = false;
                     alert("Failed to get auth URL");
                 }
             } catch (e) {
-                authTriggered = false;
                 console.error(e);
                 alert("Error starting auth");
             }
