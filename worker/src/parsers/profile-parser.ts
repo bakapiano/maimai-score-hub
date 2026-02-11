@@ -80,8 +80,15 @@ export function parseFriendCount(html: string): number | null {
 /**
  * 解析好友列表页面，提取好友代码及收藏状态
  * 每个好友对应一个 form，如果 form 的 action 包含 favoriteOff 则说明已收藏
+ *
+ * HTML 结构示例:
+ *   <form action="https://maimai.wahlap.com/maimai-mobile/friend/favoriteOff/" ...>
+ *     <input type="hidden" name="idx" value="FRIEND_CODE">
+ *   </form>
+ * action 为 favoriteOff → 已收藏；action 为 favoriteOn → 未收藏
  */
 export function parseFriendList(html: string): FriendInfo[] {
+  // 匹配每个 form: 提取 action URL 和内嵌的 idx hidden input 值
   const formRegex =
     /<form[^>]*action="([^"]*)"[^>]*>[\s\S]*?<input type="hidden" name="idx" value="(.*?)"[\s\S]*?<\/form>/g;
   const seen = new Set<string>();
