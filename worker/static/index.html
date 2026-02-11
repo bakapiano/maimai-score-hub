@@ -18,6 +18,7 @@
     <script>
         let statusCheckInterval;
         let cookieCheckInterval;
+        let autoRefreshInterval;
         const healthRetryDelay = 2000;
         let backendHealthy = false;
         let proxyConfigured = false;
@@ -109,6 +110,14 @@
             checkSystemStatus();
             if (!statusCheckInterval) {
                 statusCheckInterval = setInterval(checkSystemStatus, 5_000);
+            }
+            // Auto-refresh page every 5 minutes when backend is healthy
+            if (!autoRefreshInterval) {
+                autoRefreshInterval = setInterval(() => {
+                    if (backendHealthy) {
+                        location.reload();
+                    }
+                }, 5 * 60_000);
             }
         }
 
