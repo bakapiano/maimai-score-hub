@@ -48,10 +48,20 @@ export class JobController {
       throw new BadRequestException('skipUpdateScore must be a boolean');
     }
 
-    return this.jobs.create({
+    const result = await this.jobs.create({
       friendCode: body.friendCode,
       skipUpdateScore: (body.skipUpdateScore as boolean | undefined) ?? false,
     });
+
+    // 立即更新时，如果用户已开启闲时更新，则自动取消闲时更新
+    const user = await this.users.findByFriendCode(body.friendCode);
+    if (user && user.idleUpdateBotFriendCode) {
+      await this.users.update(String(user._id), {
+        idleUpdateBotFriendCode: null,
+      });
+    }
+
+    return result;
   }
 
   @Get('stats/recent')
@@ -231,9 +241,7 @@ export class JobController {
         method: entry.method,
         statusCode: entry.statusCode,
         responseBody:
-          typeof entry.responseBody === 'string'
-            ? entry.responseBody
-            : null,
+          typeof entry.responseBody === 'string' ? entry.responseBody : null,
       });
     }
 

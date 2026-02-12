@@ -161,6 +161,7 @@ export class UsersController {
       friendCode: user.friendCode,
       skipUpdateScore: true,
       jobType: 'idle_add_friend',
+      botUserFriendCode: selectedBot,
     });
 
     return { ...result, message: '闲时更新任务已创建，等待 Bot 添加好友' };

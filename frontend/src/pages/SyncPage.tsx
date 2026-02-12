@@ -387,6 +387,14 @@ export default function SyncPage() {
   const startSync = async () => {
     if (!profile?.friendCode) return;
 
+    // 如果已开启闲时更新，提示用户立即更新会取消闲时更新
+    if (idleUpdateStatus?.enabled) {
+      const confirmed = window.confirm(
+        "你已开启闲时更新，立即更新将会取消闲时更新。是否继续？",
+      );
+      if (!confirmed) return;
+    }
+
     setSyncing(true);
     setSyncError(null);
     setSyncStatus(null);
@@ -408,6 +416,20 @@ export default function SyncPage() {
     if (res.ok && res.data?.jobId) {
       setSyncJobId(res.data.jobId);
       setSyncStatus(res.data.job);
+
+      // 立即更新成功创建后，如果之前开启了闲时更新，更新前端状态
+      if (idleUpdateStatus?.enabled) {
+        setIdleUpdateStatus({
+          enabled: false,
+          botFriendCode: null,
+          pendingJob: false,
+        });
+        notifications.show({
+          title: "闲时更新已取消",
+          message: "已自动关闭闲时更新，如需使用请在同步完成后重新开启",
+          color: "yellow",
+        });
+      }
     } else {
       setSyncing(false);
       const errorData = res.data as { message?: string; error?: string } | null;

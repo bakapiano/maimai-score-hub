@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { BotStatusService } from '../admin/bot-status.service';
 import { ConfigService } from '@nestjs/config';
 import { JobService } from '../job/job.service';
 import { JwtService } from '@nestjs/jwt';
@@ -17,6 +18,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly users: UsersService,
     private readonly jobs: JobService,
+    private readonly botStatus: BotStatusService,
     config: ConfigService,
   ) {
     this.skipAuth = config.get<string>('SKIP_AUTH', 'false') === 'true';
@@ -50,9 +52,21 @@ export class AuthService {
       return { skipAuth: true, token, user };
     }
 
+    // 如果用户开启了闲时更新，优先选择不是闲时更新的那个 bot
+    let botUserFriendCode: string | undefined;
+    if (user.idleUpdateBotFriendCode) {
+      const availableBots = this.botStatus.getAll().filter((b) => b.available);
+      const nonIdleBot = availableBots.find(
+        (b) => b.friendCode !== user.idleUpdateBotFriendCode,
+      );
+      botUserFriendCode =
+        nonIdleBot?.friendCode ?? availableBots[0]?.friendCode;
+    }
+
     const { jobId } = await this.jobs.create({
       friendCode: normalized,
       skipUpdateScore,
+      botUserFriendCode,
     });
 
     return { jobId, userId: user._id };
