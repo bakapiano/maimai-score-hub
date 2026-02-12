@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { ConfigService } from '@nestjs/config';
+import { IdleUpdateLogService } from './idle-update-log.service';
 import { JobService } from './job.service';
 import { UsersService } from '../users/users.service';
 
@@ -24,6 +25,7 @@ export class IdleUpdateSchedulerService
   constructor(
     private readonly jobService: JobService,
     private readonly usersService: UsersService,
+    private readonly idleUpdateLogService: IdleUpdateLogService,
     config: ConfigService,
   ) {
     this.idleUpdateHour = Number(config.get<string>('IDLE_UPDATE_HOUR', '0'));
@@ -52,8 +54,6 @@ export class IdleUpdateSchedulerService
     }
   }
 
-  private lastTriggeredDate: string | null = null;
-
   private async checkAndTrigger(): Promise<void> {
     // 获取 UTC+8 时间
     const now = new Date();
@@ -61,13 +61,26 @@ export class IdleUpdateSchedulerService
     const hour = utc8.getUTCHours();
     const dateKey = utc8.toISOString().slice(0, 10);
 
-    // 只在目标小时且当天未触发过时执行
-    if (hour !== this.idleUpdateHour || this.lastTriggeredDate === dateKey) {
+    // 只在目标小时执行
+    if (hour !== this.idleUpdateHour) {
       return;
     }
 
-    this.lastTriggeredDate = dateKey;
-    await this.triggerNow();
+    // 通过 DB 原子操作竞争触发权，确保多 instance 只触发一次
+    const acquired = await this.idleUpdateLogService.tryAcquire(dateKey);
+    if (!acquired) {
+      return;
+    }
+
+    const result = await this.triggerNow();
+
+    // 记录本次触发的详细结果
+    await this.idleUpdateLogService.finalize(dateKey, {
+      totalUsers: result.totalUsers,
+      created: result.created,
+      failed: result.failed,
+      entries: result.entries,
+    });
   }
 
   /** 轮询间隔(ms) */
@@ -82,17 +95,19 @@ export class IdleUpdateSchedulerService
     totalUsers: number;
     created: number;
     failed: number;
+    entries: Array<{ friendCode: string; jobId: string }>;
   }> {
     this.logger.log('Triggering idle update jobs');
 
     const users = await this.usersService.getIdleUpdateUsers();
     if (!users.length) {
       this.logger.log('No users with idle update enabled');
-      return { totalUsers: 0, created: 0, failed: 0 };
+      return { totalUsers: 0, created: 0, failed: 0, entries: [] };
     }
 
     let created = 0;
     let failed = 0;
+    const entries: Array<{ friendCode: string; jobId: string }> = [];
 
     // 按 concurrency 分批处理
     for (let i = 0; i < users.length; i += this.concurrency) {
@@ -116,6 +131,7 @@ export class IdleUpdateSchedulerService
           });
 
           batchJobIds.push(jobId);
+          entries.push({ friendCode: user.friendCode, jobId });
           created++;
         } catch (err) {
           failed++;
@@ -138,7 +154,7 @@ export class IdleUpdateSchedulerService
       `Idle update complete: ${created} jobs created, ${failed} failed out of ${users.length} users`,
     );
 
-    return { totalUsers: users.length, created, failed };
+    return { totalUsers: users.length, created, failed, entries };
   }
 
   /**
