@@ -83,10 +83,10 @@ export class MaimaiHttpClient {
   jobId: string | null = null;
 
   // =========================================================================
-  // 全局限流 —— 所有实例共享，保证相邻请求发起时间间隔 ≥ 1.5 秒以防限流
+  // 全局限流 —— 所有实例共享，保证相邻请求发起时间间隔 ≥ 2 秒以防限流
   // =========================================================================
   /** 请求发起间最小间隔（毫秒） */
-  private static readonly REQUEST_INTERVAL_MS = 1_500;
+  private static readonly REQUEST_INTERVAL_MS = 2_000;
   /** 上一次请求发起的时间戳 */
   private static lastRequestStartTime = 0;
   /** 限流锁：保证等待+更新时间戳的原子性 */
