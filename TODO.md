@@ -20,5 +20,7 @@
 - [] https://github.com/Lxns-Network/maimai-prober-frontend/blob/bbaa066ba0f2d06ced0a9f5306ac55a52195b1c2/src/pages/public/Chart.tsx#L390 铺面预览?
 - [] 所有铺面 search by name
 - [] TODO fix 11494 封面（怎么变句子怪兽了）
-- [] TODO セイクリッド　ルイン 传不上去 圣墟
+- [] TODO セイクリッド　ルイン 传不上去 圣墟 / 虚拟赛车 也传不上去
+- [] TODO 烤联动封面不对
 - [] TODO ADB 控制安卓自动恢复登陆页面
+- [] todo REMOVE utage from b50

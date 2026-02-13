@@ -12,6 +12,7 @@ import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
 import { BotStatusService } from './bot-status.service';
 import { JobApiLogService } from '../job/job-api-log.service';
+import { JobService } from '../job/job.service';
 import { IdleUpdateSchedulerService } from '../job/idle-update-scheduler.service';
 
 @Controller('admin')
@@ -21,6 +22,7 @@ export class AdminController {
     private readonly botStatusService: BotStatusService,
     private readonly apiLogService: JobApiLogService,
     private readonly idleUpdateScheduler: IdleUpdateSchedulerService,
+    private readonly jobService: JobService,
   ) {}
 
   /**
@@ -134,5 +136,15 @@ export class AdminController {
   async triggerIdleUpdate() {
     const result = await this.idleUpdateScheduler.triggerNow();
     return { ok: true, ...result };
+  }
+
+  /**
+   * 清理创建时间在七天之前的所有 job
+   */
+  @Post('cleanup-jobs')
+  @UseGuards(AdminGuard)
+  async cleanupJobs() {
+    const deletedCount = await this.jobService.cleanupOldJobs();
+    return { ok: true, deletedCount };
   }
 }

@@ -30,7 +30,7 @@ export class IdleUpdateSchedulerService
   ) {
     this.idleUpdateHour = Number(config.get<string>('IDLE_UPDATE_HOUR', '0'));
     this.concurrency = Number(
-      config.get<string>('IDLE_UPDATE_CONCURRENCY', '5'),
+      config.get<string>('IDLE_UPDATE_CONCURRENCY', '4'),
     );
   }
 

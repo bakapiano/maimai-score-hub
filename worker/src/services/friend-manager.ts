@@ -10,6 +10,8 @@ import { MaimaiHttpClient } from "./maimai-client.ts";
  */
 export class FriendManager {
   private client: MaimaiHttpClient;
+  private static cleanUpPromises = new Map<string, Promise<void>>();
+  private static readonly CLEANUP_TIMEOUT_MS = 60_000;
 
   constructor(client: MaimaiHttpClient) {
     this.client = client;
@@ -20,6 +22,25 @@ export class FriendManager {
    * 包括取消待处理的好友请求和删除已有好友
    */
   async cleanUpFriend(friendCode: string): Promise<void> {
+    const existing = FriendManager.cleanUpPromises.get(friendCode);
+    if (existing) {
+      return existing;
+    }
+
+    const promise = this._doCleanUpFriend(friendCode);
+    FriendManager.cleanUpPromises.set(friendCode, promise);
+
+    const timeout = setTimeout(() => {
+      FriendManager.cleanUpPromises.delete(friendCode);
+    }, FriendManager.CLEANUP_TIMEOUT_MS);
+
+    return promise.finally(() => {
+      clearTimeout(timeout);
+      FriendManager.cleanUpPromises.delete(friendCode);
+    });
+  }
+
+  private async _doCleanUpFriend(friendCode: string): Promise<void> {
     let [sent, friendInfos, accepted] = await Promise.all([
       this.client.getSentRequests(),
       this.client.getFriendList(),

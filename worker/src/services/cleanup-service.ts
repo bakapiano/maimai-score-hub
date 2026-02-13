@@ -131,7 +131,7 @@ export class CleanupService {
       // 2. 获取活跃的 friendCode 列表和闲时更新的 friendCode 列表
       const [activeFriendCodes, idleUpdateFriendCodes] = await Promise.all([
         getActiveFriendCodes(botFriendCode),
-        getIdleUpdateFriendCodes(botFriendCode).catch(() => [] as string[]),
+        getIdleUpdateFriendCodes(botFriendCode),
       ]);
       const activeSet = new Set(activeFriendCodes);
       const idleUpdateSet = new Set(idleUpdateFriendCodes);

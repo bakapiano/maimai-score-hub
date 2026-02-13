@@ -27,6 +27,7 @@ import {
   IconClock,
   IconRefresh,
   IconRobot,
+  IconTrash,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -65,6 +66,28 @@ export default function AdminActiveJobsPage() {
   );
   const [jobErrorStatsLoading, setJobErrorStatsLoading] = useState(false);
   const [selectedErrorTimeRange, setSelectedErrorTimeRange] = useState(0);
+
+  // ── Cleanup ──
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<string | null>(null);
+
+  const handleCleanupJobs = useCallback(async () => {
+    if (!password) return;
+    if (!window.confirm("确定要清理 7 天前的所有任务记录吗？此操作不可撤销。")) return;
+    setCleanupLoading(true);
+    setCleanupResult(null);
+    const res = await adminFetch<{ deletedCount: number }>(
+      "/api/admin/cleanup-jobs",
+      password,
+      { method: "POST" },
+    );
+    setCleanupLoading(false);
+    if (res.ok && res.data) {
+      setCleanupResult(`已清理 ${res.data.deletedCount} 条旧任务`);
+    } else {
+      setCleanupResult(`清理失败: ${res.error}`);
+    }
+  }, [password]);
 
   // ── Loaders ──
 
@@ -207,6 +230,31 @@ export default function AdminActiveJobsPage() {
 
   return (
     <Stack gap="lg">
+      {/* ── 维护操作 ── */}
+      <Card withBorder shadow="sm" padding="lg" radius="md">
+        <Group justify="space-between" align="center">
+          <Group gap="xs">
+            <IconTrash size={20} />
+            <Text fw={600}>数据维护</Text>
+            {cleanupResult && (
+              <Text size="sm" c={cleanupResult.startsWith("已清理") ? "green" : "red"}>
+                {cleanupResult}
+              </Text>
+            )}
+          </Group>
+          <Button
+            variant="light"
+            color="red"
+            size="xs"
+            leftSection={<IconTrash size={14} />}
+            onClick={handleCleanupJobs}
+            loading={cleanupLoading}
+          >
+            清理 7 天前的任务
+          </Button>
+        </Group>
+      </Card>
+
       {/* ── Bot 状态 ── */}
       <Card withBorder shadow="sm" padding="lg" radius="md">
         <Stack gap="md">

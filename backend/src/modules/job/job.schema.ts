@@ -61,3 +61,6 @@ export class JobEntity {
 
 export type JobDocument = HydratedDocument<JobEntity>;
 export const JobSchema = SchemaFactory.createForClass(JobEntity);
+
+// 7 天 TTL 索引，自动清理过期 job
+JobSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7 * 24 * 60 * 60 });

@@ -96,9 +96,7 @@ export class JobService {
     if (recent) {
       const diff = now.getTime() - recent.createdAt.getTime();
       if (diff < MIN_CREATE_INTERVAL_MS) {
-        throw new BadRequestException(
-          'Too many requests for this friendCode; please wait a minute.',
-        );
+        throw new BadRequestException('请求过于频繁，请等待一分钟过后重试！');
       }
     }
 
@@ -463,5 +461,16 @@ export class JobService {
       friendRequestSentAt: job.friendRequestSentAt,
       pickedAt: job.pickedAt,
     };
+  }
+
+  /**
+   * 清理创建时间在七天之前的所有 job
+   */
+  async cleanupOldJobs(): Promise<number> {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const result = await this.jobModel.deleteMany({
+      createdAt: { $lt: sevenDaysAgo },
+    });
+    return result.deletedCount;
   }
 }
