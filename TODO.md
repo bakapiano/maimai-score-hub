@@ -22,6 +22,7 @@
 - [] TODO セイクリッド　ルイン 传不上去 圣墟 / 虚拟赛车 也传不上去
 - [] TODO ADB 控制安卓自动恢复登陆页面
 - [] todo REMOVE utage from b50
+- [] 更新完成自动导出水鱼
 
   [364] "D✪N’T ST✪P R✪CKIN’" (standard) charts: 0,1,2,3,4
   [383] "Link" (standard) charts: 0,1,2,3
