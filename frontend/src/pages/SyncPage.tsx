@@ -658,32 +658,6 @@ export default function SyncPage() {
           从 maimai DX NET 同步你的最新游戏成绩数据。
         </Text>
 
-        {recentStats && recentStats.totalCount >= 5 && (
-          <Group gap="xl">
-            <Group gap={6}>
-              <Text size="sm" c="dimmed">近 1 小时成功率</Text>
-              <Badge
-                variant="light"
-                size="lg"
-                radius="md"
-                color={recentStats.successRate >= 80 ? "green" : recentStats.successRate >= 50 ? "yellow" : "red"}
-              >
-                {recentStats.successRate}%
-              </Badge>
-            </Group>
-            {recentStats.avgDuration != null && (
-              <Group gap={6}>
-                <Text size="sm" c="dimmed">平均耗时</Text>
-                <Badge variant="light" size="lg" radius="md">
-                  {recentStats.avgDuration >= 60000
-                    ? `${Math.floor(recentStats.avgDuration / 60000)}分${Math.round((recentStats.avgDuration % 60000) / 1000)}秒`
-                    : `${Math.round(recentStats.avgDuration / 1000)}秒`}
-                </Badge>
-              </Group>
-            )}
-          </Group>
-        )}
-
         {lastSync && (
           <Card withBorder padding="sm" radius="md">
             <Group justify="space-between" align="center">
@@ -909,6 +883,32 @@ export default function SyncPage() {
         <Text size="sm" c="dimmed">
           先和 Bot 添加好友，在当日凌晨空闲时段自动更新成绩，成功率更高。（注：更新完成后会自动解除好友关系）
         </Text>
+
+        {recentStats && recentStats.totalCount && (
+          <Group gap="xl">
+            <Group gap={6}>
+              <Text size="sm" c="dimmed">近 1 小时成功率</Text>
+              <Badge
+                variant="light"
+                size="lg"
+                radius="md"
+                color={recentStats.successRate >= 80 ? "green" : recentStats.successRate >= 50 ? "yellow" : "red"}
+              >
+                {recentStats.successRate}%
+              </Badge>
+            </Group>
+            {recentStats.avgDuration != null && (
+              <Group gap={6}>
+                <Text size="sm" c="dimmed">平均耗时</Text>
+                <Badge variant="light" size="lg" radius="md">
+                  {recentStats.avgDuration >= 60000
+                    ? `${Math.floor(recentStats.avgDuration / 60000)}分${Math.round((recentStats.avgDuration % 60000) / 1000)}秒`
+                    : `${Math.round(recentStats.avgDuration / 1000)}秒`}
+                </Badge>
+              </Group>
+            )}
+          </Group>
+        )}
 
         {lowSuccessRate && !idleUpdateStatus?.enabled && (
           <Alert

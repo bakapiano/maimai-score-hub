@@ -413,38 +413,6 @@ export default function LoginPage() {
                 </>
               ) : (
                 <>
-                {recentStats && recentStats.totalCount >= 5 && (
-                <Group gap="xl" mb="xs">
-                  <Group gap={6}>
-                    <Text size="sm" c="dimmed">近 1 小时成功率</Text>
-                    <Badge
-                      variant="light"
-                      size="lg"
-                      radius="md"
-                      color={
-                        recentStats.successRate >= 80
-                          ? "green"
-                          : recentStats.successRate >= 50
-                            ? "yellow"
-                            : "red"
-                      }
-                    >
-                      {recentStats.successRate}%
-                    </Badge>
-                  </Group>
-                  {recentStats.avgDuration != null && (
-                    <Group gap={6}>
-                      <Text size="sm" c="dimmed">平均耗时</Text>
-                      <Badge variant="light" size="lg" radius="md">
-                        {recentStats.avgDuration >= 60000
-                          ? `${Math.floor(recentStats.avgDuration / 60000)}分${Math.round((recentStats.avgDuration % 60000) / 1000)}秒`
-                          : `${Math.round(recentStats.avgDuration / 1000)}秒`}
-                      </Badge>
-                    </Group>
-                  )}
-                </Group>
-              )}
-
               <Paper shadow="xs" p="lg" radius="md" withBorder>
                   <Stack gap="md">
                     <Group align="flex-end" gap="xs">
@@ -516,6 +484,38 @@ export default function LoginPage() {
                         }
                         disabled={polling}
                       />
+                    )}
+
+                    {!skipUpdateScore && recentStats && recentStats.totalCount > 0 && (
+                      <Group gap="xl">
+                        <Group gap={6}>
+                          <Text size="sm" c="dimmed">近 1 小时更新成功率</Text>
+                          <Badge
+                            variant="light"
+                            size="lg"
+                            radius="md"
+                            color={
+                              recentStats.successRate >= 80
+                                ? "green"
+                                : recentStats.successRate >= 50
+                                  ? "yellow"
+                                  : "red"
+                            }
+                          >
+                            {recentStats.successRate}%
+                          </Badge>
+                        </Group>
+                        {recentStats.avgDuration != null && (
+                          <Group gap={6}>
+                            <Text size="sm" c="dimmed">平均耗时</Text>
+                            <Badge variant="light" size="lg" radius="md">
+                              {recentStats.avgDuration >= 60000
+                                ? `${Math.floor(recentStats.avgDuration / 60000)}分${Math.round((recentStats.avgDuration % 60000) / 1000)}秒`
+                                : `${Math.round(recentStats.avgDuration / 1000)}秒`}
+                            </Badge>
+                          </Group>
+                        )}
+                      </Group>
                     )}
 
                     {lowSuccessRate && !skipUpdateScore && !useIdleUpdate && (

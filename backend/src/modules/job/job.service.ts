@@ -382,11 +382,6 @@ export class JobService {
 
     const filter = {
       skipUpdateScore: false,
-      $or: [
-        { jobType: 'immediate' },
-        { jobType: { $exists: false } },
-        { jobType: null },
-      ],
       createdAt: { $gte: oneHourAgo },
     };
 
