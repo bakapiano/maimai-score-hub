@@ -15,7 +15,12 @@ export class AuthController {
 
   @Post('login-request')
   async loginRequest(
-    @Body() body: { friendCode?: unknown; skipUpdateScore?: unknown },
+    @Body()
+    body: {
+      friendCode?: unknown;
+      skipUpdateScore?: unknown;
+      useIdleUpdate?: unknown;
+    },
   ) {
     if (typeof body.friendCode !== 'string') {
       throw new BadRequestException('friendCode is required');
@@ -25,8 +30,13 @@ export class AuthController {
       anyBody.skipUpdateScore === undefined
         ? true
         : Boolean(anyBody.skipUpdateScore);
+    const useIdleUpdate = Boolean(anyBody.useIdleUpdate);
 
-    return this.auth.requestLogin(body.friendCode, skipUpdateScore);
+    return this.auth.requestLogin(
+      body.friendCode,
+      skipUpdateScore,
+      useIdleUpdate,
+    );
   }
 
   @Get('login-status')

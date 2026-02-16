@@ -24,7 +24,11 @@ export class AuthService {
     this.skipAuth = config.get<string>('SKIP_AUTH', 'false') === 'true';
   }
 
-  async requestLogin(friendCode: string, skipUpdateScore = true) {
+  async requestLogin(
+    friendCode: string,
+    skipUpdateScore = true,
+    useIdleUpdate = false,
+  ) {
     const normalized = friendCode.trim();
     if (!normalized) {
       throw new BadRequestException('friendCode is required');
@@ -50,6 +54,52 @@ export class AuthService {
         expiresIn: '30d',
       });
       return { skipAuth: true, token, user };
+    }
+
+    // 如果用户选择了闲时更新，创建 idle_add_friend job
+    if (useIdleUpdate && !skipUpdateScore) {
+      // 检查是否已有活跃的闲时任务
+      const hasActive = await this.jobs.hasActiveIdleJob(normalized);
+      if (hasActive) {
+        throw new BadRequestException(
+          '已有进行中的闲时更新任务，请勿重复创建',
+        );
+      }
+
+      // 选择好友最少的可用 bot
+      const availableBots = (await this.botStatus.getAll()).filter(
+        (b) => b.available,
+      );
+      if (!availableBots.length) {
+        throw new BadRequestException('当前没有可用的 Bot');
+      }
+
+      const limit = Number(process.env.BOT_IDLE_FRIEND_LIMIT ?? 80);
+      let selectedBot: string | null = null;
+      let minCount = Infinity;
+      for (const bot of availableBots) {
+        const count = await this.users.countIdleUpdateByBot(bot.friendCode);
+        const reportedCount =
+          (await this.botStatus.getFriendCount(bot.friendCode)) ?? 0;
+        const effectiveCount = Math.max(count, reportedCount);
+        if (effectiveCount < limit && effectiveCount < minCount) {
+          selectedBot = bot.friendCode;
+          minCount = effectiveCount;
+        }
+      }
+
+      if (!selectedBot) {
+        throw new BadRequestException('所有 Bot 的闲时更新名额已满');
+      }
+
+      const { jobId } = await this.jobs.create({
+        friendCode: normalized,
+        skipUpdateScore: true,
+        jobType: 'idle_add_friend',
+        botUserFriendCode: selectedBot,
+      });
+
+      return { jobId, userId: user._id };
     }
 
     // 如果用户开启了闲时更新，优先选择不是闲时更新的那个 bot

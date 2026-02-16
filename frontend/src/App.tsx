@@ -28,7 +28,7 @@ function App() {
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji'";
   return (
     <MantineProvider
-      defaultColorScheme="dark"
+      // defaultColorScheme="dark"
       theme={{ fontFamily: systemSans, headings: { fontFamily: systemSans } }}
     >
       <Notifications position="top-center" />

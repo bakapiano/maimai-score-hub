@@ -1,10 +1,14 @@
 import {
   Alert,
+  Anchor,
   AppShell,
+  Badge,
   Box,
   Button,
+  Collapse,
   Container,
   Group,
+  Image,
   Loader,
   Paper,
   Progress,
@@ -15,7 +19,8 @@ import {
   Tooltip,
   useMantineColorScheme,
 } from "@mantine/core";
-import { IconInfoCircle, IconCopy, IconClock } from "@tabler/icons-react";
+import { IconInfoCircle, IconCopy, IconClock, IconChevronDown, IconChevronUp } from "@tabler/icons-react";
+import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useMemo, useState } from "react";
 
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
@@ -45,6 +50,43 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   return { ok: res.ok, status: res.status, data };
 }
 
+function FriendCodeGuide() {
+  const [opened, { toggle }] = useDisclosure(true);
+
+  return (
+    <Stack gap={4}>
+      <Anchor
+        component="button"
+        type="button"
+        size="md"
+        fw={500}
+        onClick={toggle}
+        style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 4 }}
+      >
+        {opened ? <IconChevronUp size={20} /> : <IconChevronDown size={20} />}
+        好友代码是什么？
+      </Anchor>
+      <Collapse in={opened}>
+        <Stack gap="xs">
+          <Text size="sm">
+            登录{" "}
+            <Anchor href="https://tgk-wcaime.wahlap.com/wc_auth/oauth/authorize/maimai-dx" target="_blank" rel="noopener">
+              maimai NET
+            </Anchor>
+            ，进入「好友」页面，点击右下角「你的好友号码」即可查看。
+          </Text>
+          <Image
+            src="/friendcode.png"
+            alt="好友代码查找教程"
+            radius="md"
+            w="100%"
+          />
+        </Stack>
+      </Collapse>
+    </Stack>
+  );
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -65,6 +107,11 @@ export default function LoginPage() {
   const [skipUpdateScore, setSkipUpdateScore] = useState(true);
   const [useIdleUpdate, setUseIdleUpdate] = useState(false);
   const [lowSuccessRate, setLowSuccessRate] = useState(false);
+  const [recentStats, setRecentStats] = useState<{
+    totalCount: number;
+    successRate: number;
+    avgDuration: number | null;
+  } | null>(null);
   const [_health, setHealth] = useState("");
   const [jobId, setJobId] = useState(() => {
     try {
@@ -116,6 +163,26 @@ export default function LoginPage() {
     (async () => {
       const res = await fetchJson<{ status?: string }>("/api/health");
       setHealth(res.ok ? JSON.stringify(res.data) : `HTTP ${res.status}`);
+    })();
+
+    // Fetch recent stats on mount
+    (async () => {
+      try {
+        const statsRes = await fetchJson<{
+          totalCount: number;
+          successRate: number;
+          avgDuration: number | null;
+        }>("/api/job/stats/recent");
+        if (statsRes.ok && statsRes.data) {
+          setRecentStats(statsRes.data);
+          if (
+            statsRes.data.totalCount >= 5 &&
+            statsRes.data.successRate <= 50
+          ) {
+            setLowSuccessRate(true);
+          }
+        }
+      } catch {}
     })();
   }, []);
 
@@ -223,23 +290,7 @@ export default function LoginPage() {
       localStorage.setItem("lastFriendCode", trimmedCode);
     } catch {}
 
-    // 如果不跳过更新成绩且不是闲时更新，检查立即更新的成功率
-    if (!skipUpdateScore && !useIdleUpdate) {
-      try {
-        const statsRes = await fetchJson<{
-          totalCount: number;
-          successRate: number;
-        }>("/api/job/stats/recent");
-        if (
-          statsRes.ok &&
-          statsRes.data &&
-          statsRes.data.totalCount >= 5 &&
-          statsRes.data.successRate <= 50
-        ) {
-          setLowSuccessRate(true);
-        }
-      } catch {}
-    }
+
 
     const res = await fetchJson<LoginRequest>("/api/auth/login-request", {
       method: "POST",
@@ -247,6 +298,7 @@ export default function LoginPage() {
       body: JSON.stringify({
         friendCode: trimmedCode,
         skipUpdateScore,
+        useIdleUpdate: !skipUpdateScore && useIdleUpdate,
       }),
     });
 
@@ -310,7 +362,7 @@ export default function LoginPage() {
           <Container size="sm" style={{ maxWidth: 600, width: "100%" }}>
             <PageHeader
               title={"欢迎！"}
-              description={"输入 maimai DX Net 好友代码以继续"}
+              description={"输入 maimai Net 好友代码以继续"}
             />
           </Container>
         </Box>
@@ -360,7 +412,40 @@ export default function LoginPage() {
                   )}
                 </>
               ) : (
-                <Paper shadow="xs" p="lg" radius="md" withBorder>
+                <>
+                {recentStats && recentStats.totalCount >= 5 && (
+                <Group gap="xl" mb="xs">
+                  <Group gap={6}>
+                    <Text size="sm" c="dimmed">近 1 小时成功率</Text>
+                    <Badge
+                      variant="light"
+                      size="lg"
+                      radius="md"
+                      color={
+                        recentStats.successRate >= 80
+                          ? "green"
+                          : recentStats.successRate >= 50
+                            ? "yellow"
+                            : "red"
+                      }
+                    >
+                      {recentStats.successRate}%
+                    </Badge>
+                  </Group>
+                  {recentStats.avgDuration != null && (
+                    <Group gap={6}>
+                      <Text size="sm" c="dimmed">平均耗时</Text>
+                      <Badge variant="light" size="lg" radius="md">
+                        {recentStats.avgDuration >= 60000
+                          ? `${Math.floor(recentStats.avgDuration / 60000)}分${Math.round((recentStats.avgDuration % 60000) / 1000)}秒`
+                          : `${Math.round(recentStats.avgDuration / 1000)}秒`}
+                      </Badge>
+                    </Group>
+                  )}
+                </Group>
+              )}
+
+              <Paper shadow="xs" p="lg" radius="md" withBorder>
                   <Stack gap="md">
                     <Group align="flex-end" gap="xs">
                       <TextInput
@@ -421,7 +506,7 @@ export default function LoginPage() {
                         label={
                           <Group gap={4}>
                             <IconClock size={14} />
-                            <Text size="sm">使用闲时更新</Text>
+                            <Text size="sm">使用夜间更新 (Beta)</Text>
                           </Group>
                         }
                         description="先与 Bot 成为好友，在凌晨空闲时段自动更新成绩"
@@ -433,16 +518,16 @@ export default function LoginPage() {
                       />
                     )}
 
-                    {lowSuccessRate && !useIdleUpdate && (
+                    {lowSuccessRate && !skipUpdateScore && !useIdleUpdate && (
                       <Alert
                         variant="light"
                         color="yellow"
-                        title="立即更新成功率较低"
+                        title="推荐使用闲时更新"
                         icon={<IconInfoCircle size={16} />}
                         radius="md"
                       >
                         <Text size="sm">
-                          当前立即更新成功率较低，建议使用闲时更新以获得更好的体验。
+                          当前立即更新成功率较低，建议勾选闲时更新以获得更好的体验。
                         </Text>
                       </Alert>
                     )}
@@ -458,6 +543,9 @@ export default function LoginPage() {
                     </Group>
                   </Stack>
                 </Paper>
+
+              <FriendCodeGuide />
+              </>
               )}
             </Stack>
           </Container>
