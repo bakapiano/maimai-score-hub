@@ -28,7 +28,8 @@
         async function checkBackendHealth() {
             try {
                 const response = await fetch('/api/health', { 
-                    cache: 'no-store'
+                    cache: 'no-store',
+                    signal: AbortSignal.timeout(30_000)
                 });
                 backendHealthy = response.ok;
                 
@@ -51,7 +52,7 @@
 
         async function checkProxyConfiguration() {
             try {
-                const response = await fetch('http://93.184.215.14', { cache: 'no-store' });
+                const response = await fetch('http://93.184.215.14', { cache: 'no-store', signal: AbortSignal.timeout(30_000) });
                 const data = await response.json().catch(() => ({}));
                 proxyConfigured = data.success === true;
                 
@@ -74,7 +75,7 @@
 
         async function checkCookieStatus() {
             try {
-                const response = await fetch('/api/status', { cache: 'no-store' });
+                const response = await fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(30_000) });
                 const data = await response.json();
                 
                 const indicator = document.getElementById('cookieStatusIndicator');
@@ -111,9 +112,10 @@
             if (!statusCheckInterval) {
                 statusCheckInterval = setInterval(checkSystemStatus, 5_000);
             }
-            // Auto-refresh page every 5 minutes when backend is healthy
+            // Auto-refresh page every 5 minutes if backend is healthy
             if (!autoRefreshInterval) {
-                autoRefreshInterval = setInterval(() => {
+                autoRefreshInterval = setInterval(async () => {
+                    await checkBackendHealth();
                     if (backendHealthy) {
                         location.reload();
                     }
@@ -125,7 +127,7 @@
             const deadline = Date.now() + timeout;
             while (Date.now() < deadline) {
                 try {
-                    const res = await fetch('/api/health', { cache: 'no-store' });
+                    const res = await fetch('/api/health', { cache: 'no-store', signal: AbortSignal.timeout(30_000) });
                     if (res.ok) {
                         const data = await res.json().catch(() => ({}));
                         if (!data.status || data.status === 'ok') {
@@ -149,7 +151,7 @@
 
             try {
                 await waitForHealth();
-                const response = await fetch('/api/auth');
+                const response = await fetch('/api/auth', { signal: AbortSignal.timeout(30_000) });
                 const data = await response.json();
                 if (data.authUrl) {
                     window.location.href = data.authUrl;
