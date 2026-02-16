@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Post,
   Param,
   Query,
@@ -50,6 +51,16 @@ export class AdminController {
   @UseGuards(AdminGuard)
   async getBotStatus() {
     return this.botStatusService.getAll();
+  }
+
+  @Patch('bot-status/:friendCode/remark')
+  @UseGuards(AdminGuard)
+  async updateBotRemark(
+    @Param('friendCode') friendCode: string,
+    @Body() body: { remark: string | null },
+  ) {
+    await this.botStatusService.updateRemark(friendCode, body.remark);
+    return { ok: true };
   }
 
   @Get('stats')

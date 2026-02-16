@@ -15,6 +15,13 @@ export class BotStatusEntity {
 
   @Prop({ type: Number, default: null })
   friendCount!: number | null;
+
+  @Prop({ type: String, default: null })
+  remark!: string | null;
+
+  /** 是否已发送过不可用通知（用于去重） */
+  @Prop({ type: Boolean, default: false })
+  notifiedUnavailable!: boolean;
 }
 
 export type BotStatusDocument = HydratedDocument<BotStatusEntity>;

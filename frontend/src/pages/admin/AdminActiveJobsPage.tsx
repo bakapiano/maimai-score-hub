@@ -1,4 +1,5 @@
 import {
+  ActionIcon,
   Badge,
   Button,
   Card,
@@ -9,6 +10,7 @@ import {
   Table,
   Tabs,
   Text,
+  TextInput,
 } from "@mantine/core";
 import {
   Bar,
@@ -24,7 +26,9 @@ import {
 } from "recharts";
 import {
   IconChartBar,
+  IconCheck,
   IconClock,
+  IconEdit,
   IconRefresh,
   IconRobot,
   IconTrash,
@@ -52,6 +56,8 @@ export default function AdminActiveJobsPage() {
   // ── Bot Status ──
   const [botStatuses, setBotStatuses] = useState<BotStatus[] | null>(null);
   const [botStatusesLoading, setBotStatusesLoading] = useState(false);
+  const [editingRemark, setEditingRemark] = useState<string | null>(null);
+  const [editRemarkValue, setEditRemarkValue] = useState("");
 
   // ── Job Stats ──
   const [jobStats, setJobStats] = useState<JobStats | null>(null);
@@ -88,6 +94,27 @@ export default function AdminActiveJobsPage() {
       setCleanupResult(`清理失败: ${res.error}`);
     }
   }, [password]);
+
+  const saveRemark = useCallback(
+    async (friendCode: string) => {
+      if (!password) return;
+      const remark = editRemarkValue.trim() || null;
+      await adminFetch("/api/admin/bot-status/" + friendCode + "/remark", password, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ remark }),
+      });
+      setEditingRemark(null);
+      // Update local state immediately
+      setBotStatuses(
+        (prev: BotStatus[] | null) =>
+          prev?.map((b: BotStatus) =>
+            b.friendCode === friendCode ? { ...b, remark } : b,
+          ) ?? null,
+      );
+    },
+    [password, editRemarkValue],
+  );
 
   // ── Loaders ──
 
@@ -291,6 +318,7 @@ export default function AdminActiveJobsPage() {
                   <Table.Th>Bot 好友码</Table.Th>
                   <Table.Th>状态</Table.Th>
                   <Table.Th ta="right">好友数量</Table.Th>
+                  <Table.Th>备注</Table.Th>
                   <Table.Th>最近上报时间</Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -315,6 +343,57 @@ export default function AdminActiveJobsPage() {
                       <Text size="sm">
                         {bot.friendCount != null ? bot.friendCount : "-"}
                       </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      {editingRemark === bot.friendCode ? (
+                        <Group gap="xs" wrap="nowrap">
+                          <TextInput
+                            size="xs"
+                            value={editRemarkValue}
+                            onChange={(e) =>
+                              setEditRemarkValue(e.currentTarget.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                void saveRemark(bot.friendCode);
+                              } else if (e.key === "Escape") {
+                                setEditingRemark(null);
+                              }
+                            }}
+                            style={{ flex: 1 }}
+                            autoFocus
+                          />
+                          <ActionIcon
+                            size="sm"
+                            variant="light"
+                            color="green"
+                            onClick={() => void saveRemark(bot.friendCode)}
+                          >
+                            <IconCheck size={14} />
+                          </ActionIcon>
+                        </Group>
+                      ) : (
+                        <Group
+                          gap="xs"
+                          wrap="nowrap"
+                          style={{ cursor: "pointer" }}
+                          onClick={() => {
+                            setEditingRemark(bot.friendCode);
+                            setEditRemarkValue(bot.remark ?? "");
+                          }}
+                        >
+                          <Text size="sm" c={bot.remark ? undefined : "dimmed"}>
+                            {bot.remark || "-"}
+                          </Text>
+                          <ActionIcon
+                            size="xs"
+                            variant="subtle"
+                            color="gray"
+                          >
+                            <IconEdit size={12} />
+                          </ActionIcon>
+                        </Group>
+                      )}
                     </Table.Td>
                     <Table.Td>
                       <Text size="sm" c="dimmed">

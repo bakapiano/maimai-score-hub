@@ -16,6 +16,15 @@
         .status-row { margin: 0.5rem 0; }
     </style>
     <script>
+        // Polyfill for AbortSignal.timeout (not available in all browsers)
+        if (typeof AbortSignal.timeout !== 'function') {
+            AbortSignal.timeout = function(ms) {
+                const controller = new AbortController();
+                setTimeout(() => controller.abort(new DOMException('TimeoutError', 'TimeoutError')), ms);
+                return controller.signal;
+            };
+        }
+
         let statusCheckInterval;
         let cookieCheckInterval;
         let autoRefreshInterval;

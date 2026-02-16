@@ -27,16 +27,17 @@ import { UsersModule } from './modules/users/users.module';
         const password = config.get<string>('MONGO_PASSWORD');
         const authSource = config.get<string>('MONGO_AUTH_SOURCE', 'admin');
 
-        if (!user || !password) {
-          throw new Error('MONGO_USER and MONGO_PASSWORD are required');
+        let uri: string;
+        if (user && password) {
+          const creds = `${encodeURIComponent(user)}:${encodeURIComponent(
+            password,
+          )}@`;
+          uri = `mongodb://${creds}${host}:${port}/${db}?authSource=${encodeURIComponent(
+            authSource,
+          )}`;
+        } else {
+          uri = `mongodb://${host}:${port}/${db}`;
         }
-
-        const creds = `${encodeURIComponent(user)}:${encodeURIComponent(
-          password,
-        )}@`;
-        const uri = `mongodb://${creds}${host}:${port}/${db}?authSource=${encodeURIComponent(
-          authSource,
-        )}`;
 
         return { uri };
       },

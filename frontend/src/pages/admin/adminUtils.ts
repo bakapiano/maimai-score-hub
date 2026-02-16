@@ -9,6 +9,7 @@ export interface BotStatus {
   available: boolean;
   lastReportedAt: string;
   friendCount: number | null;
+  remark: string | null;
 }
 
 export interface AdminStats {
