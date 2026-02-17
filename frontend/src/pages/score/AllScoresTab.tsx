@@ -47,6 +47,7 @@ import {
 
 import type { SyncScore } from "../../types/syncScore";
 import {
+  getCoverUrl,
   getIconUrl,
   renderRank,
   type DetailedMusicScoreCardProps,
@@ -911,7 +912,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                 }
                 const name = music?.title || score.musicId;
                 const artist = music?.artist;
-                const coverUrl = `/api/cover/${score.musicId}`;
+                const coverUrl = getCoverUrl(score.musicId);
                 const level = chart?.level || "-";
                 const detailLevel =
                   typeof chart?.detailLevel === "number"

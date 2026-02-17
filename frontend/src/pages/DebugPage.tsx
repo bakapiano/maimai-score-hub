@@ -285,7 +285,7 @@ function DebugPage() {
 
   const showCover = () => {
     if (!coverId.trim()) return;
-    setCoverUrl(`/api/cover/${coverId.trim()}`);
+    setCoverUrl(`/api/cover/${coverId.trim()}?v=2`);
   };
 
   return (

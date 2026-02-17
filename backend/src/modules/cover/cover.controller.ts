@@ -51,7 +51,7 @@ export class CoverController {
 
     // Encourage long-lived browser/proxy caching for cover images
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    res.setHeader('Vary', 'Accept');
+    res.vary('Accept');
     res.type(selected.format);
     res.sendFile(selected.path);
   }

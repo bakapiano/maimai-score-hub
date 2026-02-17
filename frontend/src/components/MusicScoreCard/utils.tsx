@@ -107,9 +107,10 @@ export function getRankFromScore(score: string | null): string {
 
 /**
  * Build cover URL from music ID
+ * v=2: bust browser cache after enabling webp content-negotiation
  */
 export function getCoverUrl(musicId: string): string {
-  return `/api/cover/${musicId}`;
+  return `/api/cover/${musicId}?v=2`;
 }
 
 /**
