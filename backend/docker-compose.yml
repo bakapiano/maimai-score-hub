@@ -41,7 +41,7 @@ services:
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-change-me-in-production}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     volumes:
-      - ./covers:/app/covers
+      - ./covers:/app/backend/covers
 
   nginx:
     image: nginx:1.27-alpine
