@@ -1,0 +1,11 @@
+﻿dist/assets/index-Bqa6OGgm.js
+node.exe :   Your source map refers to generated column Infinity on line 2, but the source only contains 139550 column(s) on t
+hat line.
+所在位置 行:1 字符: 1
++ & "D:\node/node.exe" "D:\node/node_modules/npm/bin/npx-cli.js" -y sou ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (  Your source m...) on that line.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  Check that you are using the correct source map.
+

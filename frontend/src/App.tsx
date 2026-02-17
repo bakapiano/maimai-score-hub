@@ -1,21 +1,36 @@
 import { AuthProvider, useAuth } from "./providers/AuthProvider";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { Suspense, lazy, type ReactNode } from "react";
 
-import AdminActiveJobsPage from "./pages/admin/AdminActiveJobsPage";
-import AdminJobDebugPage from "./pages/admin/AdminJobDebugPage";
-import AdminLayout from "./pages/admin/AdminLayout";
-import AdminSyncPage from "./pages/admin/AdminSyncPage";
-import AdminUsersPage from "./pages/admin/AdminUsersPage";
-import AuthedLayout from "./layouts/AuthedLayout";
-import DebugPage from "./pages/DebugPage";
-import HomePage from "./pages/HomePage";
+import { Center, Loader } from "@mantine/core";
 import LoginPage from "./pages/LoginPage";
 import { MantineProvider } from "@mantine/core";
 import { MusicProvider } from "./providers/MusicProvider";
 import { Notifications } from "@mantine/notifications";
-import type { ReactNode } from "react";
-import ScorePage from "./pages/ScorePage";
-import SyncPage from "./pages/SyncPage";
+
+// Lazy-loaded routes for code splitting
+const AuthedLayout = lazy(() => import("./layouts/AuthedLayout"));
+const HomePage = lazy(() => import("./pages/HomePage"));
+const ScorePage = lazy(() => import("./pages/ScorePage"));
+const SyncPage = lazy(() => import("./pages/SyncPage"));
+const DebugPage = lazy(() => import("./pages/DebugPage"));
+const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
+const AdminActiveJobsPage = lazy(
+  () => import("./pages/admin/AdminActiveJobsPage"),
+);
+const AdminJobDebugPage = lazy(
+  () => import("./pages/admin/AdminJobDebugPage"),
+);
+const AdminSyncPage = lazy(() => import("./pages/admin/AdminSyncPage"));
+const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage"));
+
+function PageLoader() {
+  return (
+    <Center h="100vh">
+      <Loader size="lg" type="bars" />
+    </Center>
+  );
+}
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { token } = useAuth();
@@ -34,7 +49,7 @@ function App() {
       <Notifications position="top-center" />
       <BrowserRouter>
         <AuthProvider>
-          <MusicProvider>
+          <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/admin" element={<AdminLayout />}>
@@ -52,12 +67,19 @@ function App() {
               >
                 <Route path="/app" element={<HomePage />} />
                 <Route path="/app/sync" element={<SyncPage />} />
-                <Route path="/app/scores" element={<ScorePage />} />
+                <Route
+                  path="/app/scores"
+                  element={
+                    <MusicProvider>
+                      <ScorePage />
+                    </MusicProvider>
+                  }
+                />
                 <Route path="/app/debug" element={<DebugPage />} />
               </Route>
               <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>
-          </MusicProvider>
+          </Suspense>
         </AuthProvider>
       </BrowserRouter>
     </MantineProvider>

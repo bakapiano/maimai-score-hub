@@ -42,7 +42,7 @@ type LoginStatus = {
 };
 
 function FriendCodeGuide() {
-  const [opened, { toggle }] = useDisclosure(true);
+  const [opened, { toggle }] = useDisclosure(false);
 
   return (
     <Stack gap={4}>

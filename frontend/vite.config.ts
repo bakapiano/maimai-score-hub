@@ -12,6 +12,22 @@ export default defineConfig({
       ),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+          mantine: [
+            "@mantine/core",
+            "@mantine/hooks",
+            "@mantine/notifications",
+          ],
+          recharts: ["recharts"],
+          icons: ["@tabler/icons-react"],
+        },
+      },
+    },
+  },
   server: {
     port: 3001,
     host: "127.0.0.1",
