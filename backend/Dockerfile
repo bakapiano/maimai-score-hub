@@ -1,11 +1,17 @@
 FROM node:20-alpine AS builder
 
-WORKDIR /app
-
-COPY package*.json ./
+# Build shared package first
+WORKDIR /app/shared
+COPY shared/package*.json ./
 RUN npm ci
+COPY shared/ ./
+RUN npm run build
 
-COPY . .
+# Build backend
+WORKDIR /app/backend
+COPY backend/package*.json ./
+RUN npm install --install-links=true
+COPY backend/ ./
 RUN npm run build
 
 FROM node:20-alpine
@@ -13,13 +19,16 @@ FROM node:20-alpine
 # 安装 fontconfig 以支持字体渲染，以及 curl 用于健康检查
 RUN apk add --no-cache fontconfig curl
 
-WORKDIR /app
+# Copy built shared package so install-links can copy it
+WORKDIR /app/shared
+COPY --from=builder /app/shared/ ./
 
-COPY package*.json ./
-RUN npm ci --only=production
+WORKDIR /app/backend
+COPY backend/package*.json ./
+RUN npm install --install-links=true --omit=dev
 
-COPY --from=builder /app/dist ./dist
-COPY assets ./assets
+COPY --from=builder /app/backend/dist ./dist
+COPY backend/assets ./assets
 
 EXPOSE 9050
 
