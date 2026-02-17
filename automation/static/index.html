@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ADB Worker</title>
+<style>
+  :root {
+    --bg: #0f172a; --surface: #1e293b; --border: #334155;
+    --text: #e2e8f0; --text-dim: #94a3b8; --accent: #3b82f6;
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308; --orange: #f97316;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 16px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 1.5rem; }
+  .status-bar { display: flex; gap: 16px; font-size: 0.85rem; color: var(--text-dim); }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  .dot-green { background: var(--green); }
+  .dot-red { background: var(--red); }
+  .dot-yellow { background: var(--yellow); }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tab { padding: 8px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px 6px 0 0; cursor: pointer; font-size: 0.9rem; color: var(--text-dim); border-bottom: none; }
+  .tab.active { background: var(--bg); color: var(--accent); border-color: var(--accent); border-bottom: 2px solid var(--bg); }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .card-header h3 { font-size: 1rem; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight: 500; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+  .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge-yellow { background: rgba(234,179,8,0.15); color: var(--yellow); }
+
+  .btn { padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 500; transition: opacity 0.2s; }
+  .btn:hover { opacity: 0.85; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-danger { background: var(--red); color: white; }
+  .btn-small { padding: 4px 8px; font-size: 0.75rem; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+
+  .form-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+  .form-row label { font-size: 0.8rem; color: var(--text-dim); min-width: 60px; }
+  input, select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 4px; font-size: 0.85rem; }
+  input:focus { outline: none; border-color: var(--accent); }
+
+  .toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 0.85rem; z-index: 100; transition: opacity 0.3s; }
+  .toast-success { background: var(--green); color: white; }
+  .toast-error { background: var(--red); color: white; }
+
+  .empty { text-align: center; color: var(--text-dim); padding: 32px; font-size: 0.9rem; }
+  .log-msg { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .time-ago { color: var(--text-dim); font-size: 0.8rem; }
+
+  @media (max-width: 768px) {
+    .form-row { flex-direction: column; align-items: stretch; }
+    .form-row label { min-width: unset; }
+    table { font-size: 0.75rem; }
+    th, td { padding: 6px 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>📱 ADB Worker</h1>
+    <div class="status-bar" id="statusBar">Loading...</div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-panel="devices">设备</div>
+    <div class="tab" data-panel="bindings">绑定</div>
+    <div class="tab" data-panel="bots">Bot 状态</div>
+    <div class="tab" data-panel="logs">日志</div>
+    <div class="tab" data-panel="settings">设置</div>
+  </div>
+
+  <!-- Devices Panel -->
+  <div class="panel active" id="panel-devices">
+    <div class="card">
+      <div class="card-header">
+        <h3>配对新设备</h3>
+      </div>
+      <div class="form-row">
+        <label>IP</label><input id="pairIp" placeholder="192.168.1.x" style="width:140px">
+        <label>端口</label><input id="pairPort" type="number" placeholder="37xxx" style="width:90px">
+        <label>配对码</label><input id="pairCode" placeholder="123456" style="width:90px">
+        <button class="btn btn-primary" onclick="pairDevice()">配对</button>
+      </div>
+      <div class="form-row" style="margin-top:4px">
+        <label>连接</label><input id="connectIp" placeholder="192.168.1.x" style="width:140px">
+        <label>端口</label><input id="connectPort" type="number" placeholder="5555" style="width:90px">
+        <button class="btn btn-outline" onclick="connectDevice()">连接</button>
+        <button class="btn btn-outline" onclick="scanDevices()">扫描</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>设备列表</h3>
+      </div>
+      <table>
+        <thead><tr><th>设备 ID</th><th>型号</th><th>状态</th><th>最后在线</th><th>操作</th></tr></thead>
+        <tbody id="deviceTable"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Bindings Panel -->
+  <div class="panel" id="panel-bindings">
+    <div class="card">
+      <div class="card-header">
+        <h3>新建绑定</h3>
+      </div>
+      <div class="form-row">
+        <label>设备</label>
+        <select id="bindDevice" style="width:200px"></select>
+        <label>好友码</label><input id="bindFriendCode" placeholder="friend_code" style="width:130px">
+      </div>
+      <div class="form-row">
+        <label>恢复URL</label><input id="bindUrl" placeholder="http://..." style="flex:1;min-width:200px">
+        <label>重试(s)</label><input id="bindRetry" type="number" value="30" style="width:70px">
+        <button class="btn btn-primary" onclick="createBinding()">创建</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3>绑定列表</h3></div>
+      <table>
+        <thead><tr><th>ID</th><th>设备</th><th>好友码</th><th>恢复 URL</th><th>重试间隔</th><th>恢复次数</th><th>上次恢复</th><th>操作</th></tr></thead>
+        <tbody id="bindingTable"><tr><td colspan="8" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Bots Panel -->
+  <div class="panel" id="panel-bots">
+    <div class="card">
+      <div class="card-header">
+        <h3>Bot 状态</h3>
+        <button class="btn btn-outline btn-small" onclick="refreshBots()">刷新</button>
+      </div>
+      <table>
+        <thead><tr><th>好友码</th><th>状态</th><th>好友数</th><th>最后上报</th><th>备注</th><th>操作</th></tr></thead>
+        <tbody id="botTable"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Logs Panel -->
+  <div class="panel" id="panel-logs">
+    <div class="card">
+      <div class="card-header">
+        <h3>恢复日志</h3>
+        <button class="btn btn-outline btn-small" onclick="loadLogs()">刷新</button>
+      </div>
+      <table>
+        <thead><tr><th>时间</th><th>好友码</th><th>设备</th><th>状态</th><th>消息</th></tr></thead>
+        <tbody id="logTable"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Settings Panel -->
+  <div class="panel" id="panel-settings">
+    <div class="card">
+      <div class="card-header">
+        <h3>运行时配置</h3>
+      </div>
+      <div class="form-row">
+        <label style="min-width:120px">Backend URL</label>
+        <input id="setBackendUrl" placeholder="https://..." style="flex:1;min-width:250px">
+      </div>
+      <div class="form-row">
+        <label style="min-width:120px">Admin 密码</label>
+        <input id="setAdminPassword" type="password" placeholder="用于获取 Bot 状态" style="flex:1;min-width:250px">
+      </div>
+      <div class="form-row">
+        <label style="min-width:120px">轮询间隔(s)</label>
+        <input id="setPollInterval" type="number" style="width:100px">
+        <label style="min-width:120px;margin-left:16px">设备扫描间隔(s)</label>
+        <input id="setDeviceScanInterval" type="number" style="width:100px">
+      </div>
+      <div class="form-row">
+        <label style="min-width:120px">日志保留条数</label>
+        <input id="setLogRetention" type="number" style="width:100px" placeholder="500">
+      </div>
+      <div class="form-row" style="margin-top:12px">
+        <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+        <button class="btn btn-outline" onclick="loadSettings()" style="margin-left:8px">重置</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+
+// ====== Tab switching ======
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+  });
+});
+
+// ====== Toast ======
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+// ====== API helpers ======
+async function api(path, opts = {}) {
+  try {
+    const resp = await fetch(API + path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...opts,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || JSON.stringify(data));
+    return data;
+  } catch (e) {
+    toast(e.message, 'error');
+    throw e;
+  }
+}
+
+function timeAgo(iso) {
+  if (!iso) return '-';
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return Math.floor(diff) + '秒前';
+  if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
+  if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
+  return Math.floor(diff / 86400) + '天前';
+}
+
+function truncate(s, len = 50) {
+  if (!s) return '-';
+  return s.length > len ? s.substring(0, len) + '...' : s;
+}
+
+// ====== Devices ======
+async function loadDevices() {
+  const devices = await api('/api/devices');
+  const tbody = document.getElementById('deviceTable');
+  if (!devices.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">没有设备</td></tr>'; return; }
+  tbody.innerHTML = devices.map(d => `<tr>
+    <td>${d.id}</td>
+    <td>${d.model || d.name || '-'}</td>
+    <td><span class="badge ${d.status === 'online' ? 'badge-green' : 'badge-red'}">${d.status}</span></td>
+    <td class="time-ago">${timeAgo(d.last_seen)}</td>
+    <td><button class="btn btn-danger btn-small" onclick="deleteDevice('${d.id}')">删除</button></td>
+  </tr>`).join('');
+
+  // 更新绑定设备下拉
+  const sel = document.getElementById('bindDevice');
+  const onlineDevices = devices.filter(d => d.status === 'online');
+  sel.innerHTML = onlineDevices.map(d => `<option value="${d.id}">${d.model || d.id}</option>`).join('');
+}
+
+async function scanDevices() {
+  await api('/api/devices/scan', { method: 'POST' });
+  toast('扫描完成');
+  loadDevices();
+}
+
+async function pairDevice() {
+  const ip = document.getElementById('pairIp').value;
+  const port = parseInt(document.getElementById('pairPort').value);
+  const code = document.getElementById('pairCode').value;
+  if (!ip || !port || !code) { toast('请填写完整', 'error'); return; }
+  await api('/api/devices/pair', { method: 'POST', body: { ip, port, pairing_code: code } });
+  toast('配对成功');
+  loadDevices();
+}
+
+async function connectDevice() {
+  const ip = document.getElementById('connectIp').value;
+  const port = parseInt(document.getElementById('connectPort').value) || 5555;
+  if (!ip) { toast('请填写 IP', 'error'); return; }
+  await api('/api/devices/connect', { method: 'POST', body: { ip, port } });
+  toast('连接成功');
+  loadDevices();
+}
+
+async function deleteDevice(id) {
+  if (!confirm('确定删除设备 ' + id + '？')) return;
+  await api('/api/devices/' + encodeURIComponent(id), { method: 'DELETE' });
+  toast('已删除');
+  loadDevices();
+}
+
+// ====== Bindings ======
+let _allDevices = [];
+async function loadBindings() {
+  const bindings = await api('/api/bindings');
+  try { _allDevices = await api('/api/devices'); } catch(e) {}
+  const tbody = document.getElementById('bindingTable');
+  if (!bindings.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">没有绑定</td></tr>'; return; }
+  tbody.innerHTML = bindings.map(b => `<tr id="bind-row-${b.id}">
+    <td>${b.id}</td>
+    <td title="${b.device_id}">${truncate(b.device_id, 20)}</td>
+    <td>${b.friend_code}</td>
+    <td class="log-msg" title="${b.recovery_url}">${truncate(b.recovery_url, 40)}</td>
+    <td>${b.retry_interval}s</td>
+    <td>${b.recovery_count}</td>
+    <td class="time-ago">${timeAgo(b.last_recovery_at)}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-outline btn-small" onclick="editBinding(${b.id})">编辑</button>
+      <button class="btn btn-primary btn-small" onclick="triggerRecovery('${b.friend_code}')">恢复</button>
+      <button class="btn btn-danger btn-small" onclick="deleteBinding(${b.id})">删除</button>
+    </td>
+  </tr>`).join('');
+}
+
+function editBinding(id) {
+  const row = document.getElementById('bind-row-' + id);
+  if (!row) return;
+  // read current values from cells
+  const cells = row.children;
+  const curDevice = cells[1].getAttribute('title');
+  const curFc = cells[2].textContent;
+  const curUrl = cells[3].getAttribute('title');
+  const curRetry = parseInt(cells[4].textContent) || 30;
+
+  const devOpts = _allDevices.map(d => `<option value="${d.id}" ${d.id === curDevice ? 'selected' : ''}>${d.model || d.id}</option>`).join('');
+  row.innerHTML = `
+    <td>${id}</td>
+    <td><select id="edit-dev-${id}" style="width:120px">${devOpts}</select></td>
+    <td><input id="edit-fc-${id}" value="${curFc}" style="width:100px"></td>
+    <td><input id="edit-url-${id}" value="${curUrl}" style="width:200px"></td>
+    <td><input id="edit-retry-${id}" type="number" value="${curRetry}" style="width:60px"></td>
+    <td colspan="2"></td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-primary btn-small" onclick="saveBinding(${id})">保存</button>
+      <button class="btn btn-outline btn-small" onclick="loadBindings()">取消</button>
+    </td>
+  `;
+}
+
+async function saveBinding(id) {
+  const body = {
+    device_id: document.getElementById('edit-dev-' + id).value,
+    friend_code: document.getElementById('edit-fc-' + id).value,
+    recovery_url: document.getElementById('edit-url-' + id).value,
+    retry_interval: parseInt(document.getElementById('edit-retry-' + id).value) || 30,
+  };
+  await api('/api/bindings/' + id, { method: 'PUT', body });
+  toast('绑定已更新');
+  loadBindings();
+}
+
+async function createBinding() {
+  const device_id = document.getElementById('bindDevice').value;
+  const friend_code = document.getElementById('bindFriendCode').value;
+  const recovery_url = document.getElementById('bindUrl').value;
+  const retry_interval = parseInt(document.getElementById('bindRetry').value) || 30;
+  if (!device_id || !friend_code || !recovery_url) { toast('请填写完整', 'error'); return; }
+  await api('/api/bindings', { method: 'POST', body: { device_id, friend_code, recovery_url, retry_interval } });
+  toast('绑定已创建');
+  loadBindings();
+}
+
+async function deleteBinding(id) {
+  if (!confirm('确定删除绑定 #' + id + '？')) return;
+  await api('/api/bindings/' + id, { method: 'DELETE' });
+  toast('已删除');
+  loadBindings();
+}
+
+async function triggerRecovery(fc) {
+  try {
+    const res = await api('/api/recovery/' + fc, { method: 'POST' });
+    toast('恢复触发: ' + (res.message || 'OK'));
+    loadBindings();
+    loadLogs();
+  } catch (e) { /* toast already shown */ }
+}
+
+// ====== Bots ======
+async function loadBots() {
+  const bots = await api('/api/bots');
+  const tbody = document.getElementById('botTable');
+  if (!bots.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">没有 Bot 数据（请在设置中配置 Admin 密码）</td></tr>'; return; }
+  tbody.innerHTML = bots.map(b => `<tr>
+    <td>${b.friend_code}</td>
+    <td><span class="badge ${b.available ? 'badge-green' : 'badge-red'}">${b.available ? '在线' : '离线'}</span></td>
+    <td>${b.friend_count ?? '-'}</td>
+    <td class="time-ago">${timeAgo(b.last_reported_at)}</td>
+    <td>${b.remark || '-'}</td>
+    <td>${!b.available ? '<button class="btn btn-primary btn-small" onclick="triggerRecovery(\'' + b.friend_code + '\')">恢复</button>' : ''}</td>
+  </tr>`).join('');
+}
+
+async function refreshBots() {
+  await api('/api/bots/refresh', { method: 'POST' });
+  toast('已刷新');
+  loadBots();
+}
+
+// ====== Logs ======
+async function loadLogs() {
+  const logs = await api('/api/logs');
+  const tbody = document.getElementById('logTable');
+  if (!logs.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无日志</td></tr>'; return; }
+  tbody.innerHTML = logs.map(l => `<tr>
+    <td class="time-ago">${timeAgo(l.created_at)}</td>
+    <td>${l.friend_code}</td>
+    <td>${l.device_id}</td>
+    <td><span class="badge ${l.status === 'success' ? 'badge-green' : 'badge-red'}">${l.status}</span></td>
+    <td class="log-msg" title="${l.message}">${truncate(l.message, 60)}</td>
+  </tr>`).join('');
+}
+
+// ====== Status bar ======
+async function loadStatus() {
+  try {
+    const s = await api('/api/status');
+    const bar = document.getElementById('statusBar');
+    bar.innerHTML = `
+      <span><span class="status-dot ${s.devices.online > 0 ? 'dot-green' : 'dot-red'}"></span>设备 ${s.devices.online}/${s.devices.total}</span>
+      <span><span class="status-dot ${s.bots.unavailable === 0 ? 'dot-green' : s.bots.unavailable > 0 ? 'dot-red' : 'dot-yellow'}"></span>Bot ${s.bots.available}/${s.bots.total}</span>
+      ${s.running_recovery ? '<span><span class="status-dot dot-yellow"></span>恢复中: ' + s.running_recovery + '</span>' : ''}
+      ${s.monitor_error ? '<span style="color:var(--red)">⚠ ' + truncate(s.monitor_error, 30) + '</span>' : ''}
+    `;
+  } catch (e) { /* ignore */ }
+}
+
+// ====== Settings ======
+async function loadSettings() {
+  const s = await api('/api/settings');
+  document.getElementById('setBackendUrl').value = s.backend_url || '';
+  document.getElementById('setAdminPassword').value = s.admin_password || '';
+  document.getElementById('setPollInterval').value = s.poll_interval || '30';
+  document.getElementById('setDeviceScanInterval').value = s.device_scan_interval || '10';
+  document.getElementById('setLogRetention').value = s.log_retention_count || '500';
+}
+
+async function saveSettings() {
+  const body = {
+    backend_url: document.getElementById('setBackendUrl').value,
+    admin_password: document.getElementById('setAdminPassword').value,
+    poll_interval: parseInt(document.getElementById('setPollInterval').value) || 30,
+    device_scan_interval: parseInt(document.getElementById('setDeviceScanInterval').value) || 10,
+    log_retention_count: parseInt(document.getElementById('setLogRetention').value) || 500,
+  };
+  await api('/api/settings', { method: 'PUT', body });
+  toast('设置已保存');
+  loadStatus();
+}
+
+// ====== Init ======
+async function init() {
+  await Promise.all([loadDevices(), loadBots(), loadLogs(), loadStatus(), loadSettings()]);
+  loadBindings();
+  // Auto-refresh
+  setInterval(loadStatus, 10000);
+  setInterval(loadDevices, 15000);
+  setInterval(loadBots, 30000);
+}
+
+init();
+</script>
+</body>
+</html>
