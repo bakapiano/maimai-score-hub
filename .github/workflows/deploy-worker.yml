@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "worker/**"
+      - "shared/**"
   workflow_dispatch:
 
 jobs:

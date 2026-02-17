@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "worker/**"
+      - "shared/**"
   pull_request:
     branches: [main]
     paths:
       - "worker/**"
+      - "shared/**"
   workflow_call:
   workflow_dispatch:
 
@@ -28,14 +30,14 @@ jobs:
           cache: npm
           cache-dependency-path: worker/package-lock.json
 
-      - name: Install dependencies
-        run: npm install --install-links=true
-
       - name: Install shared dependencies
         run: npm --prefix ../shared install
 
       - name: Build shared package
         run: npm --prefix ../shared run build
+
+      - name: Install dependencies
+        run: npm install --install-links=true
 
       - name: Type check
         run: npx tsc --noEmit

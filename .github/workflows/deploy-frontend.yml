@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "frontend/**"
+      - "shared/**"
   workflow_dispatch:
 
 concurrency:

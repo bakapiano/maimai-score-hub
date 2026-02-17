@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      - "shared/**"
   workflow_dispatch:
 
 concurrency:
