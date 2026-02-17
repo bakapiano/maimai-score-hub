@@ -8,12 +8,19 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import {
+  DivingFishTokenBodySchema,
+  UpdateProfileBodySchema,
+  type DivingFishTokenBody,
+  type UpdateProfileBody,
+} from '@maimai-score-hub/shared';
 import { UsersService } from './users.service';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { getImportToken } from '../../common/prober/diving-fish/api';
 import { JobService } from '../job/job.service';
 import { BotStatusService } from '../admin/bot-status.service';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 type AuthedRequest = Request & { userId?: string };
 
@@ -48,36 +55,15 @@ export class UsersController {
   @Patch('profile')
   async updateProfile(
     @Req() req: AuthedRequest,
-    @Body()
-    body: { divingFishImportToken?: unknown; lxnsImportToken?: unknown },
+    @Body(new ZodValidationPipe(UpdateProfileBodySchema)) body: UpdateProfileBody,
   ) {
     const userId = extractUserId(req);
     if (!userId) {
       throw new BadRequestException('No user context');
     }
 
-    const divingFishToken = (() => {
-      if (
-        body.divingFishImportToken === undefined ||
-        body.divingFishImportToken === null
-      ) {
-        return null;
-      }
-      if (typeof body.divingFishImportToken !== 'string') {
-        throw new BadRequestException('divingFishImportToken must be a string');
-      }
-      return body.divingFishImportToken;
-    })();
-
-    const lxnsToken = (() => {
-      if (body.lxnsImportToken === undefined || body.lxnsImportToken === null) {
-        return null;
-      }
-      if (typeof body.lxnsImportToken !== 'string') {
-        throw new BadRequestException('lxnsImportToken must be a string');
-      }
-      return body.lxnsImportToken;
-    })();
+    const divingFishToken = body.divingFishImportToken ?? null;
+    const lxnsToken = body.lxnsImportToken ?? null;
 
     return this.users.update(userId, {
       divingFishImportToken: divingFishToken,
@@ -92,15 +78,9 @@ export class UsersController {
    */
   @Post('diving-fish/token')
   async getDivingFishToken(
-    @Body() body: { username?: unknown; password?: unknown },
+    @Body(new ZodValidationPipe(DivingFishTokenBodySchema))
+    body: DivingFishTokenBody,
   ) {
-    if (typeof body.username !== 'string' || !body.username) {
-      throw new BadRequestException('username is required');
-    }
-    if (typeof body.password !== 'string' || !body.password) {
-      throw new BadRequestException('password is required');
-    }
-
     try {
       return await getImportToken(body.username, body.password);
     } catch (error) {

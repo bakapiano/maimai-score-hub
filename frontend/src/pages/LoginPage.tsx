@@ -26,13 +26,11 @@ import { useEffect, useMemo, useState } from "react";
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
 import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
+import { authApi, getHealthStatus } from "../api/appClient";
 import { notifications } from "@mantine/notifications";
+import { getRecentJobStats } from "../api/jobClient";
 import { useAuth } from "../providers/AuthProvider";
 import { useNavigate, useSearchParams } from "react-router-dom";
-
-type LoginRequest =
-  | { jobId: string; userId: string }
-  | { skipAuth: true; token: string; user: { friendCode: string } };
 
 type LoginStatus = {
   status?: string;
@@ -42,13 +40,6 @@ type LoginStatus = {
   error?: string | null;
   [key: string]: unknown;
 };
-
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
-  const res = await fetch(input, init);
-  const text = await res.text();
-  const data = text ? (JSON.parse(text) as T) : (null as T);
-  return { ok: res.ok, status: res.status, data };
-}
 
 function FriendCodeGuide() {
   const [opened, { toggle }] = useDisclosure(true);
@@ -161,23 +152,19 @@ export default function LoginPage() {
 
   useEffect(() => {
     (async () => {
-      const res = await fetchJson<{ status?: string }>("/api/health");
+      const res = await getHealthStatus();
       setHealth(res.ok ? JSON.stringify(res.data) : `HTTP ${res.status}`);
     })();
 
     // Fetch recent stats on mount
     (async () => {
       try {
-        const statsRes = await fetchJson<{
-          totalCount: number;
-          successRate: number;
-          avgDuration: number | null;
-        }>("/api/job/stats/recent");
-        if (statsRes.ok && statsRes.data) {
-          setRecentStats(statsRes.data);
+        const statsRes = await getRecentJobStats();
+        if (statsRes) {
+          setRecentStats(statsRes);
           if (
-            statsRes.data.totalCount >= 5 &&
-            statsRes.data.successRate <= 50
+            statsRes.totalCount >= 5 &&
+            statsRes.successRate <= 50
           ) {
             setLowSuccessRate(true);
           }
@@ -190,11 +177,9 @@ export default function LoginPage() {
     if (!jobId || polling === false) return;
 
     const handle = setInterval(async () => {
-      const res = await fetchJson<LoginStatus>(
-        `/api/auth/login-status?jobId=${jobId}`,
-      );
+      const res = await authApi.loginStatus({ query: { jobId } });
 
-      if (!res.ok) {
+      if (res.status !== 200) {
         setJobStatus(`HTTP ${res.status}`);
         // If job not found (404), clear localStorage
         if (res.status === 404) {
@@ -207,27 +192,28 @@ export default function LoginPage() {
         return;
       }
 
-      setJobStatus(JSON.stringify(res.data, null, 2));
+      const data = res.body as LoginStatus;
+      setJobStatus(JSON.stringify(data, null, 2));
 
-      const stage = (res.data as any)?.job?.stage;
+      const stage = (data as any)?.job?.stage;
       if (stage) setJobStage(stage);
 
-      const sentAt = (res.data as any)?.job?.friendRequestSentAt;
+      const sentAt = (data as any)?.job?.friendRequestSentAt;
       if (sentAt) setFriendRequestSentAt(sentAt);
 
-      const pickedAt = (res.data as any)?.job?.pickedAt;
+      const pickedAt = (data as any)?.job?.pickedAt;
       if (pickedAt) setJobPickedAt(pickedAt);
 
       const profileFromStatus =
-        (res.data as LoginStatus)?.profile ??
-        (res.data as LoginStatus)?.job?.profile ??
+        (data as LoginStatus)?.profile ??
+        (data as LoginStatus)?.job?.profile ??
         null;
       if (profileFromStatus) {
         setProfile(profileFromStatus);
       }
 
-      if (res.data?.token) {
-        setToken(res.data.token);
+      if (data?.token) {
+        setToken(data.token);
         setPolling(false);
         try {
           localStorage.removeItem("pendingLoginJobId");
@@ -238,7 +224,7 @@ export default function LoginPage() {
           color: "green",
         });
         navigate("/app", { replace: true });
-      } else if (res.data?.status === "failed") {
+      } else if (data?.status === "failed") {
         setPolling(false);
         setJobStage("");
         setProfile(null);
@@ -247,7 +233,7 @@ export default function LoginPage() {
         } catch {}
         notifications.show({
           title: "登录失败",
-          message: String(res.data?.job?.error || "未知错误"),
+          message: String(data?.job?.error || "未知错误"),
           color: "red",
         });
       }
@@ -292,20 +278,19 @@ export default function LoginPage() {
 
 
 
-    const res = await fetchJson<LoginRequest>("/api/auth/login-request", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const res = await authApi.loginRequest({
+      body: {
         friendCode: trimmedCode,
         skipUpdateScore,
         useIdleUpdate: !skipUpdateScore && useIdleUpdate,
-      }),
+      },
     });
 
-    if (res.ok && res.data) {
+    if (res.status === 201 && res.body) {
+      const body = res.body as any;
       // Handle skipAuth mode - direct token response
-      if ("skipAuth" in res.data && res.data.skipAuth) {
-        setToken(res.data.token);
+      if (body.skipAuth) {
+        setToken(String(body.token ?? ""));
         notifications.show({
           title: "登录成功",
           message: "已跳过验证直接登录",
@@ -317,20 +302,17 @@ export default function LoginPage() {
       }
 
       // Normal flow - poll job status
-      if ("jobId" in res.data) {
-        setJobId(res.data.jobId);
+      if (typeof body.jobId === "string") {
+        setJobId(body.jobId);
         setPolling(true);
         try {
-          localStorage.setItem("pendingLoginJobId", res.data.jobId);
+          localStorage.setItem("pendingLoginJobId", body.jobId);
         } catch {}
       }
     } else {
-      const errorData = res.data as { message?: string; error?: string } | null;
-      const errorMessage =
-        errorData?.message || errorData?.error || `HTTP ${res.status}`;
       notifications.show({
         title: "创建登录任务失败",
-        message: errorMessage,
+        message: `HTTP ${res.status}`,
         color: "red",
       });
     }
@@ -486,7 +468,7 @@ export default function LoginPage() {
                       />
                     )}
 
-                    {!skipUpdateScore && recentStats && recentStats.totalCount > 0 && (
+                    {!skipUpdateScore && recentStats && recentStats.totalCount >= 5 && (
                       <Group gap="xl">
                         <Group gap={6}>
                           <Text size="sm" c="dimmed">近 1 小时更新成功率</Text>

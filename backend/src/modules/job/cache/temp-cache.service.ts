@@ -5,7 +5,7 @@ import { Model } from 'mongoose';
 import {
   JobTempCacheEntity,
   type JobTempCacheDocument,
-} from './job-temp-cache.schema';
+} from './temp-cache.schema';
 
 /**
  * Job 临时缓存服务
@@ -79,7 +79,7 @@ export class JobTempCacheService {
    * 删除创建时间超过 12 小时的记录
    * 每天凌晨 3 点执行
    */
-  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  @Cron(CronExpression.EVERY_DAY_AT_3AM, { timeZone: 'Asia/Shanghai' })
   async cleanupExpired(): Promise<number> {
     this.logger.log('Running scheduled cleanup of expired cache entries...');
     const cutoffTime = new Date(Date.now() - 12 * 60 * 60 * 1000);

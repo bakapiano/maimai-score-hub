@@ -17,7 +17,18 @@ import {
 import { IconClock, IconInfoCircle } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useState } from "react";
+import type { JobResponse as JobStatus } from "@maimai-score-hub/shared";
 
+import {
+  syncApi,
+  usersApi,
+} from "../api/appClient";
+import {
+  createJob,
+  getActiveJobByFriendCode,
+  getJobById,
+  getRecentJobStats,
+} from "../api/jobClient";
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
 import { useAuth } from "../providers/AuthProvider";
 
@@ -50,21 +61,6 @@ type IdleUpdateStatusResponse = {
   } | null;
 };
 
-type JobStatus = {
-  id: string;
-  friendCode: string;
-  status: "queued" | "processing" | "completed" | "failed" | "canceled";
-  stage: "send_request" | "wait_acceptance" | "update_score";
-  error?: string | null;
-  scoreProgress?: {
-    completedDiffs: number[];
-    totalDiffs: number;
-  } | null;
-  updatedAt: string;
-  friendRequestSentAt?: string;
-  pickedAt?: string;
-};
-
 const DIFFICULTY_NAMES: Record<number, string> = {
   0: "BASIC",
   1: "ADVANCED",
@@ -75,6 +71,141 @@ const DIFFICULTY_NAMES: Record<number, string> = {
 };
 
 async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
+  const path = typeof input === "string" ? input : input.toString();
+  const method = (init?.method ?? "GET").toUpperCase();
+  const headers = new Headers(init?.headers);
+  const authorization =
+    headers.get("Authorization") ?? headers.get("authorization") ?? "";
+
+  if (path === "/api/users/profile" && method === "GET" && authorization) {
+    const res = await usersApi.profile({
+      headers: { authorization },
+    });
+    return {
+      ok: res.status === 200,
+      status: res.status,
+      data: (res.body ?? null) as T,
+    };
+  }
+
+  if (path === "/api/users/profile" && method === "PATCH" && authorization) {
+    const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+    const res = await usersApi.updateProfile({
+      headers: { authorization },
+      body: {
+        divingFishImportToken:
+          (body.divingFishImportToken as string | null | undefined) ?? null,
+        lxnsImportToken: (body.lxnsImportToken as string | null | undefined) ?? null,
+      },
+    });
+    return {
+      ok: res.status === 200,
+      status: res.status,
+      data: (res.body ?? null) as T,
+    };
+  }
+
+  if (
+    path === "/api/users/diving-fish/token" &&
+    method === "POST" &&
+    authorization
+  ) {
+    const body = init?.body
+      ? (JSON.parse(String(init.body)) as { username: string; password: string })
+      : { username: "", password: "" };
+    const res = await usersApi.getDivingFishToken({
+      headers: { authorization },
+      body,
+    });
+    return {
+      ok: res.status === 201,
+      status: res.status,
+      data: (res.body ?? null) as T,
+    };
+  }
+
+  if (
+    path === "/api/users/idle-update/status" &&
+    method === "GET" &&
+    authorization
+  ) {
+    const res = await usersApi.getIdleUpdateStatus({
+      headers: { authorization },
+    });
+    return {
+      ok: res.status === 200,
+      status: res.status,
+      data: (res.body ?? null) as T,
+    };
+  }
+
+  if (
+    path === "/api/users/idle-update/enable" &&
+    method === "POST" &&
+    authorization
+  ) {
+    const res = await usersApi.enableIdleUpdate({
+      headers: { authorization },
+    });
+    return {
+      ok: res.status === 201,
+      status: res.status,
+      data: (res.body ?? null) as T,
+    };
+  }
+
+  if (
+    path === "/api/users/idle-update/disable" &&
+    method === "POST" &&
+    authorization
+  ) {
+    const res = await usersApi.disableIdleUpdate({
+      headers: { authorization },
+    });
+    return {
+      ok: res.status === 201,
+      status: res.status,
+      data: (res.body ?? null) as T,
+    };
+  }
+
+  if (path === "/api/sync/latest" && method === "GET" && authorization) {
+    const res = await syncApi.latest({
+      headers: { authorization },
+    });
+    return {
+      ok: res.status === 200,
+      status: res.status,
+      data: (res.body ?? null) as T,
+    };
+  }
+
+  if (
+    path === "/api/sync/latest/diving-fish" &&
+    method === "POST" &&
+    authorization
+  ) {
+    const res = await syncApi.exportToDivingFish({
+      headers: { authorization },
+    });
+    return {
+      ok: res.status === 201,
+      status: res.status,
+      data: (res.body ?? null) as T,
+    };
+  }
+
+  if (path === "/api/sync/latest/lxns" && method === "POST" && authorization) {
+    const res = await syncApi.exportToLxns({
+      headers: { authorization },
+    });
+    return {
+      ok: res.status === 201,
+      status: res.status,
+      data: (res.body ?? null) as T,
+    };
+  }
+
   const res = await fetch(input, init);
   const text = await res.text();
   const data = text ? (JSON.parse(text) as T) : (null as T);
@@ -205,18 +336,16 @@ export default function SyncPage() {
 
         // Check for active job after getting friendCode
         if (res.data.friendCode) {
-          const activeJobRes = await fetchJson<{ job: JobStatus | null }>(
-            `/api/job/by-friend-code/${res.data.friendCode}/active`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            },
+          const activeJobRes = await getActiveJobByFriendCode(
+            res.data.friendCode,
+            token,
           );
 
           if (cancelled) return;
 
-          if (activeJobRes.ok && activeJobRes.data?.job) {
+          if (activeJobRes.job) {
             // Found an active job, restore the state
-            const activeJob = activeJobRes.data.job;
+            const activeJob = activeJobRes.job;
             setSyncJobId(activeJob.id);
             setSyncStatus(activeJob);
             // Only set syncing to true if it's still in progress
@@ -257,19 +386,10 @@ export default function SyncPage() {
 
       // Check success rate for recommendation
       try {
-        const statsRes = await fetchJson<{
-          totalCount: number;
-          successRate: number;
-          avgDuration: number | null;
-        }>("/api/job/stats/recent");
-        if (statsRes.ok && statsRes.data) {
-          setRecentStats(statsRes.data);
-          if (
-            statsRes.data.totalCount >= 5 &&
-            statsRes.data.successRate <= 50
-          ) {
-            setLowSuccessRate(true);
-          }
+        const statsRes = await getRecentJobStats();
+        setRecentStats(statsRes);
+        if (statsRes.totalCount >= 5 && statsRes.successRate <= 50) {
+          setLowSuccessRate(true);
         }
       } catch {}
 
@@ -311,28 +431,24 @@ export default function SyncPage() {
     if (!syncJobId || !syncing) return;
 
     const interval = setInterval(async () => {
-      const res = await fetchJson<JobStatus>(`/api/job/${syncJobId}`);
-
-      if (!res.ok) {
-        setSyncError(`轮询失败 (HTTP ${res.status})`);
-        return;
-      }
-
-      if (res.data) {
-        setSyncStatus(res.data);
+      try {
+        const job = await getJobById(syncJobId);
+        setSyncStatus(job);
 
         if (
-          res.data.status === "completed" ||
-          res.data.status === "failed" ||
-          res.data.status === "canceled"
+          job.status === "completed" ||
+          job.status === "failed" ||
+          job.status === "canceled"
         ) {
           setSyncing(false);
-          if (res.data.status === "completed") {
-            // Refresh profile and last sync info
+          if (job.status === "completed") {
             loadProfile();
             loadLastSync();
           }
         }
+      } catch {
+        setSyncError("轮询失败");
+        return;
       }
     }, 1500);
 
@@ -406,23 +522,14 @@ export default function SyncPage() {
     setSyncError(null);
     setSyncStatus(null);
 
-    const res = await fetchJson<{ jobId: string; job: JobStatus }>(
-      "/api/job/create",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          friendCode: profile.friendCode,
-          skipUpdateScore: false, // We want to sync scores
-        }),
-      },
-    );
+    try {
+      const res = await createJob({
+        friendCode: profile.friendCode,
+        skipUpdateScore: false,
+      });
 
-    if (res.ok && res.data?.jobId) {
-      setSyncJobId(res.data.jobId);
-      setSyncStatus(res.data.job);
+      setSyncJobId(res.jobId);
+      setSyncStatus(res.job);
 
       // 立即更新成功创建后，如果之前开启了闲时更新，更新前端状态
       if (idleUpdateStatus?.enabled) {
@@ -437,11 +544,10 @@ export default function SyncPage() {
           color: "yellow",
         });
       }
-    } else {
+    } catch (error) {
       setSyncing(false);
-      const errorData = res.data as { message?: string; error?: string } | null;
       const errorMessage =
-        errorData?.message || errorData?.error || `HTTP ${res.status}`;
+        error instanceof Error ? error.message : "未知错误";
       setSyncError(`创建同步任务失败: ${errorMessage}`);
     }
   };
@@ -884,7 +990,7 @@ export default function SyncPage() {
           先和 Bot 添加好友，在当日凌晨空闲时段自动更新成绩，成功率更高。（注：更新完成后会自动解除好友关系）
         </Text>
 
-        {recentStats && recentStats.totalCount && (
+        {recentStats && recentStats.totalCount >= 5 && (
           <Group gap="xl">
             <Group gap={6}>
               <Text size="sm" c="dimmed">近 1 小时成功率</Text>

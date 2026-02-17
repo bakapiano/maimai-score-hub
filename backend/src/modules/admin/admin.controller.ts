@@ -8,13 +8,22 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import {
+  ReportBotStatusBodySchema,
+  SearchJobsQuerySchema,
+  UpdateBotRemarkBodySchema,
+  type ReportBotStatusBody,
+  type SearchJobsQuery,
+  type UpdateBotRemarkBody,
+} from '@maimai-score-hub/shared';
 
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
 import { BotStatusService } from './bot-status.service';
-import { JobApiLogService } from '../job/job-api-log.service';
+import { JobApiLogService } from '../job/api-log/api-log.service';
 import { JobService } from '../job/job.service';
-import { IdleUpdateSchedulerService } from '../job/idle-update-scheduler.service';
+import { IdleUpdateSchedulerService } from '../job/idle-update/idle-update-scheduler.service';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 @Controller('admin')
 export class AdminController {
@@ -31,14 +40,8 @@ export class AdminController {
    */
   @Post('bot-status')
   async reportBotStatus(
-    @Body()
-    body: {
-      bots: {
-        friendCode: string;
-        available: boolean;
-        friendCount?: number;
-      }[];
-    },
+    @Body(new ZodValidationPipe(ReportBotStatusBodySchema))
+    body: ReportBotStatusBody,
   ) {
     await this.botStatusService.report(body.bots);
     return { ok: true };
@@ -57,7 +60,8 @@ export class AdminController {
   @UseGuards(AdminGuard)
   async updateBotRemark(
     @Param('friendCode') friendCode: string,
-    @Body() body: { remark: string | null },
+    @Body(new ZodValidationPipe(UpdateBotRemarkBodySchema))
+    body: UpdateBotRemarkBody,
   ) {
     await this.botStatusService.updateRemark(friendCode, body.remark);
     return { ok: true };
@@ -126,20 +130,13 @@ export class AdminController {
   @Get('jobs')
   @UseGuards(AdminGuard)
   async searchJobs(
-    @Query('friendCode') friendCode?: string,
-    @Query('status') status?: string,
-    @Query('page') pageStr?: string,
-    @Query('pageSize') pageSizeStr?: string,
+    @Query(new ZodValidationPipe(SearchJobsQuerySchema)) query: SearchJobsQuery,
   ) {
-    const page = pageStr ? Math.max(parseInt(pageStr, 10) || 1, 1) : 1;
-    const pageSize = pageSizeStr
-      ? Math.min(Math.max(parseInt(pageSizeStr, 10) || 10, 1), 100)
-      : 10;
     return await this.adminService.searchJobs({
-      friendCode,
-      status,
-      page,
-      pageSize,
+      friendCode: query.friendCode,
+      status: query.status,
+      page: query.page,
+      pageSize: query.pageSize,
     });
   }
 

@@ -3,7 +3,16 @@
  * 用于收集和批量上报 bot 的 API 调用日志到后端
  */
 
-import { buildUrl } from "./job-service-client.ts";
+import { initClient } from "@ts-rest/core";
+import * as sharedContract from "@maimai-score-hub/shared";
+
+import { getJobServiceBaseUrl } from "./job-service-client.ts";
+
+const { jobContract } = sharedContract;
+
+const client = initClient(jobContract, {
+  baseUrl: `${getJobServiceBaseUrl()}/api`,
+});
 
 export interface ApiLogEntry {
   url: string;
@@ -47,13 +56,12 @@ export async function flushApiLogs(jobId: string): Promise<void> {
   const logs = buffer.splice(0);
 
   try {
-    const response = await fetch(buildUrl(`/api/job/${jobId}/api-logs`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ logs }),
+    const response = await client.addApiLogs({
+      params: { jobId },
+      body: { logs },
     });
 
-    if (!response.ok) {
+    if (response.status !== 201) {
       console.warn(
         `[ApiLogClient] Failed to flush ${logs.length} logs for job ${jobId}. Status: ${response.status}`,
       );

@@ -1,4 +1,5 @@
 import { Box, LoadingOverlay } from "@mantine/core";
+import { musicApi } from "../api/appClient";
 import type { MusicChartPayload, MusicRow } from "../types/music";
 import {
   createContext,
@@ -8,8 +9,6 @@ import {
   useMemo,
   useState,
 } from "react";
-
-import { fetchJson } from "../utils/fetch";
 
 type MusicContextValue = {
   musics: MusicRow[];
@@ -34,9 +33,9 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchJson<MusicRow[]>("/api/music");
-      if (res.ok && Array.isArray(res.data)) {
-        setMusics(res.data);
+      const res = await musicApi.listAll({});
+      if (res.status === 200 && Array.isArray(res.body)) {
+        setMusics(res.body as MusicRow[]);
       } else {
         setError(`获取曲库失败 (HTTP ${res.status})`);
         setMusics([]);

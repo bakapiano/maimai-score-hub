@@ -6,8 +6,15 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import {
+  LoginRequestBodySchema,
+  LoginStatusQuerySchema,
+  type LoginRequestBody,
+  type LoginStatusQuery,
+} from '@maimai-score-hub/shared';
 
 import { AuthService } from './auth.service';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 @Controller('auth')
 export class AuthController {
@@ -15,35 +22,19 @@ export class AuthController {
 
   @Post('login-request')
   async loginRequest(
-    @Body()
-    body: {
-      friendCode?: unknown;
-      skipUpdateScore?: unknown;
-      useIdleUpdate?: unknown;
-    },
+    @Body(new ZodValidationPipe(LoginRequestBodySchema)) body: LoginRequestBody,
   ) {
-    if (typeof body.friendCode !== 'string') {
-      throw new BadRequestException('friendCode is required');
-    }
-    const anyBody = body as Record<string, unknown>;
-    const skipUpdateScore =
-      anyBody.skipUpdateScore === undefined
-        ? true
-        : Boolean(anyBody.skipUpdateScore);
-    const useIdleUpdate = Boolean(anyBody.useIdleUpdate);
-
     return this.auth.requestLogin(
       body.friendCode,
-      skipUpdateScore,
-      useIdleUpdate,
+      body.skipUpdateScore,
+      body.useIdleUpdate,
     );
   }
 
   @Get('login-status')
-  async loginStatus(@Query('jobId') jobId?: string) {
-    if (!jobId) {
-      throw new BadRequestException('jobId is required');
-    }
-    return this.auth.checkStatus(jobId);
+  async loginStatus(
+    @Query(new ZodValidationPipe(LoginStatusQuerySchema)) query: LoginStatusQuery,
+  ) {
+    return this.auth.checkStatus(query.jobId);
   }
 }

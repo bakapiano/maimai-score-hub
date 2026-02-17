@@ -7,8 +7,8 @@ import {
 
 import { ConfigService } from '@nestjs/config';
 import { IdleUpdateLogService } from './idle-update-log.service';
-import { JobService } from './job.service';
-import { UsersService } from '../users/users.service';
+import { JobService } from '../job.service';
+import { UsersService } from '../../users/users.service';
 
 @Injectable()
 export class IdleUpdateSchedulerService
@@ -108,6 +108,8 @@ export class IdleUpdateSchedulerService
     let created = 0;
     let failed = 0;
     const entries: Array<{ friendCode: string; jobId: string }> = [];
+    const createdJobIds: string[] = [];
+    const usersToClearIdleMark: string[] = [];
 
     // 按 concurrency 分批处理
     for (let i = 0; i < users.length; i += this.concurrency) {
@@ -124,13 +126,9 @@ export class IdleUpdateSchedulerService
             botUserFriendCode: user.idleUpdateBotFriendCode,
           });
 
-          // 清除用户的闲时更新标记
-          const userId = String(user._id);
-          await this.usersService.update(userId, {
-            idleUpdateBotFriendCode: null,
-          });
-
           batchJobIds.push(jobId);
+          createdJobIds.push(jobId);
+          usersToClearIdleMark.push(String(user._id));
           entries.push({ friendCode: user.friendCode, jobId });
           created++;
         } catch (err) {
@@ -148,6 +146,22 @@ export class IdleUpdateSchedulerService
         );
         await this.waitForJobsToFinish(batchJobIds);
       }
+    }
+
+    if (createdJobIds.length > 0) {
+      await this.waitForJobsToFinish(createdJobIds);
+
+      await Promise.all(
+        usersToClearIdleMark.map((userId) =>
+          this.usersService
+            .update(userId, { idleUpdateBotFriendCode: null })
+            .catch((err) => {
+              this.logger.warn(
+                `Failed to clear idle update mark for user ${userId}: ${err}`,
+              );
+            }),
+        ),
+      );
     }
 
     this.logger.log(

@@ -10,7 +10,7 @@ import { MusicEntity } from '../music/music.schema';
 import type { ChartPayload, MusicDocument } from '../music/music.schema';
 import { SyncEntity } from '../sync/sync.schema';
 import type { SyncDocument, SyncScore } from '../sync/sync.schema';
-import { ensureFontsLoaded } from './score-export.fonts';
+import { ensureFontsLoaded } from './rendering/score-export.fonts';
 import {
   buildLevelBuckets,
   buildRatingSummary,
@@ -21,7 +21,7 @@ import {
   renderBest50Image,
   renderLevelScoresImage,
   renderVersionScoresImage,
-} from './score-export.render';
+} from './rendering/score-export.render';
 
 @Injectable()
 export class ScoreExportService {

@@ -6,9 +6,12 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "prebuild": "npm --prefix ../shared run openapi:generate",
     "build": "nest build -b swc",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "prestart": "npm --prefix ../shared run openapi:generate",
     "start": "nest start -b swc",
+    "prestart:dev": "npm --prefix ../shared run openapi:generate",
     "start:dev": "nest start --watch -b swc",
     "start:debug": "nest start --debug --watch -b swc",
     "start:prod": "node dist/main",
@@ -20,6 +23,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@maimai-score-hub/shared": "file:../shared",
     "@napi-rs/canvas": "^0.1.68",
     "@nestjs/cache-manager": "^3.1.0",
     "@nestjs/common": "^11.0.1",
@@ -33,7 +37,11 @@
     "cron": "^3.1.7",
     "mongoose": "^9.1.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "sharp": "^0.34.5",
+    "swagger-ui-express": "^5.0.1",
+    "yaml": "^2.8.2",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -47,6 +55,7 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^22.10.7",
     "@types/supertest": "^6.0.2",
+    "@types/swagger-ui-express": "^4.1.8",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",

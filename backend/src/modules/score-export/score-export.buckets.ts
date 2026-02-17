@@ -8,7 +8,7 @@ import type {
 
 import type { ChartPayload } from '../music/music.schema';
 import type { SyncScore } from '../sync/sync.schema';
-import { VERSION_ORDER } from './score-export.constants';
+import { VERSION_ORDER } from './rendering/score-export.constants';
 
 export function buildRatingSummary(scores: SyncScore[]): RatingSummary | null {
   if (!Array.isArray(scores)) return null;

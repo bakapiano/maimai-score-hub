@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { Cron } from '@nestjs/schedule';
 import type { Model } from 'mongoose';
-import { mkdir, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import sharp from 'sharp';
 
 import { MusicEntity } from '../music/music.schema';
 import type { MusicDocument } from '../music/music.schema';
@@ -10,8 +12,8 @@ import { MusicService } from '../music/music.service';
 import type { MusicDataSource } from '../music/music.service';
 import {
   buildDivingFishDocs,
-  buildLxnsDocs,
   buildIdMap,
+  buildLxnsDocs,
 } from '../../common/prober/id-map';
 import { getLxnsSongListUrl } from '../../common/prober/lxns/transform';
 import type { LxnsApiResponse } from '../../common/prober/lxns/transform';
@@ -23,6 +25,15 @@ type SyncSummary = {
   failed: number;
 };
 
+type LocalBackfillSummary = {
+  total: number;
+  saved: number;
+  skipped: number;
+  failed: number;
+};
+
+type CoverFormat = 'png' | 'webp';
+
 const DIVING_FISH_MUSIC_URL =
   'https://www.diving-fish.com/api/maimaidxprober/music_data';
 
@@ -32,6 +43,7 @@ export class CoverService {
   private readonly divingFishCoverBase = 'https://www.diving-fish.com/covers';
   private readonly lxnsCoverBase = 'https://assets.lxns.net/maimai/jacket';
   private readonly baseDir = join(process.cwd(), 'covers');
+  private scheduledSyncRunning = false;
 
   constructor(
     @InjectModel(MusicEntity.name)
@@ -43,9 +55,18 @@ export class CoverService {
     return id.length < 5 ? id.padStart(5, '0') : id;
   }
 
-  private buildLocalPath(id: string) {
+  private buildLocalPath(id: string, format: CoverFormat = 'png') {
     const padded = this.padId(id);
-    return join(this.baseDir, `${padded}.png`);
+    return join(this.baseDir, `${padded}.${format}`);
+  }
+
+  private async pathExists(path: string): Promise<boolean> {
+    try {
+      await stat(path);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** diving-fish cover URL: 5-digit zero-padded id */
@@ -59,14 +80,23 @@ export class CoverService {
     return `${this.lxnsCoverBase}/${lxnsId}.png!webp`;
   }
 
-  async getLocalPathIfExists(id: string) {
-    const path = this.buildLocalPath(id);
-    try {
-      await stat(path);
-      return path;
-    } catch {
-      return null;
+  async getLocalPathIfExists(id: string, format: CoverFormat = 'png') {
+    const path = this.buildLocalPath(id, format);
+    return (await this.pathExists(path)) ? path : null;
+  }
+
+  async getPreferredLocalPath(id: string, preferWebp: boolean) {
+    if (preferWebp) {
+      const webp = await this.getLocalPathIfExists(id, 'webp');
+      if (webp) return { path: webp, format: 'webp' as const };
+      const png = await this.getLocalPathIfExists(id, 'png');
+      return png ? { path: png, format: 'png' as const } : null;
     }
+
+    const png = await this.getLocalPathIfExists(id, 'png');
+    if (png) return { path: png, format: 'png' as const };
+    const webp = await this.getLocalPathIfExists(id, 'webp');
+    return webp ? { path: webp, format: 'webp' as const } : null;
   }
 
   async getCoverCount(): Promise<number> {
@@ -81,10 +111,6 @@ export class CoverService {
   private async ensureDir() {
     await mkdir(this.baseDir, { recursive: true });
   }
-
-  // ---------------------------------------------------------------------------
-  // Build the cross-source ID mapping
-  // ---------------------------------------------------------------------------
 
   private async buildCrossIdMap(dataSource: MusicDataSource): Promise<{
     toDivingFishId: (dbId: string) => string | null;
@@ -113,20 +139,16 @@ export class CoverService {
 
     if (dataSource === 'diving-fish') {
       return {
-        toDivingFishId: (dbId) => dbId, // already diving-fish
+        toDivingFishId: (dbId) => dbId,
         toLxnsId: (dbId) => dfToLxns.get(dbId) ?? null,
       };
-    } else {
-      return {
-        toDivingFishId: (dbId) => lxnsToDf.get(dbId) ?? null,
-        toLxnsId: (dbId) => dbId, // already lxns
-      };
     }
-  }
 
-  // ---------------------------------------------------------------------------
-  // syncAll
-  // ---------------------------------------------------------------------------
+    return {
+      toDivingFishId: (dbId) => lxnsToDf.get(dbId) ?? null,
+      toLxnsId: (dbId) => dbId,
+    };
+  }
 
   async syncAll(): Promise<SyncSummary> {
     return this.doSync(false);
@@ -134,6 +156,82 @@ export class CoverService {
 
   async forceSyncAll(): Promise<SyncSummary> {
     return this.doSync(true);
+  }
+
+  @Cron('0 3 * * *', { timeZone: 'Asia/Shanghai' })
+  async runScheduledDailySync() {
+    if (this.scheduledSyncRunning) {
+      this.logger.warn('Skip scheduled cover sync: previous run still active.');
+      return;
+    }
+
+    this.scheduledSyncRunning = true;
+    this.logger.log('Starting scheduled cover sync (daily 03:00 UTC+8).');
+    try {
+      const summary = await this.syncAll();
+      this.logger.log(
+        `Scheduled cover sync done: total=${summary.total}, saved=${summary.saved}, skipped=${summary.skipped}, failed=${summary.failed}`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Scheduled cover sync failed: ${(err as Error).message}`,
+        err instanceof Error ? err.stack : String(err),
+      );
+    } finally {
+      this.scheduledSyncRunning = false;
+    }
+  }
+
+  async backfillLocalVariants(): Promise<LocalBackfillSummary> {
+    await this.ensureDir();
+
+    const files = await readdir(this.baseDir);
+    const idSet = new Set<string>();
+    for (const file of files) {
+      const match = /^(\d+)\.(png|webp)$/i.exec(file);
+      if (!match) continue;
+      idSet.add(match[1]);
+    }
+
+    const ids = Array.from(idSet);
+    const summary: LocalBackfillSummary = {
+      total: ids.length,
+      saved: 0,
+      skipped: 0,
+      failed: 0,
+    };
+
+    let processed = 0;
+    const tasks = ids.map((id) => async () => {
+      const pngPath = this.buildLocalPath(id, 'png');
+      const webpPath = this.buildLocalPath(id, 'webp');
+      const [pngExists, webpExists] = await Promise.all([
+        this.pathExists(pngPath),
+        this.pathExists(webpPath),
+      ]);
+
+      if (pngExists && webpExists) {
+        summary.skipped += 1;
+      } else if (pngExists) {
+        const ok = await this.convertLocalVariant(pngPath, webpPath, 'webp');
+        ok ? (summary.saved += 1) : (summary.failed += 1);
+      } else if (webpExists) {
+        const ok = await this.convertLocalVariant(webpPath, pngPath, 'png');
+        ok ? (summary.saved += 1) : (summary.failed += 1);
+      } else {
+        summary.failed += 1;
+      }
+
+      processed += 1;
+      if (processed % 100 === 0 || processed === summary.total) {
+        this.logger.log(
+          `Local cover backfill progress: ${processed}/${summary.total} (saved=${summary.saved}, skipped=${summary.skipped}, failed=${summary.failed})`,
+        );
+      }
+    });
+
+    await runWithConcurrency(tasks, 8);
+    return summary;
   }
 
   private async doSync(force: boolean): Promise<SyncSummary> {
@@ -155,23 +253,19 @@ export class CoverService {
     let processed = 0;
     const tasks = musics.map((m) => async () => {
       const dbId = String(m.id);
-      const localPath = this.buildLocalPath(dbId);
-      const exists = await this.getLocalPathIfExists(dbId);
+      const result = await this.ensureCoverVariants(
+        dbId,
+        force,
+        toDivingFishId,
+        toLxnsId,
+      );
 
-      if (exists && !force) {
+      if (result === 'skipped') {
         summary.skipped += 1;
+      } else if (result === 'saved') {
+        summary.saved += 1;
       } else {
-        const saved = await this.fetchAndSaveCover(
-          dbId,
-          localPath,
-          toDivingFishId,
-          toLxnsId,
-        );
-        if (saved) {
-          summary.saved += 1;
-        } else {
-          summary.failed += 1;
-        }
+        summary.failed += 1;
       }
 
       processed += 1;
@@ -187,34 +281,130 @@ export class CoverService {
     return summary;
   }
 
-  /**
-   * 1. 先尝试 diving-fish 封面 (用 diving-fish id)
-   * 2. 如果 404，尝试 lxns 封面 (用 lxns id)
-   * 返回是否保存成功
-   */
-  private async fetchAndSaveCover(
+  private async ensureCoverVariants(
     dbId: string,
-    localPath: string,
+    force: boolean,
+    toDivingFishId: (dbId: string) => string | null,
+    toLxnsId: (dbId: string) => string | null,
+  ): Promise<'saved' | 'skipped' | 'failed'> {
+    const pngPath = this.buildLocalPath(dbId, 'png');
+    const webpPath = this.buildLocalPath(dbId, 'webp');
+
+    const [pngExists, webpExists] = await Promise.all([
+      this.pathExists(pngPath),
+      this.pathExists(webpPath),
+    ]);
+
+    if (force) {
+      const saved = await this.fetchAndSaveCoverVariants(
+        dbId,
+        toDivingFishId,
+        toLxnsId,
+      );
+      return saved ? 'saved' : 'failed';
+    }
+
+    if (pngExists && webpExists) {
+      return 'skipped';
+    }
+
+    if (pngExists && !webpExists) {
+      const generated = await this.convertLocalVariant(pngPath, webpPath, 'webp');
+      if (generated) return 'saved';
+    }
+
+    if (webpExists && !pngExists) {
+      const generated = await this.convertLocalVariant(webpPath, pngPath, 'png');
+      if (generated) return 'saved';
+    }
+
+    const saved = await this.fetchAndSaveCoverVariants(
+      dbId,
+      toDivingFishId,
+      toLxnsId,
+    );
+    return saved ? 'saved' : 'failed';
+  }
+
+  private async convertLocalVariant(
+    inputPath: string,
+    outputPath: string,
+    format: CoverFormat,
+  ): Promise<boolean> {
+    try {
+      const image = sharp(inputPath, { failOn: 'none' });
+      if (format === 'webp') {
+        await image.webp({ quality: 78 }).toFile(outputPath);
+      } else {
+        await image.png().toFile(outputPath);
+      }
+      return true;
+    } catch (err) {
+      this.logger.warn(
+        `Failed to convert local cover variant: ${inputPath} -> ${outputPath} (${(err as Error).message})`,
+      );
+      return false;
+    }
+  }
+
+  private async saveCoverVariantsFromBuffer(
+    dbId: string,
+    sourceBuffer: Buffer,
+  ): Promise<boolean> {
+    const pngPath = this.buildLocalPath(dbId, 'png');
+    const webpPath = this.buildLocalPath(dbId, 'webp');
+
+    try {
+      const image = sharp(sourceBuffer, { failOn: 'none' });
+      await Promise.all([
+        image.clone().png().toFile(pngPath),
+        image.clone().webp({ quality: 78 }).toFile(webpPath),
+      ]);
+      return true;
+    } catch (err) {
+      this.logger.warn(
+        `Failed to save cover variants for dbId=${dbId}: ${(err as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  private async fetchAndSaveCoverVariants(
+    dbId: string,
     toDivingFishId: (dbId: string) => string | null,
     toLxnsId: (dbId: string) => string | null,
   ): Promise<boolean> {
-    // --- 1. Try diving-fish ---
+    const source = await this.fetchCoverSourceBuffer(
+      dbId,
+      toDivingFishId,
+      toLxnsId,
+    );
+
+    if (!source) {
+      return false;
+    }
+
+    return this.saveCoverVariantsFromBuffer(dbId, source);
+  }
+
+  private async fetchCoverSourceBuffer(
+    dbId: string,
+    toDivingFishId: (dbId: string) => string | null,
+    toLxnsId: (dbId: string) => string | null,
+  ): Promise<Buffer | null> {
     const dfId = toDivingFishId(dbId);
     if (dfId) {
       const url = this.buildDivingFishUrl(dfId);
       try {
         const res = await fetch(url);
         if (res.ok) {
-          const buf = Buffer.from(await res.arrayBuffer());
-          await writeFile(localPath, buf);
-          return true;
+          return Buffer.from(await res.arrayBuffer());
         }
       } catch {
         // fall through
       }
     }
 
-    // --- 2. Fallback: lxns ---
     const lxId = toLxnsId(dbId);
     if (lxId) {
       const url = this.buildLxnsUrl(lxId);
@@ -222,9 +412,7 @@ export class CoverService {
         const res = await fetch(url);
         const cacheControl = res.headers.get('cache-control');
         if (res.ok && cacheControl !== 'no-cache') {
-          const buf = Buffer.from(await res.arrayBuffer());
-          await writeFile(localPath, buf);
-          return true;
+          return Buffer.from(await res.arrayBuffer());
         }
       } catch {
         // fall through
@@ -234,7 +422,7 @@ export class CoverService {
     this.logger.warn(
       `Cover not found for dbId=${dbId} (dfId=${dfId ?? '?'}, lxId=${lxId ?? '?'})`,
     );
-    return false;
+    return null;
   }
 }
 

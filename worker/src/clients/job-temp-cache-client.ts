@@ -3,7 +3,16 @@
  * 用于在 update_score 阶段存储和恢复 FriendVS HTML 结果
  */
 
-import { buildUrl } from "./job-service-client.ts";
+import { initClient } from "@ts-rest/core";
+import * as sharedContract from "@maimai-score-hub/shared";
+
+import { getJobServiceBaseUrl } from "./job-service-client.ts";
+
+const { jobContract } = sharedContract;
+
+const client = initClient(jobContract, {
+  baseUrl: `${getJobServiceBaseUrl()}/api`,
+});
 
 /**
  * 获取缓存的 HTML
@@ -15,26 +24,25 @@ export async function getCachedHtml(
   type: number,
 ): Promise<string | null> {
   try {
-    const response = await fetch(
-      buildUrl(`/api/job/${jobId}/cache/${diff}/${type}`),
-    );
+    const response = await client.getTempCache({
+      params: { jobId, diff: String(diff), type: String(type) },
+    });
 
     if (response.status === 404 || response.status === 400) {
       return null;
     }
 
-    if (!response.ok) {
+    if (response.status !== 200) {
       console.warn(
         `[JobTempCache] Failed to get cache for job ${jobId}, diff ${diff}, type ${type}. Status: ${response.status}`,
       );
       return null;
     }
 
-    const data = (await response.json()) as { html: string };
     console.log(
       `[JobTempCache] Cache hit for job ${jobId}, diff ${diff}, type ${type}`,
     );
-    return data.html;
+    return response.body.html;
   } catch (err) {
     console.warn(
       `[JobTempCache] Error getting cache for job ${jobId}, diff ${diff}, type ${type}:`,
@@ -54,19 +62,14 @@ export async function setCachedHtml(
   html: string,
 ): Promise<void> {
   try {
-    const response = await fetch(
-      buildUrl(`/api/job/${jobId}/cache/${diff}/${type}`),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ html }),
-      },
-    );
+    const response = await client.setTempCache({
+      params: { jobId, diff: String(diff), type: String(type) },
+      body: { html },
+    });
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
+    if (response.status !== 201) {
       console.warn(
-        `[JobTempCache] Failed to set cache for job ${jobId}, diff ${diff}, type ${type}. Status: ${response.status}. Body: ${text}`,
+        `[JobTempCache] Failed to set cache for job ${jobId}, diff ${diff}, type ${type}. Status: ${response.status}`,
       );
     } else {
       console.log(

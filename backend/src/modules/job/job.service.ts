@@ -8,7 +8,7 @@ import type { Model } from 'mongoose';
 import { randomUUID } from 'crypto';
 
 import { SyncService } from '../sync/sync.service';
-import { JobTempCacheService } from './job-temp-cache.service';
+import { JobTempCacheService } from './cache/temp-cache.service';
 import type {
   JobPatchBody,
   JobResponse,

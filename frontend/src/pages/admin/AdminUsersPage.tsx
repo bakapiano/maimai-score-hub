@@ -10,7 +10,8 @@ import {
 import { IconRefresh, IconUsers } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { adminFetch, useAdminContext, type AdminUser } from "./adminUtils";
+import { adminApi } from "../../api/appClient";
+import { useAdminContext, type AdminUser } from "./adminUtils";
 
 export default function AdminUsersPage() {
   const { password } = useAdminContext();
@@ -33,10 +34,12 @@ export default function AdminUsersPage() {
   const load = useCallback(async () => {
     if (!password) return;
     setLoading(true);
-    const res = await adminFetch<AdminUser[]>("/api/admin/users", password);
+    const res = await adminApi.getAllUsers({
+      headers: { "x-admin-password": password },
+    });
     setLoading(false);
-    if (res.ok && res.data) {
-      setUsers(res.data);
+    if (res.status === 200) {
+      setUsers((res.body as AdminUser[]) ?? []);
       setPage(1);
     }
   }, [password]);

@@ -1,22 +1,25 @@
-import { JobApiLogEntity, JobApiLogSchema } from './job-api-log.schema';
+import { JobApiLogEntity, JobApiLogSchema } from './api-log/api-log.schema';
 import { JobEntity, JobSchema } from './job.schema';
 import {
   JobTempCacheEntity,
   JobTempCacheSchema,
-} from './job-temp-cache.schema';
+} from './cache/temp-cache.schema';
 import {
   IdleUpdateLogEntity,
   IdleUpdateLogSchema,
-} from './idle-update-log.schema';
+} from './idle-update/idle-update-log.schema';
 import { Module, forwardRef } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
-import { IdleUpdateLogService } from './idle-update-log.service';
-import { IdleUpdateSchedulerService } from './idle-update-scheduler.service';
-import { JobApiLogService } from './job-api-log.service';
+import { ApiLogController } from './api-log/api-log.controller';
+import { IdleUpdateController } from './idle-update/idle-update.controller';
+import { IdleUpdateLogService } from './idle-update/idle-update-log.service';
+import { IdleUpdateSchedulerService } from './idle-update/idle-update-scheduler.service';
+import { JobApiLogService } from './api-log/api-log.service';
 import { JobController } from './job.controller';
 import { JobService } from './job.service';
-import { JobTempCacheService } from './job-temp-cache.service';
+import { JobTempCacheService } from './cache/temp-cache.service';
+import { TempCacheController } from './cache/temp-cache.controller';
 import { MongooseModule } from '@nestjs/mongoose';
 import { SyncModule } from '../sync/sync.module';
 import { UsersModule } from '../users/users.module';
@@ -33,7 +36,12 @@ import { UsersModule } from '../users/users.module';
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
   ],
-  controllers: [JobController],
+  controllers: [
+    JobController,
+    TempCacheController,
+    IdleUpdateController,
+    ApiLogController,
+  ],
   providers: [
     JobService,
     JobTempCacheService,

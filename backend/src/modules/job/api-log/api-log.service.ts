@@ -4,7 +4,7 @@ import type { Model } from 'mongoose';
 import {
   JobApiLogEntity,
   type JobApiLogDocument,
-} from './job-api-log.schema';
+} from './api-log.schema';
 
 export interface ApiLogEntry {
   url: string;

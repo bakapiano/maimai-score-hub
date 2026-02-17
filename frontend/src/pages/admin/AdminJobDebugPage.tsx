@@ -24,11 +24,11 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 import {
-  adminFetch,
-  useAdminContext,
   type ApiLogEntry,
   type SearchJobResult,
+  useAdminContext,
 } from "./adminUtils";
+import { adminApi } from "../../api/appClient";
 
 export default function AdminJobDebugPage() {
   const { password } = useAdminContext();
@@ -54,26 +54,26 @@ export default function AdminJobDebugPage() {
     async (p = 1) => {
       if (!password) return;
       setLoading(true);
-      const params = new URLSearchParams();
-      if (friendCode.trim()) {
-        params.set("friendCode", friendCode.trim());
-      }
-      if (status) {
-        params.set("status", status);
-      }
-      params.set("page", String(p));
-      params.set("pageSize", "10");
-      const res = await adminFetch<{
-        data: SearchJobResult[];
-        total: number;
-        page: number;
-        pageSize: number;
-      }>(`/api/admin/jobs?${params.toString()}`, password);
+      const res = await adminApi.searchJobs({
+        headers: { "x-admin-password": password },
+        query: {
+          friendCode: friendCode.trim() || undefined,
+          status: status || undefined,
+          page: p,
+          pageSize: 10,
+        },
+      });
       setLoading(false);
-      if (res.ok && res.data) {
-        setJobs(res.data.data);
-        setTotal(res.data.total);
-        setPage(res.data.page);
+      if (res.status === 200) {
+        const body = res.body as {
+          data: SearchJobResult[];
+          total: number;
+          page: number;
+          pageSize: number;
+        };
+        setJobs(body.data ?? []);
+        setTotal(body.total ?? 0);
+        setPage(body.page ?? p);
       }
     },
     [password, friendCode, status],
@@ -84,13 +84,13 @@ export default function AdminJobDebugPage() {
       if (!password) return;
       setSelectedJobId(jobId);
       setApiLogsLoading(true);
-      const res = await adminFetch<ApiLogEntry[]>(
-        `/api/admin/jobs/${jobId}/api-logs`,
-        password,
-      );
+      const res = await adminApi.getJobApiLogs({
+        headers: { "x-admin-password": password },
+        params: { jobId },
+      });
       setApiLogsLoading(false);
-      if (res.ok && res.data) {
-        setApiLogs(res.data);
+      if (res.status === 200) {
+        setApiLogs((res.body as ApiLogEntry[]) ?? []);
       } else {
         setApiLogs([]);
       }

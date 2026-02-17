@@ -147,32 +147,6 @@ export function useAdminPassword() {
   return { password, savePassword };
 }
 
-// ── Fetch helper ──
-
-export async function adminFetch<T>(
-  url: string,
-  password: string,
-  options?: RequestInit,
-): Promise<{ ok: boolean; data?: T; error?: string }> {
-  try {
-    const res = await fetch(url, {
-      ...options,
-      headers: {
-        ...options?.headers,
-        "X-Admin-Password": password,
-      },
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      return { ok: false, error: `HTTP ${res.status}: ${text}` };
-    }
-    const data = await res.json();
-    return { ok: true, data };
-  } catch (err) {
-    return { ok: false, error: String(err) };
-  }
-}
-
 // ── Admin context hook ──
 
 export interface AdminOutletContext {

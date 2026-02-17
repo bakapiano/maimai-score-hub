@@ -4,12 +4,16 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "npm --prefix ../shared run build",
     "dev": "vite",
+    "prebuild": "npm --prefix ../shared run build",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@maimai-score-hub/shared": "file:../shared",
+    "@ts-rest/core": "^3.52.1",
     "@emotion/react": "^11.14.0",
     "@mantine/core": "^8.3.10",
     "@mantine/hooks": "^8.3.10",

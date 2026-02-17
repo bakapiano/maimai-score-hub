@@ -1,15 +1,19 @@
 import {
+  Body,
   Controller,
   Get,
   Post,
-  Body,
-  BadRequestException,
   UseGuards,
 } from '@nestjs/common';
+import {
+  SetMusicSourceBodySchema,
+  type SetMusicSourceBody,
+} from '@maimai-score-hub/shared';
 
 import { MusicService } from './music.service';
 import type { MusicDataSource } from './music-config.schema';
 import { AdminGuard } from '../admin/admin.guard';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 @Controller('music')
 export class MusicController {
@@ -35,13 +39,10 @@ export class MusicController {
 
   @Post('source')
   @UseGuards(AdminGuard)
-  async setDataSource(@Body() body: { source: string }) {
+  async setDataSource(
+    @Body(new ZodValidationPipe(SetMusicSourceBodySchema)) body: SetMusicSourceBody,
+  ) {
     const { source } = body;
-    if (source !== 'diving-fish' && source !== 'lxns') {
-      throw new BadRequestException(
-        'Invalid source. Must be "diving-fish" or "lxns"',
-      );
-    }
     await this.musicService.setDataSource(source as MusicDataSource);
     return { ok: true, source };
   }

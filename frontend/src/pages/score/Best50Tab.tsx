@@ -76,8 +76,6 @@ type Best50TabProps = {
 };
 
 export function Best50Tab({ scores, loading }: Best50TabProps) {
-  console.log(scores);
-
   const { musicMap, chartMap } = useMusic();
   const { token } = useAuth();
   const ratingSummary = useMemo(() => buildRatingSummary(scores), [scores]);

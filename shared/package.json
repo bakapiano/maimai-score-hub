@@ -1,0 +1,23 @@
+{
+  "name": "@maimai-score-hub/shared",
+  "version": "0.0.1",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "openapi:generate": "npm run build && node scripts/generate-openapi.cjs"
+  },
+  "dependencies": {
+    "@ts-rest/core": "^3.52.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@ts-rest/open-api": "^3.52.1",
+    "typescript": "^5.9.3",
+    "yaml": "^2.8.2"
+  }
+}

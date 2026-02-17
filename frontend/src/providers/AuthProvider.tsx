@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { usersApi } from "../api/appClient";
 
 const TOKEN_KEY = "netbot_token";
 
@@ -57,8 +58,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     (async () => {
       try {
-        const res = await fetch("/api/users/profile", {
-          headers: { Authorization: `Bearer ${token}` },
+        const res = await usersApi.profile({
+          headers: { authorization: `Bearer ${token}` },
         });
 
         if (cancelled) return;

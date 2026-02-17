@@ -36,14 +36,14 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 import {
-  adminFetch,
-  useAdminContext,
   type ActiveJobsStats,
   type BotStatus,
   type JobErrorStats,
   type JobStats,
   type JobTrend,
+  useAdminContext,
 } from "./adminUtils";
+import { adminApi } from "../../api/appClient";
 
 export default function AdminActiveJobsPage() {
   const { password } = useAdminContext();
@@ -82,16 +82,14 @@ export default function AdminActiveJobsPage() {
     if (!window.confirm("确定要清理 7 天前的所有任务记录吗？此操作不可撤销。")) return;
     setCleanupLoading(true);
     setCleanupResult(null);
-    const res = await adminFetch<{ deletedCount: number }>(
-      "/api/admin/cleanup-jobs",
-      password,
-      { method: "POST" },
-    );
+    const res = await adminApi.cleanupJobs({
+      headers: { "x-admin-password": password },
+    });
     setCleanupLoading(false);
-    if (res.ok && res.data) {
-      setCleanupResult(`已清理 ${res.data.deletedCount} 条旧任务`);
+    if (res.status === 201) {
+      setCleanupResult(`已清理 ${res.body.deletedCount} 条旧任务`);
     } else {
-      setCleanupResult(`清理失败: ${res.error}`);
+      setCleanupResult(`清理失败: HTTP ${res.status}`);
     }
   }, [password]);
 
@@ -99,10 +97,10 @@ export default function AdminActiveJobsPage() {
     async (friendCode: string) => {
       if (!password) return;
       const remark = editRemarkValue.trim() || null;
-      await adminFetch("/api/admin/bot-status/" + friendCode + "/remark", password, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ remark }),
+      await adminApi.updateBotRemark({
+        headers: { "x-admin-password": password },
+        params: { friendCode },
+        body: { remark },
       });
       setEditingRemark(null);
       // Update local state immediately
@@ -121,36 +119,36 @@ export default function AdminActiveJobsPage() {
   const loadActiveJobs = useCallback(async () => {
     if (!password) return;
     setActiveJobsLoading(true);
-    const res = await adminFetch<ActiveJobsStats>(
-      "/api/admin/active-jobs",
-      password,
-    );
+    const res = await adminApi.getActiveJobs({
+      headers: { "x-admin-password": password },
+    });
     setActiveJobsLoading(false);
-    if (res.ok && res.data) {
-      setActiveJobs(res.data);
+    if (res.status === 200) {
+      setActiveJobs((res.body as ActiveJobsStats) ?? null);
     }
   }, [password]);
 
   const loadBotStatuses = useCallback(async () => {
     if (!password) return;
     setBotStatusesLoading(true);
-    const res = await adminFetch<BotStatus[]>(
-      "/api/admin/bot-status",
-      password,
-    );
+    const res = await adminApi.getBotStatus({
+      headers: { "x-admin-password": password },
+    });
     setBotStatusesLoading(false);
-    if (res.ok && res.data) {
-      setBotStatuses(res.data);
+    if (res.status === 200) {
+      setBotStatuses((res.body as BotStatus[]) ?? null);
     }
   }, [password]);
 
   const loadJobStats = useCallback(async () => {
     if (!password) return;
     setJobStatsLoading(true);
-    const res = await adminFetch<JobStats>("/api/admin/job-stats", password);
+    const res = await adminApi.getJobStats({
+      headers: { "x-admin-password": password },
+    });
     setJobStatsLoading(false);
-    if (res.ok) {
-      setJobStats(res.data ?? null);
+    if (res.status === 200) {
+      setJobStats((res.body as JobStats) ?? null);
     }
   }, [password]);
 
@@ -159,13 +157,13 @@ export default function AdminActiveJobsPage() {
       if (!password) return;
       setJobTrendLoading(true);
       const h = hours ?? trendHours;
-      const res = await adminFetch<JobTrend>(
-        `/api/admin/job-trend?hours=${h}`,
-        password,
-      );
+      const res = await adminApi.getJobTrend({
+        headers: { "x-admin-password": password },
+        query: { hours: h },
+      });
       setJobTrendLoading(false);
-      if (res.ok) {
-        setJobTrend(res.data ?? null);
+      if (res.status === 200) {
+        setJobTrend((res.body as JobTrend) ?? null);
       }
     },
     [password, trendHours],
@@ -174,13 +172,12 @@ export default function AdminActiveJobsPage() {
   const loadJobErrorStats = useCallback(async () => {
     if (!password) return;
     setJobErrorStatsLoading(true);
-    const res = await adminFetch<JobErrorStats[]>(
-      "/api/admin/job-error-stats",
-      password,
-    );
+    const res = await adminApi.getJobErrorStats({
+      headers: { "x-admin-password": password },
+    });
     setJobErrorStatsLoading(false);
-    if (res.ok) {
-      setJobErrorStats(res.data ?? null);
+    if (res.status === 200) {
+      setJobErrorStats((res.body as JobErrorStats[]) ?? null);
     }
   }, [password]);
 

@@ -3,7 +3,7 @@ import type {
   CompactCard,
   LevelBucket,
   VersionBucket,
-} from './score-export.types';
+} from '../score-export.types';
 import {
   DIFFICULTY_NAMES,
   FC_NAMES,

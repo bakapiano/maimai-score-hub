@@ -8,6 +8,7 @@ import {
 import { Anchor, Box, Group, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { syncApi } from "../api/appClient";
 
 import { AllScoresTab } from "./score/AllScoresTab";
 import { Best50Tab } from "./score/Best50Tab";
@@ -16,13 +17,6 @@ import type { SyncScore } from "../types/syncScore";
 import { VersionScoresTab } from "./score/VersionScoresTab";
 import { useAuth } from "../providers/AuthProvider";
 import { useMusic } from "../providers/MusicProvider";
-
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
-  const res = await fetch(input, init);
-  const text = await res.text();
-  const data = text ? (JSON.parse(text) as T) : (null as T);
-  return { ok: res.ok, status: res.status, data };
-}
 
 export default function ScorePage() {
   const { token } = useAuth();
@@ -40,14 +34,11 @@ export default function ScorePage() {
     setError(null);
 
     try {
-      const headers: HeadersInit = { Authorization: `Bearer ${token}` };
-      const latestRes = await fetchJson<{
-        scores?: SyncScore[];
-        createdAt?: string;
-        updatedAt?: string;
-      }>("/api/sync/latest", { headers });
+      const latestRes = await syncApi.latest({
+        headers: { authorization: `Bearer ${token}` },
+      });
 
-      if (!latestRes.ok) {
+      if (latestRes.status !== 200) {
         if (latestRes.status === 404) {
           setError(null);
           setScores([]);
@@ -57,8 +48,12 @@ export default function ScorePage() {
         setError(`获取成绩失败 (HTTP ${latestRes.status})`);
         setScores([]);
         setLastSyncAt(null);
-      } else if (latestRes.data) {
-        const { scores: syncScores, createdAt, updatedAt } = latestRes.data;
+      } else if (latestRes.body) {
+        const { scores: syncScores, createdAt, updatedAt } = latestRes.body as {
+          scores?: SyncScore[];
+          createdAt?: string;
+          updatedAt?: string;
+        };
         if (Array.isArray(syncScores)) {
           setScores(syncScores);
         } else {

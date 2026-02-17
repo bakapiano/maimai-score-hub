@@ -3,6 +3,8 @@
  * 与后端 Job Service 通信的 API 客户端
  */
 
+import { initClient } from "@ts-rest/core";
+import * as sharedContract from "@maimai-score-hub/shared";
 import type { Job, JobPatch, JobResponse } from "../types/index.ts";
 
 import config from "../config.ts";
@@ -10,6 +12,8 @@ import config from "../config.ts";
 // Re-export types for backward compatibility
 export type { Job, JobPatch, JobResponse };
 export type { JobStatus, JobStage, UserProfile } from "../types/index.ts";
+
+const { jobContract } = sharedContract;
 
 const baseUrl = (config.jobService?.baseUrl ?? "").replace(/\/$/, "");
 
@@ -23,6 +27,10 @@ function ensureBaseUrl(): string {
 export function buildUrl(path: string): string {
   return `${ensureBaseUrl()}${path}`;
 }
+
+const client = initClient(jobContract, {
+  baseUrl: `${ensureBaseUrl()}/api`,
+});
 
 function deserializeJob(payload: JobResponse): Job {
   return {
@@ -87,25 +95,19 @@ export function getJobServiceBaseUrl(): string {
 export async function claimNextJob(
   botUserFriendCode?: string,
 ): Promise<Job | null> {
-  const response = await fetch(buildUrl("/api/job/next"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ botUserFriendCode }),
+  const response = await client.next({
+    body: { botUserFriendCode: botUserFriendCode ?? "" },
   });
 
   if (response.status === 204) {
     return null;
   }
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(
-      `Failed to claim next job. Status: ${response.status}. Body: ${text}`,
-    );
+  if (response.status !== 200) {
+    throw new Error(`Failed to claim next job. Status: ${response.status}`);
   }
 
-  const payload = (await response.json()) as JobResponse;
-  return deserializeJob(payload);
+  return deserializeJob(response.body as JobResponse);
 }
 
 /**
@@ -116,38 +118,29 @@ export async function updateJob(
   patch: JobPatch,
   signal?: AbortSignal,
 ): Promise<Job> {
-  const response = await fetch(buildUrl(`/api/job/${jobId}`), {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(serializePatch(patch)),
-    signal,
+  const response = await client.patch({
+    params: { jobId },
+    body: serializePatch(patch) as any,
+    fetchOptions: { signal },
   });
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(
-      `Failed to update job ${jobId}. Status: ${response.status}. Body: ${text}`,
-    );
+  if (response.status !== 200) {
+    throw new Error(`Failed to update job ${jobId}. Status: ${response.status}`);
   }
 
-  const payload = (await response.json()) as JobResponse;
-  return deserializeJob(payload);
+  return deserializeJob(response.body as JobResponse);
 }
 
 /**
  * 获取任务详情
  */
 export async function getJob(jobId: string): Promise<Job> {
-  const response = await fetch(buildUrl(`/api/job/${jobId}`));
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(
-      `Failed to fetch job ${jobId}. Status: ${response.status}. Body: ${text}`,
-    );
+  const response = await client.getById({ params: { jobId } });
+  if (response.status !== 200) {
+    throw new Error(`Failed to fetch job ${jobId}. Status: ${response.status}`);
   }
 
-  const payload = (await response.json()) as JobResponse;
-  return deserializeJob(payload);
+  return deserializeJob(response.body as JobResponse);
 }
 
 /**
@@ -156,17 +149,16 @@ export async function getJob(jobId: string): Promise<Job> {
 export async function getActiveFriendCodes(
   botUserFriendCode: string,
 ): Promise<string[]> {
-  const response = await fetch(
-    buildUrl(`/api/job/active/${encodeURIComponent(botUserFriendCode)}`),
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
+  const response = await client.getActiveByBot({
+    params: { botUserFriendCode },
+  });
+  if (response.status !== 200) {
     throw new Error(
-      `Failed to fetch active friend codes. Status: ${response.status}. Body: ${text}`,
+      `Failed to fetch active friend codes. Status: ${response.status}`,
     );
   }
 
-  return (await response.json()) as string[];
+  return response.body;
 }
 
 /**
@@ -176,16 +168,13 @@ export async function markIdleUpdateReady(
   friendCode: string,
   botFriendCode: string,
 ): Promise<void> {
-  const response = await fetch(buildUrl("/api/job/idle-update/mark-ready"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ friendCode, botFriendCode }),
+  const response = await client.markIdleUpdateReady({
+    body: { friendCode, botFriendCode },
   });
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
+  if (response.status !== 200) {
     throw new Error(
-      `Failed to mark idle update ready. Status: ${response.status}. Body: ${text}`,
+      `Failed to mark idle update ready. Status: ${response.status}`,
     );
   }
 }
@@ -196,20 +185,17 @@ export async function markIdleUpdateReady(
 export async function getIdleUpdateFriendCodes(
   botFriendCode: string,
 ): Promise<string[]> {
-  const response = await fetch(
-    buildUrl(
-      `/api/job/idle-update/friends/${encodeURIComponent(botFriendCode)}`,
-    ),
-  );
+  const response = await client.getIdleUpdateFriends({
+    params: { botFriendCode },
+  });
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
+  if (response.status !== 200) {
     throw new Error(
-      `Failed to fetch idle update friend codes. Status: ${response.status}. Body: ${text}`,
+      `Failed to fetch idle update friend codes. Status: ${response.status}`,
     );
   }
 
-  return (await response.json()) as string[];
+  return response.body;
 }
 
 /**

@@ -1,6 +1,7 @@
 import "../App.css";
 
 import { useEffect, useMemo, useState } from "react";
+import { authApi, getHealthStatus, syncApi, usersApi } from "../api/appClient";
 
 import { useAuth } from "../providers/AuthProvider";
 
@@ -48,13 +49,6 @@ const TABS = [
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
-
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
-  const res = await fetch(input, init);
-  const text = await res.text();
-  const data = text ? (JSON.parse(text) as T) : (null as T);
-  return { ok: res.ok, status: res.status, data };
-}
 
 function buildRatingSummary(detail: SyncDetail): RatingSummary | null {
   if (!detail || !Array.isArray(detail.scores)) return null;
@@ -116,7 +110,7 @@ function DebugPage() {
 
   useEffect(() => {
     (async () => {
-      const res = await fetchJson<{ status?: string }>("/api/health");
+      const res = await getHealthStatus();
       setHealth(res.ok ? JSON.stringify(res.data) : `HTTP ${res.status}`);
     })();
   }, []);
@@ -126,18 +120,16 @@ function DebugPage() {
     if (!("jobId" in loginReq)) return;
 
     const handle = setInterval(async () => {
-      const res = await fetchJson<any>(
-        `/api/auth/login-status?jobId=${loginReq.jobId}`,
-      );
-      if (!res.ok) {
+      const res = await authApi.loginStatus({ query: { jobId: loginReq.jobId } });
+      if (res.status !== 200) {
         setJobStatus(`HTTP ${res.status}`);
         return;
       }
 
-      setJobStatus(JSON.stringify(res.data, null, 2));
+      setJobStatus(JSON.stringify(res.body, null, 2));
 
-      if (res.data?.status === "completed" && res.data?.token) {
-        setToken(res.data.token);
+      if ((res.body as any)?.status === "completed" && (res.body as any)?.token) {
+        setToken((res.body as any).token);
         setPolling(false);
       }
     }, 1500);
@@ -153,24 +145,22 @@ function DebugPage() {
     setLoginReq(null);
     setPolling(false);
 
-    const res = await fetchJson<LoginRequest>("/api/auth/login-request", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const res = await authApi.loginRequest({
+      body: {
         friendCode: friendCode.trim(),
         skipUpdateScore,
-      }),
+      },
     });
 
-    if (res.ok && res.data) {
+    if (res.status === 201 && res.body) {
       // Handle skipAuth mode - direct token response
-      if ("skipAuth" in res.data && res.data.skipAuth) {
-        setToken(res.data.token);
+      if ("skipAuth" in (res.body as LoginRequest) && (res.body as any).skipAuth) {
+        setToken((res.body as any).token);
         setJobStatus("Logged in directly (skipAuth mode)");
         return;
       }
 
-      setLoginReq(res.data);
+      setLoginReq(res.body as LoginRequest);
       setPolling(true);
     } else {
       setJobStatus(`Login request failed (HTTP ${res.status})`);
@@ -179,12 +169,16 @@ function DebugPage() {
 
   const fetchProfile = async () => {
     setProfileResp("");
-    const headers: HeadersInit | undefined = token
-      ? { Authorization: `Bearer ${token}` }
-      : undefined;
-    const res = await fetchJson<unknown>("/api/users/profile", { headers });
-    if (res.ok) {
-      const data = res.data as any;
+    const authHeader = token ? `Bearer ${token}` : "";
+    if (!authHeader) {
+      setProfileResp("Missing token");
+      return;
+    }
+    const res = await usersApi.profile({
+      headers: { authorization: authHeader },
+    });
+    if (res.status === 200) {
+      const data = res.body as any;
       setProfileResp(JSON.stringify(data, null, 2));
       setProfileTokenInput(
         typeof data?.divingFishImportToken === "string"
@@ -201,24 +195,20 @@ function DebugPage() {
 
   const patchProfile = async () => {
     setProfilePatchResp("");
-    const headers: HeadersInit = token
-      ? {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        }
-      : { "Content-Type": "application/json" };
-
-    const res = await fetchJson<unknown>("/api/users/profile", {
-      method: "PATCH",
-      headers,
-      body: JSON.stringify({
+    if (!token) {
+      setProfilePatchResp("Missing token");
+      return;
+    }
+    const res = await usersApi.updateProfile({
+      headers: { authorization: `Bearer ${token}` },
+      body: {
         divingFishImportToken: profileTokenInput || null,
         lxnsImportToken: profileLxnsTokenInput || null,
-      }),
+      },
     });
 
     setProfilePatchResp(
-      res.ok ? JSON.stringify(res.data, null, 2) : `HTTP ${res.status}`,
+      res.status === 200 ? JSON.stringify(res.body, null, 2) : `HTTP ${res.status}`,
     );
   };
 
@@ -228,13 +218,16 @@ function DebugPage() {
     setRatingSummary(null);
     setExportResp("");
     setExportLxnsResp("");
-    const headers: HeadersInit | undefined = token
-      ? { Authorization: `Bearer ${token}` }
-      : undefined;
-    const res = await fetchJson<any>("/api/sync/latest", { headers });
-    if (res.ok) {
-      setSyncsResp(JSON.stringify(res.data, null, 2));
-      const detail = res.data as SyncDetail;
+    if (!token) {
+      setSyncsResp("Missing token");
+      return;
+    }
+    const res = await syncApi.latest({
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (res.status === 200) {
+      setSyncsResp(JSON.stringify(res.body, null, 2));
+      const detail = res.body as unknown as SyncDetail;
       setSyncDetailObj(detail);
       setRatingSummary(buildRatingSummary(detail));
     } else {
@@ -244,57 +237,49 @@ function DebugPage() {
 
   const exportDivingFish = async () => {
     setExportResp("Running...");
-    const headers: HeadersInit = token
-      ? {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        }
-      : { "Content-Type": "application/json" };
-
-    const res = await fetchJson<any>("/api/sync/latest/diving-fish", {
-      method: "POST",
-      headers,
+    if (!token) {
+      setExportResp("Missing token");
+      return;
+    }
+    const res = await syncApi.exportToDivingFish({
+      headers: { authorization: `Bearer ${token}` },
     });
 
     setExportResp(
-      res.ok ? JSON.stringify(res.data, null, 2) : `HTTP ${res.status}`,
+      res.status === 201 ? JSON.stringify(res.body, null, 2) : `HTTP ${res.status}`,
     );
   };
 
   const exportLxns = async () => {
     setExportLxnsResp("Running...");
-    const headers: HeadersInit = token
-      ? {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        }
-      : { "Content-Type": "application/json" };
-
-    const res = await fetchJson<any>("/api/sync/latest/lxns", {
-      method: "POST",
-      headers,
+    if (!token) {
+      setExportLxnsResp("Missing token");
+      return;
+    }
+    const res = await syncApi.exportToLxns({
+      headers: { authorization: `Bearer ${token}` },
     });
 
     setExportLxnsResp(
-      res.ok ? JSON.stringify(res.data, null, 2) : `HTTP ${res.status}`,
+      res.status === 201 ? JSON.stringify(res.body, null, 2) : `HTTP ${res.status}`,
     );
   };
 
   const triggerCoverSync = async () => {
     setCoverSyncResp("Running...");
-    const res = await fetchJson<any>("/api/cover/sync", {
-      method: "POST",
-    });
+    const res = await fetch("/api/cover/sync", { method: "POST" });
+    const text = await res.text();
     setCoverSyncResp(
-      res.ok ? JSON.stringify(res.data, null, 2) : `HTTP ${res.status}`,
+      res.ok ? text : `HTTP ${res.status}`,
     );
   };
 
   const triggerMusicSync = async () => {
     setMusicSyncResp("Running...");
-    const res = await fetchJson<any>("/api/music/sync", { method: "POST" });
+    const res = await fetch("/api/music/sync", { method: "POST" });
+    const text = await res.text();
     setMusicSyncResp(
-      res.ok ? JSON.stringify(res.data, null, 2) : `HTTP ${res.status}`,
+      res.ok ? text : `HTTP ${res.status}`,
     );
   };
 

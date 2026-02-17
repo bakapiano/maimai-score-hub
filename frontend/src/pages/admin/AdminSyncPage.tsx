@@ -1,4 +1,5 @@
 import { Button, Card, Group, Stack, Text } from "@mantine/core";
+import { adminApi, coverApi, musicApi } from "../../api/appClient";
 import {
   IconArrowsExchange,
   IconClock,
@@ -7,7 +8,7 @@ import {
   IconPhoto,
   IconRefresh,
 } from "@tabler/icons-react";
-import { adminFetch, useAdminContext } from "./adminUtils";
+import { useAdminContext } from "./adminUtils";
 import { useCallback, useEffect, useState } from "react";
 
 export default function AdminSyncPage() {
@@ -18,6 +19,9 @@ export default function AdminSyncPage() {
 
   const [coverForceSyncing, setCoverForceSyncing] = useState(false);
   const [coverForceSyncResult, setCoverForceSyncResult] = useState("");
+
+  const [coverBackfilling, setCoverBackfilling] = useState(false);
+  const [coverBackfillResult, setCoverBackfillResult] = useState("");
 
   const [musicSyncing, setMusicSyncing] = useState(false);
   const [musicSyncResult, setMusicSyncResult] = useState("");
@@ -34,10 +38,9 @@ export default function AdminSyncPage() {
   const loadDataSource = useCallback(async () => {
     setDataSourceLoading(true);
     try {
-      const res = await fetch("/api/music/source");
-      if (res.ok) {
-        const data = await res.json();
-        setDataSource(data.source);
+      const res = await musicApi.getDataSource({});
+      if (res.status === 200) {
+        setDataSource(res.body.source);
       }
     } catch {
       // ignore
@@ -49,18 +52,13 @@ export default function AdminSyncPage() {
     async (newSource: "diving-fish" | "lxns") => {
       if (!password) return;
       setDataSourceSwitching(true);
-      const res = await adminFetch<{ ok: boolean; source: string }>(
-        "/api/music/source",
-        password,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source: newSource }),
-        },
-      );
+      const res = await musicApi.setDataSource({
+        headers: { "x-admin-password": password },
+        body: { source: newSource },
+      });
       setDataSourceSwitching(false);
-      if (res.ok && res.data) {
-        setDataSource(res.data.source as "diving-fish" | "lxns");
+      if (res.status === 201) {
+        setDataSource(res.body.source);
       }
     },
     [password],
@@ -70,20 +68,16 @@ export default function AdminSyncPage() {
     if (!password) return;
     setCoverSyncing(true);
     setCoverSyncResult("");
-    const res = await adminFetch<{
-      ok: boolean;
-      total: number;
-      saved: number;
-      skipped: number;
-      failed: number;
-    }>("/api/admin/sync-covers", password, { method: "POST" });
+    const res = await adminApi.syncCovers({
+      headers: { "x-admin-password": password },
+    });
     setCoverSyncing(false);
-    if (res.ok && res.data) {
+    if (res.status === 201) {
       setCoverSyncResult(
-        `完成: 总计 ${res.data.total}, 保存 ${res.data.saved}, 跳过 ${res.data.skipped}, 失败 ${res.data.failed}`,
+        `完成: 总计 ${res.body.total}, 保存 ${res.body.saved}, 跳过 ${res.body.skipped}, 失败 ${res.body.failed}`,
       );
     } else {
-      setCoverSyncResult(`失败: ${res.error}`);
+      setCoverSyncResult(`失败: HTTP ${res.status}`);
     }
   }, [password]);
 
@@ -91,40 +85,50 @@ export default function AdminSyncPage() {
     if (!password) return;
     setCoverForceSyncing(true);
     setCoverForceSyncResult("");
-    const res = await adminFetch<{
-      ok: boolean;
-      total: number;
-      saved: number;
-      skipped: number;
-      failed: number;
-    }>("/api/admin/force-sync-covers", password, { method: "POST" });
+    const res = await adminApi.forceSyncCovers({
+      headers: { "x-admin-password": password },
+    });
     setCoverForceSyncing(false);
-    if (res.ok && res.data) {
+    if (res.status === 201) {
       setCoverForceSyncResult(
-        `完成: 总计 ${res.data.total}, 保存 ${res.data.saved}, 跳过 ${res.data.skipped}, 失败 ${res.data.failed}`,
+        `完成: 总计 ${res.body.total}, 保存 ${res.body.saved}, 跳过 ${res.body.skipped}, 失败 ${res.body.failed}`,
       );
     } else {
-      setCoverForceSyncResult(`失败: ${res.error}`);
+      setCoverForceSyncResult(`失败: HTTP ${res.status}`);
     }
+  }, [password]);
+
+  const backfillCoverVariants = useCallback(async () => {
+    if (!password) return;
+    setCoverBackfilling(true);
+    setCoverBackfillResult("");
+    const res = await coverApi.backfillVariants({
+      headers: { "x-admin-password": password },
+    });
+    if (res.status === 201) {
+      setCoverBackfillResult(
+        `补齐完成: 总计 ${res.body.total}, 新增 ${res.body.saved}, 跳过 ${res.body.skipped}, 失败 ${res.body.failed}`,
+      );
+    } else {
+      setCoverBackfillResult(`补齐失败: HTTP ${res.status}`);
+    }
+    setCoverBackfilling(false);
   }, [password]);
 
   const syncMusic = useCallback(async () => {
     if (!password) return;
     setMusicSyncing(true);
     setMusicSyncResult("");
-    const res = await adminFetch<{
-      ok: boolean;
-      total: number;
-      added: number;
-      updated: number;
-    }>("/api/admin/sync-music", password, { method: "POST" });
+    const res = await adminApi.syncMusic({
+      headers: { "x-admin-password": password },
+    });
     setMusicSyncing(false);
-    if (res.ok && res.data) {
+    if (res.status === 201) {
       setMusicSyncResult(
-        `完成: 总计 ${res.data.total}, 新增 ${res.data.added}, 更新 ${res.data.updated}`,
+        `完成: 总计 ${res.body.total}, 新增 ${res.body.added}, 更新 ${res.body.updated}`,
       );
     } else {
-      setMusicSyncResult(`失败: ${res.error}`);
+      setMusicSyncResult(`失败: HTTP ${res.status}`);
     }
   }, [password]);
 
@@ -132,19 +136,16 @@ export default function AdminSyncPage() {
     if (!password) return;
     setIdleUpdateTriggering(true);
     setIdleUpdateResult("");
-    const res = await adminFetch<{
-      ok: boolean;
-      totalUsers: number;
-      created: number;
-      failed: number;
-    }>("/api/admin/trigger-idle-update", password, { method: "POST" });
+    const res = await adminApi.triggerIdleUpdate({
+      headers: { "x-admin-password": password },
+    });
     setIdleUpdateTriggering(false);
-    if (res.ok && res.data) {
+    if (res.status === 201) {
       setIdleUpdateResult(
-        `完成: 总用户 ${res.data.totalUsers}, 创建 ${res.data.created} 个任务, 失败 ${res.data.failed}`,
+        `完成: 总用户 ${res.body.totalUsers}, 创建 ${res.body.created} 个任务, 失败 ${res.body.failed}`,
       );
     } else {
-      setIdleUpdateResult(`失败: ${res.error}`);
+      setIdleUpdateResult(`失败: HTTP ${res.status}`);
     }
   }, [password]);
 
@@ -181,6 +182,15 @@ export default function AdminSyncPage() {
               >
                 强制重新同步封面
               </Button>
+              <Button
+                variant="light"
+                color="teal"
+                leftSection={<IconRefresh size={16} />}
+                onClick={backfillCoverVariants}
+                loading={coverBackfilling}
+              >
+                补齐封面格式
+              </Button>
             </Group>
             {coverSyncResult && (
               <Text size="sm" c="dimmed">
@@ -190,6 +200,11 @@ export default function AdminSyncPage() {
             {coverForceSyncResult && (
               <Text size="sm" c="dimmed">
                 {coverForceSyncResult}
+              </Text>
+            )}
+            {coverBackfillResult && (
+              <Text size="sm" c="dimmed">
+                {coverBackfillResult}
               </Text>
             )}
           </div>

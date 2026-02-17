@@ -1,8 +1,12 @@
 import { json, urlencoded } from 'express';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { AddressInfo } from 'net';
 import { AppModule } from './app.module';
 import { NestFactory } from '@nestjs/core';
+import swaggerUi from 'swagger-ui-express';
+import { parse } from 'yaml';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -11,6 +15,26 @@ async function bootstrap() {
   app.use(urlencoded({ extended: true, limit: '100mb' }));
   app.enableCors({ origin: true });
   app.setGlobalPrefix('api');
+
+  const openApiCandidates = [
+    resolve(process.cwd(), '../shared/openapi/openapi.yaml'),
+    resolve(__dirname, '../../shared/openapi/openapi.yaml'),
+  ];
+  const openApiPath = openApiCandidates.find((candidate) =>
+    existsSync(candidate),
+  );
+
+  if (openApiPath) {
+    const openApiYaml = readFileSync(openApiPath, 'utf8');
+    const openApiDoc = parse(openApiYaml);
+    app.use('/swagger', swaggerUi.serve, swaggerUi.setup(openApiDoc));
+    console.log(`Swagger UI available at /swagger (source: ${openApiPath})`);
+  } else {
+    console.warn(
+      'OpenAPI YAML not found, skipping Swagger UI. Run: npm --prefix ../shared run openapi:generate',
+    );
+  }
+
   const preferredPort = Number(process.env.PORT ?? 9050);
   const host = process.env.HOST ?? '0.0.0.0';
   const fallbackPort = Number(process.env.FALLBACK_PORT ?? 0) || 0; // 0 lets OS pick a free port

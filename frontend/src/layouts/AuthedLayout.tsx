@@ -22,18 +22,9 @@ import { type MiniProfile } from "../components/MiniProfileCard";
 import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
 import { SettingsPanel } from "../components/SettingsPanel";
+import { usersApi } from "../api/appClient";
 import { useAuth } from "../providers/AuthProvider";
 import { useDisclosure } from "@mantine/hooks";
-
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
-  try {
-    const res = await fetch(input, init);
-    const data: T = await res.json();
-    return { ok: res.ok, status: res.status, data };
-  } catch {
-    return { ok: false, status: 0, data: null as T | null };
-  }
-}
 
 type PageMeta = {
   label: string;
@@ -106,19 +97,16 @@ export default function AuthedLayout() {
     let cancelled = false;
 
     (async () => {
-      const res = await fetchJson<{ profile: MiniProfile | null }>(
-        "/api/users/profile",
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const res = await usersApi.profile({
+        headers: { authorization: `Bearer ${token}` },
+      });
 
       if (cancelled) return;
 
-      if (res.ok && res.data?.profile) {
+      if (res.status === 200 && res.body?.profile) {
         setProfile({
-          avatarUrl: res.data.profile.avatarUrl,
-          username: res.data.profile.username,
+          avatarUrl: (res.body.profile as MiniProfile).avatarUrl,
+          username: (res.body.profile as MiniProfile).username,
         });
       }
     })();

@@ -72,6 +72,8 @@ backend/covers/
 
 # backend dist
 backend/dist
+shared/dist
+worker/dist
 
 
 debug-html/

@@ -1,5 +1,5 @@
 import { JobEntity, JobSchema } from '../job/job.schema';
-import { JobApiLogEntity, JobApiLogSchema } from '../job/job-api-log.schema';
+import { JobApiLogEntity, JobApiLogSchema } from '../job/api-log/api-log.schema';
 import { MusicEntity, MusicSchema } from '../music/music.schema';
 import { SyncEntity, SyncSchema } from '../sync/sync.schema';
 import { UserEntity, UserSchema } from '../users/user.schema';

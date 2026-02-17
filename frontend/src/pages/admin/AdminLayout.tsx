@@ -22,7 +22,8 @@ import {
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { adminFetch, useAdminPassword, type AdminStats } from "./adminUtils";
+import { adminApi } from "../../api/appClient";
+import { useAdminPassword } from "./adminUtils";
 import { useDisclosure } from "@mantine/hooks";
 
 type AdminPageMeta = {
@@ -79,17 +80,16 @@ export default function AdminLayout() {
     setVerifying(true);
     setError("");
 
-    const res = await adminFetch<AdminStats>(
-      "/api/admin/stats",
-      inputPassword.trim(),
-    );
+    const res = await adminApi.getStats({
+      headers: { "x-admin-password": inputPassword.trim() },
+    });
     setVerifying(false);
 
-    if (res.ok) {
+    if (res.status === 200) {
       savePassword(inputPassword.trim());
       setVerified(true);
     } else {
-      setError(res.error || "验证失败");
+      setError(`验证失败 (HTTP ${res.status})`);
     }
   }, [inputPassword, savePassword]);
 
@@ -99,9 +99,11 @@ export default function AdminLayout() {
       setInputPassword(password);
       (async () => {
         setVerifying(true);
-        const res = await adminFetch<AdminStats>("/api/admin/stats", password);
+        const res = await adminApi.getStats({
+          headers: { "x-admin-password": password },
+        });
         setVerifying(false);
-        if (res.ok) {
+        if (res.status === 200) {
           setVerified(true);
         }
       })();
