@@ -6,6 +6,10 @@ const config = {
   fetchTimeOut: parseInt(process.env.FETCH_TIMEOUT || "300000", 10),
   fetchRetryCount: parseInt(process.env.FETCH_RETRY_COUNT || "5", 10),
   redirectUrl: process.env.REDIRECT_URL || "http://106.14.237.126:3999/",
+  host: (process.env.HOST_WHITE_LIST || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean),
   httpProxy: {
     port: parseInt(process.env.HTTP_PROXY_PORT || "2222", 10),
   },
