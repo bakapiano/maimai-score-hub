@@ -78,6 +78,12 @@ async def _init_tables(db: aiosqlite.Connection):
     except Exception:
         pass  # 列已存在
 
+    try:
+        await db.execute("ALTER TABLE devices ADD COLUMN hardware_id TEXT DEFAULT ''")
+        await db.commit()
+    except Exception:
+        pass  # 列已存在
+
     # 初始化默认设置
     for key, default_val in SETTING_DEFAULTS.items():
         await db.execute(
@@ -92,15 +98,16 @@ async def _init_tables(db: aiosqlite.Connection):
 async def upsert_device(device: Device) -> Device:
     db = await get_db()
     await db.execute(
-        """INSERT INTO devices (id, name, model, status, last_seen, remark)
-           VALUES (?, ?, ?, ?, ?, ?)
+        """INSERT INTO devices (id, name, model, status, last_seen, remark, hardware_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              name = COALESCE(NULLIF(excluded.name, ''), devices.name),
              model = COALESCE(NULLIF(excluded.model, ''), devices.model),
              status = excluded.status,
-             last_seen = excluded.last_seen
+             last_seen = excluded.last_seen,
+             hardware_id = COALESCE(NULLIF(excluded.hardware_id, ''), devices.hardware_id)
         """,
-        (device.id, device.name, device.model, device.status, device.last_seen, device.remark),
+        (device.id, device.name, device.model, device.status, device.last_seen, device.remark, device.hardware_id),
     )
     await db.commit()
     return device
@@ -110,6 +117,56 @@ async def update_device_remark(device_id: str, remark: str):
     db = await get_db()
     await db.execute("UPDATE devices SET remark = ? WHERE id = ?", (remark, device_id))
     await db.commit()
+
+
+async def get_device_by_hardware_id(hardware_id: str) -> Optional[Device]:
+    """根据硬件序列号查找设备"""
+    if not hardware_id:
+        return None
+    conn = await get_db()
+    cursor = await conn.execute("SELECT * FROM devices WHERE hardware_id = ?", (hardware_id,))
+    row = await cursor.fetchone()
+    return Device(**dict(row)) if row else None
+
+
+async def migrate_device_id(old_id: str, new_id: str):
+    """设备 IP:port 变化时，将旧 ID 迁移到新 ID，同时更新绑定关系"""
+    conn = await get_db()
+    # 获取旧设备信息
+    cursor = await conn.execute("SELECT * FROM devices WHERE id = ?", (old_id,))
+    old_row = await cursor.fetchone()
+    if not old_row:
+        return
+    old_device = dict(old_row)
+
+    # 删除旧设备记录
+    await conn.execute("DELETE FROM devices WHERE id = ?", (old_id,))
+
+    # 插入新设备记录（保留备注等信息）
+    await conn.execute(
+        """INSERT INTO devices (id, name, model, status, last_seen, remark, hardware_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             name = COALESCE(NULLIF(excluded.name, ''), devices.name),
+             model = COALESCE(NULLIF(excluded.model, ''), devices.model),
+             remark = COALESCE(NULLIF(excluded.remark, ''), devices.remark),
+             hardware_id = COALESCE(NULLIF(excluded.hardware_id, ''), devices.hardware_id),
+             status = excluded.status,
+             last_seen = excluded.last_seen
+        """,
+        (new_id, old_device.get('name', ''), old_device.get('model', ''),
+         old_device.get('status', 'online'), old_device.get('last_seen', ''),
+         old_device.get('remark', ''), old_device.get('hardware_id', '')),
+    )
+
+    # 更新绑定关系的 FK
+    await conn.execute("UPDATE bindings SET device_id = ? WHERE device_id = ?", (new_id, old_id))
+
+    # 更新恢复日志中的设备 ID
+    await conn.execute("UPDATE recovery_logs SET device_id = ? WHERE device_id = ?", (new_id, old_id))
+
+    await conn.commit()
+    logger.info(f"Device migrated: {old_id} -> {new_id}")
 
 
 async def get_all_devices() -> list[Device]:

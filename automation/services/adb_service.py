@@ -38,8 +38,23 @@ async def _run_adb(*args: str, device: str = None, timeout: int = 15) -> tuple[i
         return -1, "", str(e)
 
 
+async def _get_hardware_id(serial: str) -> str:
+    """获取设备硬件序列号作为稳定标识符"""
+    code, stdout, _ = await _run_adb("shell", "getprop ro.serialno", device=serial, timeout=5)
+    if code == 0 and stdout.strip():
+        return stdout.strip()
+    # 部分设备可能用 ro.boot.serialno
+    code, stdout, _ = await _run_adb("shell", "getprop ro.boot.serialno", device=serial, timeout=5)
+    if code == 0 and stdout.strip():
+        return stdout.strip()
+    return ""
+
+
 async def list_devices() -> list[Device]:
     """列出所有已连接的 ADB 设备，并同步到数据库"""
+    # 先尝试通过 mDNS 自动连接已配对但未连接的设备
+    await auto_connect_mdns()
+
     code, stdout, stderr = await _run_adb("devices", "-l")
     if code != 0:
         logger.error(f"adb devices failed: {stderr}")
@@ -80,6 +95,17 @@ async def list_devices() -> list[Device]:
             status="online",
             last_seen=datetime.now(timezone.utc).isoformat(),
         )
+
+        # 获取硬件序列号作为稳定标识符
+        hw_id = await _get_hardware_id(serial)
+        if hw_id:
+            device.hardware_id = hw_id
+            # 检查是否有相同硬件 ID 但不同传输地址的旧记录，如有则迁移
+            old_device = await db.get_device_by_hardware_id(hw_id)
+            if old_device and old_device.id != serial:
+                logger.info(f"Device address changed: {old_device.id} -> {serial} (hw: {hw_id})")
+                await db.migrate_device_id(old_device.id, serial)
+
         devices.append(device)
         online_ids.add(serial)
 
@@ -257,3 +283,64 @@ async def send_notification(serial: str, title: str = "ADB Worker", message: str
     else:
         logger.error(f"[{serial}] Notification failed: {output}")
         return False, output
+
+
+async def discover_mdns_services() -> list[dict]:
+    """
+    通过 adb mdns services 发现局域网内广播的 ADB 设备。
+    返回格式: [{"service_name": "adb-xxx", "type": "_adb-tls-connect._tcp", "addr": "192.168.1.x:port"}, ...]
+    """
+    code, stdout, stderr = await _run_adb("mdns", "services", timeout=5)
+    if code != 0:
+        logger.debug(f"adb mdns services failed: {stderr}")
+        return []
+
+    services = []
+    for line in stdout.strip().splitlines()[1:]:  # 跳过 header
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) >= 3 and parts[1] == "_adb-tls-connect._tcp":
+            services.append({
+                "service_name": parts[0],
+                "type": parts[1],
+                "addr": parts[2],
+            })
+    return services
+
+
+async def auto_connect_mdns():
+    """
+    自动连接通过 mDNS 发现的已配对设备。
+    对比当前已连接设备列表，只连接尚未连接的设备。
+    """
+    # 获取当前已连接的设备
+    code, stdout, _ = await _run_adb("devices")
+    if code != 0:
+        return
+
+    connected_addrs = set()
+    for line in stdout.strip().splitlines()[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "device":
+            connected_addrs.add(parts[0])
+
+    # 发现 mDNS 服务
+    services = await discover_mdns_services()
+    if not services:
+        return
+
+    for svc in services:
+        addr = svc["addr"]
+        if addr not in connected_addrs:
+            logger.info(f"mDNS auto-connect: {svc['service_name']} at {addr}")
+            code, out, err = await _run_adb("connect", addr)
+            output = (out + err).strip()
+            if "connected" in output.lower():
+                logger.info(f"mDNS auto-connected to {addr}")
+            else:
+                logger.warning(f"mDNS auto-connect failed for {addr}: {output}")

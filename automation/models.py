@@ -9,12 +9,13 @@ from typing import Optional
 
 @dataclass
 class Device:
-    id: str  # ADB serial
+    id: str  # ADB serial (IP:port or USB serial)
     name: str = ""
     model: str = ""
     status: str = "offline"  # online / offline
     last_seen: Optional[str] = None
     remark: str = ""
+    hardware_id: str = ""  # 硬件序列号（ro.serialno），稳定标识符
 
     def to_dict(self) -> dict:
         return asdict(self)
