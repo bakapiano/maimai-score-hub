@@ -111,8 +111,8 @@
         <h3>设备列表</h3>
       </div>
       <table>
-        <thead><tr><th>设备 ID</th><th>型号</th><th>状态</th><th>最后在线</th><th>操作</th></tr></thead>
-        <tbody id="deviceTable"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
+        <thead><tr><th>设备 ID</th><th>型号</th><th>备注</th><th>状态</th><th>最后在线</th><th>操作</th></tr></thead>
+        <tbody id="deviceTable"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -126,7 +126,7 @@
       <div class="form-row">
         <label>设备</label>
         <select id="bindDevice" style="width:200px"></select>
-        <label>好友码</label><input id="bindFriendCode" placeholder="friend_code" style="width:130px">
+        <label>好友码</label><select id="bindFriendCode" style="width:200px"></select>
       </div>
       <div class="form-row">
         <label>恢复URL</label><input id="bindUrl" placeholder="http://..." style="flex:1;min-width:200px">
@@ -138,8 +138,8 @@
     <div class="card">
       <div class="card-header"><h3>绑定列表</h3></div>
       <table>
-        <thead><tr><th>ID</th><th>设备</th><th>好友码</th><th>恢复 URL</th><th>重试间隔</th><th>恢复次数</th><th>上次恢复</th><th>操作</th></tr></thead>
-        <tbody id="bindingTable"><tr><td colspan="8" class="empty">加载中...</td></tr></tbody>
+        <thead><tr><th>ID</th><th>设备</th><th>设备备注</th><th>好友码</th><th>恢复 URL</th><th>重试间隔</th><th>恢复次数</th><th>上次恢复</th><th>操作</th></tr></thead>
+        <tbody id="bindingTable"><tr><td colspan="9" class="empty">加载中...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -261,19 +261,28 @@ function truncate(s, len = 50) {
 async function loadDevices() {
   const devices = await api('/api/devices');
   const tbody = document.getElementById('deviceTable');
-  if (!devices.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">没有设备</td></tr>'; return; }
+  if (!devices.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">没有设备</td></tr>'; return; }
   tbody.innerHTML = devices.map(d => `<tr>
     <td>${d.id}</td>
     <td>${d.model || d.name || '-'}</td>
+    <td id="remark-cell-${CSS.escape(d.id)}">
+      <span onclick="editRemark('${d.id}', this)" style="cursor:pointer;border-bottom:1px dashed var(--text-dim)" title="点击编辑备注">${d.remark || '<span style="color:var(--text-dim)">点击添加</span>'}</span>
+    </td>
     <td><span class="badge ${d.status === 'online' ? 'badge-green' : 'badge-red'}">${d.status}</span></td>
     <td class="time-ago">${timeAgo(d.last_seen)}</td>
-    <td><button class="btn btn-danger btn-small" onclick="deleteDevice('${d.id}')">删除</button></td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-outline btn-small" onclick="notifyDevice('${d.id}')" ${d.status !== 'online' ? 'disabled' : ''} title="发送通知到设备">🔔 通知</button>
+      <button class="btn btn-danger btn-small" onclick="deleteDevice('${d.id}')">删除</button>
+    </td>
   </tr>`).join('');
 
   // 更新绑定设备下拉
   const sel = document.getElementById('bindDevice');
   const onlineDevices = devices.filter(d => d.status === 'online');
-  sel.innerHTML = onlineDevices.map(d => `<option value="${d.id}">${d.model || d.id}</option>`).join('');
+  sel.innerHTML = onlineDevices.map(d => `<option value="${d.id}">${d.remark ? d.remark + ' - ' : ''}${d.model || d.id}</option>`).join('');
+
+  // 更新绑定好友码下拉
+  await updateFriendCodeSelect();
 }
 
 async function scanDevices() {
@@ -308,16 +317,52 @@ async function deleteDevice(id) {
   loadDevices();
 }
 
+async function notifyDevice(id) {
+  try {
+    await api('/api/devices/' + encodeURIComponent(id) + '/notify', {
+      method: 'POST',
+      body: { title: 'ADB Worker', message: '这是设备: ' + id },
+    });
+    toast('通知已发送到 ' + id);
+  } catch (e) { /* toast already shown */ }
+}
+
+function editRemark(deviceId, el) {
+  const cell = el.parentElement;
+  const current = el.textContent === '点击添加' ? '' : el.textContent;
+  cell.innerHTML = `
+    <input id="remark-input" value="${current}" style="width:100px" onkeydown="if(event.key==='Enter')saveRemark('${deviceId}')">
+    <button class="btn btn-primary btn-small" onclick="saveRemark('${deviceId}')">保存</button>
+  `;
+  cell.querySelector('input').focus();
+}
+
+async function saveRemark(deviceId) {
+  const remark = document.getElementById('remark-input').value;
+  await api('/api/devices/' + encodeURIComponent(deviceId) + '/remark', {
+    method: 'PUT',
+    body: { remark },
+  });
+  toast('备注已更新');
+  loadDevices();
+}
+
 // ====== Bindings ======
 let _allDevices = [];
 async function loadBindings() {
   const bindings = await api('/api/bindings');
   try { _allDevices = await api('/api/devices'); } catch(e) {}
+  const deviceMap = {};
+  _allDevices.forEach(d => deviceMap[d.id] = d);
   const tbody = document.getElementById('bindingTable');
-  if (!bindings.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">没有绑定</td></tr>'; return; }
-  tbody.innerHTML = bindings.map(b => `<tr id="bind-row-${b.id}">
+  if (!bindings.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">没有绑定</td></tr>'; return; }
+  tbody.innerHTML = bindings.map(b => {
+    const dev = deviceMap[b.device_id];
+    const devRemark = dev && dev.remark ? dev.remark : '-';
+    return `<tr id="bind-row-${b.id}">
     <td>${b.id}</td>
     <td title="${b.device_id}">${truncate(b.device_id, 20)}</td>
+    <td style="color:var(--text-dim)">${devRemark}</td>
     <td>${b.friend_code}</td>
     <td class="log-msg" title="${b.recovery_url}">${truncate(b.recovery_url, 40)}</td>
     <td>${b.retry_interval}s</td>
@@ -328,23 +373,25 @@ async function loadBindings() {
       <button class="btn btn-primary btn-small" onclick="triggerRecovery('${b.friend_code}')">恢复</button>
       <button class="btn btn-danger btn-small" onclick="deleteBinding(${b.id})">删除</button>
     </td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
 }
 
 function editBinding(id) {
   const row = document.getElementById('bind-row-' + id);
   if (!row) return;
-  // read current values from cells
+  // read current values from cells (0:ID 1:设备 2:设备备注 3:好友码 4:URL 5:重试 ...)
   const cells = row.children;
   const curDevice = cells[1].getAttribute('title');
-  const curFc = cells[2].textContent;
-  const curUrl = cells[3].getAttribute('title');
-  const curRetry = parseInt(cells[4].textContent) || 30;
+  const curFc = cells[3].textContent;
+  const curUrl = cells[4].getAttribute('title');
+  const curRetry = parseInt(cells[5].textContent) || 30;
 
-  const devOpts = _allDevices.map(d => `<option value="${d.id}" ${d.id === curDevice ? 'selected' : ''}>${d.model || d.id}</option>`).join('');
+  const devOpts = _allDevices.map(d => `<option value="${d.id}" ${d.id === curDevice ? 'selected' : ''}>${d.remark ? d.remark + ' - ' : ''}${d.model || d.id}</option>`).join('');
   row.innerHTML = `
     <td>${id}</td>
     <td><select id="edit-dev-${id}" style="width:120px">${devOpts}</select></td>
+    <td></td>
     <td><input id="edit-fc-${id}" value="${curFc}" style="width:100px"></td>
     <td><input id="edit-url-${id}" value="${curUrl}" style="width:200px"></td>
     <td><input id="edit-retry-${id}" type="number" value="${curRetry}" style="width:60px"></td>
@@ -396,8 +443,23 @@ async function triggerRecovery(fc) {
 }
 
 // ====== Bots ======
+let _cachedBots = [];
+
+async function updateFriendCodeSelect() {
+  try { _cachedBots = await api('/api/bots'); } catch(e) {}
+  const sel = document.getElementById('bindFriendCode');
+  if (!_cachedBots.length) {
+    sel.innerHTML = '<option value="">无可用 Bot</option>';
+    return;
+  }
+  sel.innerHTML = _cachedBots.map(b =>
+    `<option value="${b.friend_code}">${b.friend_code}${b.remark ? ' (' + b.remark + ')' : ''}</option>`
+  ).join('');
+}
+
 async function loadBots() {
   const bots = await api('/api/bots');
+  _cachedBots = bots;
   const tbody = document.getElementById('botTable');
   if (!bots.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">没有 Bot 数据（请在设置中配置 Admin 密码）</td></tr>'; return; }
   tbody.innerHTML = bots.map(b => `<tr>

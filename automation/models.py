@@ -14,6 +14,7 @@ class Device:
     model: str = ""
     status: str = "offline"  # online / offline
     last_seen: Optional[str] = None
+    remark: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)

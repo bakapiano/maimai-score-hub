@@ -63,6 +63,10 @@ async def list_devices() -> list[Device]:
         if status != "device":
             continue
 
+        # 跳过 mDNS 服务名条目（如 adb-xxx._adb-tls-connect._tcp）
+        if "._adb-tls-connect._tcp" in serial or "._adb-tls-pairing._tcp" in serial:
+            continue
+
         # 解析设备信息
         model = ""
         for part in parts[2:]:
@@ -237,3 +241,19 @@ async def is_device_online(serial: str) -> bool:
     """检查设备是否在线"""
     code, stdout, _ = await _run_adb("get-state", device=serial, timeout=5)
     return code == 0 and "device" in stdout.strip()
+
+
+async def send_notification(serial: str, title: str = "ADB Worker", message: str = "这是你的设备") -> tuple[bool, str]:
+    """向设备发送通知以帮助识别设备"""
+    code, stdout, stderr = await _run_adb(
+        "shell",
+        f'cmd notification post -S bigtext -t "{title}" adb_worker_identify "{message}"',
+        device=serial,
+    )
+    output = (stdout + stderr).strip()
+    if code == 0:
+        logger.info(f"[{serial}] Notification sent: {title} - {message}")
+        return True, "通知已发送"
+    else:
+        logger.error(f"[{serial}] Notification failed: {output}")
+        return False, output

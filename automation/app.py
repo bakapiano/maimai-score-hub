@@ -98,6 +98,15 @@ class ConnectRequest(BaseModel):
     port: int
 
 
+class NotifyRequest(BaseModel):
+    title: str = "ADB Worker"
+    message: str = "这是你的设备"
+
+
+class RemarkRequest(BaseModel):
+    remark: str
+
+
 class BindingCreate(BaseModel):
     device_id: str
     friend_code: str
@@ -157,16 +166,30 @@ async def api_connect_device(req: ConnectRequest):
     return {"success": True, "message": msg}
 
 
-@app.delete("/api/devices/{device_id:path}")
-async def api_delete_device(device_id: str):
-    await db.delete_device(device_id)
-    return {"success": True}
-
-
 @app.get("/api/devices/{device_id:path}/info")
 async def api_device_info(device_id: str):
     info = await adb_service.get_device_info(device_id)
     return info
+
+
+@app.post("/api/devices/{device_id:path}/notify")
+async def api_notify_device(device_id: str, req: NotifyRequest):
+    ok, msg = await adb_service.send_notification(device_id, req.title, req.message)
+    if not ok:
+        raise HTTPException(400, msg)
+    return {"success": True, "message": msg}
+
+
+@app.put("/api/devices/{device_id:path}/remark")
+async def api_update_device_remark(device_id: str, req: RemarkRequest):
+    await db.update_device_remark(device_id, req.remark)
+    return {"success": True}
+
+
+@app.delete("/api/devices/{device_id:path}")
+async def api_delete_device(device_id: str):
+    await db.delete_device(device_id)
+    return {"success": True}
 
 
 # ====== Bindings API ======
@@ -280,7 +303,7 @@ async def api_get_settings():
 async def api_update_settings(req: SettingsUpdate):
     updates = {}
     if req.backend_url is not None:
-        updates["backend_url"] = req.backend_url
+        updates["backend_url"] = req.backend_url.rstrip("/")
     if req.admin_password is not None:
         updates["admin_password"] = req.admin_password
     if req.poll_interval is not None:

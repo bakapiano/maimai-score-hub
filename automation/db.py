@@ -71,6 +71,13 @@ async def _init_tables(db: aiosqlite.Connection):
     """)
     await db.commit()
 
+    # 数据库迁移：添加 remark 列
+    try:
+        await db.execute("ALTER TABLE devices ADD COLUMN remark TEXT DEFAULT ''")
+        await db.commit()
+    except Exception:
+        pass  # 列已存在
+
     # 初始化默认设置
     for key, default_val in SETTING_DEFAULTS.items():
         await db.execute(
@@ -85,18 +92,24 @@ async def _init_tables(db: aiosqlite.Connection):
 async def upsert_device(device: Device) -> Device:
     db = await get_db()
     await db.execute(
-        """INSERT INTO devices (id, name, model, status, last_seen)
-           VALUES (?, ?, ?, ?, ?)
+        """INSERT INTO devices (id, name, model, status, last_seen, remark)
+           VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              name = COALESCE(NULLIF(excluded.name, ''), devices.name),
              model = COALESCE(NULLIF(excluded.model, ''), devices.model),
              status = excluded.status,
              last_seen = excluded.last_seen
         """,
-        (device.id, device.name, device.model, device.status, device.last_seen),
+        (device.id, device.name, device.model, device.status, device.last_seen, device.remark),
     )
     await db.commit()
     return device
+
+
+async def update_device_remark(device_id: str, remark: str):
+    db = await get_db()
+    await db.execute("UPDATE devices SET remark = ? WHERE id = ?", (remark, device_id))
+    await db.commit()
 
 
 async def get_all_devices() -> list[Device]:
