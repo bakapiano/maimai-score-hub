@@ -114,7 +114,7 @@ function collectCategories(
   while ((match = categoryRegex.exec(html)) !== null) {
     categories.push({
       start: match.index ?? 0,
-      name: normalizeText(match[1]),
+      name: normalizeCategoryText(match[1]),
     });
   }
   return categories;
@@ -145,7 +145,12 @@ function cloneRegex(regex: RegExp): RegExp {
 }
 
 function normalizeText(value: string): string {
-  const trimmed = value.replace(/\s+/g, " ").trim();
+  return decodeHtml(value.trim());
+}
+
+function normalizeCategoryText(value: string): string {
+  // Replace all whitespace (including full-width spaces) with a single half-width space
+  const trimmed = value.replace(/\s+/g, ' ').trim();
   return decodeHtml(trimmed);
 }
 

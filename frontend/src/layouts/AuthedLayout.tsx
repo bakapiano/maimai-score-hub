@@ -1,4 +1,6 @@
 import {
+  Alert,
+  Anchor,
   AppShell,
   Box,
   Burger,
@@ -11,6 +13,7 @@ import {
 import {
   IconBug,
   IconHome,
+  IconInfoCircle,
   IconMusic,
   IconRefresh,
   IconSettings,
@@ -22,9 +25,11 @@ import { type MiniProfile } from "../components/MiniProfileCard";
 import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
 import { SettingsPanel } from "../components/SettingsPanel";
+import { AppFooter } from "../components/AppFooter";
 import { usersApi } from "../api/appClient";
 import { useAuth } from "../providers/AuthProvider";
 import { useDisclosure } from "@mantine/hooks";
+import { cacheProfile, getCachedProfile } from "../utils/offlineCache";
 
 type PageMeta = {
   label: string;
@@ -75,7 +80,7 @@ const pages: PageMeta[] = [
 export default function AuthedLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { token, clearToken } = useAuth();
+  const { token, clearToken, offline, setOffline } = useAuth();
   const [opened, { toggle, close }] = useDisclosure(false);
   const [settingsOpened, { open: openSettings, close: closeSettings }] =
     useDisclosure(false);
@@ -86,12 +91,24 @@ export default function AuthedLayout() {
   const currentPage = pages.find((p) => p.to === location.pathname);
 
   const handleLogout = () => {
+    if (offline) {
+      setOffline(false);
+    }
     clearToken();
     navigate("/login", { replace: true });
   };
 
   // Load profile for mini card
   useEffect(() => {
+    if (offline) {
+      // In offline mode, load from cache
+      const cached = getCachedProfile();
+      if (cached) {
+        setProfile({ avatarUrl: cached.avatarUrl, username: cached.username });
+      }
+      return;
+    }
+
     if (!token) return;
 
     let cancelled = false;
@@ -104,17 +121,20 @@ export default function AuthedLayout() {
       if (cancelled) return;
 
       if (res.status === 200 && res.body?.profile) {
-        setProfile({
+        const p = {
           avatarUrl: (res.body.profile as MiniProfile).avatarUrl,
           username: (res.body.profile as MiniProfile).username,
-        });
+        };
+        setProfile(p);
+        // Cache profile for offline use
+        cacheProfile(p);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, offline]);
 
   const headerBg =
     colorScheme === "dark"
@@ -132,7 +152,7 @@ export default function AuthedLayout() {
       padding={0}
     >
       <AppShell.Header>
-        <AppHeader profile={profile} onLogout={handleLogout} />
+        <AppHeader profile={profile} onLogout={handleLogout} offline={offline} />
       </AppShell.Header>
 
       <AppShell.Navbar
@@ -156,7 +176,9 @@ export default function AuthedLayout() {
           <Group gap={4}>
             {pages
               .filter((page) => !page.hidden)
-              .map((page) => (
+              .map((page) => {
+                const isDisabled = offline && page.to === "/app/sync";
+                return (
                 <NavLink
                   key={page.to}
                   component={Link}
@@ -169,8 +191,10 @@ export default function AuthedLayout() {
                   }
                   active={location.pathname === page.to}
                   onClick={close}
+                  style={isDisabled ? { opacity: 0.5 } : undefined}
                 />
-              ))}
+                );
+              })}
 
             <NavLink
               label="网站设置"
@@ -184,13 +208,31 @@ export default function AuthedLayout() {
                 openSettings();
               }}
             />
+
+            <NavLink
+              component={Link}
+              to="/about"
+              label="关于网站"
+              leftSection={
+                <ThemeIcon size={28} radius="md" color="blue">
+                  <IconInfoCircle size={18} />
+                </ThemeIcon>
+              }
+              onClick={close}
+            />
           </Group>
         </Stack>
       </AppShell.Navbar>
 
       <SettingsPanel opened={settingsOpened} onClose={closeSettings} />
 
-      <AppShell.Main>
+      <AppShell.Main
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          minHeight: "100vh",
+        }}
+      >
         <Box
           hiddenFrom="sm"
           style={{
@@ -234,6 +276,32 @@ export default function AuthedLayout() {
             </div>
           </Box>
         )}
+        {offline && (
+          <Box px="md" pt="md">
+            <div style={{ maxWidth: 838, margin: "0 auto" }}>
+              <Alert
+                variant="light"
+                color="yellow"
+                icon={<IconInfoCircle size={18} />}
+                radius="md"
+              >
+                当前处于离线模式，仅可查看缓存的成绩数据：
+                <Anchor
+                  component="button"
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    setOffline(false);
+                    clearToken();
+                    navigate("/login", { replace: true });
+                  }}
+                >
+                  登录来使用完整功能
+                </Anchor>
+              </Alert>
+            </div>
+          </Box>
+        )}
         <Box p="md">
           <div
             style={{
@@ -246,6 +314,8 @@ export default function AuthedLayout() {
             <Outlet />
           </div>
         </Box>
+
+        <AppFooter />
       </AppShell.Main>
     </AppShell>
   );

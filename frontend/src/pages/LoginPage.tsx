@@ -31,6 +31,8 @@ import { notifications } from "@mantine/notifications";
 import { getRecentJobStats } from "../api/jobClient";
 import { useAuth } from "../providers/AuthProvider";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { hasOfflineData } from "../utils/offlineCache";
+import { AppFooter } from "../components/AppFooter";
 
 type LoginStatus = {
   status?: string;
@@ -81,7 +83,7 @@ function FriendCodeGuide() {
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { token, setToken } = useAuth();
+  const { token, setToken, offline, setOffline } = useAuth();
 
   const [friendCode, setFriendCode] = useState(() => {
     try {
@@ -146,9 +148,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (token) {
+      // Exiting offline mode when logging in with a real token
+      if (offline) setOffline(false);
       navigate("/app", { replace: true });
     }
-  }, [token, navigate]);
+  }, [token, navigate, offline, setOffline]);
 
   useEffect(() => {
     (async () => {
@@ -333,7 +337,13 @@ export default function LoginPage() {
         <AppHeader showProfile={false} />
       </AppShell.Header>
 
-      <AppShell.Main>
+      <AppShell.Main
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          minHeight: "100vh",
+        }}
+      >
         <Box
           py="lg"
           px="md"
@@ -344,7 +354,7 @@ export default function LoginPage() {
           <Container size="sm" style={{ maxWidth: 600, width: "100%" }}>
             <PageHeader
               title={"欢迎！"}
-              description={"输入 maimai Net 好友代码以继续"}
+              description={"使用 maimai NET 好友代码登录以继续"}
             />
           </Container>
         </Box>
@@ -520,8 +530,20 @@ export default function LoginPage() {
                         disabled={!canLogin}
                         loading={loading || polling}
                       >
-                        下一步
+                        登录账户
                       </Button>
+                      {hasOfflineData() && (
+                        <Button
+                          variant="outline"
+                          color="gray"
+                          onClick={() => {
+                            setOffline(true);
+                            navigate("/app", { replace: true });
+                          }}
+                        >
+                          离线模式
+                        </Button>
+                      )}
                     </Group>
                   </Stack>
                 </Paper>
@@ -532,6 +554,8 @@ export default function LoginPage() {
             </Stack>
           </Container>
         </Box>
+
+        <AppFooter />
       </AppShell.Main>
     </AppShell>
   );

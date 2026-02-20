@@ -38,10 +38,6 @@ function mapVersion(version: string | null | undefined): string | null {
   return VERSION_MAP[version] ?? version;
 }
 
-function normalizeTitle(title: string | undefined): string | undefined {
-  return title;
-  // return title?.replace(/\u3000/g, ' ');
-}
 
 type ItemOverride = {
   title?: string;
@@ -57,7 +53,7 @@ type ItemOverride = {
 const ITEM_OVERRIDES: Record<string, ItemOverride> = {
   '11568': { category: '流行&动漫' }, // INTERNET OVERDOSE
   '383': { title: 'Link' },
-  '364': { title: 'D✪N’T ST✪P R✪CKIN’' },
+
 };
 
 function getOverrideForItem(id: string | number): ItemOverride | undefined {
@@ -131,7 +127,7 @@ export function mapSongMetadataFromDivingFish(info: any): SongMetadata | null {
 
   const rawCategory = info.genre ?? info.category;
   const mappedCategory = mapDivingFishCategory(rawCategory);
-  const title = normalizeTitle(info.title);
+  const title = info.title;
 
   return {
     title: title ?? info.title,
@@ -155,7 +151,7 @@ export function convertDivingFishItemToDocument(item: any, now: Date) {
   const fallbackCategory = metadata?.category ?? null;
   const category = override?.category ?? fallbackCategory;
   const mappedType = override?.type ?? mapDivingFishType(item.type, category);
-  const title = normalizeTitle(item.title) ?? item.title;
+  const title = item.title;
   const rawVersion = metadata?.from ?? null;
   const version = mapVersion(rawVersion);
 

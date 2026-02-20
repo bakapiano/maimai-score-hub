@@ -9,6 +9,7 @@ type AppHeaderProps = {
   onLogout?: () => void;
   showProfile?: boolean;
   rightSection?: ReactNode;
+  offline?: boolean;
 };
 
 export function AppHeader({
@@ -16,6 +17,7 @@ export function AppHeader({
   onLogout,
   showProfile = true,
   rightSection,
+  offline,
 }: AppHeaderProps) {
   const navigate = useNavigate();
 
@@ -60,7 +62,11 @@ export function AppHeader({
       <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
         {rightSection ??
           (showProfile ? (
-            <HeaderProfileCard profile={profile ?? null} onLogout={onLogout} />
+            <HeaderProfileCard
+              profile={profile ?? null}
+              onLogout={onLogout}
+              offline={offline}
+            />
           ) : null)}
       </Group>
     </Group>

@@ -7,6 +7,10 @@ import {
   useState,
 } from "react";
 import { usersApi } from "../api/appClient";
+import {
+  isOfflineMode,
+  setOfflineMode as persistOfflineMode,
+} from "../utils/offlineCache";
 
 const TOKEN_KEY = "netbot_token";
 
@@ -14,6 +18,8 @@ type AuthContextValue = {
   token: string | null;
   setToken: (token: string | null) => void;
   clearToken: () => void;
+  offline: boolean;
+  setOffline: (v: boolean) => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -43,6 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setTokenState] = useState<string | null>(() =>
     readInitialToken()
   );
+  const [offline, setOfflineState] = useState(() => isOfflineMode());
 
   const setToken = useCallback((next: string | null) => {
     setTokenState(next);
@@ -51,8 +58,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const clearToken = useCallback(() => setToken(null), [setToken]);
 
+  const setOffline = useCallback((v: boolean) => {
+    setOfflineState(v);
+    persistOfflineMode(v);
+  }, []);
+
   useEffect(() => {
-    if (!token) return;
+    // Skip token validation in offline mode
+    if (!token || offline) return;
 
     let cancelled = false;
 
@@ -77,11 +90,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [token, setToken]);
+  }, [token, setToken, offline]);
 
   const value = useMemo(
-    () => ({ token, setToken, clearToken }),
-    [token, setToken, clearToken]
+    () => ({ token, setToken, clearToken, offline, setOffline }),
+    [token, setToken, clearToken, offline, setOffline]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

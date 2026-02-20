@@ -35,7 +35,9 @@ type RatingSummary = {
 const buildRatingSummary = (scores: SyncScore[]): RatingSummary | null => {
   if (!Array.isArray(scores)) return null;
 
-  const withRating = scores.filter((s) => typeof s.rating === "number");
+  const withRating = scores.filter(
+    (s) => typeof s.rating === "number" && s.type !== "utage",
+  );
 
   const newScores = withRating
     .filter((s) => s.isNew === true)

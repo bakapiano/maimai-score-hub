@@ -10,6 +10,7 @@ import {
 import { IconMusic, IconRefresh } from "@tabler/icons-react";
 
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../providers/AuthProvider";
 
 const banners = [
   {
@@ -30,6 +31,7 @@ const banners = [
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const { offline } = useAuth();
 
   return (
     <Stack gap="md">
@@ -38,7 +40,11 @@ export default function HomePage() {
           <UnstyledButton
             key={banner.to}
             onClick={() => navigate(banner.to)}
-            style={{ width: "100%" }}
+            disabled={offline && banner.to === "/app/sync"}
+            style={{
+              width: "100%",
+              opacity: offline && banner.to === "/app/sync" ? 0.5 : 1,
+            }}
           >
             <Card withBorder shadow="sm" padding="lg" radius="md">
               <Group wrap="nowrap">
@@ -50,7 +56,9 @@ export default function HomePage() {
                     {banner.title}
                   </Text>
                   <Text size="sm" c="dimmed" lineClamp={1}>
-                    {banner.description}
+                    {offline && banner.to === "/app/sync"
+                      ? "需要登录后使用"
+                      : banner.description}
                   </Text>
                 </div>
               </Group>
@@ -58,10 +66,6 @@ export default function HomePage() {
           </UnstyledButton>
         ))}
       </SimpleGrid>
-
-      {/* <Text c="dimmed" size="sm">
-        更多功能开发中...
-      </Text> */}
     </Stack>
   );
 }

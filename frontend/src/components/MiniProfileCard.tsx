@@ -1,8 +1,9 @@
 import { Avatar, Group, Menu, Text, UnstyledButton } from "@mantine/core";
-import { IconCopy, IconLogout } from "@tabler/icons-react";
+import { IconCopy, IconLogin, IconLogout } from "@tabler/icons-react";
 
 import { normalizeMaimaiImgUrl } from "../utils/maimaiImages";
 import { notifications } from "@mantine/notifications";
+import { useNavigate } from "react-router-dom";
 
 export type MiniProfile = {
   avatarUrl: string | null;
@@ -15,10 +16,62 @@ type Props = {
 
 type HeaderProps = Props & {
   onLogout?: () => void;
+  offline?: boolean;
 };
 
 // Compact version for header with dropdown menu
-export function HeaderProfileCard({ profile, onLogout }: HeaderProps) {
+export function HeaderProfileCard({ profile, onLogout, offline }: HeaderProps) {
+  const navigate = useNavigate();
+
+  // In offline mode, show menu with login option
+  if (offline) {
+    return (
+      <Menu shadow="md" width={160} position="bottom-end">
+        <Menu.Target>
+          <UnstyledButton>
+            <Group gap="xs" wrap="nowrap">
+              <Text
+                size="sm"
+                fw={500}
+                lineClamp={1}
+                style={{ maxWidth: 120 }}
+                visibleFrom="sm"
+              >
+                {profile?.username ?? "离线模式"}
+              </Text>
+              <Avatar
+                src={
+                  profile?.avatarUrl
+                    ? normalizeMaimaiImgUrl(profile.avatarUrl)
+                    : null
+                }
+                alt={profile?.username ?? "avatar"}
+                size={36}
+                radius="0"
+                imageProps={{
+                  referrerPolicy: "no-referrer",
+                  style: { transformOrigin: "center" },
+                }}
+              />
+            </Group>
+          </UnstyledButton>
+        </Menu.Target>
+
+        <Menu.Dropdown>
+          <Menu.Item
+            leftSection={<IconLogin size={16} />}
+            onClick={() => {
+              onLogout?.();
+              navigate("/login", { replace: true });
+            }}
+          >
+            前往登录
+          </Menu.Item>
+        </Menu.Dropdown>
+      </Menu>
+    );
+  }
+
   if (!profile) {
     return null;
   }

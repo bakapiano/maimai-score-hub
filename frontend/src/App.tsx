@@ -23,6 +23,7 @@ const AdminJobDebugPage = lazy(
 );
 const AdminSyncPage = lazy(() => import("./pages/admin/AdminSyncPage"));
 const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage"));
+const AboutPage = lazy(() => import("./pages/AboutPage"));
 
 function PageLoader() {
   return (
@@ -33,8 +34,8 @@ function PageLoader() {
 }
 
 function RequireAuth({ children }: { children: ReactNode }) {
-  const { token } = useAuth();
-  if (!token) return <Navigate to="/login" replace />;
+  const { token, offline } = useAuth();
+  if (!token && !offline) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
@@ -77,6 +78,7 @@ function App() {
                 />
                 <Route path="/app/debug" element={<DebugPage />} />
               </Route>
+              <Route path="/about" element={<AboutPage />} />
               <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>
           </Suspense>

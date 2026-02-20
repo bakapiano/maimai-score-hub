@@ -147,9 +147,9 @@ export class SyncService {
               continue;
             }
 
-            // Fix for 11422, title is single space
+            // Fix for 11422, title is single full-width space
             if (resolvedTitle.length === 0) {
-              resolvedTitle = ' ';
+              resolvedTitle = '\u3000';
             }
 
             const music = musicMap.get(

@@ -2,6 +2,7 @@ import {
   Alert,
   Anchor,
   Badge,
+  Box,
   Button,
   Card,
   Divider,
@@ -14,7 +15,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { IconClock, IconInfoCircle } from "@tabler/icons-react";
+import { IconClock, IconInfoCircle, IconLogin } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useState } from "react";
 import type { JobResponse as JobStatus } from "@maimai-score-hub/shared";
@@ -31,6 +32,7 @@ import {
 } from "../api/jobClient";
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
 import { useAuth } from "../providers/AuthProvider";
+import { useNavigate } from "react-router-dom";
 
 type UserProfileResponse = {
   friendCode: string;
@@ -224,7 +226,8 @@ function formatDate(dateString: string) {
 }
 
 export default function SyncPage() {
-  const { token } = useAuth();
+  const { token, offline, setOffline } = useAuth();
+  const navigate = useNavigate();
 
   // Profile state
   const [profile, setProfile] = useState<UserProfileResponse | null>(null);
@@ -739,6 +742,37 @@ export default function SyncPage() {
   const progress = getSyncProgress();
 
   return (
+    <Box style={{ position: "relative" }}>
+      {offline && (
+        <Box
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "flex-start",
+            paddingTop: 48,
+            gap: 12,
+            backdropFilter: "blur(4px)",
+            backgroundColor: "rgba(255, 255, 255, 0.3)",
+            borderRadius: 8,
+            zIndex: 10,
+          }}
+        >
+          <Text fw={600} size="lg">需要登录</Text>
+          <Text size="sm" c="dimmed">同步数据功能需要登录后才能使用</Text>
+          <Button
+            leftSection={<IconLogin size={16} />}
+            onClick={() => {
+              setOffline(false);
+              navigate("/login", { replace: true });
+            }}
+          >
+            前往登录
+          </Button>
+        </Box>
+      )}
     <Stack gap="xl" mx="auto" w="100%">
       {/* Profile Section */}
 
@@ -1438,5 +1472,6 @@ export default function SyncPage() {
         </Card>
       </Stack>
     </Stack>
+    </Box>
   );
 }

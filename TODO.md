@@ -9,7 +9,7 @@
 - [] 后台直接 upsert TODO list
 - [] fix lynx 数据源（线上 version 没法正确map， why？）(落雪的 dx 谱 id 和水鱼的有出入)
 - [] add "https://dxrating.net/search" as source
-- [] Support for internal ver?
+- [] Support for international ver?
 - [] https://userjot.com/ - track user feedback
 - [] 加一个 dev 环境用的 bot
 - [] proxy 登陆用前端独立出来（proxy 项目独立出来）(不确定是否有必要？)
@@ -19,9 +19,6 @@
 - [] job 最长 timeout(一小时？)
 - [] https://github.com/Lxns-Network/maimai-prober-frontend/blob/bbaa066ba0f2d06ced0a9f5306ac55a52195b1c2/src/pages/public/Chart.tsx#L390 铺面预览?
 - [] 所有铺面 search by name
-- [] TODO セイクリッド　ルイン 传不上去 圣墟 / 虚拟赛车 也传不上去 -> 全角半角空格问题
-- [] TODO ADB 控制安卓自动恢复登陆页面
-- [] todo REMOVE utage from b50
 - [] 更新完成自动导出水鱼
 - [] TODO idle update 触发 hanlde deploy 打断的情况
 

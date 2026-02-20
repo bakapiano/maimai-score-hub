@@ -11,6 +11,7 @@ import {
 import {
   IconCopy,
   IconDeviceDesktop,
+  IconLogin,
   IconLogout,
   IconMoon,
   IconSun,
@@ -20,6 +21,7 @@ import { useRef, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
 import { useAuth } from "../providers/AuthProvider";
+import { useNavigate } from "react-router-dom";
 
 type Props = {
   opened: boolean;
@@ -28,24 +30,32 @@ type Props = {
 
 export function SettingsPanel({ opened, onClose }: Props) {
   const { colorScheme, setColorScheme } = useMantineColorScheme();
-  const { token, clearToken } = useAuth();
+  const { token, clearToken, offline, setOffline } = useAuth();
+  const navigate = useNavigate();
   const touchStartX = useRef<number | null>(null);
   const [clearing, setClearing] = useState(false);
 
   const handleLogout = () => {
+    if (offline) {
+      setOffline(false);
+    }
     clearToken();
     onClose();
-    window.location.reload();
+    navigate("/login", { replace: true });
   };
 
   const handleClearCache = () => {
     setClearing(true);
     try {
       const token = localStorage.getItem("netbot_token");
+      const offlineMode = localStorage.getItem("offline_mode");
+      const cachedProfile = localStorage.getItem("offline_cache_profile");
+      const cachedSync = localStorage.getItem("offline_cache_sync_latest");
       localStorage.clear();
-      if (token) {
-        localStorage.setItem("netbot_token", token);
-      }
+      if (token) localStorage.setItem("netbot_token", token);
+      if (offlineMode) localStorage.setItem("offline_mode", offlineMode);
+      if (cachedProfile) localStorage.setItem("offline_cache_profile", cachedProfile);
+      if (cachedSync) localStorage.setItem("offline_cache_sync_latest", cachedSync);
       window.location.reload();
     } catch (err) {
       console.error("Failed to clear cache", err);
@@ -136,12 +146,33 @@ export function SettingsPanel({ opened, onClose }: Props) {
             </Text>
           </div>
 
-          {token && (
+          {(token || offline) && (
             <div>
               <Text size="sm" fw={500} mb="xs">
                 账号
               </Text>
               <Stack gap="xs">
+                {offline ? (
+                  <>
+                    <Text size="xs" c="dimmed">
+                      当前处于离线模式
+                    </Text>
+                    <Button
+                      variant="light"
+                      color="blue"
+                      fullWidth
+                      leftSection={<IconLogin size={16} />}
+                      onClick={() => {
+                        setOffline(false);
+                        onClose();
+                        navigate("/login", { replace: true });
+                      }}
+                    >
+                      前往登录
+                    </Button>
+                  </>
+                ) : (
+                  <>
                 <Button
                   variant="light"
                   color="blue"
@@ -177,6 +208,8 @@ export function SettingsPanel({ opened, onClose }: Props) {
                 >
                   退出登录
                 </Button>
+                  </>
+                )}
               </Stack>
             </div>
           )}

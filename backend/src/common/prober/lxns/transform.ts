@@ -7,9 +7,12 @@ const LXNS_SONG_LIST_URL = 'https://maimai.lxns.net/api/v0/maimai/song/list';
 type GenreMapItem = { id: number; title: string; genre: string };
 type VersionMapItem = { id: number; title: string; version: number };
 
-function normalizeTitle(title: string | undefined): string | undefined {
-  return title?.replace(/\u3000/g, ' ');
-}
+// LXNS title → actual game title
+const LXNS_TITLE_MAP: Record<string, string> = {
+  // Add entries here if LXNS titles differ from actual game titles
+};
+
+
 
 type LxnsDifficulty = {
   type: string; // 'standard' | 'dx' | 'utage'
@@ -132,7 +135,7 @@ export function convertLxnsSongToDocument(
 ) {
   const charts = buildChartsFromLxnsSong(song);
   const id = String(song.id);
-  const title = normalizeTitle(song.title) ?? song.title;
+  const title = LXNS_TITLE_MAP[song.title] ?? song.title;
 
   // Map genre from Japanese to Chinese display name
   const category = genreMap.get(song.genre) ?? song.genre;

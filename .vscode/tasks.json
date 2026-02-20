@@ -1,0 +1,131 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    // ─── Shared (must build first) ───
+    {
+      "label": "shared:build",
+      "type": "shell",
+      "command": "npm run build",
+      "options": { "cwd": "${workspaceFolder}/shared" },
+      "group": "build",
+      "presentation": {
+        "reveal": "silent",
+        "panel": "dedicated",
+        "group": "dev"
+      },
+      "problemMatcher": "$tsc"
+    },
+
+    // ─── Backend (NestJS) ───
+    {
+      "label": "backend:dev",
+      "type": "shell",
+      "command": "npm run start:dev",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "dependsOn": "shared:build",
+      "isBackground": true,
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev"
+      }, 
+      "problemMatcher": {
+        "pattern": { "regexp": "^(.*)$", "file": 1, "location": 2, "message": 3 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Starting compilation",
+          "endsPattern": "Nest application successfully started"
+        }
+      }
+    },
+
+    // ─── Frontend (Vite) ───
+    {
+      "label": "frontend:dev",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "dependsOn": "shared:build",
+      "isBackground": true,
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev"
+      },
+      "problemMatcher": {
+        "pattern": { "regexp": "^(.*)$", "file": 1, "location": 2, "message": 3 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "vite",
+          "endsPattern": "ready in"
+        }
+      }
+    },
+
+    // ─── Worker ───
+    {
+      "label": "worker:dev",
+      "type": "shell",
+      "command": "npm run start:dev",
+      "options": { "cwd": "${workspaceFolder}/worker" },
+      "dependsOn": "shared:build",
+      "isBackground": true,
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev"
+      },
+      "problemMatcher": {
+        "pattern": { "regexp": "^(.*)$", "file": 1, "location": 2, "message": 3 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "."
+        }
+      }
+    },
+
+    // ─── Automation (Python) ───
+    {
+      "label": "automation:dev",
+      "type": "shell",
+      "command": "python app.py",
+      "options": { "cwd": "${workspaceFolder}/automation" },
+      "isBackground": true,
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev"
+      },
+      "problemMatcher": {
+        "pattern": { "regexp": "^(.*)$", "file": 1, "location": 2, "message": 3 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "ADB Worker starting",
+          "endsPattern": "Application startup complete"
+        }
+      }
+    },
+
+    // ─── Compound: Start All ───
+    {
+      "label": "dev:all",
+      "dependsOn": [
+        "backend:dev",
+        "frontend:dev",
+        "worker:dev",
+        "automation:dev"
+      ],
+      "dependsOrder": "parallel",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}

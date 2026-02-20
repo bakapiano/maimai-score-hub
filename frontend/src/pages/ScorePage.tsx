@@ -17,9 +17,10 @@ import type { SyncScore } from "../types/syncScore";
 import { VersionScoresTab } from "./score/VersionScoresTab";
 import { useAuth } from "../providers/AuthProvider";
 import { useMusic } from "../providers/MusicProvider";
+import { cacheSyncLatest, getCachedSyncLatest } from "../utils/offlineCache";
 
 export default function ScorePage() {
-  const { token } = useAuth();
+  const { token, offline } = useAuth();
   const { musics } = useMusic();
   const [scores, setScores] = useState<SyncScore[]>([]);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
@@ -28,6 +29,19 @@ export default function ScorePage() {
   const hasSync = Boolean(lastSyncAt) || scores.length > 0;
 
   const loadScores = async () => {
+    // Offline mode: load from cache
+    if (offline) {
+      const cached = getCachedSyncLatest();
+      if (cached) {
+        setScores((cached.scores ?? []) as SyncScore[]);
+        setLastSyncAt(cached.createdAt ?? cached.updatedAt ?? null);
+      } else {
+        setScores([]);
+        setLastSyncAt(null);
+      }
+      return;
+    }
+
     if (!token) return;
 
     setLoading(true);
@@ -56,6 +70,8 @@ export default function ScorePage() {
         };
         if (Array.isArray(syncScores)) {
           setScores(syncScores);
+          // Cache for offline use
+          cacheSyncLatest({ scores: syncScores, createdAt, updatedAt });
         } else {
           setScores([]);
         }
@@ -76,7 +92,7 @@ export default function ScorePage() {
   useEffect(() => {
     loadScores();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, offline]);
 
   if (loading) {
     return (
@@ -157,12 +173,16 @@ export default function ScorePage() {
             }}
           >
             <Stack align="center" gap="xs">
+              {offline ? (
+                <Text size="sm" c="dimmed">暂无离线缓存的成绩数据</Text>
+              ) : (
               <Anchor component={Link} to="/app/sync">
                 <Group gap={6} align="center">
                   <IconRefresh size={16} />
                   <span>同步数据以查看成绩</span>
                 </Group>
               </Anchor>
+              )}
             </Stack>
           </Box>
         )}
