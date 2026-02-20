@@ -16,7 +16,6 @@ import {
   IconBrandBilibili,
   IconBrandGithub,
   IconBrandQq,
-  IconCode,
   IconHeart,
   IconLink,
   IconUsers,
