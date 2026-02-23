@@ -28,6 +28,7 @@ import {
   getRecentJobStats,
 } from "../api/jobClient";
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
+import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { useAuth } from "../providers/AuthProvider";
 import { useNavigate } from "react-router-dom";
 
@@ -996,7 +997,8 @@ export default function SyncPage() {
                       </Text>
                       {syncStatus.friendRequestSentAt && (
                         <Text size="sm" c="red" fw={700}>
-                          若申请时间不是 {syncStatus.friendRequestSentAt}
+                          若申请时间不是{" "}
+                          {formatFriendRequestSentAt(syncStatus.friendRequestSentAt)}
                           ，请勿接受，可能是他人尝试登录！
                         </Text>
                       )}
@@ -1145,7 +1147,7 @@ export default function SyncPage() {
                   idleUpdateStatus.activeJob?.friendRequestSentAt && (
                     <Text size="sm" c="red" fw={700}>
                       若申请时间不是{" "}
-                      {idleUpdateStatus.activeJob.friendRequestSentAt}
+                      {formatFriendRequestSentAt(idleUpdateStatus.activeJob.friendRequestSentAt)}
                       ，请勿接受，可能是他人尝试登录！
                     </Text>
                   )}

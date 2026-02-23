@@ -30,6 +30,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useMemo, useState } from "react";
 
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
+import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
 import { authApi, getHealthStatus } from "../api/appClient";
@@ -387,7 +388,8 @@ export default function LoginPage() {
                           并在核对时间一致后同意好友申请。
                         </Text>
                         <Text size="sm" c="red" fw={700}>
-                          若申请时间不是 {friendRequestSentAt}
+                          若申请时间不是{" "}
+                          {formatFriendRequestSentAt(friendRequestSentAt!)}
                           ，请勿接受，可能是他人尝试登录！
                         </Text>
                         <Progress.Root size="xl" mt={4}>

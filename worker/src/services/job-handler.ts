@@ -28,6 +28,19 @@ import { ScoreAggregator } from "./score-aggregator.ts";
 import { cookieStore } from "./cookie-store.ts";
 import { randomUUID } from "node:crypto";
 
+/**
+ * 解析日期字符串，兼容旧格式的 CST 本地时间（如 "2026/02/23 23:31"）
+ * 和标准 ISO 8601 格式。
+ */
+function parseDateAsCST(dateStr: string): Date {
+  // ISO 格式（含 T 或 Z）直接解析
+  if (dateStr.includes("T") || dateStr.includes("Z")) {
+    return new Date(dateStr);
+  }
+  // 旧格式：舞萌网站的 CST (UTC+8) 本地时间
+  return new Date(`${dateStr.replace(/\//g, "-")}:00+08:00`);
+}
+
 export interface JobHandlerConfig {
   /** 是否跳过好友清理 */
   skipCleanUpFriend: boolean;
@@ -222,7 +235,7 @@ export class JobHandler {
       await this.applyPatch({ stage: "update_score", updatedAt: new Date() });
     } else {
       const sentAt = this.job.friendRequestSentAt
-        ? new Date(this.job.friendRequestSentAt)
+        ? parseDateAsCST(this.job.friendRequestSentAt)
         : this.job.createdAt;
       const elapsed = Date.now() - sentAt.getTime();
       if (elapsed > TIMEOUTS.friendAcceptWait) {
