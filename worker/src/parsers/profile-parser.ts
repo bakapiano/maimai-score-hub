@@ -6,6 +6,15 @@
 import type { FriendInfo, UserProfile } from "../types/index.ts";
 
 /**
+ * 将舞萌网站的中国本地时间字符串（如 "2026/02/23 23:31"）转换为 ISO 8601 UTC 字符串。
+ * 国服舞萌网站使用 CST (UTC+8)。
+ */
+function toISOFromCST(cstDateStr: string): string {
+  const date = new Date(`${cstDateStr.replace(/\//g, "-")}:00+08:00`);
+  return date.toISOString();
+}
+
+/**
  * 解析用户个人资料页面
  */
 export function parseUserProfile(html: string): UserProfile | null {
@@ -127,7 +136,9 @@ export function parseSentRequests(
       if (!friendCode) continue;
       requests.push({
         friendCode,
-        appliedAt: dateMatch?.[1]?.trim() || null,
+        appliedAt: dateMatch?.[1]?.trim()
+          ? toISOFromCST(dateMatch[1].trim())
+          : null,
       });
     }
   }
