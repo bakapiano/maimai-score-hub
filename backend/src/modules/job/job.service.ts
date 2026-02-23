@@ -51,7 +51,6 @@ function toJobResponse(job: JobEntity): JobResponse {
     updateScoreDuration: job.updateScoreDuration ?? null,
     error: job.error ?? null,
     executing: job.executing,
-    pickedAt: job.pickedAt?.toISOString() ?? null,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
   };
@@ -172,7 +171,6 @@ export class JobService {
         $set: {
           status: 'processing',
           executing: true,
-          pickedAt: now,
           updatedAt: now,
         },
       },
@@ -192,7 +190,6 @@ export class JobService {
           status: 'processing',
           executing: true,
           botUserFriendCode,
-          pickedAt: now,
           updatedAt: now,
         },
       },
@@ -454,7 +451,6 @@ export class JobService {
       stage: job.stage,
       scoreProgress: job.scoreProgress,
       friendRequestSentAt: job.friendRequestSentAt,
-      pickedAt: job.pickedAt,
     };
   }
 

@@ -1,0 +1,17 @@
+[Unit]
+Description=ADB Worker - Bot Cookie Recovery Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/automation
+ExecStart=/opt/automation/venv/bin/python app.py
+Restart=always
+RestartSec=5
+Environment=HOST=0.0.0.0
+Environment=PORT=8080
+Environment=DB_PATH=/opt/automation/adb_worker.db
+
+[Install]
+WantedBy=multi-user.target

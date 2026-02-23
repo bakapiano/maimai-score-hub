@@ -19,7 +19,9 @@ def _find_adb() -> str:
 
     try:
         import adbutils
-        bundled = os.path.join(os.path.dirname(adbutils.__file__), "binaries", "adb.exe")
+        # Cross-platform: use "adb.exe" on Windows, "adb" on Linux/macOS
+        adb_name = "adb.exe" if os.name == "nt" else "adb"
+        bundled = os.path.join(os.path.dirname(adbutils.__file__), "binaries", adb_name)
         if os.path.isfile(bundled):
             return bundled
     except ImportError:

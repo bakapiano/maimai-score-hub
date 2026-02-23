@@ -68,7 +68,6 @@ export interface ActiveJob {
   scoreProgress: { completedDiffs: number[]; totalDiffs: number } | null;
   createdAt: string;
   updatedAt: string;
-  pickedAt: string | null;
   runningDuration: number; // milliseconds since createdAt
 }
 
@@ -91,7 +90,6 @@ export interface SearchJobResult {
   updateScoreDuration: number | null;
   createdAt: string;
   updatedAt: string;
-  pickedAt: string | null;
   raw: Record<string, unknown>;
 }
 
@@ -188,7 +186,6 @@ export class AdminService {
         scoreProgress: job.scoreProgress,
         createdAt: job.createdAt.toISOString(),
         updatedAt: job.updatedAt.toISOString(),
-        pickedAt: job.pickedAt?.toISOString() ?? null,
         runningDuration: now - job.createdAt.getTime(),
       })),
     };
@@ -548,7 +545,6 @@ export class AdminService {
           updateScoreDuration: job.updateScoreDuration ?? null,
           createdAt: job.createdAt.toISOString(),
           updatedAt: job.updatedAt.toISOString(),
-          pickedAt: job.pickedAt?.toISOString() ?? null,
           raw,
         };
       }),

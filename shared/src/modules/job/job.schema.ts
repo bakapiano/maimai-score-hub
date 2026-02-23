@@ -1,23 +1,23 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const JobStatusSchema = z.enum([
-  'queued',
-  'processing',
-  'completed',
-  'failed',
-  'canceled',
+  "queued",
+  "processing",
+  "completed",
+  "failed",
+  "canceled",
 ]);
 
 export const JobStageSchema = z.enum([
-  'send_request',
-  'wait_acceptance',
-  'update_score',
+  "send_request",
+  "wait_acceptance",
+  "update_score",
 ]);
 
 export const JobTypeSchema = z.enum([
-  'immediate',
-  'idle_add_friend',
-  'idle_update_score',
+  "immediate",
+  "idle_add_friend",
+  "idle_update_score",
 ]);
 
 export const ScoreProgressSchema = z.object({
@@ -39,7 +39,6 @@ export const JobResponseSchema = z.object({
   executing: z.boolean().optional(),
   scoreProgress: ScoreProgressSchema.nullable().optional(),
   updateScoreDuration: z.number().nullable().optional(),
-  pickedAt: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

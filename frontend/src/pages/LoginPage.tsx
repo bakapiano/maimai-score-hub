@@ -19,7 +19,13 @@ import {
   Tooltip,
   useMantineColorScheme,
 } from "@mantine/core";
-import { IconInfoCircle, IconCopy, IconClock, IconChevronDown, IconChevronUp } from "@tabler/icons-react";
+import {
+  IconInfoCircle,
+  IconCopy,
+  IconClock,
+  IconChevronDown,
+  IconChevronUp,
+} from "@tabler/icons-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useMemo, useState } from "react";
 
@@ -54,7 +60,12 @@ function FriendCodeGuide() {
         size="md"
         fw={500}
         onClick={toggle}
-        style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 4 }}
+        style={{
+          alignSelf: "flex-start",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+        }}
       >
         {opened ? <IconChevronUp size={20} /> : <IconChevronDown size={20} />}
         好友代码是什么？
@@ -63,7 +74,11 @@ function FriendCodeGuide() {
         <Stack gap="xs">
           <Text size="sm">
             登录{" "}
-            <Anchor href="https://tgk-wcaime.wahlap.com/wc_auth/oauth/authorize/maimai-dx" target="_blank" rel="noopener">
+            <Anchor
+              href="https://tgk-wcaime.wahlap.com/wc_auth/oauth/authorize/maimai-dx"
+              target="_blank"
+              rel="noopener"
+            >
               maimai NET
             </Anchor>
             ，进入「好友」页面，点击右下角「你的好友号码」即可查看。
@@ -124,8 +139,9 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [jobStage, setJobStage] = useState("");
-  const [friendRequestSentAt, setFriendRequestSentAt] = useState("");
-  const [jobPickedAt, setJobPickedAt] = useState<string | null>(null);
+  const [friendRequestSentAt, setFriendRequestSentAt] = useState<string | null>(
+    null,
+  );
   const [timeLeft, setTimeLeft] = useState(0);
 
   const totalWaitSeconds = 5 * 60;
@@ -166,10 +182,7 @@ export default function LoginPage() {
         const statsRes = await getRecentJobStats();
         if (statsRes) {
           setRecentStats(statsRes);
-          if (
-            statsRes.totalCount >= 5 &&
-            statsRes.successRate <= 50
-          ) {
+          if (statsRes.totalCount >= 5 && statsRes.successRate <= 50) {
             setLowSuccessRate(true);
           }
         }
@@ -204,9 +217,6 @@ export default function LoginPage() {
 
       const sentAt = (data as any)?.job?.friendRequestSentAt;
       if (sentAt) setFriendRequestSentAt(sentAt);
-
-      const pickedAt = (data as any)?.job?.pickedAt;
-      if (pickedAt) setJobPickedAt(pickedAt);
 
       const profileFromStatus =
         (data as LoginStatus)?.profile ??
@@ -247,21 +257,21 @@ export default function LoginPage() {
   }, [jobId, polling, setToken, navigate]);
 
   useEffect(() => {
-    if (jobStage !== "wait_acceptance" || !jobPickedAt) {
+    if (jobStage !== "wait_acceptance" || !friendRequestSentAt) {
       if (timeLeft !== 0) setTimeLeft(0);
       return;
     }
 
     const interval = setInterval(() => {
       const now = Date.now();
-      const picked = new Date(jobPickedAt).getTime();
-      const end = picked + totalWaitSeconds * 1000;
+      const sentAt = new Date(friendRequestSentAt).getTime();
+      const end = sentAt + totalWaitSeconds * 1000;
       const left = Math.max(0, Math.ceil((end - now) / 1000));
       setTimeLeft(left);
     }, 500);
 
     return () => clearInterval(interval);
-  }, [jobStage, jobPickedAt]);
+  }, [jobStage, friendRequestSentAt]);
 
   const startLogin = async () => {
     setLoading(true);
@@ -270,8 +280,7 @@ export default function LoginPage() {
     setPolling(false);
     setProfile(null);
     setJobStage("");
-    setFriendRequestSentAt("");
-    setJobPickedAt(null);
+    setFriendRequestSentAt(null);
     setTimeLeft(0);
     setLowSuccessRate(false);
 
@@ -279,8 +288,6 @@ export default function LoginPage() {
     try {
       localStorage.setItem("lastFriendCode", trimmedCode);
     } catch {}
-
-
 
     const res = await authApi.loginRequest({
       body: {
@@ -405,151 +412,157 @@ export default function LoginPage() {
                 </>
               ) : (
                 <>
-              <Paper shadow="xs" p="lg" radius="md" withBorder>
-                  <Stack gap="md">
-                    <Group align="flex-end" gap="xs">
-                      <TextInput
-                        label="好友代码"
-                        placeholder="请输入 NET 好友代码"
-                        value={friendCode}
+                  <Paper shadow="xs" p="lg" radius="md" withBorder>
+                    <Stack gap="md">
+                      <Group align="flex-end" gap="xs">
+                        <TextInput
+                          label="好友代码"
+                          placeholder="请输入 NET 好友代码"
+                          value={friendCode}
+                          onChange={(e) => {
+                            const val = e.currentTarget.value;
+                            if (/^\d*$/.test(val) && val.length <= 15) {
+                              setFriendCode(val);
+                            }
+                          }}
+                          disabled={polling}
+                          required
+                          styles={{ label: { textAlign: "left" } }}
+                          error={
+                            friendCode && friendCode.length !== 15
+                              ? "好友代码必须是 15 位数字"
+                              : null
+                          }
+                          style={{ flex: 1 }}
+                        />
+                        {quickLoginUrl && !polling && (
+                          <Tooltip label="复制快速登录链接" withArrow>
+                            <Button
+                              variant="light"
+                              onClick={() => {
+                                navigator.clipboard.writeText(quickLoginUrl);
+                                notifications.show({
+                                  title: "链接已复制",
+                                  message: "从此链接进入可自动填写好友代码",
+                                  color: "teal",
+                                });
+                              }}
+                              color="blue"
+                              px="xs"
+                            >
+                              <IconCopy size={18} />
+                            </Button>
+                          </Tooltip>
+                        )}
+                      </Group>
+
+                      <Checkbox
+                        label="同时更新成绩"
+                        checked={!skipUpdateScore}
                         onChange={(e) => {
-                          const val = e.currentTarget.value;
-                          if (/^\d*$/.test(val) && val.length <= 15) {
-                            setFriendCode(val);
+                          setSkipUpdateScore(!e.currentTarget.checked);
+                          if (e.currentTarget.checked === false) {
+                            setUseIdleUpdate(false);
                           }
                         }}
                         disabled={polling}
-                        required
-                        styles={{ label: { textAlign: "left" } }}
-                        error={
-                          friendCode && friendCode.length !== 15
-                            ? "好友代码必须是 15 位数字"
-                            : null
-                        }
-                        style={{ flex: 1 }}
                       />
-                      {quickLoginUrl && !polling && (
-                        <Tooltip label="复制快速登录链接" withArrow>
-                          <Button
-                            variant="light"
-                            onClick={() => {
-                              navigator.clipboard.writeText(quickLoginUrl);
-                              notifications.show({
-                                title: "链接已复制",
-                                message: "从此链接进入可自动填写好友代码",
-                                color: "teal",
-                              });
-                            }}
-                            color="blue"
-                            px="xs"
-                          >
-                            <IconCopy size={18} />
-                          </Button>
-                        </Tooltip>
+
+                      {!skipUpdateScore && (
+                        <Checkbox
+                          label={
+                            <Group gap={4}>
+                              <IconClock size={14} />
+                              <Text size="sm">使用夜间更新 (Beta)</Text>
+                            </Group>
+                          }
+                          description="先与 Bot 成为好友，在凌晨空闲时段自动更新成绩"
+                          checked={useIdleUpdate}
+                          onChange={(e) =>
+                            setUseIdleUpdate(e.currentTarget.checked)
+                          }
+                          disabled={polling}
+                        />
                       )}
-                    </Group>
 
-                    <Checkbox
-                      label="同时更新成绩"
-                      checked={!skipUpdateScore}
-                      onChange={(e) => {
-                        setSkipUpdateScore(!e.currentTarget.checked);
-                        if (e.currentTarget.checked === false) {
-                          setUseIdleUpdate(false);
-                        }
-                      }}
-                      disabled={polling}
-                    />
-
-                    {!skipUpdateScore && (
-                      <Checkbox
-                        label={
-                          <Group gap={4}>
-                            <IconClock size={14} />
-                            <Text size="sm">使用夜间更新 (Beta)</Text>
-                          </Group>
-                        }
-                        description="先与 Bot 成为好友，在凌晨空闲时段自动更新成绩"
-                        checked={useIdleUpdate}
-                        onChange={(e) =>
-                          setUseIdleUpdate(e.currentTarget.checked)
-                        }
-                        disabled={polling}
-                      />
-                    )}
-
-                    {!skipUpdateScore && recentStats && recentStats.totalCount >= 5 && (
-                      <Group gap="xl">
-                        <Group gap={6}>
-                          <Text size="sm" c="dimmed">近 1 小时更新成功率</Text>
-                          <Badge
-                            variant="light"
-                            size="lg"
-                            radius="md"
-                            color={
-                              recentStats.successRate >= 80
-                                ? "green"
-                                : recentStats.successRate >= 50
-                                  ? "yellow"
-                                  : "red"
-                            }
-                          >
-                            {recentStats.successRate}%
-                          </Badge>
-                        </Group>
-                        {recentStats.avgDuration != null && (
-                          <Group gap={6}>
-                            <Text size="sm" c="dimmed">平均耗时</Text>
-                            <Badge variant="light" size="lg" radius="md">
-                              {recentStats.avgDuration >= 60000
-                                ? `${Math.floor(recentStats.avgDuration / 60000)}分${Math.round((recentStats.avgDuration % 60000) / 1000)}秒`
-                                : `${Math.round(recentStats.avgDuration / 1000)}秒`}
-                            </Badge>
+                      {!skipUpdateScore &&
+                        recentStats &&
+                        recentStats.totalCount >= 5 && (
+                          <Group gap="xl">
+                            <Group gap={6}>
+                              <Text size="sm" c="dimmed">
+                                近 1 小时更新成功率
+                              </Text>
+                              <Badge
+                                variant="light"
+                                size="lg"
+                                radius="md"
+                                color={
+                                  recentStats.successRate >= 80
+                                    ? "green"
+                                    : recentStats.successRate >= 50
+                                      ? "yellow"
+                                      : "red"
+                                }
+                              >
+                                {recentStats.successRate}%
+                              </Badge>
+                            </Group>
+                            {recentStats.avgDuration != null && (
+                              <Group gap={6}>
+                                <Text size="sm" c="dimmed">
+                                  平均耗时
+                                </Text>
+                                <Badge variant="light" size="lg" radius="md">
+                                  {recentStats.avgDuration >= 60000
+                                    ? `${Math.floor(recentStats.avgDuration / 60000)}分${Math.round((recentStats.avgDuration % 60000) / 1000)}秒`
+                                    : `${Math.round(recentStats.avgDuration / 1000)}秒`}
+                                </Badge>
+                              </Group>
+                            )}
                           </Group>
                         )}
-                      </Group>
-                    )}
 
-                    {lowSuccessRate && !skipUpdateScore && !useIdleUpdate && (
-                      <Alert
-                        variant="light"
-                        color="yellow"
-                        title="推荐使用闲时更新"
-                        icon={<IconInfoCircle size={16} />}
-                        radius="md"
-                      >
-                        <Text size="sm">
-                          当前立即更新成功率较低，建议勾选闲时更新以获得更好的体验。
-                        </Text>
-                      </Alert>
-                    )}
-
-                    <Group justify="center" gap="sm">
-                      <Button
-                        onClick={startLogin}
-                        disabled={!canLogin}
-                        loading={loading || polling}
-                      >
-                        登录账户
-                      </Button>
-                      {hasOfflineData() && (
-                        <Button
-                          variant="outline"
-                          color="gray"
-                          onClick={() => {
-                            setOffline(true);
-                            navigate("/app", { replace: true });
-                          }}
+                      {lowSuccessRate && !skipUpdateScore && !useIdleUpdate && (
+                        <Alert
+                          variant="light"
+                          color="yellow"
+                          title="推荐使用闲时更新"
+                          icon={<IconInfoCircle size={16} />}
+                          radius="md"
                         >
-                          离线模式
-                        </Button>
+                          <Text size="sm">
+                            当前立即更新成功率较低，建议勾选闲时更新以获得更好的体验。
+                          </Text>
+                        </Alert>
                       )}
-                    </Group>
-                  </Stack>
-                </Paper>
 
-              <FriendCodeGuide />
-              </>
+                      <Group justify="center" gap="sm">
+                        <Button
+                          onClick={startLogin}
+                          disabled={!canLogin}
+                          loading={loading || polling}
+                        >
+                          登录账户
+                        </Button>
+                        {hasOfflineData() && (
+                          <Button
+                            variant="outline"
+                            color="gray"
+                            onClick={() => {
+                              setOffline(true);
+                              navigate("/app", { replace: true });
+                            }}
+                          >
+                            离线模式
+                          </Button>
+                        )}
+                      </Group>
+                    </Stack>
+                  </Paper>
+
+                  <FriendCodeGuide />
+                </>
               )}
             </Stack>
           </Container>

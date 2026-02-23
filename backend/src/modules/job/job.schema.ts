@@ -49,9 +49,6 @@ export class JobEntity {
   @Prop({ type: Number, default: null })
   updateScoreDuration!: number | null;
 
-  @Prop({ type: Date, default: null })
-  pickedAt!: Date | null;
-
   @Prop({ required: true })
   createdAt!: Date;
 

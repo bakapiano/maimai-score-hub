@@ -3,11 +3,12 @@
  * 与后端 Job Service 通信的 API 客户端
  */
 
-import { initClient } from "@ts-rest/core";
 import * as sharedContract from "@maimai-score-hub/shared";
+
 import type { Job, JobPatch, JobResponse } from "../types/index.ts";
 
 import config from "../config.ts";
+import { initClient } from "@ts-rest/core";
 
 // Re-export types for backward compatibility
 export type { Job, JobPatch, JobResponse };
@@ -35,7 +36,6 @@ const client = initClient(jobContract, {
 function deserializeJob(payload: JobResponse): Job {
   return {
     ...payload,
-    pickedAt: payload.pickedAt ? new Date(payload.pickedAt) : null,
     createdAt: new Date(payload.createdAt),
     updatedAt: new Date(payload.updatedAt),
   };
@@ -125,7 +125,9 @@ export async function updateJob(
   });
 
   if (response.status !== 200) {
-    throw new Error(`Failed to update job ${jobId}. Status: ${response.status}`);
+    throw new Error(
+      `Failed to update job ${jobId}. Status: ${response.status}`,
+    );
   }
 
   return deserializeJob(response.body as JobResponse);

@@ -72,13 +72,11 @@ export interface Job {
   executing?: boolean;
   scoreProgress?: ScoreProgress | null;
   updateScoreDuration?: number | null;
-  pickedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export type JobResponse = Omit<Job, "createdAt" | "updatedAt" | "pickedAt"> & {
-  pickedAt?: string | null;
+export type JobResponse = Omit<Job, "createdAt" | "updatedAt"> & {
   createdAt: string;
   updatedAt: string;
 };

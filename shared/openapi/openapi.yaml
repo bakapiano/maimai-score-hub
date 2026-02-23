@@ -122,9 +122,6 @@ paths:
                       updateScoreDuration:
                         type: number
                         nullable: true
-                      pickedAt:
-                        type: string
-                        nullable: true
                       createdAt:
                         type: string
                       updatedAt:
@@ -358,9 +355,6 @@ paths:
                       updateScoreDuration:
                         type: number
                         nullable: true
-                      pickedAt:
-                        type: string
-                        nullable: true
                       createdAt:
                         type: string
                       updatedAt:
@@ -479,9 +473,6 @@ paths:
                         nullable: true
                       updateScoreDuration:
                         type: number
-                        nullable: true
-                      pickedAt:
-                        type: string
                         nullable: true
                       createdAt:
                         type: string
@@ -671,9 +662,6 @@ paths:
                       updateScoreDuration:
                         type: number
                         nullable: true
-                      pickedAt:
-                        type: string
-                        nullable: true
                       createdAt:
                         type: string
                       updatedAt:
@@ -765,9 +753,6 @@ paths:
                     nullable: true
                   updateScoreDuration:
                     type: number
-                    nullable: true
-                  pickedAt:
-                    type: string
                     nullable: true
                   createdAt:
                     type: string
@@ -917,9 +902,6 @@ paths:
                   updateScoreDuration:
                     type: number
                     nullable: true
-                  pickedAt:
-                    type: string
-                    nullable: true
                   createdAt:
                     type: string
                   updatedAt:
@@ -1016,9 +998,6 @@ paths:
                         nullable: true
                       updateScoreDuration:
                         type: number
-                        nullable: true
-                      pickedAt:
-                        type: string
                         nullable: true
                       createdAt:
                         type: string
@@ -1151,9 +1130,6 @@ paths:
                     nullable: true
                   updateScoreDuration:
                     type: number
-                    nullable: true
-                  pickedAt:
-                    type: string
                     nullable: true
                   createdAt:
                     type: string

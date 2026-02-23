@@ -55,7 +55,6 @@ export interface JobResponse {
   executing?: boolean;
   scoreProgress?: ScoreProgress | null;
   updateScoreDuration?: number | null;
-  pickedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

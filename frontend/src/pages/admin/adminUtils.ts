@@ -72,7 +72,6 @@ export interface ActiveJob {
   scoreProgress: { completedDiffs: number[]; totalDiffs: number } | null;
   createdAt: string;
   updatedAt: string;
-  pickedAt: string | null;
   runningDuration: number;
 }
 
@@ -104,7 +103,6 @@ export interface SearchJobResult {
   updateScoreDuration: number | null;
   createdAt: string;
   updatedAt: string;
-  pickedAt: string | null;
   raw: Record<string, unknown>;
 }
 
