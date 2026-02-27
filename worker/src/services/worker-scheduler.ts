@@ -97,7 +97,15 @@ export class WorkerScheduler {
       return;
     }
 
-    this.intervalId = setInterval(() => this.tick(), 5000);
+    // 使用随机抖动的 tick 间隔，避免多 worker 实例同步竞争同一个 queued job
+    const scheduleTick = () => {
+      const jitter = Math.floor(Math.random() * 2000); // 0-2s 随机抖动
+      this.intervalId = setTimeout(() => {
+        this.tick().catch(() => {});
+        scheduleTick();
+      }, 3000 + jitter); // 3-5s 间隔
+    };
+    scheduleTick();
 
     // 启动 Cookie 健康检查
     this.startCookieHealthCheck();
@@ -116,7 +124,7 @@ export class WorkerScheduler {
    */
   stop(): void {
     if (this.intervalId) {
-      clearInterval(this.intervalId);
+      clearTimeout(this.intervalId);
       this.intervalId = null;
     }
     if (this.healthCheckIntervalId) {
