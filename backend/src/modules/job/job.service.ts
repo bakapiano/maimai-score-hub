@@ -154,21 +154,51 @@ export class JobService {
     );
 
     // 1a) Queued first: claim the oldest unassigned queued job.
-    //     New jobs get higher priority than processing (wait_acceptance) jobs.
-    const queued = await this.jobModel.findOneAndUpdate(
-      { status: 'queued', executing: false, botUserFriendCode: null },
+    //     To balance load across bots, only allow this bot to claim a new queued
+    //     job if it doesn't already have more active jobs than any other bot.
+    const activeCountForThisBot = await this.jobModel.countDocuments({
+      botUserFriendCode,
+      status: 'processing',
+    });
+
+    // Find the minimum active job count among all OTHER bots that have processing jobs.
+    // If no other bots have any jobs, minOtherCount stays at Infinity and this bot can claim.
+    const otherBotCounts = await this.jobModel.aggregate<{
+      _id: string;
+      count: number;
+    }>([
       {
-        $set: {
+        $match: {
           status: 'processing',
-          executing: true,
-          botUserFriendCode,
-          updatedAt: now,
+          botUserFriendCode: { $ne: null, $nin: [botUserFriendCode] },
         },
       },
-      { new: true, sort: { updatedAt: 1 } },
-    );
-    if (queued) {
-      return toJobResponse(queued.toObject() as JobEntity);
+      { $group: { _id: '$botUserFriendCode', count: { $sum: 1 } } },
+    ]);
+
+    const minOtherCount =
+      otherBotCounts.length > 0
+        ? Math.min(...otherBotCounts.map((b) => b.count))
+        : 0;
+
+    // Only claim new queued job if this bot's active count is not too far ahead of others.
+    // Allow up to 1 more than the minimum, so a single bot going offline won't block others.
+    if (activeCountForThisBot <= minOtherCount + 1) {
+      const queued = await this.jobModel.findOneAndUpdate(
+        { status: 'queued', executing: false, botUserFriendCode: null },
+        {
+          $set: {
+            status: 'processing',
+            executing: true,
+            botUserFriendCode,
+            updatedAt: now,
+          },
+        },
+        { new: true, sort: { updatedAt: 1 } },
+      );
+      if (queued) {
+        return toJobResponse(queued.toObject() as JobEntity);
+      }
     }
 
     // 1b) Resume: pick the oldest processing job for this bot.
