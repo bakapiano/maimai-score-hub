@@ -21,6 +21,7 @@
 - [] 所有铺面 search by name
 - [] 更新完成自动导出水鱼
 - [] TODO idle update 触发 hanlde deploy 打断的情况
+- [] 白 link 无法导入
 
   [364] "D✪N’T ST✪P R✪CKIN’" (standard) charts: 0,1,2,3,4
   [383] "Link" (standard) charts: 0,1,2,3

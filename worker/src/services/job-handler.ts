@@ -86,12 +86,16 @@ export class JobHandler {
       this.startHeartbeat();
       this.client.jobId = this.job.id;
 
-      // 获取用户资料
-      const profile = await this.client.getUserProfile(this.job.friendCode);
-      if (!profile) {
-        throw new Error("未找到该好友代码对应的用户，请检查好友代码是否正确!");
+      // 获取用户资料（如果 job 上已有 profile 则跳过）
+      if (!this.job.profile) {
+        const profile = await this.client.getUserProfile(this.job.friendCode);
+        if (!profile) {
+          throw new Error(
+            "未找到该好友代码对应的用户，请检查好友代码是否正确!",
+          );
+        }
+        await this.applyPatch({ profile, updatedAt: new Date() });
       }
-      await this.applyPatch({ profile, updatedAt: new Date() });
 
       // 根据当前阶段处理
       switch (this.job.stage) {
@@ -155,59 +159,93 @@ export class JobHandler {
    * 处理发送好友请求阶段
    */
   private async handleSendRequest(): Promise<void> {
-    console.log(`[JobHandler] Job ${this.job.id}: Checking friend list...`);
-
-    if (!this.config.skipCleanUpFriend) {
-      await this.friendManager.cleanUpFriend(this.job.friendCode);
-    }
-
     console.log(`[JobHandler] Job ${this.job.id}: Sending friend request...`);
 
-    const maxRetries = 3;
     let match: SentFriendRequest | undefined;
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // 记录当前 UTC+8 时间（精确到分钟，与舞萌网站申请日期精度一致）
+      const nowCST = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      const sendTimestamp = new Date(
+        Date.UTC(
+          nowCST.getUTCFullYear(),
+          nowCST.getUTCMonth(),
+          nowCST.getUTCDate(),
+          nowCST.getUTCHours(),
+          nowCST.getUTCMinutes(),
+          0,
+          0,
+        ),
+      );
+      const sendThreshold = sendTimestamp.getTime() - 8 * 60 * 60 * 1000;
+      console.log(
+        `[JobHandler] Job ${this.job.id}: Send threshold (UTC): ${new Date(sendThreshold).toISOString()}`,
+      );
+
+      // 先执行一次发送 + 验证
       await this.friendManager.sendFriendRequest(this.job.friendCode);
 
-      // 发送后检查是否已经是好友（可能对方已接受或自动成为好友）
-      const alreadyFriend = await this.friendManager.isFriend(
-        this.job.friendCode,
+      // 检查初次发送的结果
+      {
+        const sentRequests = await this.friendManager.getSentRequests();
+        const found = sentRequests.find(
+          (s) => s.friendCode === this.job.friendCode,
+        );
+        if (found && found.appliedAt) {
+          const appliedTime = new Date(found.appliedAt).getTime();
+          if (appliedTime >= sendThreshold) {
+            // appliedAt >= sendThreshold，是本次发送的有效请求
+            match = found;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(
+        `[JobHandler] Job ${this.job.id}: Failed to verify sent friend request:`,
+        err,
       );
-      if (alreadyFriend) {
-        console.log(
-          `[JobHandler] Job ${this.job.id}: Already friends after sending request, treating as success`,
-        );
-        break;
+    }
+
+    // 如果初次验证未拿到有效 match，进入重试循环
+    if (!match) {
+      if (!this.config.skipCleanUpFriend) {
+        await this.friendManager.cleanUpFriend(this.job.friendCode);
       }
 
-      const sentRequests = await this.friendManager.getSentRequests();
-      match = sentRequests.find((s) => s.friendCode === this.job.friendCode);
+      const maxRetries = 3;
 
-      if (match || this.config.skipCleanUpFriend) {
-        break;
-      }
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        await this.friendManager.sendFriendRequest(this.job.friendCode);
 
-      if (attempt < maxRetries) {
-        console.warn(
-          `[JobHandler] Job ${this.job.id}: Friend request not found in sent list, retrying (${attempt}/${maxRetries})...`,
+        // 发送后检查是否已经是好友
+        const alreadyFriend = await this.friendManager.isFriend(
+          this.job.friendCode,
         );
-        await this.sleep(10_000);
+        if (alreadyFriend) {
+          console.log(
+            `[JobHandler] Job ${this.job.id}: Already friends after sending request, treating as success`,
+          );
+          break;
+        }
+
+        const sentRequests = await this.friendManager.getSentRequests();
+        match = sentRequests.find((s) => s.friendCode === this.job.friendCode);
+
+        if (match || this.config.skipCleanUpFriend) {
+          break;
+        }
+
+        if (attempt < maxRetries) {
+          console.warn(
+            `[JobHandler] Job ${this.job.id}: Friend request not found in sent list, retrying (${attempt}/${maxRetries})...`,
+          );
+          await this.sleep(10_000);
+        }
       }
     }
 
-    // 发送后再次确认是否已经是好友
-    const isFriendAfterSend = await this.friendManager.isFriend(
-      this.job.friendCode,
-    );
-
-    if (!this.config.skipCleanUpFriend && !match && !isFriendAfterSend) {
+    if (!this.config.skipCleanUpFriend && !match) {
       throw new Error("发送好友请求失败");
-    }
-
-    // 如果已经是好友，直接跳到 update_score 阶段
-    if (isFriendAfterSend) {
-      await this.applyPatch({ stage: "update_score", updatedAt: new Date() });
-      return;
     }
 
     await this.applyPatch({ stage: "wait_acceptance", updatedAt: new Date() });
@@ -285,7 +323,12 @@ export class JobHandler {
         throw new Error("好友请求已被取消或删除");
       }
 
-      await this.applyPatch({ updatedAt: new Date() });
+      // 故意将 updatedAt 推迟 30 秒，让其他排队任务有机会先被处理
+      const delayedAt = new Date(Date.now() + 30_000);
+      await this.applyPatch({ updatedAt: delayedAt });
+      console.log(
+        `[JobHandler] Job ${this.job.id}: Friend not yet accepted, delaying updatedAt by 30s`,
+      );
     }
   }
 

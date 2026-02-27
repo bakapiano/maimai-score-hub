@@ -998,7 +998,9 @@ export default function SyncPage() {
                       {syncStatus.friendRequestSentAt && (
                         <Text size="sm" c="red" fw={700}>
                           若申请时间不是{" "}
-                          {formatFriendRequestSentAt(syncStatus.friendRequestSentAt)}
+                          {formatFriendRequestSentAt(
+                            syncStatus.friendRequestSentAt,
+                          )}
                           ，请勿接受，可能是他人尝试登录！
                         </Text>
                       )}
@@ -1147,7 +1149,9 @@ export default function SyncPage() {
                   idleUpdateStatus.activeJob?.friendRequestSentAt && (
                     <Text size="sm" c="red" fw={700}>
                       若申请时间不是{" "}
-                      {formatFriendRequestSentAt(idleUpdateStatus.activeJob.friendRequestSentAt)}
+                      {formatFriendRequestSentAt(
+                        idleUpdateStatus.activeJob.friendRequestSentAt,
+                      )}
                       ，请勿接受，可能是他人尝试登录！
                     </Text>
                   )}

@@ -153,19 +153,49 @@ export class JobService {
       { $set: { executing: false } },
     );
 
-    // 1) Prefer already-processing job for this bot
+    // 1a) Queued first: claim the oldest unassigned queued job.
+    //     New jobs get higher priority than processing (wait_acceptance) jobs.
+    const queued = await this.jobModel.findOneAndUpdate(
+      { status: 'queued', executing: false, botUserFriendCode: null },
+      {
+        $set: {
+          status: 'processing',
+          executing: true,
+          botUserFriendCode,
+          updatedAt: now,
+        },
+      },
+      { new: true, sort: { updatedAt: 1 } },
+    );
+    if (queued) {
+      return toJobResponse(queued.toObject() as JobEntity);
+    }
+
+    // 1b) Resume: pick the oldest processing job for this bot.
+    //     Only pick jobs whose updatedAt <= now (future updatedAt = intentional cooldown
+    //     from wait_acceptance stage).
     const processing = await this.jobModel.findOneAndUpdate(
-      { status: 'processing', botUserFriendCode, executing: false },
-      { $set: { executing: true, updatedAt: now } },
-      { new: true, sort: { createdAt: 1 } },
+      {
+        status: 'processing',
+        botUserFriendCode,
+        executing: false,
+        updatedAt: { $lte: now },
+      },
+      {
+        $set: {
+          executing: true,
+          updatedAt: now,
+        },
+      },
+      { new: true, sort: { updatedAt: 1 } },
     );
     if (processing) {
       return toJobResponse(processing.toObject() as JobEntity);
     }
 
-    // 2) Claim queued jobs that are pre-assigned to this bot
-    //    (e.g. idle_update_score jobs locked to a specific bot)
-    const preAssigned = await this.jobModel.findOneAndUpdate(
+    // 2) Idle pool: claim pre-assigned queued jobs (e.g. idle_update_score)
+    //    Lowest priority — only picked when no main pool jobs are available.
+    const idle = await this.jobModel.findOneAndUpdate(
       { status: 'queued', executing: false, botUserFriendCode },
       {
         $set: {
@@ -176,28 +206,9 @@ export class JobService {
       },
       { new: true, sort: { createdAt: 1 } },
     );
-    if (preAssigned) {
-      return toJobResponse(preAssigned.toObject() as JobEntity);
-    }
 
-    // 3) Claim the oldest unassigned queued job atomically via findOneAndUpdate
-    //    Don't overwrite `stage` — it was already set correctly at creation
-    //    (e.g. idle_update_score starts at 'update_score').
-    const claimed = await this.jobModel.findOneAndUpdate(
-      { status: 'queued', executing: false, botUserFriendCode: null },
-      {
-        $set: {
-          status: 'processing',
-          executing: true,
-          botUserFriendCode,
-          updatedAt: now,
-        },
-      },
-      { new: true, sort: { createdAt: 1 } },
-    );
-
-    if (!claimed) return null;
-    return toJobResponse(claimed.toObject() as JobEntity);
+    if (!idle) return null;
+    return toJobResponse(idle.toObject() as JobEntity);
   }
 
   async patch(jobId: string, body: JobPatchBody): Promise<JobResponse> {
