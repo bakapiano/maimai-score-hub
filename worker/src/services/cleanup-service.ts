@@ -165,29 +165,51 @@ export class CleanupService {
       }
 
       // 4. 当非闲时更新好友 > 20 时，按活跃度排序，保留最活跃的 20 个，淘汰其余
+      //    同时清除超过 1 小时未活跃的用户
       let friendsToRemove: string[] = [];
-      if (nonIdleFriendCount > 20) {
-        // 找出所有非闲时更新的好友
+      {
         const nonIdleFriends = friends.filter((fc) => !idleUpdateSet.has(fc));
-        // 查询这些用户的活跃度
         const activityData = await getUsersActivity(nonIdleFriends);
         const activityMap = new Map(
           activityData.map((u) => [u.friendCode, u.lastActiveAt]),
         );
-        // 按 lastActiveAt 降序排序（最活跃的排前面，null 排最后）
-        nonIdleFriends.sort((a, b) => {
-          const ta = activityMap.get(a);
-          const tb = activityMap.get(b);
-          if (!ta && !tb) return 0;
-          if (!ta) return 1;
-          if (!tb) return -1;
-          return new Date(tb).getTime() - new Date(ta).getTime();
+
+        const ONE_HOUR_MS = 60 * 60 * 1000;
+        const nowMs = Date.now();
+
+        // 先淘汰超过 1 小时未活跃且不在活跃任务中的好友
+        const inactiveFriends = nonIdleFriends.filter((fc) => {
+          if (activeSet.has(fc)) return false;
+          const lastActive = activityMap.get(fc);
+          if (!lastActive) return true; // 从未活跃过，清除
+          return nowMs - new Date(lastActive).getTime() > ONE_HOUR_MS;
         });
-        // 保留前 20 个，淘汰其余
-        friendsToRemove = nonIdleFriends.slice(20);
-        console.log(
-          `[CleanupService] Bot ${botFriendCode} has ${nonIdleFriendCount} non-idle friends (> 20), evicting ${friendsToRemove.length} least-active friends`,
-        );
+
+        if (inactiveFriends.length > 0) {
+          console.log(
+            `[CleanupService] Bot ${botFriendCode} evicting ${inactiveFriends.length} friends inactive for > 1 hour`,
+          );
+          friendsToRemove.push(...inactiveFriends);
+        }
+
+        // 剔除已标记移除的后，如果剩余非闲时好友仍 > 20，按活跃度排序保留前 20
+        const removeSet = new Set(friendsToRemove);
+        const remaining = nonIdleFriends.filter((fc) => !removeSet.has(fc));
+        if (remaining.length > 20) {
+          remaining.sort((a, b) => {
+            const ta = activityMap.get(a);
+            const tb = activityMap.get(b);
+            if (!ta && !tb) return 0;
+            if (!ta) return 1;
+            if (!tb) return -1;
+            return new Date(tb).getTime() - new Date(ta).getTime();
+          });
+          const excess = remaining.slice(20);
+          friendsToRemove.push(...excess);
+          console.log(
+            `[CleanupService] Bot ${botFriendCode} has ${remaining.length} remaining non-idle friends (> 20), evicting ${excess.length} least-active friends`,
+          );
+        }
       }
 
       for (const friendCode of friendsToRemove) {
