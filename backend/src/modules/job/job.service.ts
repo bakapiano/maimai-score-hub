@@ -197,20 +197,46 @@ export class JobService {
     // Only claim new queued job if this bot's active count is not too far ahead of others.
     // Allow up to 1 more than the minimum, so a single bot going offline won't block others.
     if (activeCountForThisBot <= minOtherCount + 1) {
-      const queued = await this.jobModel.findOneAndUpdate(
-        { status: 'queued', executing: false, botUserFriendCode: null },
-        {
-          $set: {
-            status: 'processing',
-            executing: true,
-            botUserFriendCode,
-            updatedAt: now,
+      // Find the oldest unassigned queued job
+      const candidates = await this.jobModel
+        .find({ status: 'queued', executing: false, botUserFriendCode: null })
+        .sort({ updatedAt: 1 })
+        .limit(10)
+        .lean();
+
+      for (const candidate of candidates) {
+        // Check preferred bot: if job is queued < 30s and user prefers a different bot, skip
+        const queuedDuration = now.getTime() - candidate.createdAt.getTime();
+        if (queuedDuration < 30_000) {
+          const preferredBot = await this.usersService.getPreferredBot(
+            candidate.friendCode,
+          );
+          if (preferredBot && preferredBot !== botUserFriendCode) {
+            continue; // Let the preferred bot pick this job
+          }
+        }
+
+        // Try to atomically claim this job
+        const claimed = await this.jobModel.findOneAndUpdate(
+          {
+            id: candidate.id,
+            status: 'queued',
+            executing: false,
+            botUserFriendCode: null,
           },
-        },
-        { new: true, sort: { updatedAt: 1 } },
-      );
-      if (queued) {
-        return toJobResponse(queued.toObject() as JobEntity);
+          {
+            $set: {
+              status: 'processing',
+              executing: true,
+              botUserFriendCode,
+              updatedAt: now,
+            },
+          },
+          { new: true },
+        );
+        if (claimed) {
+          return toJobResponse(claimed.toObject() as JobEntity);
+        }
       }
     }
 
@@ -373,6 +399,20 @@ export class JobService {
 
     if (!updated) {
       throw new NotFoundException('Job not found');
+    }
+
+    // 当 job 进入 wait_acceptance 或完成时，更新用户的偏好 bot
+    if (
+      updated.botUserFriendCode &&
+      (body.stage === 'update_score' || body.status === 'completed')
+    ) {
+      this.usersService
+        .updatePreferredBot(updated.friendCode, updated.botUserFriendCode)
+        .catch((err) => {
+          this.logger.error(
+            `Failed to update preferred bot for ${updated.friendCode}: ${err?.message}`,
+          );
+        });
     }
 
     // 当 job 完成、失败或取消时，清理临时缓存

@@ -53,6 +53,7 @@ export class UsersService {
       idleUpdateBotFriendCode?: string | null;
       autoExportDivingFish?: boolean;
       autoExportLxns?: boolean;
+      preferredBotFriendCode?: string | null;
     },
   ) {
     if (!isValidObjectId(id)) {
@@ -77,6 +78,9 @@ export class UsersService {
     }
     if ('autoExportLxns' in input) {
       updateDoc.autoExportLxns = !!input.autoExportLxns;
+    }
+    if ('preferredBotFriendCode' in input) {
+      updateDoc.preferredBotFriendCode = input.preferredBotFriendCode ?? null;
     }
 
     const updated = await this.userModel.findByIdAndUpdate(id, updateDoc, {
@@ -109,6 +113,30 @@ export class UsersService {
       { _id: userId },
       { lastActiveAt: new Date() },
     );
+  }
+
+  /**
+   * 更新用户偏好的 bot
+   */
+  async updatePreferredBot(
+    friendCode: string,
+    botFriendCode: string,
+  ): Promise<void> {
+    await this.userModel.updateOne(
+      { friendCode },
+      { preferredBotFriendCode: botFriendCode },
+    );
+  }
+
+  /**
+   * 获取用户偏好的 bot
+   */
+  async getPreferredBot(friendCode: string): Promise<string | null> {
+    const user = await this.userModel
+      .findOne({ friendCode })
+      .select('preferredBotFriendCode')
+      .lean();
+    return user?.preferredBotFriendCode ?? null;
   }
 
   /**

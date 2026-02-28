@@ -1245,7 +1245,7 @@ export default function SyncPage() {
             <Group gap="xl">
               <Group gap={6}>
                 <Text size="sm" c="dimmed">
-                  近 1 小时成功率
+                  近 1 小时立即更新成功率
                 </Text>
                 <Badge
                   variant="light"

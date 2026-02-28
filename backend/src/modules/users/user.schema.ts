@@ -29,6 +29,9 @@ export class UserEntity {
 
   @Prop({ type: Date, default: null })
   lastActiveAt!: Date | null;
+
+  @Prop({ type: String, default: null })
+  preferredBotFriendCode!: string | null;
 }
 
 export type UserDocument = HydratedDocument<UserEntity>;
