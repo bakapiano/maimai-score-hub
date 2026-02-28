@@ -1009,20 +1009,6 @@ export default function SyncPage() {
                 >
                   开始同步
                 </Button>
-                {syncing && syncStatus && (
-                  <Group gap="xs">
-                    <Loader size="xs" />
-                    <Text size="xs" c="dimmed">
-                      {syncStatus.status === "queued"
-                        ? "正在排队中，请稍候..."
-                        : syncStatus.stage === "send_request"
-                          ? "正在发送好友请求，通常需要等待约 60 秒..."
-                          : syncStatus.stage === "update_score"
-                            ? "正在更新成绩..."
-                            : "同步中..."}
-                    </Text>
-                  </Group>
-                )}
               </Stack>
             </Card>
           )}
