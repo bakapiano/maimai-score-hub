@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Schema as MongooseSchema } from 'mongoose';
 
 import type { HydratedDocument } from 'mongoose';
+import { Schema as MongooseSchema } from 'mongoose';
 import type { UserNetProfile } from './user.types';
 
 @Schema({ timestamps: true })
@@ -20,6 +20,15 @@ export class UserEntity {
 
   @Prop({ type: String, default: null })
   idleUpdateBotFriendCode!: string | null;
+
+  @Prop({ type: Boolean, default: false })
+  autoExportDivingFish!: boolean;
+
+  @Prop({ type: Boolean, default: false })
+  autoExportLxns!: boolean;
+
+  @Prop({ type: Date, default: null })
+  lastActiveAt!: Date | null;
 }
 
 export type UserDocument = HydratedDocument<UserEntity>;

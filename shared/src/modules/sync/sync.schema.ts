@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const LastSyncSchema = z
   .object({
@@ -6,6 +6,19 @@ export const LastSyncSchema = z
     createdAt: z.string(),
     updatedAt: z.string(),
     scores: z.array(z.unknown()).optional(),
+    autoExportResult: z
+      .object({
+        divingFish: z
+          .object({ status: z.string(), message: z.string().optional() })
+          .nullable()
+          .optional(),
+        lxns: z
+          .object({ status: z.string(), message: z.string().optional() })
+          .nullable()
+          .optional(),
+      })
+      .nullable()
+      .optional(),
   })
   .passthrough();
 

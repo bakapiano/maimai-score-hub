@@ -61,9 +61,7 @@ export class AuthService {
       // 检查是否已有活跃的闲时任务
       const hasActive = await this.jobs.hasActiveIdleJob(normalized);
       if (hasActive) {
-        throw new BadRequestException(
-          '已有进行中的闲时更新任务，请勿重复创建',
-        );
+        throw new BadRequestException('已有进行中的闲时更新任务，请勿重复创建');
       }
 
       // 选择好友最少的可用 bot
@@ -164,5 +162,12 @@ export class AuthService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * 更新用户最后活跃时间（fire-and-forget）
+   */
+  updateLastActiveAt(userId: string): void {
+    this.users.updateLastActiveAt(userId).catch(() => {});
   }
 }

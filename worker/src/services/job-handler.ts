@@ -161,6 +161,23 @@ export class JobHandler {
   private async handleSendRequest(): Promise<void> {
     console.log(`[JobHandler] Job ${this.job.id}: Sending friend request...`);
 
+    // 登录后创建的 job，先检查是否已经是好友，如果是则跳过发送好友请求
+    if (this.job.isAuthenticated) {
+      const alreadyFriend = await this.friendManager.isFriend(
+        this.job.friendCode,
+      );
+      if (alreadyFriend) {
+        console.log(
+          `[JobHandler] Job ${this.job.id}: Authenticated job - already friends, skipping send_request`,
+        );
+        await this.applyPatch({
+          stage: "wait_acceptance",
+          updatedAt: new Date(),
+        });
+        return;
+      }
+    }
+
     let match: SentFriendRequest | undefined;
 
     try {
@@ -432,33 +449,31 @@ export class JobHandler {
     // 清理好友关系（不等待完成）
     // idle_update_score job 完成后也清理好友（因为调度器已清除 user 标记）
     // 对于 immediate job，如果当前 bot 是用户的闲时更新 bot，跳过删除好友
-    let shouldSkipCleanup =
-      this.config.skipCleanUpFriend || jobType === "idle_add_friend";
-
-    if (
-      !shouldSkipCleanup &&
-      jobType === "immediate" &&
-      this.job.botUserFriendCode
-    ) {
-      try {
-        const isIdleBot = await checkIsIdleUpdateBot(
-          this.job.friendCode,
-          this.job.botUserFriendCode,
-        );
-        if (isIdleBot) {
-          shouldSkipCleanup = true;
-          console.log(
-            `[JobHandler] Job ${this.job.id}: Skipping friend cleanup (bot is idle update bot for this user)`,
-          );
-        }
-      } catch {
-        // Best effort check
-      }
-    }
-
-    if (!shouldSkipCleanup) {
-      this.friendManager.cleanUpFriend(this.job.friendCode).catch(() => {});
-    }
+    // let shouldSkipCleanup =
+    //   this.config.skipCleanUpFriend || jobType === "idle_add_friend";
+    // if (
+    //   !shouldSkipCleanup &&
+    //   jobType === "immediate" &&
+    //   this.job.botUserFriendCode
+    // ) {
+    //   try {
+    //     const isIdleBot = await checkIsIdleUpdateBot(
+    //       this.job.friendCode,
+    //       this.job.botUserFriendCode,
+    //     );
+    //     if (isIdleBot) {
+    //       shouldSkipCleanup = true;
+    //       console.log(
+    //         `[JobHandler] Job ${this.job.id}: Skipping friend cleanup (bot is idle update bot for this user)`,
+    //       );
+    //     }
+    //   } catch {
+    //     // Best effort check
+    //   }
+    // }
+    // if (!shouldSkipCleanup) {
+    //   this.friendManager.cleanUpFriend(this.job.friendCode).catch(() => {});
+    // }
 
     const cost = this.job.updatedAt.getTime() - this.job.createdAt.getTime();
     console.log(`[JobHandler] Job ${this.job.id}: Completed! Cost: ${cost}ms`);
@@ -496,23 +511,23 @@ export class JobHandler {
       return;
     }
 
-    if (!this.config.skipCleanUpFriend) {
-      // 对于 immediate job，如果当前 bot 是用户的闲时更新 bot，跳过删除好友
-      let shouldSkip = false;
-      if (jobType === "immediate" && this.job.botUserFriendCode) {
-        try {
-          shouldSkip = await checkIsIdleUpdateBot(
-            this.job.friendCode,
-            this.job.botUserFriendCode,
-          );
-        } catch {
-          // Best effort
-        }
-      }
-      if (!shouldSkip) {
-        this.friendManager.cleanUpFriend(this.job.friendCode).catch(() => {});
-      }
-    }
+    // if (!this.config.skipCleanUpFriend) {
+    //   // 对于 immediate job，如果当前 bot 是用户的闲时更新 bot，跳过删除好友
+    //   let shouldSkip = false;
+    //   if (jobType === "immediate" && this.job.botUserFriendCode) {
+    //     try {
+    //       shouldSkip = await checkIsIdleUpdateBot(
+    //         this.job.friendCode,
+    //         this.job.botUserFriendCode,
+    //       );
+    //     } catch {
+    //       // Best effort
+    //     }
+    //   }
+    //   if (!shouldSkip) {
+    //     this.friendManager.cleanUpFriend(this.job.friendCode).catch(() => {});
+    //   }
+    // }
   }
 
   /**

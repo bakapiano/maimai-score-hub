@@ -30,6 +30,12 @@ export class AuthGuard implements CanActivate {
     }
 
     req.user = payload;
+
+    // Fire-and-forget: update last active time
+    if (payload.sub) {
+      this.auth.updateLastActiveAt(payload.sub);
+    }
+
     return true;
   }
 }

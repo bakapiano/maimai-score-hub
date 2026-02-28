@@ -29,6 +29,12 @@ export class SyncEntity {
   @Prop({ type: [Object], default: [] })
   scores!: SyncScore[];
 
+  @Prop({ type: Object, default: null })
+  autoExportResult!: {
+    divingFish?: { status: string; message?: string } | null;
+    lxns?: { status: string; message?: string } | null;
+  } | null;
+
   createdAt!: Date;
   updatedAt!: Date;
 }

@@ -1,12 +1,9 @@
-import { initContract } from '@ts-rest/core';
-import { z } from 'zod';
-
 import {
   AddApiLogsBodySchema,
   IdleUpdateMarkReadyBodySchema,
   TempCacheBodySchema,
   TempCacheResponseSchema,
-} from './job-extra.schema';
+} from "./job-extra.schema";
 import {
   JobByFriendCodeActiveResponseSchema,
   JobCreateBodySchema,
@@ -15,30 +12,34 @@ import {
   JobPatchBodySchema,
   JobRecentStatsSchema,
   JobResponseSchema,
-} from './job.schema';
+} from "./job.schema";
+
+import { initContract } from "@ts-rest/core";
+import { z } from "zod";
 
 const c = initContract();
 
 export const jobContract = c.router({
   create: {
-    method: 'POST',
-    path: '/job/create',
+    method: "POST",
+    path: "/job/create",
+    headers: z.object({ authorization: z.string() }),
     body: JobCreateBodySchema,
     responses: {
       201: JobCreateResponseSchema,
     },
   },
   getById: {
-    method: 'GET',
-    path: '/job/:jobId',
+    method: "GET",
+    path: "/job/:jobId",
     pathParams: z.object({ jobId: z.string() }),
     responses: {
       200: JobResponseSchema,
     },
   },
   getActiveByFriendCode: {
-    method: 'GET',
-    path: '/job/by-friend-code/:friendCode/active',
+    method: "GET",
+    path: "/job/by-friend-code/:friendCode/active",
     pathParams: z.object({ friendCode: z.string() }),
     headers: z.object({ authorization: z.string() }),
     responses: {
@@ -46,15 +47,15 @@ export const jobContract = c.router({
     },
   },
   getRecentStats: {
-    method: 'GET',
-    path: '/job/stats/recent',
+    method: "GET",
+    path: "/job/stats/recent",
     responses: {
       200: JobRecentStatsSchema,
     },
   },
   next: {
-    method: 'POST',
-    path: '/job/next',
+    method: "POST",
+    path: "/job/next",
     body: JobNextBodySchema,
     responses: {
       200: JobResponseSchema,
@@ -62,8 +63,8 @@ export const jobContract = c.router({
     },
   },
   patch: {
-    method: 'PATCH',
-    path: '/job/:jobId',
+    method: "PATCH",
+    path: "/job/:jobId",
     pathParams: z.object({ jobId: z.string() }),
     body: JobPatchBodySchema,
     responses: {
@@ -71,32 +72,58 @@ export const jobContract = c.router({
     },
   },
   getActiveByBot: {
-    method: 'GET',
-    path: '/job/active/:botUserFriendCode',
+    method: "GET",
+    path: "/job/active/:botUserFriendCode",
     pathParams: z.object({ botUserFriendCode: z.string() }),
     responses: {
       200: z.array(z.string()),
     },
   },
   markIdleUpdateReady: {
-    method: 'POST',
-    path: '/job/idle-update/mark-ready',
+    method: "POST",
+    path: "/job/idle-update/mark-ready",
     body: IdleUpdateMarkReadyBodySchema,
     responses: {
       200: z.object({ ok: z.boolean() }),
     },
   },
   getIdleUpdateFriends: {
-    method: 'GET',
-    path: '/job/idle-update/friends/:botFriendCode',
+    method: "GET",
+    path: "/job/idle-update/friends/:botFriendCode",
     pathParams: z.object({ botFriendCode: z.string() }),
     responses: {
       200: z.array(z.string()),
     },
   },
+  getIdleUpdateFriendsDetailed: {
+    method: "GET",
+    path: "/job/idle-update/friends/:botFriendCode/detailed",
+    pathParams: z.object({ botFriendCode: z.string() }),
+    responses: {
+      200: z.array(
+        z.object({
+          friendCode: z.string(),
+          lastActiveAt: z.string().nullable(),
+        }),
+      ),
+    },
+  },
+  getUsersActivity: {
+    method: "POST",
+    path: "/job/users-activity",
+    body: z.object({ friendCodes: z.array(z.string()) }),
+    responses: {
+      200: z.array(
+        z.object({
+          friendCode: z.string(),
+          lastActiveAt: z.string().nullable(),
+        }),
+      ),
+    },
+  },
   getTempCache: {
-    method: 'GET',
-    path: '/job/:jobId/cache/:diff/:type',
+    method: "GET",
+    path: "/job/:jobId/cache/:diff/:type",
     pathParams: z.object({
       jobId: z.string(),
       diff: z.string(),
@@ -107,8 +134,8 @@ export const jobContract = c.router({
     },
   },
   setTempCache: {
-    method: 'POST',
-    path: '/job/:jobId/cache/:diff/:type',
+    method: "POST",
+    path: "/job/:jobId/cache/:diff/:type",
     pathParams: z.object({
       jobId: z.string(),
       diff: z.string(),
@@ -120,8 +147,8 @@ export const jobContract = c.router({
     },
   },
   addApiLogs: {
-    method: 'POST',
-    path: '/job/:jobId/api-logs',
+    method: "POST",
+    path: "/job/:jobId/api-logs",
     pathParams: z.object({ jobId: z.string() }),
     body: AddApiLogsBodySchema,
     responses: {

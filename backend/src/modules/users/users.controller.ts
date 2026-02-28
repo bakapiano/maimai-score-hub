@@ -49,26 +49,55 @@ export class UsersController {
     if (!userId) {
       throw new BadRequestException('No user context');
     }
-    return this.users.getById(userId);
+    const user = await this.users.getById(userId);
+    // Never expose actual tokens to the client
+    const { divingFishImportToken, lxnsImportToken, ...rest } = user;
+    return {
+      ...rest,
+      hasDivingFishImportToken: !!divingFishImportToken,
+      hasLxnsImportToken: !!lxnsImportToken,
+    };
   }
 
   @Patch('profile')
   async updateProfile(
     @Req() req: AuthedRequest,
-    @Body(new ZodValidationPipe(UpdateProfileBodySchema)) body: UpdateProfileBody,
+    @Body(new ZodValidationPipe(UpdateProfileBodySchema))
+    body: UpdateProfileBody,
   ) {
     const userId = extractUserId(req);
     if (!userId) {
       throw new BadRequestException('No user context');
     }
 
-    const divingFishToken = body.divingFishImportToken ?? null;
-    const lxnsToken = body.lxnsImportToken ?? null;
+    const updateInput: Record<string, unknown> = {};
 
-    return this.users.update(userId, {
-      divingFishImportToken: divingFishToken,
-      lxnsImportToken: lxnsToken,
-    });
+    if (body.divingFishImportToken !== undefined) {
+      updateInput.divingFishImportToken = body.divingFishImportToken ?? null;
+    }
+    if (body.lxnsImportToken !== undefined) {
+      updateInput.lxnsImportToken = body.lxnsImportToken ?? null;
+    }
+    if (body.autoExportDivingFish !== undefined) {
+      updateInput.autoExportDivingFish = body.autoExportDivingFish;
+    }
+    if (body.autoExportLxns !== undefined) {
+      updateInput.autoExportLxns = body.autoExportLxns;
+    }
+
+    const updated = await this.users.update(userId, updateInput);
+
+    // Never expose actual tokens to the client
+    const {
+      divingFishImportToken: _df,
+      lxnsImportToken: _lx,
+      ...rest
+    } = updated;
+    return {
+      ...rest,
+      hasDivingFishImportToken: !!_df,
+      hasLxnsImportToken: !!_lx,
+    };
   }
 
   /**
@@ -121,7 +150,7 @@ export class UsersController {
       throw new BadRequestException('当前没有可用的 Bot');
     }
 
-    const limit = Number(process.env.BOT_IDLE_FRIEND_LIMIT ?? 80);
+    const limit = Number(process.env.BOT_IDLE_FRIEND_LIMIT ?? 60);
 
     // 找好友最少的一个有容量的 bot，避免倾斜到同一个 bot
     let selectedBot: string | null = null;
@@ -147,6 +176,7 @@ export class UsersController {
       skipUpdateScore: true,
       jobType: 'idle_add_friend',
       botUserFriendCode: selectedBot,
+      isAuthenticated: true,
     });
 
     return { ...result, message: '闲时更新任务已创建，等待 Bot 添加好友' };

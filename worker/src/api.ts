@@ -35,8 +35,14 @@ app.get("/", (_req, res) => {
 /**
  * 获取认证 URL
  */
-app.get("/api/auth", async (_req, res) => {
+app.get("/api/auth", async (req, res) => {
   try {
+    // 前端传入当前页面 URL，auth 完成后重定向回去
+    const redirectUrl = req.query.redirectUrl as string | undefined;
+    if (redirectUrl) {
+      runtimeState.redirectUrl = redirectUrl;
+    }
+
     const href = await getAuthUrl(GameType.maimai);
     console.log(href);
     res.json({ authUrl: href });

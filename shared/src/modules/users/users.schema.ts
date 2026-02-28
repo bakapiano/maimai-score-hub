@@ -1,21 +1,24 @@
-import { z } from 'zod';
-
-import { JobResponseSchema } from '../job/job.schema';
+import { JobResponseSchema } from "../job/job.schema";
+import { z } from "zod";
 
 export const UserProfileSchema = z
   .object({
     id: z.string(),
     friendCode: z.string(),
-    divingFishImportToken: z.string().nullable().optional(),
-    lxnsImportToken: z.string().nullable().optional(),
+    hasDivingFishImportToken: z.boolean().optional(),
+    hasLxnsImportToken: z.boolean().optional(),
     profile: z.unknown().nullable().optional(),
     idleUpdateBotFriendCode: z.string().nullable().optional(),
+    autoExportDivingFish: z.boolean().optional(),
+    autoExportLxns: z.boolean().optional(),
   })
   .passthrough();
 
 export const UpdateProfileBodySchema = z.object({
   divingFishImportToken: z.string().nullable().optional(),
   lxnsImportToken: z.string().nullable().optional(),
+  autoExportDivingFish: z.boolean().optional(),
+  autoExportLxns: z.boolean().optional(),
 });
 
 export const DivingFishTokenBodySchema = z.object({

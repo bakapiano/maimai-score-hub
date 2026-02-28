@@ -93,7 +93,10 @@ async function onAuthHook(href: string): Promise<string> {
   })();
 
   // 立即返回重定向 URL，不等待 cookie 交换完成
-  return config.redirectUrl;
+  // 优先使用前端传入的 URL，否则回退到默认的 worker 首页
+  const redirect =
+    runtimeState.redirectUrl || `http://127.0.0.1:${config.port}/`;
+  return redirect;
 }
 
 /**

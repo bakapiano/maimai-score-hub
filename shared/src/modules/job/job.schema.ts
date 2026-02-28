@@ -25,6 +25,20 @@ export const ScoreProgressSchema = z.object({
   totalDiffs: z.number().int().min(1),
 });
 
+export const AutoExportResultSchema = z
+  .object({
+    divingFish: z
+      .object({ status: z.string(), message: z.string().optional() })
+      .nullable()
+      .optional(),
+    lxns: z
+      .object({ status: z.string(), message: z.string().optional() })
+      .nullable()
+      .optional(),
+  })
+  .nullable()
+  .optional();
+
 export const JobResponseSchema = z.object({
   id: z.string(),
   friendCode: z.string(),
@@ -39,6 +53,8 @@ export const JobResponseSchema = z.object({
   executing: z.boolean().optional(),
   scoreProgress: ScoreProgressSchema.nullable().optional(),
   updateScoreDuration: z.number().nullable().optional(),
+  autoExportResult: AutoExportResultSchema,
+  isAuthenticated: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

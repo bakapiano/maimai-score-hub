@@ -122,6 +122,32 @@ paths:
                       updateScoreDuration:
                         type: number
                         nullable: true
+                      autoExportResult:
+                        type: object
+                        properties:
+                          divingFish:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                          lxns:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                        nullable: true
+                      isAuthenticated:
+                        type: boolean
                       createdAt:
                         type: string
                       updatedAt:
@@ -184,17 +210,19 @@ paths:
                     type: string
                   friendCode:
                     type: string
-                  divingFishImportToken:
-                    type: string
-                    nullable: true
-                  lxnsImportToken:
-                    type: string
-                    nullable: true
+                  hasDivingFishImportToken:
+                    type: boolean
+                  hasLxnsImportToken:
+                    type: boolean
                   profile:
                     nullable: true
                   idleUpdateBotFriendCode:
                     type: string
                     nullable: true
+                  autoExportDivingFish:
+                    type: boolean
+                  autoExportLxns:
+                    type: boolean
                 required:
                   - id
                   - friendCode
@@ -216,6 +244,10 @@ paths:
                 lxnsImportToken:
                   type: string
                   nullable: true
+                autoExportDivingFish:
+                  type: boolean
+                autoExportLxns:
+                  type: boolean
       responses:
         "200":
           description: "200"
@@ -228,17 +260,19 @@ paths:
                     type: string
                   friendCode:
                     type: string
-                  divingFishImportToken:
-                    type: string
-                    nullable: true
-                  lxnsImportToken:
-                    type: string
-                    nullable: true
+                  hasDivingFishImportToken:
+                    type: boolean
+                  hasLxnsImportToken:
+                    type: boolean
                   profile:
                     nullable: true
                   idleUpdateBotFriendCode:
                     type: string
                     nullable: true
+                  autoExportDivingFish:
+                    type: boolean
+                  autoExportLxns:
+                    type: boolean
                 required:
                   - id
                   - friendCode
@@ -355,6 +389,32 @@ paths:
                       updateScoreDuration:
                         type: number
                         nullable: true
+                      autoExportResult:
+                        type: object
+                        properties:
+                          divingFish:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                          lxns:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                        nullable: true
+                      isAuthenticated:
+                        type: boolean
                       createdAt:
                         type: string
                       updatedAt:
@@ -474,6 +534,32 @@ paths:
                       updateScoreDuration:
                         type: number
                         nullable: true
+                      autoExportResult:
+                        type: object
+                        properties:
+                          divingFish:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                          lxns:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                        nullable: true
+                      isAuthenticated:
+                        type: boolean
                       createdAt:
                         type: string
                       updatedAt:
@@ -516,6 +602,30 @@ paths:
                     type: array
                     items:
                       nullable: true
+                  autoExportResult:
+                    type: object
+                    properties:
+                      divingFish:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - status
+                        nullable: true
+                      lxns:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - status
+                        nullable: true
+                    nullable: true
                 required:
                   - id
                   - createdAt
@@ -574,7 +684,12 @@ paths:
     post:
       tags: &a5
         - job
-      parameters: []
+      parameters:
+        - name: authorization
+          in: header
+          required: true
+          schema:
+            type: string
       operationId: job.create
       requestBody:
         description: Body
@@ -662,6 +777,32 @@ paths:
                       updateScoreDuration:
                         type: number
                         nullable: true
+                      autoExportResult:
+                        type: object
+                        properties:
+                          divingFish:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                          lxns:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                        nullable: true
+                      isAuthenticated:
+                        type: boolean
                       createdAt:
                         type: string
                       updatedAt:
@@ -754,6 +895,32 @@ paths:
                   updateScoreDuration:
                     type: number
                     nullable: true
+                  autoExportResult:
+                    type: object
+                    properties:
+                      divingFish:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - status
+                        nullable: true
+                      lxns:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - status
+                        nullable: true
+                    nullable: true
+                  isAuthenticated:
+                    type: boolean
                   createdAt:
                     type: string
                   updatedAt:
@@ -902,6 +1069,32 @@ paths:
                   updateScoreDuration:
                     type: number
                     nullable: true
+                  autoExportResult:
+                    type: object
+                    properties:
+                      divingFish:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - status
+                        nullable: true
+                      lxns:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - status
+                        nullable: true
+                    nullable: true
+                  isAuthenticated:
+                    type: boolean
                   createdAt:
                     type: string
                   updatedAt:
@@ -999,6 +1192,32 @@ paths:
                       updateScoreDuration:
                         type: number
                         nullable: true
+                      autoExportResult:
+                        type: object
+                        properties:
+                          divingFish:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                          lxns:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                        nullable: true
+                      isAuthenticated:
+                        type: boolean
                       createdAt:
                         type: string
                       updatedAt:
@@ -1131,6 +1350,32 @@ paths:
                   updateScoreDuration:
                     type: number
                     nullable: true
+                  autoExportResult:
+                    type: object
+                    properties:
+                      divingFish:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - status
+                        nullable: true
+                      lxns:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - status
+                        nullable: true
+                    nullable: true
+                  isAuthenticated:
+                    type: boolean
                   createdAt:
                     type: string
                   updatedAt:
@@ -1217,6 +1462,70 @@ paths:
                 type: array
                 items:
                   type: string
+  /job/idle-update/friends/{botFriendCode}/detailed:
+    get:
+      tags: *a5
+      parameters:
+        - name: botFriendCode
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: job.getIdleUpdateFriendsDetailed
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    friendCode:
+                      type: string
+                    lastActiveAt:
+                      type: string
+                      nullable: true
+                  required:
+                    - friendCode
+                    - lastActiveAt
+  /job/users-activity:
+    post:
+      tags: *a5
+      parameters: []
+      operationId: job.getUsersActivity
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                friendCodes:
+                  type: array
+                  items:
+                    type: string
+              required:
+                - friendCodes
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    friendCode:
+                      type: string
+                    lastActiveAt:
+                      type: string
+                      nullable: true
+                  required:
+                    - friendCode
+                    - lastActiveAt
   /job/{jobId}/cache/{diff}/{type}:
     get:
       tags: *a5

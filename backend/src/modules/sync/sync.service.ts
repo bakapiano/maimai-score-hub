@@ -93,7 +93,18 @@ export class SyncService {
       createdAt: sync.createdAt,
       updatedAt: sync.updatedAt,
       scores,
+      autoExportResult: sync.autoExportResult ?? null,
     };
+  }
+
+  async updateAutoExportResult(
+    jobId: string,
+    autoExportResult: {
+      divingFish?: { status: string; message?: string } | null;
+      lxns?: { status: string; message?: string } | null;
+    },
+  ) {
+    await this.syncModel.updateOne({ jobId }, { $set: { autoExportResult } });
   }
 
   private async mapResultToScores(result: any): Promise<ScoreSnapshot[]> {

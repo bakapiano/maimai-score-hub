@@ -13,14 +13,11 @@ const AuthedLayout = lazy(() => import("./layouts/AuthedLayout"));
 const HomePage = lazy(() => import("./pages/HomePage"));
 const ScorePage = lazy(() => import("./pages/ScorePage"));
 const SyncPage = lazy(() => import("./pages/SyncPage"));
-const DebugPage = lazy(() => import("./pages/DebugPage"));
 const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
 const AdminActiveJobsPage = lazy(
   () => import("./pages/admin/AdminActiveJobsPage"),
 );
-const AdminJobDebugPage = lazy(
-  () => import("./pages/admin/AdminJobDebugPage"),
-);
+const AdminJobDebugPage = lazy(() => import("./pages/admin/AdminJobDebugPage"));
 const AdminSyncPage = lazy(() => import("./pages/admin/AdminSyncPage"));
 const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage"));
 const AboutPage = lazy(() => import("./pages/AboutPage"));
@@ -76,7 +73,6 @@ function App() {
                     </MusicProvider>
                   }
                 />
-                <Route path="/app/debug" element={<DebugPage />} />
               </Route>
               <Route path="/about" element={<AboutPage />} />
               <Route path="*" element={<Navigate to="/login" replace />} />

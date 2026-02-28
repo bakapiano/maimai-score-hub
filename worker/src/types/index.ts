@@ -72,6 +72,7 @@ export interface Job {
   executing?: boolean;
   scoreProgress?: ScoreProgress | null;
   updateScoreDuration?: number | null;
+  isAuthenticated?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -1,13 +1,17 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
+  Logger,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { randomUUID } from 'crypto';
 
 import { SyncService } from '../sync/sync.service';
+import { UsersService } from '../users/users.service';
 import { JobTempCacheService } from './cache/temp-cache.service';
 import type {
   JobPatchBody,
@@ -31,9 +35,9 @@ const DEAD_JOB_TIMEOUT_MS = Number(
 );
 
 // [TODO] Change this to 1min
-const MIN_CREATE_INTERVAL_MS = Number(
-  process.env.MIN_CREATE_INTERVAL_MS ?? 1000 * 60,
-);
+// const MIN_CREATE_INTERVAL_MS = Number(
+//   process.env.MIN_CREATE_INTERVAL_MS ?? 1000 * 60,
+// );
 
 function toJobResponse(job: JobEntity): JobResponse {
   return {
@@ -49,6 +53,8 @@ function toJobResponse(job: JobEntity): JobResponse {
     profile: job.profile,
     scoreProgress: job.scoreProgress ?? null,
     updateScoreDuration: job.updateScoreDuration ?? null,
+    autoExportResult: job.autoExportResult ?? null,
+    isAuthenticated: job.isAuthenticated ?? false,
     error: job.error ?? null,
     executing: job.executing,
     createdAt: job.createdAt.toISOString(),
@@ -72,11 +78,15 @@ const VALID_STAGE: readonly JobStage[] = [
 
 @Injectable()
 export class JobService {
+  private readonly logger = new Logger(JobService.name);
+
   constructor(
     @InjectModel(JobEntity.name)
     private readonly jobModel: Model<JobEntity>,
     private readonly syncService: SyncService,
     private readonly tempCacheService: JobTempCacheService,
+    @Inject(forwardRef(() => UsersService))
+    private readonly usersService: UsersService,
   ) {}
 
   async create(input: {
@@ -84,20 +94,22 @@ export class JobService {
     skipUpdateScore: boolean;
     jobType?: JobType;
     botUserFriendCode?: string | null;
+    isAuthenticated?: boolean;
   }) {
     const id = randomUUID();
     const now = new Date();
     const resolvedJobType: JobType = input.jobType ?? 'immediate';
 
-    const recent = await this.jobModel
-      .findOne({ friendCode: input.friendCode })
-      .sort({ createdAt: -1 });
-    if (recent) {
-      const diff = now.getTime() - recent.createdAt.getTime();
-      if (diff < MIN_CREATE_INTERVAL_MS) {
-        throw new BadRequestException('请求过于频繁，请等待一分钟过后重试！');
-      }
-    }
+    // [TODO] 将这个限流改为 ip 黑名单机制，同一时间对于一个 friend code 的请求如果过于频繁就拒绝
+    // const recent = await this.jobModel
+    //   .findOne({ friendCode: input.friendCode })
+    //   .sort({ createdAt: -1 });
+    // if (recent) {
+    //   const diff = now.getTime() - recent.createdAt.getTime();
+    //   if (diff < MIN_CREATE_INTERVAL_MS) {
+    //     throw new BadRequestException('请求过于频繁，请等待一分钟过后重试！');
+    //   }
+    // }
 
     await this.jobModel.updateMany(
       {
@@ -128,6 +140,7 @@ export class JobService {
       executing: false,
       error: null,
       result: undefined,
+      isAuthenticated: input.isAuthenticated ?? false,
       createdAt: now,
       updatedAt: now,
     });
@@ -377,6 +390,13 @@ export class JobService {
       updated.result
     ) {
       await this.syncService.createFromJob(updated.toObject() as JobEntity);
+
+      // Fire-and-forget auto-export
+      this.runAutoExport(jobId, updated.friendCode).catch((err: Error) => {
+        this.logger.error(
+          `Auto-export failed for job ${jobId}: ${err?.message}`,
+        );
+      });
     }
 
     return toJobResponse(updated.toObject() as JobEntity);
@@ -504,5 +524,77 @@ export class JobService {
       createdAt: { $lt: sevenDaysAgo },
     });
     return result.deletedCount;
+  }
+
+  /**
+   * 自动导出：检查用户设置，异步导出到 diving-fish / lxns，
+   * 完成后将结果写回 job.autoExportResult
+   */
+  private async runAutoExport(
+    jobId: string,
+    friendCode: string,
+  ): Promise<void> {
+    const user = await this.usersService.findByFriendCode(friendCode);
+    if (!user) return;
+
+    const userDoc = user as unknown as Record<string, unknown>;
+    const shouldExportDf =
+      !!userDoc.autoExportDivingFish && !!user.divingFishImportToken;
+    const shouldExportLxns = !!userDoc.autoExportLxns && !!user.lxnsImportToken;
+
+    if (!shouldExportDf && !shouldExportLxns) return;
+
+    const exportResult: {
+      divingFish?: { status: string; message?: string } | null;
+      lxns?: { status: string; message?: string } | null;
+    } = {};
+
+    if (shouldExportDf) {
+      try {
+        const res = await this.syncService.exportToDivingFish(
+          friendCode,
+          user.divingFishImportToken!,
+        );
+        exportResult.divingFish = {
+          status: 'success',
+          message: `导出 ${res.exported ?? 0} 条成绩`,
+        };
+        this.logger.log(`Auto-export to DivingFish succeeded for job ${jobId}`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        exportResult.divingFish = { status: 'failed', message: msg };
+        this.logger.warn(
+          `Auto-export to DivingFish failed for job ${jobId}: ${msg}`,
+        );
+      }
+    }
+
+    if (shouldExportLxns) {
+      try {
+        const res = await this.syncService.exportToLxns(
+          friendCode,
+          user.lxnsImportToken!,
+        );
+        exportResult.lxns = {
+          status: 'success',
+          message: `导出 ${res.exported ?? 0} 条成绩`,
+        };
+        this.logger.log(`Auto-export to LXNS succeeded for job ${jobId}`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        exportResult.lxns = { status: 'failed', message: msg };
+        this.logger.warn(`Auto-export to LXNS failed for job ${jobId}: ${msg}`);
+      }
+    }
+
+    // Write results back to the job document and the sync record
+    await Promise.all([
+      this.jobModel.updateOne(
+        { id: jobId },
+        { $set: { autoExportResult: exportResult } },
+      ),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      this.syncService.updateAutoExportResult(jobId, exportResult),
+    ]);
   }
 }

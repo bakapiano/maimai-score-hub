@@ -55,6 +55,11 @@ export interface JobResponse {
   executing?: boolean;
   scoreProgress?: ScoreProgress | null;
   updateScoreDuration?: number | null;
+  autoExportResult?: {
+    divingFish?: { status: string; message?: string } | null;
+    lxns?: { status: string; message?: string } | null;
+  } | null;
+  isAuthenticated?: boolean;
   createdAt: string;
   updatedAt: string;
 }

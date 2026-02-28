@@ -79,6 +79,7 @@ worker/dist
 debug-html/
 friend-vs/
 log/
+data/
 
 *.zip
 backend/score-exports/

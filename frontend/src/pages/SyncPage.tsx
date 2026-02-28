@@ -11,6 +11,7 @@ import {
   PasswordInput,
   Progress,
   Stack,
+  Switch,
   Tabs,
   Text,
   TextInput,
@@ -34,8 +35,10 @@ import { useNavigate } from "react-router-dom";
 
 type UserProfileResponse = {
   friendCode: string;
-  divingFishImportToken: string | null;
-  lxnsImportToken: string | null;
+  hasDivingFishImportToken?: boolean;
+  hasLxnsImportToken?: boolean;
+  autoExportDivingFish?: boolean;
+  autoExportLxns?: boolean;
   profile: UserProfile | null;
 };
 
@@ -44,6 +47,10 @@ type LastSyncInfo = {
   createdAt: string;
   updatedAt: string;
   scores: unknown[];
+  autoExportResult?: {
+    divingFish?: { status: string; message?: string } | null;
+    lxns?: { status: string; message?: string } | null;
+  } | null;
 };
 
 type IdleUpdateStatusResponse = {
@@ -91,14 +98,20 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
     const body = init?.body
       ? (JSON.parse(String(init.body)) as Record<string, unknown>)
       : {};
+    const patchBody: Record<string, string | boolean | null> = {};
+    if ("divingFishImportToken" in body)
+      patchBody.divingFishImportToken =
+        (body.divingFishImportToken as string | null) ?? null;
+    if ("lxnsImportToken" in body)
+      patchBody.lxnsImportToken =
+        (body.lxnsImportToken as string | null) ?? null;
+    if ("autoExportDivingFish" in body)
+      patchBody.autoExportDivingFish = !!body.autoExportDivingFish;
+    if ("autoExportLxns" in body)
+      patchBody.autoExportLxns = !!body.autoExportLxns;
     const res = await usersApi.updateProfile({
       headers: { authorization },
-      body: {
-        divingFishImportToken:
-          (body.divingFishImportToken as string | null | undefined) ?? null,
-        lxnsImportToken:
-          (body.lxnsImportToken as string | null | undefined) ?? null,
-      },
+      body: patchBody,
     });
     return {
       ok: res.status === 200,
@@ -242,6 +255,8 @@ export default function SyncPage() {
   // Token settings
   const [divingFishToken, setDivingFishToken] = useState("");
   const [lxnsToken, setLxnsToken] = useState("");
+  const [editingDivingFishToken, setEditingDivingFishToken] = useState(false);
+  const [editingLxnsToken, setEditingLxnsToken] = useState(false);
 
   // Diving-Fish login mode: "token" or "login"
   const [divingFishMode, setDivingFishMode] = useState<"token" | "login">(
@@ -312,8 +327,6 @@ export default function SyncPage() {
 
     if (res.ok && res.data) {
       setProfile(res.data);
-      setDivingFishToken(res.data.divingFishImportToken ?? "");
-      setLxnsToken(res.data.lxnsImportToken ?? "");
     } else {
       setProfileError(`加载失败 (HTTP ${res.status})`);
     }
@@ -337,8 +350,6 @@ export default function SyncPage() {
 
       if (res.ok && res.data) {
         setProfile(res.data);
-        setDivingFishToken(res.data.divingFishImportToken ?? "");
-        setLxnsToken(res.data.lxnsImportToken ?? "");
 
         // Check for active job after getting friendCode
         if (res.data.friendCode) {
@@ -410,8 +421,16 @@ export default function SyncPage() {
   }, [token]);
 
   // Save tokens (silent, returns success)
+  // Only sends token fields that the user has actually entered a value for
   const saveTokens = async (): Promise<boolean> => {
     if (!token) return false;
+
+    const body: Record<string, string | null> = {};
+    if (divingFishToken) body.divingFishImportToken = divingFishToken;
+    if (lxnsToken) body.lxnsImportToken = lxnsToken;
+
+    // Nothing to save
+    if (Object.keys(body).length === 0) return true;
 
     const res = await fetchJson<unknown>("/api/users/profile", {
       method: "PATCH",
@@ -419,10 +438,7 @@ export default function SyncPage() {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        divingFishImportToken: divingFishToken || null,
-        lxnsImportToken: lxnsToken || null,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (res.ok) {
@@ -430,6 +446,31 @@ export default function SyncPage() {
       return true;
     }
     return false;
+  };
+
+  // Toggle auto-export settings
+  const toggleAutoExport = async (
+    field: "autoExportDivingFish" | "autoExportLxns",
+    value: boolean,
+  ) => {
+    if (!token) return;
+    const res = await fetchJson<unknown>("/api/users/profile", {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ [field]: value }),
+    });
+    if (res.ok) {
+      loadProfile();
+    } else {
+      notifications.show({
+        title: "保存失败",
+        message: "无法更新自动导出设置",
+        color: "red",
+      });
+    }
   };
 
   // Poll job status
@@ -450,6 +491,16 @@ export default function SyncPage() {
           if (job.status === "completed") {
             loadProfile();
             loadLastSync();
+
+            // Re-fetch job after a delay to pick up auto-export results
+            setTimeout(async () => {
+              try {
+                const updated = await getJobById(syncJobId);
+                setSyncStatus(updated);
+              } catch {
+                // ignore
+              }
+            }, 3000);
           }
         }
       } catch {
@@ -529,10 +580,13 @@ export default function SyncPage() {
     setSyncStatus(null);
 
     try {
-      const res = await createJob({
-        friendCode: profile.friendCode,
-        skipUpdateScore: false,
-      });
+      const res = await createJob(
+        {
+          friendCode: profile.friendCode,
+          skipUpdateScore: false,
+        },
+        token!,
+      );
 
       setSyncJobId(res.jobId);
       setSyncStatus(res.job);
@@ -804,6 +858,40 @@ export default function SyncPage() {
             从 maimai DX NET 同步你的最新游戏成绩数据。
           </Text>
 
+          <Card withBorder padding="md" radius="md">
+            <Stack gap="md">
+              <Switch
+                label="同步后自动更新水鱼查分器"
+                description={
+                  !profile?.hasDivingFishImportToken
+                    ? "请先配置水鱼 Import Token"
+                    : undefined
+                }
+                checked={profile?.autoExportDivingFish ?? false}
+                disabled={!profile?.hasDivingFishImportToken}
+                onChange={(e) =>
+                  toggleAutoExport(
+                    "autoExportDivingFish",
+                    e.currentTarget.checked,
+                  )
+                }
+              />
+              <Switch
+                label="同步后自动更新落雪查分器"
+                description={
+                  !profile?.hasLxnsImportToken
+                    ? "请先配置落雪 Personal Token"
+                    : undefined
+                }
+                checked={profile?.autoExportLxns ?? false}
+                disabled={!profile?.hasLxnsImportToken}
+                onChange={(e) =>
+                  toggleAutoExport("autoExportLxns", e.currentTarget.checked)
+                }
+              />
+            </Stack>
+          </Card>
+
           {lastSync && (
             <Card withBorder padding="sm" radius="md">
               <Group justify="space-between" align="center">
@@ -824,17 +912,76 @@ export default function SyncPage() {
                       {lastSync.scores.length} 条
                     </Badge>
                   </Stack>
+                  {lastSync.autoExportResult && (
+                    <Stack gap={2}>
+                      <Text size="xs" c="dimmed">
+                        自动导出
+                      </Text>
+                      <Group gap={4}>
+                        {lastSync.autoExportResult.divingFish && (
+                          <Badge
+                            variant="light"
+                            size="lg"
+                            radius="md"
+                            color={
+                              lastSync.autoExportResult.divingFish.status ===
+                              "success"
+                                ? "green"
+                                : "red"
+                            }
+                          >
+                            水鱼{" "}
+                            {lastSync.autoExportResult.divingFish.status ===
+                            "success"
+                              ? "✓"
+                              : "✗"}
+                          </Badge>
+                        )}
+                        {lastSync.autoExportResult.lxns && (
+                          <Badge
+                            variant="light"
+                            size="lg"
+                            radius="md"
+                            color={
+                              lastSync.autoExportResult.lxns.status ===
+                              "success"
+                                ? "green"
+                                : "red"
+                            }
+                          >
+                            落雪{" "}
+                            {lastSync.autoExportResult.lxns.status === "success"
+                              ? "✓"
+                              : "✗"}
+                          </Badge>
+                        )}
+                      </Group>
+                    </Stack>
+                  )}
                 </Group>
                 <Button
                   onClick={startSync}
-                  loading={syncing}
                   disabled={!profile?.friendCode || syncing}
                   variant="light"
                   size="sm"
                 >
-                  {syncing ? "同步中..." : "更新数据"}
+                  更新数据
                 </Button>
               </Group>
+              {syncing && syncStatus && (
+                <Group gap="xs" mt={4}>
+                  <Loader size="xs" />
+                  <Text size="xs" c="dimmed">
+                    {syncStatus.status === "queued"
+                      ? "正在排队中，请稍候..."
+                      : syncStatus.stage === "send_request"
+                        ? "正在发送好友请求，通常需要等待约 60 秒..."
+                        : syncStatus.stage === "update_score"
+                          ? "正在更新成绩..."
+                          : "同步中..."}
+                  </Text>
+                </Group>
+              )}
             </Card>
           )}
 
@@ -857,12 +1004,25 @@ export default function SyncPage() {
                 </Text>
                 <Button
                   onClick={startSync}
-                  loading={syncing}
                   disabled={!profile?.friendCode || syncing}
                   variant="filled"
                 >
-                  {syncing ? "同步中..." : "开始同步"}
+                  开始同步
                 </Button>
+                {syncing && syncStatus && (
+                  <Group gap="xs">
+                    <Loader size="xs" />
+                    <Text size="xs" c="dimmed">
+                      {syncStatus.status === "queued"
+                        ? "正在排队中，请稍候..."
+                        : syncStatus.stage === "send_request"
+                          ? "正在发送好友请求，通常需要等待约 60 秒..."
+                          : syncStatus.stage === "update_score"
+                            ? "正在更新成绩..."
+                            : "同步中..."}
+                    </Text>
+                  </Group>
+                )}
               </Stack>
             </Card>
           )}
@@ -1016,6 +1176,67 @@ export default function SyncPage() {
                     </Stack>
                   </Alert>
                 )}
+
+                {/* Auto-export results */}
+                {syncStatus.status === "completed" &&
+                  syncStatus.autoExportResult && (
+                    <Stack gap="xs">
+                      <Divider />
+                      <Text size="sm" fw={500} c="dimmed">
+                        自动导出结果
+                      </Text>
+                      {syncStatus.autoExportResult.divingFish && (
+                        <Group gap="xs">
+                          <Text size="sm">水鱼查分器：</Text>
+                          <Badge
+                            variant="light"
+                            size="sm"
+                            color={
+                              syncStatus.autoExportResult.divingFish.status ===
+                              "success"
+                                ? "green"
+                                : "red"
+                            }
+                          >
+                            {syncStatus.autoExportResult.divingFish.status ===
+                            "success"
+                              ? "✓ 成功"
+                              : "✗ 失败"}
+                          </Badge>
+                          {syncStatus.autoExportResult.divingFish.message && (
+                            <Text size="xs" c="dimmed">
+                              {syncStatus.autoExportResult.divingFish.message}
+                            </Text>
+                          )}
+                        </Group>
+                      )}
+                      {syncStatus.autoExportResult.lxns && (
+                        <Group gap="xs">
+                          <Text size="sm">落雪查分器：</Text>
+                          <Badge
+                            variant="light"
+                            size="sm"
+                            color={
+                              syncStatus.autoExportResult.lxns.status ===
+                              "success"
+                                ? "green"
+                                : "red"
+                            }
+                          >
+                            {syncStatus.autoExportResult.lxns.status ===
+                            "success"
+                              ? "✓ 成功"
+                              : "✗ 失败"}
+                          </Badge>
+                          {syncStatus.autoExportResult.lxns.message && (
+                            <Text size="xs" c="dimmed">
+                              {syncStatus.autoExportResult.lxns.message}
+                            </Text>
+                          )}
+                        </Group>
+                      )}
+                    </Stack>
+                  )}
               </Stack>
             </Card>
           )}
@@ -1025,13 +1246,13 @@ export default function SyncPage() {
         <Stack gap="md">
           <Group gap="xs">
             <Text fw={600} size="lg">
-              夜间更新 (Beta)
+              夜间更新
             </Text>
           </Group>
 
           <Text size="sm" c="dimmed">
-            先和 Bot
-            添加好友，在当日凌晨空闲时段自动更新成绩，成功率更高。（注：更新完成后会自动解除好友关系）
+            先添加 Bot
+            为好友，凌晨时段会自动帮你更新成绩，比立即更新成功率更高。更新完成后会自动删好友。
           </Text>
 
           {recentStats && recentStats.totalCount >= 5 && (
@@ -1108,11 +1329,19 @@ export default function SyncPage() {
                     color="red"
                     size="xs"
                     onClick={disableIdleUpdate}
-                    loading={idleUpdateLoading}
+                    disabled={idleUpdateLoading}
                   >
                     关闭
                   </Button>
                 </Group>
+                {idleUpdateLoading && (
+                  <Group gap="xs" mt={4}>
+                    <Loader size="xs" />
+                    <Text size="xs" c="dimmed">
+                      正在关闭夜间更新...
+                    </Text>
+                  </Group>
+                )}
               </Stack>
             </Card>
           )}
@@ -1234,12 +1463,19 @@ export default function SyncPage() {
                   size="xs"
                   leftSection={<IconClock size={14} />}
                   onClick={enableIdleUpdate}
-                  loading={idleUpdateLoading}
                   disabled={!profile?.friendCode || idleUpdateLoading}
                 >
                   开启
                 </Button>
               </Group>
+              {idleUpdateLoading && (
+                <Group gap="xs" mt={4}>
+                  <Loader size="xs" />
+                  <Text size="xs" c="dimmed">
+                    正在创建夜间更新任务...
+                  </Text>
+                </Group>
+              )}
             </Card>
           )}
         </Stack>
@@ -1284,14 +1520,41 @@ export default function SyncPage() {
                     <PasswordInput
                       label="Import Token"
                       placeholder="输入 import token"
-                      value={divingFishToken}
+                      value={
+                        profile?.hasDivingFishImportToken &&
+                        !editingDivingFishToken
+                          ? "••••••••••••••••••••••••••••••••"
+                          : divingFishToken
+                      }
+                      disabled={
+                        !!profile?.hasDivingFishImportToken &&
+                        !editingDivingFishToken
+                      }
                       onChange={(e) => setDivingFishToken(e.target.value)}
                       style={{ flex: 1 }}
                     />
+                    {profile?.hasDivingFishImportToken &&
+                    !editingDivingFishToken ? (
+                      <Button
+                        onClick={() => {
+                          setEditingDivingFishToken(true);
+                          setDivingFishToken("");
+                        }}
+                        variant="subtle"
+                        size="sm"
+                      >
+                        修改
+                      </Button>
+                    ) : null}
                     <Button
                       onClick={exportToDivingFish}
                       loading={exportLoading === "diving-fish"}
-                      disabled={!divingFishToken || exportLoading !== null}
+                      disabled={
+                        (!divingFishToken &&
+                          !profile?.hasDivingFishImportToken) ||
+                        (editingDivingFishToken && !divingFishToken) ||
+                        exportLoading !== null
+                      }
                       variant="light"
                       size="sm"
                     >
@@ -1479,14 +1742,35 @@ export default function SyncPage() {
                 <PasswordInput
                   label="Personal Token"
                   placeholder="输入 personal token"
-                  value={lxnsToken}
+                  value={
+                    profile?.hasLxnsImportToken && !editingLxnsToken
+                      ? "••••••••••••••••••••••••••••••••"
+                      : lxnsToken
+                  }
+                  disabled={!!profile?.hasLxnsImportToken && !editingLxnsToken}
                   onChange={(e) => setLxnsToken(e.target.value)}
                   style={{ flex: 1 }}
                 />
+                {profile?.hasLxnsImportToken && !editingLxnsToken ? (
+                  <Button
+                    onClick={() => {
+                      setEditingLxnsToken(true);
+                      setLxnsToken("");
+                    }}
+                    variant="subtle"
+                    size="sm"
+                  >
+                    修改
+                  </Button>
+                ) : null}
                 <Button
                   onClick={exportToLxns}
                   loading={exportLoading === "lxns"}
-                  disabled={!lxnsToken || exportLoading !== null}
+                  disabled={
+                    (!lxnsToken && !profile?.hasLxnsImportToken) ||
+                    (editingLxnsToken && !lxnsToken) ||
+                    exportLoading !== null
+                  }
                   variant="light"
                   size="sm"
                 >

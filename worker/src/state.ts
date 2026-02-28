@@ -19,8 +19,14 @@ export const runtimeState = {
   /** 当前 OAuth 认证 URL（供 proxy 使用） */
   authUrl: "",
 
+  /** OAuth 完成后的重定向 URL（由前端发起 auth 时传入） */
+  redirectUrl: "",
+
   /** 正在进行中的认证状态 */
-  _ongoingAuth: null as { startedAt: number; timer: ReturnType<typeof setTimeout> } | null,
+  _ongoingAuth: null as {
+    startedAt: number;
+    timer: ReturnType<typeof setTimeout>;
+  } | null,
 
   /** 标记认证开始 */
   startAuth(): void {

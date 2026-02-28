@@ -51,6 +51,8 @@ export class UsersService {
       lxnsImportToken?: string | null;
       profile?: UserNetProfile | null;
       idleUpdateBotFriendCode?: string | null;
+      autoExportDivingFish?: boolean;
+      autoExportLxns?: boolean;
     },
   ) {
     if (!isValidObjectId(id)) {
@@ -69,6 +71,12 @@ export class UsersService {
     }
     if ('idleUpdateBotFriendCode' in input) {
       updateDoc.idleUpdateBotFriendCode = input.idleUpdateBotFriendCode ?? null;
+    }
+    if ('autoExportDivingFish' in input) {
+      updateDoc.autoExportDivingFish = !!input.autoExportDivingFish;
+    }
+    if ('autoExportLxns' in input) {
+      updateDoc.autoExportLxns = !!input.autoExportLxns;
     }
 
     const updated = await this.userModel.findByIdAndUpdate(id, updateDoc, {
@@ -90,6 +98,34 @@ export class UsersService {
       .find({ idleUpdateBotFriendCode: { $ne: null } })
       .lean();
     return users;
+  }
+
+  /**
+   * 更新用户最后活跃时间
+   */
+  async updateLastActiveAt(userId: string): Promise<void> {
+    if (!isValidObjectId(userId)) return;
+    await this.userModel.updateOne(
+      { _id: userId },
+      { lastActiveAt: new Date() },
+    );
+  }
+
+  /**
+   * 批量查询用户活跃度
+   */
+  async getActivityByFriendCodes(
+    friendCodes: string[],
+  ): Promise<{ friendCode: string; lastActiveAt: Date | null }[]> {
+    if (!friendCodes.length) return [];
+    const users = await this.userModel
+      .find({ friendCode: { $in: friendCodes } })
+      .select('friendCode lastActiveAt')
+      .lean();
+    return users.map((u) => ({
+      friendCode: u.friendCode,
+      lastActiveAt: u.lastActiveAt ?? null,
+    }));
   }
 
   /**

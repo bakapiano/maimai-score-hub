@@ -52,4 +52,35 @@ export class IdleUpdateController {
       .filter((u) => u.idleUpdateBotFriendCode === botFriendCode)
       .map((u) => u.friendCode);
   }
+
+  /**
+   * 批量查询用户活跃度
+   */
+  @Post('users-activity')
+  @HttpCode(200)
+  async getUsersActivity(@Body() body: { friendCodes: string[] }) {
+    const results = await this.users.getActivityByFriendCodes(
+      body.friendCodes ?? [],
+    );
+    return results.map((u) => ({
+      friendCode: u.friendCode,
+      lastActiveAt: u.lastActiveAt?.toISOString() ?? null,
+    }));
+  }
+
+  /**
+   * 获取指定 bot 的闲时更新 friendCode 列表（含活跃度信息）
+   */
+  @Get('idle-update/friends/:botFriendCode/detailed')
+  async getIdleUpdateFriendCodesDetailed(
+    @Param('botFriendCode') botFriendCode: string,
+  ) {
+    const users = await this.users.getIdleUpdateUsers();
+    return users
+      .filter((u) => u.idleUpdateBotFriendCode === botFriendCode)
+      .map((u) => ({
+        friendCode: u.friendCode,
+        lastActiveAt: u.lastActiveAt?.toISOString?.() ?? u.lastActiveAt ?? null,
+      }));
+  }
 }

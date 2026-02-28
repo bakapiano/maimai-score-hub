@@ -140,6 +140,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [jobStage, setJobStage] = useState("");
+  const [jobStatusValue, setJobStatusValue] = useState("");
   const [friendRequestSentAt, setFriendRequestSentAt] = useState<string | null>(
     null,
   );
@@ -216,6 +217,9 @@ export default function LoginPage() {
       const stage = (data as any)?.job?.stage;
       if (stage) setJobStage(stage);
 
+      const jobSt = (data as any)?.job?.status ?? data?.status;
+      if (jobSt) setJobStatusValue(String(jobSt));
+
       const sentAt = (data as any)?.job?.friendRequestSentAt;
       if (sentAt) setFriendRequestSentAt(sentAt);
 
@@ -242,6 +246,7 @@ export default function LoginPage() {
       } else if (data?.status === "failed") {
         setPolling(false);
         setJobStage("");
+        setJobStatusValue("");
         setProfile(null);
         try {
           localStorage.removeItem("pendingLoginJobId");
@@ -281,6 +286,7 @@ export default function LoginPage() {
     setPolling(false);
     setProfile(null);
     setJobStage("");
+    setJobStatusValue("");
     setFriendRequestSentAt(null);
     setTimeLeft(0);
     setLowSuccessRate(false);
@@ -475,7 +481,7 @@ export default function LoginPage() {
                           label={
                             <Group gap={4}>
                               <IconClock size={14} />
-                              <Text size="sm">使用夜间更新 (Beta)</Text>
+                              <Text size="sm">使用夜间更新</Text>
                             </Group>
                           }
                           description="先与 Bot 成为好友，在凌晨空闲时段自动更新成绩"
@@ -542,8 +548,8 @@ export default function LoginPage() {
                       <Group justify="center" gap="sm">
                         <Button
                           onClick={startLogin}
-                          disabled={!canLogin}
-                          loading={loading || polling}
+                          disabled={!canLogin || polling}
+                          loading={loading}
                         >
                           登录账户
                         </Button>
@@ -560,6 +566,26 @@ export default function LoginPage() {
                           </Button>
                         )}
                       </Group>
+
+                      {polling && jobStatusValue === "queued" && (
+                        <Group justify="center" gap="xs">
+                          <Loader size="xs" />
+                          <Text size="sm" c="dimmed">
+                            正在排队中，请稍候...
+                          </Text>
+                        </Group>
+                      )}
+
+                      {polling &&
+                        jobStatusValue === "processing" &&
+                        jobStage === "send_request" && (
+                          <Group justify="center" gap="xs">
+                            <Loader size="xs" />
+                            <Text size="sm" c="dimmed">
+                              正在发送好友请求，通常需要等待约 60 秒...
+                            </Text>
+                          </Group>
+                        )}
                     </Stack>
                   </Paper>
 

@@ -201,6 +201,45 @@ export async function getIdleUpdateFriendCodes(
 }
 
 /**
+ * 获取指定 bot 的闲时更新 friendCode 列表（含活跃度信息）
+ */
+export async function getIdleUpdateFriendsDetailed(
+  botFriendCode: string,
+): Promise<{ friendCode: string; lastActiveAt: string | null }[]> {
+  const response = await client.getIdleUpdateFriendsDetailed({
+    params: { botFriendCode },
+  });
+
+  if (response.status !== 200) {
+    throw new Error(
+      `Failed to fetch idle update friends detailed. Status: ${response.status}`,
+    );
+  }
+
+  return response.body;
+}
+
+/**
+ * 批量查询用户活跃度
+ */
+export async function getUsersActivity(
+  friendCodes: string[],
+): Promise<{ friendCode: string; lastActiveAt: string | null }[]> {
+  if (!friendCodes.length) return [];
+  const response = await client.getUsersActivity({
+    body: { friendCodes },
+  });
+
+  if (response.status !== 200) {
+    throw new Error(
+      `Failed to fetch users activity. Status: ${response.status}`,
+    );
+  }
+
+  return response.body;
+}
+
+/**
  * 检查当前 bot 是否是用户的闲时更新 bot
  */
 export async function checkIsIdleUpdateBot(

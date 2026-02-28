@@ -38,11 +38,20 @@ export class JobController {
   ) {}
 
   @Post('create')
-  async create(@Body(new ZodValidationPipe(JobCreateBodySchema)) body: JobCreateBody) {
+  @UseGuards(AuthGuard)
+  async create(
+    @Req() req: AuthedRequest,
+    @Body(new ZodValidationPipe(JobCreateBodySchema)) body: JobCreateBody,
+  ) {
+    // 只能为自己的好友码创建任务
+    if (req.user?.friendCode !== body.friendCode) {
+      throw new BadRequestException('Cannot create jobs for other users');
+    }
 
     const result = await this.jobs.create({
       friendCode: body.friendCode,
       skipUpdateScore: body.skipUpdateScore,
+      isAuthenticated: true,
     });
 
     // 立即更新时，如果用户已开启闲时更新，则自动取消闲时更新

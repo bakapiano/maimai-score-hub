@@ -22,6 +22,9 @@
 - [] 更新完成自动导出水鱼
 - [] TODO idle update 触发 hanlde deploy 打断的情况
 - [] 白 link 无法导入
+- [] 登陆后保持一段时间好友
+- [] 可选更新难度
+- [] 支持不登陆状态下，直接公众号发送好友请求给 bot 来更新
 
   [364] "D✪N’T ST✪P R✪CKIN’" (standard) charts: 0,1,2,3,4
   [383] "Link" (standard) charts: 0,1,2,3

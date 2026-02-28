@@ -6,6 +6,7 @@
 import {
   getActiveFriendCodes,
   getIdleUpdateFriendCodes,
+  getUsersActivity,
 } from "../clients/job-service-client.ts";
 
 import { MaimaiHttpClient } from "./maimai-client.ts";
@@ -136,8 +137,13 @@ export class CleanupService {
       const activeSet = new Set(activeFriendCodes);
       const idleUpdateSet = new Set(idleUpdateFriendCodes);
 
+      // 非闲时更新的好友数
+      const nonIdleFriendCount = friends.filter(
+        (fc) => !idleUpdateSet.has(fc),
+      ).length;
+
       console.log(
-        `[CleanupService] Bot ${botFriendCode} has ${activeFriendCodes.length} active jobs, ${idleUpdateFriendCodes.length} idle update friends`,
+        `[CleanupService] Bot ${botFriendCode} has ${activeFriendCodes.length} active jobs, ${idleUpdateFriendCodes.length} idle update friends, ${nonIdleFriendCount} non-idle friends`,
       );
 
       // 3. 取消不在活跃列表中的好友请求（好友请求仍然定期清理）
@@ -158,11 +164,32 @@ export class CleanupService {
         }
       }
 
-      // 4. 删除不在活跃列表中且不在闲时更新列表中的好友
-      const friendsToRemove = friends.filter(
-        (friendCode) =>
-          !activeSet.has(friendCode) && !idleUpdateSet.has(friendCode),
-      );
+      // 4. 当非闲时更新好友 > 20 时，按活跃度排序，保留最活跃的 20 个，淘汰其余
+      let friendsToRemove: string[] = [];
+      if (nonIdleFriendCount > 20) {
+        // 找出所有非闲时更新的好友
+        const nonIdleFriends = friends.filter((fc) => !idleUpdateSet.has(fc));
+        // 查询这些用户的活跃度
+        const activityData = await getUsersActivity(nonIdleFriends);
+        const activityMap = new Map(
+          activityData.map((u) => [u.friendCode, u.lastActiveAt]),
+        );
+        // 按 lastActiveAt 降序排序（最活跃的排前面，null 排最后）
+        nonIdleFriends.sort((a, b) => {
+          const ta = activityMap.get(a);
+          const tb = activityMap.get(b);
+          if (!ta && !tb) return 0;
+          if (!ta) return 1;
+          if (!tb) return -1;
+          return new Date(tb).getTime() - new Date(ta).getTime();
+        });
+        // 保留前 20 个，淘汰其余
+        friendsToRemove = nonIdleFriends.slice(20);
+        console.log(
+          `[CleanupService] Bot ${botFriendCode} has ${nonIdleFriendCount} non-idle friends (> 20), evicting ${friendsToRemove.length} least-active friends`,
+        );
+      }
+
       for (const friendCode of friendsToRemove) {
         try {
           console.log(`[CleanupService] Removing friend ${friendCode}`);

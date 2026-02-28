@@ -13,8 +13,11 @@ const client = initClient(jobContract, {
   baseUrl: '/api',
 });
 
-export async function createJob(body: JobCreateBody): Promise<JobCreateResponse> {
-  const response = await client.create({ body });
+export async function createJob(body: JobCreateBody, authToken: string): Promise<JobCreateResponse> {
+  const response = await client.create({
+    body,
+    headers: { authorization: `Bearer ${authToken}` },
+  });
   if (response.status !== 201) {
     throw new Error(`Unexpected status: ${response.status}`);
   }
