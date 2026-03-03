@@ -83,23 +83,47 @@ export class MaimaiHttpClient {
   jobId: string | null = null;
 
   // =========================================================================
-  // 全局限流 —— 所有实例共享，保证相邻请求发起时间间隔 ≥ 2 秒以防限流
+  // 全局限流 —— 所有实例共享，保证相邻请求发起时间间隔 ≥ 2.5 秒以防限流
   // =========================================================================
   /** 请求发起间最小间隔（毫秒） */
-  private static readonly REQUEST_INTERVAL_MS = 2_000;
+  private static readonly REQUEST_INTERVAL_MS = 2_500;
   /** 上一次请求发起的时间戳 */
   private static lastRequestStartTime = 0;
   /** 限流锁：保证等待+更新时间戳的原子性 */
   private static throttleLock: Promise<void> = Promise.resolve();
+  /** 全局冻结截止时间：收到 567 后冻结所有请求 300 秒 */
+  private static frozenUntil = 0;
+  /** 冻结时长（毫秒） */
+  private static readonly FREEZE_DURATION_MS = 60_000;
+
+  /**
+   * 触发全局冻结，所有请求将等待至冻结结束
+   */
+  private static freeze(): void {
+    MaimaiHttpClient.frozenUntil =
+      Date.now() + MaimaiHttpClient.FREEZE_DURATION_MS;
+    console.log(
+      `[MaimaiClient] 全局冻结 ${MaimaiHttpClient.FREEZE_DURATION_MS / 1000} 秒，所有请求将暂停`,
+    );
+  }
 
   /**
    * 等待直到距上次请求发起时间 ≥ REQUEST_INTERVAL_MS，然后标记本次发起时间
-   * 请求本身不串行，仅发起时间点串行排队
+   * 同时检查全局冻结状态，若被冻结则等待至解冻
    */
   private static async waitForSlot(): Promise<void> {
     return new Promise<void>((resolve) => {
       MaimaiHttpClient.throttleLock = MaimaiHttpClient.throttleLock.then(
         async () => {
+          // 检查全局冻结
+          const freezeRemaining = MaimaiHttpClient.frozenUntil - Date.now();
+          if (freezeRemaining > 0) {
+            console.log(
+              `[MaimaiClient] 请求等待全局冻结解除，剩余 ${Math.ceil(freezeRemaining / 1000)} 秒`,
+            );
+            await sleep(freezeRemaining);
+          }
+
           const now = Date.now();
           const elapsed = now - MaimaiHttpClient.lastRequestStartTime;
           const waitTime = MaimaiHttpClient.REQUEST_INTERVAL_MS - elapsed;
@@ -188,7 +212,7 @@ export class MaimaiHttpClient {
           throw new CookieExpiredError(`Cookie 已失效 (HTTP ${result.status})`);
         }
 
-        // 567 限流：单独计算重试次数，不消耗普通重试次数
+        // 567 限流：触发全局冻结 60 秒，然后重试
         if (result.status === 567) {
           rateLimitCount++;
           console.log(
@@ -199,14 +223,8 @@ export class MaimaiHttpClient {
               `请求被限流 (HTTP 567)，已重试 ${rateLimitCount} 次仍未成功`,
             );
           }
-          const baseDelay = Math.min(
-            RETRY.rateLimitBaseDelayMs * Math.pow(2, rateLimitCount - 1),
-            RETRY.rateLimitMaxDelayMs,
-          );
-          const jitter = Math.random() * baseDelay * 0.5;
-          const delay = Math.round(baseDelay + jitter);
-          console.log(`[MaimaiClient] 限流等待 ${delay}ms 后重试...`);
-          await sleep(delay);
+          // 全局冻结：所有 MaimaiHttpClient 实例的请求都会等待 60 秒
+          MaimaiHttpClient.freeze();
           i--; // 不消耗普通重试次数
           continue;
         }
