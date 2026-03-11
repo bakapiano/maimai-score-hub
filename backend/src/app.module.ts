@@ -39,7 +39,12 @@ import { UsersModule } from './modules/users/users.module';
           uri = `mongodb://${host}:${port}/${db}`;
         }
 
-        return { uri };
+        return {
+          uri,
+          serverSelectionTimeoutMS: 30000,
+          retryWrites: true,
+          retryReads: true,
+        };
       },
     }),
     AuthModule,
