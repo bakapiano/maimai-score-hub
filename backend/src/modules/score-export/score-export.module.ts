@@ -4,6 +4,7 @@ import { SyncEntity, SyncSchema } from '../sync/sync.schema';
 
 import { AuthModule } from '../auth/auth.module';
 import { CoverModule } from '../cover/cover.module';
+import { UsersModule } from '../users/users.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScoreExportController } from './score-export.controller';
 import { ScoreExportService } from './score-export.service';
@@ -12,6 +13,7 @@ import { ScoreExportService } from './score-export.service';
   imports: [
     forwardRef(() => AuthModule),
     CoverModule,
+    forwardRef(() => UsersModule),
     MongooseModule.forFeature([
       { name: SyncEntity.name, schema: SyncSchema },
       { name: MusicEntity.name, schema: MusicSchema },

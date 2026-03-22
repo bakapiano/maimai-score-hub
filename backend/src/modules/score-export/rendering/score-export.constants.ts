@@ -6,6 +6,15 @@ export const LEVEL_COLORS = [
   '#dc9fff',
 ];
 
+/** Song ID colors per difficulty – original maimaiDX id_color. */
+export const ID_COLORS = [
+  '#81d955', // Basic
+  '#f5bd15', // Advanced
+  '#ff818d', // Expert
+  '#9f51dc', // Master
+  '#8a00e2', // Re:Master
+];
+
 export const DIFFICULTY_NAMES = [
   'Basic',
   'Advanced',
@@ -51,4 +60,4 @@ export const VERSION_ORDER: string[] = [
 ];
 
 export const FONT_FAMILY =
-  '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "SimHei", "Segoe UI", sans-serif';
+  '"Resource Han Rounded CN", "Torus", "PingFang SC", "Noto Sans CJK SC", sans-serif';

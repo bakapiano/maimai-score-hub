@@ -10,6 +10,8 @@ import { MusicEntity } from '../music/music.schema';
 import type { ChartPayload, MusicDocument } from '../music/music.schema';
 import { SyncEntity } from '../sync/sync.schema';
 import type { SyncDocument, SyncScore } from '../sync/sync.schema';
+import { UsersService } from '../users/users.service';
+import type { UserNetProfile } from '../users/user.types';
 import { ensureFontsLoaded } from './rendering/score-export.fonts';
 import {
   buildLevelBuckets,
@@ -36,6 +38,7 @@ export class ScoreExportService {
     @InjectModel(MusicEntity.name)
     private readonly musicModel: Model<MusicDocument>,
     private readonly covers: CoverService,
+    private readonly users: UsersService,
   ) {}
 
   async generateBest50Image(friendCode: string): Promise<Buffer> {
@@ -44,6 +47,15 @@ export class ScoreExportService {
     const summary = buildRatingSummary(scores);
     if (!summary) {
       throw new NotFoundException('No rating data');
+    }
+
+    // Load user profile for header display
+    let profile: UserNetProfile | null = null;
+    try {
+      const user = await this.users.findByFriendCode(friendCode);
+      profile = user?.profile ?? null;
+    } catch {
+      // Profile is optional, continue without it
     }
 
     const newCards = summary.newTop.map((score) =>
@@ -60,9 +72,10 @@ export class ScoreExportService {
         oldSum: summary.oldSum,
         newCards,
         oldCards,
+        profile,
       },
       (musicId) => this.loadCoverImage(musicId),
-      (icon) => this.loadIconImage(icon),
+      (url) => this.loadRemoteImage(url),
     );
   }
 
@@ -222,6 +235,16 @@ export class ScoreExportService {
     }
 
     return null;
+  }
+
+  private async loadRemoteImage(
+    url: string,
+  ): Promise<Awaited<ReturnType<typeof loadImage>> | null> {
+    try {
+      return await loadImage(url);
+    } catch {
+      return null;
+    }
   }
 
   private async loadIconImage(
