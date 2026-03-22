@@ -231,16 +231,15 @@ export class ScoreExportService {
       return this.iconCache.get(icon)!;
     }
 
-    const url = `https://maimai.wahlap.com/maimai-mobile/img/music_icon_${icon}.png`;
+    const iconPath = join(
+      process.cwd(),
+      'assets',
+      'icons',
+      `music_icon_${icon}.png`,
+    );
 
     try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        this.iconCache.set(icon, null);
-        return null;
-      }
-      const buf = Buffer.from(await res.arrayBuffer());
-      const img = await loadImage(buf);
+      const img = await loadImage(iconPath);
       this.iconCache.set(icon, img);
       return img;
     } catch {
