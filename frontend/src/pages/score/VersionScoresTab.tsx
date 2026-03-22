@@ -221,7 +221,7 @@ export function VersionScoresTab({
   );
   const versionOptions = buckets.map((b) => ({
     value: b.versionKey,
-    label: b.versionKey,
+    label: b.versionKey.charAt(0).toUpperCase() + b.versionKey.slice(1),
   }));
   const current =
     buckets.find((b) => b.versionKey === selectedVersion) ?? buckets[0];
