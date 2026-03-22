@@ -44,6 +44,12 @@ jobs:
             cd backend
             sudo $COMPOSE_CMD build
 
+            # Ensure umami services are up
+            sudo $COMPOSE_CMD up -d umami-db umami
+
+            # Reload nginx config without downtime
+            sudo $COMPOSE_CMD exec nginx nginx -s reload || sudo $COMPOSE_CMD up -d nginx
+
             # Clean up any unhealthy containers from previous failed deployments
             echo "Cleaning up unhealthy containers..."
             UNHEALTHY_IDS=$(sudo $COMPOSE_CMD ps -q --filter "health=unhealthy" backend || true)

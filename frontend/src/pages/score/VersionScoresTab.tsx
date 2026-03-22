@@ -176,8 +176,6 @@ export function VersionScoresTab({
     DEFAULT_DISPLAY_FILTER,
   );
 
-
-
   const handleScoreClick = (entry: ChartEntry) => {
     setSelectedScore({
       musicId: entry.music.id,
@@ -350,11 +348,13 @@ export function VersionScoresTab({
             />
 
             {current.levels.map((level, idx) => {
-              const visibleItems = (showAllLevels
-                ? level.items
-                : level.items.filter(
-                    (entry) => detailSortValue(entry.chart) >= detailThreshold,
-                  )
+              const visibleItems = (
+                showAllLevels
+                  ? level.items
+                  : level.items.filter(
+                      (entry) =>
+                        detailSortValue(entry.chart) >= detailThreshold,
+                    )
               ).filter((entry) =>
                 matchesScoreFilter(
                   entry.score?.score || entry.score?.dxScore || null,
@@ -365,12 +365,13 @@ export function VersionScoresTab({
               const isLastVisible = (() => {
                 for (let j = idx + 1; j < current.levels.length; j++) {
                   const nxt = current.levels[j];
-                  const nxtVisible = (showAllLevels
-                    ? nxt.items
-                    : nxt.items.filter(
-                        (entry) =>
-                          detailSortValue(entry.chart) >= detailThreshold,
-                      )
+                  const nxtVisible = (
+                    showAllLevels
+                      ? nxt.items
+                      : nxt.items.filter(
+                          (entry) =>
+                            detailSortValue(entry.chart) >= detailThreshold,
+                        )
                   ).filter((entry) =>
                     matchesScoreFilter(
                       entry.score?.score || entry.score?.dxScore || null,
@@ -428,7 +429,9 @@ export function VersionScoresTab({
               <Button
                 size="xs"
                 variant="light"
-                onClick={() => startTransition(() => setShowAllLevels((v) => !v))}
+                onClick={() =>
+                  startTransition(() => setShowAllLevels((v) => !v))
+                }
                 leftSection={
                   showAllLevels ? (
                     <IconChevronUp size={16} />
