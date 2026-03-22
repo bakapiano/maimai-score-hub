@@ -1,11 +1,14 @@
-/* Prevent horizontal scrolling on the entire app */
-html,
-body {
-  overflow-x: hidden;
-  max-width: 100vw;
+/* Always reserve space for vertical scrollbar to prevent layout shift */
+html {
+  overflow-y: scroll;
 }
 
-#root {
-  overflow-x: hidden;
-  max-width: 100vw;
+/* Prevent Mantine AppShell.Main from creating its own scrollbar */
+.mantine-AppShell-main {
+  overflow: visible !important;
+}
+
+/* Disable Mantine default active press effect (translateY) to prevent button shift */
+.mantine-active:active {
+  transform: none;
 }

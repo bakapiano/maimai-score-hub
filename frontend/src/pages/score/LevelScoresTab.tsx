@@ -30,6 +30,12 @@ import {
   type DetailedMusicScoreCardProps,
 } from "../../components/MusicScoreCard";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
+import {
+  ScoreDisplayFilter,
+  type DisplayFilterSettings,
+  DEFAULT_DISPLAY_FILTER,
+  matchesScoreFilter,
+} from "../../components/ScoreDisplayFilter";
 import type { SyncScore } from "../../types/syncScore";
 import classes from "./LevelScoresTab.module.css";
 import { useAuth } from "../../providers/AuthProvider";
@@ -152,6 +158,9 @@ export function LevelScoresTab({
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [exporting, setExporting] = useState(false);
+  const [displayFilter, setDisplayFilter] = useState<DisplayFilterSettings>(
+    DEFAULT_DISPLAY_FILTER,
+  );
 
   // Modal state
   const [modalOpened, setModalOpened] = useState(false);
@@ -206,6 +215,15 @@ export function LevelScoresTab({
     if (!current) return [];
     return current.details.flatMap((d) => d.items);
   }, [current]);
+
+  const currentFilteredItems = useMemo(() => {
+    return currentAllItems.filter((entry) =>
+      matchesScoreFilter(
+        entry.score?.score || entry.score?.dxScore || null,
+        displayFilter,
+      ),
+    );
+  }, [currentAllItems, displayFilter]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -294,15 +312,21 @@ export function LevelScoresTab({
           <Title order={4} size="h5">
             按详细定数查看
           </Title>
-          <Button
-            size="xs"
-            variant="default"
-            leftSection={<IconDownload size={14} />}
-            onClick={handleExport}
-            loading={exporting}
-          >
-            导出图片
-          </Button>
+          <Group gap="xs">
+            <ScoreDisplayFilter
+              value={displayFilter}
+              onChange={setDisplayFilter}
+            />
+            <Button
+              size="xs"
+              variant="default"
+              leftSection={<IconDownload size={14} />}
+              onClick={handleExport}
+              loading={exporting}
+            >
+              导出图片
+            </Button>
+          </Group>
         </Group>
 
         {buckets.length > 0 && (
@@ -317,8 +341,9 @@ export function LevelScoresTab({
               style={{
                 position: "absolute",
                 left: 0,
-                top: "50%",
-                transform: "translateY(-50%)",
+                top: 0,
+                bottom: 0,
+                margin: "auto 0",
                 zIndex: 10,
                 boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
               }}
@@ -368,8 +393,9 @@ export function LevelScoresTab({
               style={{
                 position: "absolute",
                 right: 0,
-                top: "50%",
-                transform: "translateY(-50%)",
+                top: 0,
+                bottom: 0,
+                margin: "auto 0",
                 zIndex: 10,
                 boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
               }}
@@ -380,11 +406,11 @@ export function LevelScoresTab({
         )}
       </Box>
 
-      {current && currentAllItems.length > 0 && (
+      {current && currentFilteredItems.length > 0 && (
         <ScoreSummaryCard
-          rankSummary={summarizeRanks(currentAllItems)}
-          statusSummary={summarizeStatuses(currentAllItems)}
-          averageScore={calculateAverageScore(currentAllItems)}
+          rankSummary={summarizeRanks(currentFilteredItems)}
+          statusSummary={summarizeStatuses(currentFilteredItems)}
+          averageScore={calculateAverageScore(currentFilteredItems)}
         />
       )}
 
@@ -410,45 +436,55 @@ export function LevelScoresTab({
           </Text>
         ) : (
           <Stack gap="lg">
-            {current.details.map((detail, idx) => (
-              <Stack key={`${current.levelKey}-${detail.detailKey}`} gap="xs">
-                <Group align="center">
-                  <Text fw={700}>{detail.detailKey}</Text>
-                </Group>
-                <CombinedBadges
-                  rankSummary={summarizeRanks(detail.items)}
-                  statusSummary={summarizeStatuses(detail.items)}
-                />
-                <Group
-                  gap="sm"
-                  align="stretch"
-                  wrap="wrap"
-                  style={{ width: "100%" }}
-                >
-                  {detail.items.map((entry) => (
-                    <div
-                      key={`${entry.music.id}-${entry.chartIndex}`}
-                      style={{ cursor: "pointer" }}
-                      onClick={() => handleScoreClick(entry)}
-                    >
-                      <MinimalMusicScoreCard
-                        musicId={entry.music.id}
-                        chartIndex={entry.chartIndex}
-                        type={entry.music.type}
-                        score={
-                          entry.score?.score || entry.score?.dxScore || null
-                        }
-                        fs={entry.score?.fs ?? null}
-                        fc={entry.score?.fc ?? null}
-                      />
-                    </div>
-                  ))}
-                </Group>
-                {idx < current.details.length - 1 && (
-                  <Divider variant="dashed" mt="md" mb="0" />
-                )}
-              </Stack>
-            ))}
+            {current.details.map((detail, idx) => {
+              const filteredItems = detail.items.filter((entry) =>
+                matchesScoreFilter(
+                  entry.score?.score || entry.score?.dxScore || null,
+                  displayFilter,
+                ),
+              );
+              if (filteredItems.length === 0) return null;
+              return (
+                <Stack key={`${current.levelKey}-${detail.detailKey}`} gap="xs">
+                  <Group align="center">
+                    <Text fw={700}>{detail.detailKey}</Text>
+                  </Group>
+                  <CombinedBadges
+                    rankSummary={summarizeRanks(filteredItems)}
+                    statusSummary={summarizeStatuses(filteredItems)}
+                  />
+                  <Group
+                    gap="sm"
+                    align="stretch"
+                    wrap="wrap"
+                    style={{ width: "100%" }}
+                  >
+                    {filteredItems.map((entry) => (
+                      <div
+                        key={`${entry.music.id}-${entry.chartIndex}`}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => handleScoreClick(entry)}
+                      >
+                        <MinimalMusicScoreCard
+                          musicId={entry.music.id}
+                          chartIndex={entry.chartIndex}
+                          type={entry.music.type}
+                          score={
+                            entry.score?.score || entry.score?.dxScore || null
+                          }
+                          fs={entry.score?.fs ?? null}
+                          fc={entry.score?.fc ?? null}
+                          displaySettings={displayFilter}
+                        />
+                      </div>
+                    ))}
+                  </Group>
+                  {idx < current.details.length - 1 && (
+                    <Divider variant="dashed" mt="md" mb="0" />
+                  )}
+                </Stack>
+              );
+            })}
           </Stack>
         )}
       </Box>

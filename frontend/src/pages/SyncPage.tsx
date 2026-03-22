@@ -1237,8 +1237,8 @@ export default function SyncPage() {
           </Group>
 
           <Text size="sm" c="dimmed">
-            先添加 Bot
-            为好友，凌晨时段会自动帮你更新成绩，比立即更新成功率更高。更新完成后会自动删好友。
+            添加 Bot
+            为好友但不立即更新，在凌晨高成功率时段自动更新成绩；推荐在当前立即更新成功率较低的时候使用
           </Text>
 
           {recentStats && recentStats.totalCount >= 5 && (

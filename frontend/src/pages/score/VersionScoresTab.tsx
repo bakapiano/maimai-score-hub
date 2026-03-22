@@ -30,6 +30,12 @@ import {
   type DetailedMusicScoreCardProps,
 } from "../../components/MusicScoreCard";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
+import {
+  ScoreDisplayFilter,
+  type DisplayFilterSettings,
+  DEFAULT_DISPLAY_FILTER,
+  matchesScoreFilter,
+} from "../../components/ScoreDisplayFilter";
 import type { SyncScore } from "../../types/syncScore";
 import { getVersionSortIndex } from "../../constants/versions";
 import { useAuth } from "../../providers/AuthProvider";
@@ -166,6 +172,11 @@ export function VersionScoresTab({
 
   // Export all levels toggle
   const [exportAllLevels, setExportAllLevels] = useState(false);
+  const [displayFilter, setDisplayFilter] = useState<DisplayFilterSettings>(
+    DEFAULT_DISPLAY_FILTER,
+  );
+
+
 
   const handleScoreClick = (entry: ChartEntry) => {
     setSelectedScore({
@@ -220,13 +231,19 @@ export function VersionScoresTab({
   const currentVisibleEntries = useMemo(() => {
     if (!current) return [] as ChartEntry[];
     return current.levels.flatMap((lvl) =>
-      showAllLevels
+      (showAllLevels
         ? lvl.items
         : lvl.items.filter(
             (entry) => detailSortValue(entry.chart) >= detailThreshold,
-          ),
+          )
+      ).filter((entry) =>
+        matchesScoreFilter(
+          entry.score?.score || entry.score?.dxScore || null,
+          displayFilter,
+        ),
+      ),
     );
-  }, [current, showAllLevels]);
+  }, [current, showAllLevels, displayFilter]);
 
   const handleExport = async (minLevel?: number) => {
     if (!token || !current) return;
@@ -275,7 +292,11 @@ export function VersionScoresTab({
             按版本查看
           </Title>
         </Group>
-        <Group gap="sm" align="center">
+        <Group gap="xs" align="center">
+          <ScoreDisplayFilter
+            value={displayFilter}
+            onChange={setDisplayFilter}
+          />
           <Switch
             size="xs"
             labelPosition="left"
@@ -329,21 +350,33 @@ export function VersionScoresTab({
             />
 
             {current.levels.map((level, idx) => {
-              const visibleItems = showAllLevels
+              const visibleItems = (showAllLevels
                 ? level.items
                 : level.items.filter(
                     (entry) => detailSortValue(entry.chart) >= detailThreshold,
-                  );
+                  )
+              ).filter((entry) =>
+                matchesScoreFilter(
+                  entry.score?.score || entry.score?.dxScore || null,
+                  displayFilter,
+                ),
+              );
               if (visibleItems.length === 0) return null;
               const isLastVisible = (() => {
                 for (let j = idx + 1; j < current.levels.length; j++) {
                   const nxt = current.levels[j];
-                  const nxtVisible = showAllLevels
+                  const nxtVisible = (showAllLevels
                     ? nxt.items
                     : nxt.items.filter(
                         (entry) =>
                           detailSortValue(entry.chart) >= detailThreshold,
-                      );
+                      )
+                  ).filter((entry) =>
+                    matchesScoreFilter(
+                      entry.score?.score || entry.score?.dxScore || null,
+                      displayFilter,
+                    ),
+                  );
                   if (nxtVisible.length > 0) return false;
                 }
                 return true;
@@ -379,6 +412,7 @@ export function VersionScoresTab({
                           }
                           fs={entry.score?.fs ?? null}
                           fc={entry.score?.fc ?? null}
+                          displaySettings={displayFilter}
                         />
                       </div>
                     ))}
@@ -394,7 +428,7 @@ export function VersionScoresTab({
               <Button
                 size="xs"
                 variant="light"
-                onClick={() => setShowAllLevels((v) => !v)}
+                onClick={() => startTransition(() => setShowAllLevels((v) => !v))}
                 leftSection={
                   showAllLevels ? (
                     <IconChevronUp size={16} />
