@@ -1,6 +1,7 @@
-/* Always reserve space for vertical scrollbar to prevent layout shift */
+/* Always reserve space for vertical scrollbar to prevent layout shift when modals open */
 html {
   overflow-y: scroll;
+  scrollbar-gutter: stable;
 }
 
 /* Prevent Mantine AppShell.Main from creating its own scrollbar */

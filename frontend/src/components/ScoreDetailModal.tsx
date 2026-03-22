@@ -24,6 +24,7 @@ export function ScoreDetailModal({
       size="auto"
       padding={0}
       withCloseButton={false}
+      lockScroll={false}
       radius="lg"
       overlayProps={{
         backgroundOpacity: 0.65,
