@@ -34,12 +34,6 @@ require('node:dns').lookup = function patchedLookup(
   return _origLookup.call(this, hostname, options as never, callback as never);
 };
 
-
-
-
-
-
-
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   // Match the legacy job-service payload size expectations (job result can be large)
