@@ -36,6 +36,12 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/** Redirect to /app if logged in, otherwise to /login */
+function DefaultRedirect() {
+  const { token, offline } = useAuth();
+  return <Navigate to={token || offline ? "/app" : "/login"} replace />;
+}
+
 function App() {
   const systemSans =
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji'";
@@ -75,7 +81,7 @@ function App() {
                 />
               </Route>
               <Route path="/about" element={<AboutPage />} />
-              <Route path="*" element={<Navigate to="/login" replace />} />
+              <Route path="*" element={<DefaultRedirect />} />
             </Routes>
           </Suspense>
         </AuthProvider>
