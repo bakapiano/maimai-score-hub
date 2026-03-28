@@ -246,6 +246,18 @@ export class ScoreExportService {
     Awaited<ReturnType<typeof loadImage>> | null
   >();
 
+  /**
+   * Load a remote image by URL.
+   *
+   * We intentionally avoid passing the URL directly to `loadImage()` because
+   * its internal HTTP client (Rust/napi) bypasses Node.js DNS resolution,
+   * and Docker's embedded DNS returns SERVFAIL for AAAA queries on some CDNs
+   * (e.g. maimai.wahlap.com), causing ~5 s hangs per request.
+   *
+   * Instead we use Node.js `fetch` (which honours our dns.lookup monkey-patch
+   * for IPv4-only resolution) to download the image bytes, then decode them
+   * with `loadImage(Buffer)`.
+   */
   private async loadRemoteImage(
     url: string,
   ): Promise<Awaited<ReturnType<typeof loadImage>> | null> {
@@ -253,17 +265,23 @@ export class ScoreExportService {
       return this.remoteImageCache.get(url)!;
     }
     try {
-      const result = await Promise.race([
-        loadImage(url),
-        new Promise<null>((resolve) =>
-          setTimeout(
-            () => resolve(null),
-            ScoreExportService.REMOTE_IMAGE_TIMEOUT_MS,
-          ),
-        ),
-      ]);
-      this.remoteImageCache.set(url, result);
-      return result;
+      const controller = new AbortController();
+      const timer = setTimeout(
+        () => controller.abort(),
+        ScoreExportService.REMOTE_IMAGE_TIMEOUT_MS,
+      );
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        this.remoteImageCache.set(url, null);
+        return null;
+      }
+
+      const buf = Buffer.from(await res.arrayBuffer());
+      const img = await loadImage(buf);
+      this.remoteImageCache.set(url, img);
+      return img;
     } catch {
       this.remoteImageCache.set(url, null);
       return null;
