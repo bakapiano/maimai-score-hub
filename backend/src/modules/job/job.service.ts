@@ -189,14 +189,17 @@ export class JobService {
       { $group: { _id: '$botUserFriendCode', count: { $sum: 1 } } },
     ]);
 
-    const minOtherCount =
-      otherBotCounts.length > 0
-        ? Math.min(...otherBotCounts.map((b) => b.count))
-        : 0;
+    // When no other bots have processing jobs, skip the balance check entirely
+    // so the only active bot is not artificially capped at 2.
+    const shouldBalanceCheck = otherBotCounts.length > 0;
+    const minOtherCount = shouldBalanceCheck
+      ? Math.min(...otherBotCounts.map((b) => b.count))
+      : 0;
 
     // Only claim new queued job if this bot's active count is not too far ahead of others.
     // Allow up to 1 more than the minimum, so a single bot going offline won't block others.
-    if (activeCountForThisBot <= minOtherCount + 1) {
+    // When this is the only active bot, skip the check entirely.
+    if (!shouldBalanceCheck || activeCountForThisBot <= minOtherCount + 1) {
       // Find the oldest unassigned queued job
       const candidates = await this.jobModel
         .find({ status: 'queued', executing: false, botUserFriendCode: null })
