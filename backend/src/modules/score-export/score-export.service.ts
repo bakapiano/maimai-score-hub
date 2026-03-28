@@ -237,12 +237,35 @@ export class ScoreExportService {
     return null;
   }
 
+  /** Timeout for remote image fetches (ms) */
+  private static readonly REMOTE_IMAGE_TIMEOUT_MS = 3_000;
+
+  /** Cache for remote images (avatar, rank icons, etc.) */
+  private readonly remoteImageCache = new Map<
+    string,
+    Awaited<ReturnType<typeof loadImage>> | null
+  >();
+
   private async loadRemoteImage(
     url: string,
   ): Promise<Awaited<ReturnType<typeof loadImage>> | null> {
+    if (this.remoteImageCache.has(url)) {
+      return this.remoteImageCache.get(url)!;
+    }
     try {
-      return await loadImage(url);
+      const result = await Promise.race([
+        loadImage(url),
+        new Promise<null>((resolve) =>
+          setTimeout(
+            () => resolve(null),
+            ScoreExportService.REMOTE_IMAGE_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+      this.remoteImageCache.set(url, result);
+      return result;
     } catch {
+      this.remoteImageCache.set(url, null);
       return null;
     }
   }

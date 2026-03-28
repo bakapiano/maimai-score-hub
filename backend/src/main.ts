@@ -1,12 +1,23 @@
-import { json, urlencoded } from 'express';
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { json, urlencoded } from 'express';
 
 import { AddressInfo } from 'net';
 import { AppModule } from './app.module';
 import { NestFactory } from '@nestjs/core';
-import swaggerUi from 'swagger-ui-express';
 import { parse } from 'yaml';
+import { resolve } from 'node:path';
+import { setDefaultResultOrder } from 'node:dns';
+import swaggerUi from 'swagger-ui-express';
+
+// Force IPv4-first DNS resolution to avoid 5s hangs caused by
+// AAAA SERVFAIL responses from some CDNs (e.g. maimai.wahlap.com).
+setDefaultResultOrder('ipv4first');
+
+
+
+
+
+
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
