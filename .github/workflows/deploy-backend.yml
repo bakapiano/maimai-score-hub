@@ -53,7 +53,7 @@ jobs:
             fi
 
             # Rolling update with zero downtime
-            sudo $COMPOSE_CMD up -d --no-deps --scale backend=2 backend
+            sudo $COMPOSE_CMD up -d --no-deps --force-recreate --scale backend=2 backend
             echo "Waiting for new containers to be healthy..."
             sleep 30
 
@@ -83,7 +83,7 @@ jobs:
             fi
 
             # Remove old containers
-            sudo $COMPOSE_CMD up -d --no-deps --scale backend=2 --remove-orphans backend
+            sudo $COMPOSE_CMD up -d --no-deps --force-recreate --scale backend=2 --remove-orphans backend
 
             # Clean up dangling images
             sudo docker image prune -f
