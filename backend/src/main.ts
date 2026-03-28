@@ -4,14 +4,35 @@ import { json, urlencoded } from 'express';
 import { AddressInfo } from 'net';
 import { AppModule } from './app.module';
 import { NestFactory } from '@nestjs/core';
+import { lookup as originalLookup } from 'node:dns';
 import { parse } from 'yaml';
 import { resolve } from 'node:path';
-import { setDefaultResultOrder } from 'node:dns';
 import swaggerUi from 'swagger-ui-express';
 
-// Force IPv4-first DNS resolution to avoid 5s hangs caused by
+// Force IPv4-only DNS resolution globally to avoid 5s hangs caused by
 // AAAA SERVFAIL responses from some CDNs (e.g. maimai.wahlap.com).
-setDefaultResultOrder('ipv4first');
+// `setDefaultResultOrder('ipv4first')` is insufficient because getaddrinfo
+// with family=0 still queries AAAA, and Docker's internal DNS (127.0.0.11)
+// returns SERVFAIL which causes the entire lookup to fail.
+const _origLookup = originalLookup;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+require('node:dns').lookup = function patchedLookup(
+  hostname: string,
+  options: unknown,
+  callback: unknown,
+) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = { family: 4 };
+  } else if (typeof options === 'number') {
+    options = { family: 4, hints: options };
+  } else if (options && typeof options === 'object') {
+    options = { ...options, family: 4 };
+  } else {
+    options = { family: 4 };
+  }
+  return _origLookup.call(this, hostname, options as never, callback as never);
+};
 
 
 
