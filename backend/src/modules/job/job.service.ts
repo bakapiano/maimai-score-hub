@@ -34,6 +34,11 @@ const DEAD_JOB_TIMEOUT_MS = Number(
   process.env.DEAD_JOB_TIMEOUT_MS ?? 1 * 30 * 1000,
 );
 
+/** Queued jobs older than this are automatically failed (default: 5 min) */
+const QUEUED_JOB_TIMEOUT_MS = Number(
+  process.env.QUEUED_JOB_TIMEOUT_MS ?? 5 * 60 * 1000,
+);
+
 // [TODO] Change this to 1min
 // const MIN_CREATE_INTERVAL_MS = Number(
 //   process.env.MIN_CREATE_INTERVAL_MS ?? 1000 * 60,
@@ -164,6 +169,23 @@ export class JobService {
     await this.jobModel.updateMany(
       { executing: true, updatedAt: { $lte: staleThreshold } },
       { $set: { executing: false } },
+    );
+
+    // Fail queued jobs that have been waiting too long (unassigned only).
+    const queuedDeadline = new Date(now.getTime() - QUEUED_JOB_TIMEOUT_MS);
+    await this.jobModel.updateMany(
+      {
+        status: 'queued',
+        botUserFriendCode: null,
+        createdAt: { $lte: queuedDeadline },
+      },
+      {
+        $set: {
+          status: 'failed',
+          error: '排队超时，可能是 Bot 繁忙或异常，请稍后再试',
+          updatedAt: now,
+        },
+      },
     );
 
     // 1a) Queued first: claim the oldest unassigned queued job.
