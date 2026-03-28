@@ -9,11 +9,11 @@ import { parse } from 'yaml';
 import { resolve } from 'node:path';
 import swaggerUi from 'swagger-ui-express';
 
-// Force IPv4-only DNS resolution globally to avoid 5s hangs caused by
-// AAAA SERVFAIL responses from some CDNs (e.g. maimai.wahlap.com).
+// Force IPv4-only DNS resolution globally.
+// Docker's internal DNS (127.0.0.11) returns SERVFAIL for AAAA queries on
+// some CDNs (e.g. maimai.wahlap.com), causing getaddrinfo to hang ~5s.
 // `setDefaultResultOrder('ipv4first')` is insufficient because getaddrinfo
-// with family=0 still queries AAAA, and Docker's internal DNS (127.0.0.11)
-// returns SERVFAIL which causes the entire lookup to fail.
+// with family=0 still queries AAAA and fails on SERVFAIL.
 const _origLookup = originalLookup;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 require('node:dns').lookup = function patchedLookup(
