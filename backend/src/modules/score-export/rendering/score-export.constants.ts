@@ -59,5 +59,29 @@ export const VERSION_ORDER: string[] = [
   '舞萌DX 2025',
 ];
 
+/** Version key → plate-style display name (used in exported images) */
+export const VERSION_DISPLAY_NAME: Record<string, string> = {
+  maimai: '真代',
+  'maimai+': '真代',
+  green: '超代',
+  'green+': '檄代',
+  orange: '橙代',
+  'orange+': '暁代',
+  pink: '桃代',
+  'pink+': '櫻代',
+  murasaki: '紫代',
+  'murasaki+': '菫代',
+  milk: '白代',
+  'milk+': '雪代',
+  finale: '輝代',
+  舞萌DX: '熊華代',
+  '舞萌DX 2021': '爽煌代',
+  '舞萌DX 2022': '宙星代',
+  '舞萌DX 2023': '祭祝代',
+  '舞萌DX 2024': '双宴代',
+  '舞萌DX 2025': '镜彩代',
+  __mai__: '舞代',
+};
+
 export const FONT_FAMILY =
   '"Resource Han Rounded CN", "Torus", "PingFang SC", "Noto Sans CJK SC", sans-serif';

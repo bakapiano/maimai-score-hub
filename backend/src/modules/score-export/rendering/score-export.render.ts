@@ -1,7 +1,9 @@
 /**
  * B50 / Level / Version image renderer.
  *
- * Design follows the maimaiDX HoshinoBot style:
+ * Design and layout based on the maimaiDX HoshinoBot plugin by Yuri-YuzuChaN:
+ * https://github.com/Yuri-YuzuChaN/maimaiDX
+ *
  *  - Pre-made card background images per difficulty
  *  - Rank / FC / FS icon overlays from game assets
  *  - Gradient background when b50_bg.png is absent
@@ -12,9 +14,15 @@ import type {
   ChartEntry,
   CompactCard,
   LevelBucket,
+  PlatePlan,
   VersionBucket,
 } from '../score-export.types';
-import { FONT_FAMILY, ID_COLORS, LEVEL_COLORS } from './score-export.constants';
+import {
+  FONT_FAMILY,
+  ID_COLORS,
+  LEVEL_COLORS,
+  VERSION_DISPLAY_NAME,
+} from './score-export.constants';
 import { createCanvas } from '@napi-rs/canvas';
 import type { UserNetProfile } from '../../users/user.types';
 import {
@@ -157,7 +165,6 @@ export async function renderBest50Image(
   // Pre-load shared assets
   const diffCards = await loadDiffCards();
   const bgImage = await loadAsset('b50_bg.png');
-  const designBar = await loadAsset('design.png');
 
   const padding = 16;
   const width = 1400; // b50_bg.png native width
@@ -187,9 +194,75 @@ export async function renderBest50Image(
   const rating =
     profile?.rating != null ? profile.rating : Math.round(payload.total);
 
-  // ── Header: plate shifted left (no logo) ──
-  // Original plate at x=300 (logo occupied 14..263). Without logo, shift left by 286.
-  const PX = 14; // plate X origin (was 300)
+  await drawProfileHeader(ctx, profile, rating, loadRemoteImage);
+
+  // ── Section title: 现版本 Best 15 ──
+  const sdRating = payload.oldSum.toFixed(0);
+  const dxRating = payload.newSum.toFixed(0);
+  ctx.font = `bold 20px ${FONT_FAMILY}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  // eslint-disable-next-line no-irregular-whitespace
+  const dxTitle = `现版本 Best 15　Rating: ${dxRating}`;
+  ctx.strokeText(dxTitle, padding + 8, firstStartY - 30);
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillText(dxTitle, padding + 8, firstStartY - 30);
+
+  // ── DX Best 15 cards ──
+  await drawCardGrid(
+    ctx,
+    payload.newCards,
+    padding,
+    firstStartY,
+    diffCards,
+    loadCoverImage,
+  );
+
+  // ── Section title: 旧版本 Best 35 ──
+  ctx.font = `bold 20px ${FONT_FAMILY}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  // eslint-disable-next-line no-irregular-whitespace
+  const sdTitle = `旧版本 Best 35　Rating: ${sdRating}`;
+  ctx.strokeText(sdTitle, padding + 8, sdStartY - 30);
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillText(sdTitle, padding + 8, sdStartY - 30);
+
+  // ── SD Best 35 cards ──
+  await drawCardGrid(
+    ctx,
+    payload.oldCards,
+    padding,
+    sdStartY,
+    diffCards,
+    loadCoverImage,
+  );
+
+  // ── Footer ──
+  const footerY = height - footerH;
+  await drawFooter(ctx, width, footerY);
+
+  return canvas.toBuffer('image/png');
+}
+
+// ─── Reusable header / footer ──────────────────────────────────────────
+
+/**
+ * Draw the profile header (plate, avatar, rating, name, title).
+ * Draws at a fixed position (PX=14, starting Y=60).
+ * Returns the Y position after the header (~200).
+ */
+async function drawProfileHeader(
+  ctx: CanvasContext,
+  profile: UserNetProfile | null,
+  rating: number,
+  loadRemoteImage: LoadRemoteImage,
+): Promise<number> {
+  const PX = 14; // plate X origin
 
   // plate (姓名框) at (PX, 60), 800×130
   const plate = await loadAsset('UI_Plate_300501.png');
@@ -275,71 +348,30 @@ export async function renderBest50Image(
     ctx.fillText(profile.title, PX + 270, 173);
   }
 
-  // ── Section title: 现版本 Best 15 ──
-  const sdRating = payload.oldSum.toFixed(0);
-  const dxRating = payload.newSum.toFixed(0);
-  ctx.font = `bold 20px ${FONT_FAMILY}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = 'rgba(255,255,255,1)';
-  // eslint-disable-next-line no-irregular-whitespace
-  const dxTitle = `现版本 Best 15　Rating: ${dxRating}`;
-  ctx.strokeText(dxTitle, padding + 8, firstStartY - 30);
-  ctx.fillStyle = 'rgba(0,0,0,0.8)';
-  ctx.fillText(dxTitle, padding + 8, firstStartY - 30);
+  return 200; // Y position after header
+}
 
-  // ── DX Best 15 cards ──
-  await drawCardGrid(
-    ctx,
-    payload.newCards,
-    padding,
-    firstStartY,
-    diffCards,
-    loadCoverImage,
-  );
-
-  // ── Section title: 旧版本 Best 35 ──
-  ctx.font = `bold 20px ${FONT_FAMILY}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = 'rgba(255,255,255,1)';
-  // eslint-disable-next-line no-irregular-whitespace
-  const sdTitle = `旧版本 Best 35　Rating: ${sdRating}`;
-  ctx.strokeText(sdTitle, padding + 8, sdStartY - 30);
-  ctx.fillStyle = 'rgba(0,0,0,0.8)';
-  ctx.fillText(sdTitle, padding + 8, sdStartY - 30);
-
-  // ── SD Best 35 cards ──
-  await drawCardGrid(
-    ctx,
-    payload.oldCards,
-    padding,
-    sdStartY,
-    diffCards,
-    loadCoverImage,
-  );
-
-  // ── Footer ──
-  const footerY = height - footerH;
-  // design.png bar, centered, 800×72 (original resized)
+/**
+ * Draw the footer (design bar + credit text).
+ */
+async function drawFooter(
+  ctx: CanvasContext,
+  width: number,
+  footerY: number,
+): Promise<void> {
+  const designBar = await loadAsset('design.png');
   if (designBar) {
     ctx.drawImage(designBar, 300, footerY, 800, 72);
   }
-  // Credit text at (700, footerY + 40), font 22, anchor='mm'
-  // Original: text_color = (124, 129, 255), stroke=5 white
   ctx.font = `22px ${FONT_FAMILY}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineWidth = 5;
   ctx.strokeStyle = 'rgba(255,255,255,1)';
   const creditText = 'Generated by MaiScoreHub';
-  ctx.strokeText(creditText, 700, footerY + 40);
+  ctx.strokeText(creditText, width / 2, footerY + 40);
   ctx.fillStyle = 'rgba(124,129,255,1)';
-  ctx.fillText(creditText, 700, footerY + 40);
-
-  return canvas.toBuffer('image/png');
+  ctx.fillText(creditText, width / 2, footerY + 40);
 }
 
 // ─── Card grid drawing ─────────────────────────────────────────────────
@@ -526,245 +558,311 @@ async function drawCard(
 export async function renderLevelScoresImage(
   bucket: LevelBucket,
   levelKey: string,
+  profile: UserNetProfile | null,
+  rating: number,
   loadCoverImage: LoadCoverImage,
-  loadIconImage: (icon: string) => Promise<CanvasImage | null>,
+  loadRemoteImage: LoadRemoteImage,
 ): Promise<Buffer> {
-  const padding = 24;
-  const cardSize = 72;
-  const gap = 10;
-  const columns = 10;
-  const headerHeight = 32;
-  const sectionGap = 28;
+  const diffCards = await loadDiffCards();
+  const bgImage = await loadAsset('b50_bg.png');
 
+  const padding = 16;
+  const width = 1400; // same as B50
+  const sectionGap = 52;
+  const firstStartY = 235;
+
+  // Calculate total height from all detail sections
   let contentHeight = 0;
-  bucket.details.forEach((detail) => {
-    const rows = Math.max(1, Math.ceil(detail.items.length / columns));
-    contentHeight +=
-      headerHeight + rows * cardSize + (rows - 1) * gap + sectionGap;
-  });
+  for (const detail of bucket.details) {
+    const rows = Math.max(1, Math.ceil(detail.items.length / COLUMNS));
+    contentHeight += sectionGap + rows * CARD_STEP_Y;
+  }
 
-  const width = padding * 2 + columns * cardSize + gap * (columns - 1);
-  const height = padding * 2 + 60 + contentHeight;
+  const footerH = 110;
+  const height = Math.max(800, firstStartY + contentHeight + footerH);
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext('2d');
 
-  drawGradientBg(ctx, width, height);
+  // ── Background ──
+  if (bgImage) {
+    ctx.drawImage(bgImage, 0, 0, width, height);
+  } else {
+    drawGradientBg(ctx, width, height);
+  }
 
-  ctx.font = `bold 22px ${FONT_FAMILY}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  drawStrokedText(ctx, `等级 ${levelKey}`, padding, padding, '#fff', '#000', 3);
+  // ── Profile header ──
+  await drawProfileHeader(ctx, profile, rating, loadRemoteImage);
 
-  let cursorY = padding + 48;
+  // ── Detail sections ──
+  let cursorY = firstStartY;
 
   for (const detail of bucket.details) {
-    ctx.font = `bold 16px ${FONT_FAMILY}`;
+    // Section title: "定数 13.0 (25 首)"
+    const count = detail.items.length;
+    const sectionTitle = `定数 ${detail.detailKey} (${count} 首)`;
+    ctx.font = `bold 20px ${FONT_FAMILY}`;
     ctx.textAlign = 'left';
-    drawStrokedText(
-      ctx,
-      `定数 ${detail.detailKey}`,
-      padding,
-      cursorY,
-      '#fff',
-      '#000',
-      2,
-    );
-    cursorY += headerHeight;
+    ctx.textBaseline = 'top';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(255,255,255,1)';
+    ctx.strokeText(sectionTitle, padding + 8, cursorY - 30);
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillText(sectionTitle, padding + 8, cursorY - 30);
 
-    await drawMinimalGrid(
-      ctx,
-      detail.items,
-      padding,
-      cursorY,
-      columns,
-      cardSize,
-      gap,
-      loadCoverImage,
-      loadIconImage,
-    );
+    // Convert ChartEntry[] to CompactCard[] for drawCardGrid
+    const cards: CompactCard[] = detail.items.map((entry) => ({
+      musicId: entry.music.id,
+      chartIndex: entry.chartIndex,
+      type: entry.music.type ?? 'standard',
+      score: entry.score?.score ?? null,
+      rating: entry.score?.rating ?? null,
+      fc: entry.score?.fc ?? null,
+      fs: entry.score?.fs ?? null,
+      title: entry.music.title ?? 'Unknown',
+      detailLevelText:
+        typeof entry.chart?.detailLevel === 'number'
+          ? entry.chart.detailLevel.toFixed(1)
+          : (entry.chart?.level ?? '?'),
+    }));
 
-    const rows = Math.max(1, Math.ceil(detail.items.length / columns));
-    cursorY += rows * cardSize + (rows - 1) * gap + sectionGap;
+    await drawCardGrid(ctx, cards, padding, cursorY, diffCards, loadCoverImage);
+
+    const rows = Math.max(1, Math.ceil(cards.length / COLUMNS));
+    cursorY += rows * CARD_STEP_Y + sectionGap;
   }
+
+  // ── Footer ──
+  const footerY = height - footerH;
+  await drawFooter(ctx, width, footerY);
 
   return canvas.toBuffer('image/png');
 }
 
 // ─── Version scores image ──────────────────────────────────────────────
 
+const PLATE_COLUMNS = 10;
+const PLATE_CARD_SIZE = 100;
+const PLATE_CARD_GAP = 15;
+const PLATE_CARD_STEP = PLATE_CARD_SIZE + PLATE_CARD_GAP;
+
 export async function renderVersionScoresImage(
   bucket: VersionBucket,
   versionKey: string,
+  profile: UserNetProfile | null,
+  rating: number,
+  plan: PlatePlan,
   loadCoverImage: LoadCoverImage,
-  loadIconImage: (icon: string) => Promise<CanvasImage | null>,
+  loadRemoteImage: LoadRemoteImage,
 ): Promise<Buffer> {
-  const padding = 24;
-  const cardSize = 72;
-  const gap = 10;
-  const columns = 10;
-  const headerHeight = 32;
-  const sectionGap = 28;
+  const bgImage = await loadAsset('b50_bg.png');
+  const padding = 50;
+  const width = 1400;
+  const sectionGap = 40;
+  const firstStartY = 235;
 
+  // Calculate total height
   let contentHeight = 0;
-  bucket.levels.forEach((level) => {
-    const rows = Math.max(1, Math.ceil(level.items.length / columns));
-    contentHeight +=
-      headerHeight + rows * cardSize + (rows - 1) * gap + sectionGap;
-  });
+  for (const level of bucket.levels) {
+    const rows = Math.max(1, Math.ceil(level.items.length / PLATE_COLUMNS));
+    contentHeight += sectionGap + rows * PLATE_CARD_STEP;
+  }
 
-  const width = padding * 2 + columns * cardSize + gap * (columns - 1);
-  const height = padding * 2 + 60 + contentHeight;
+  const footerH = 110;
+  const height = Math.max(800, firstStartY + contentHeight + footerH);
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext('2d');
 
-  drawGradientBg(ctx, width, height);
+  if (bgImage) {
+    ctx.drawImage(bgImage, 0, 0, width, height);
+  } else {
+    drawGradientBg(ctx, width, height);
+  }
 
-  ctx.font = `bold 22px ${FONT_FAMILY}`;
-  ctx.textAlign = 'left';
+  // ── Profile header ──
+  await drawProfileHeader(ctx, profile, rating, loadRemoteImage);
+
+  // ── Version title (top right) ──
+  const displayName = VERSION_DISPLAY_NAME[versionKey] ?? versionKey;
+  const planLabel =
+    plan === 'jiang'
+      ? '将'
+      : plan === 'ji'
+        ? '极'
+        : plan === 'shen'
+          ? '神'
+          : '舞舞';
+  ctx.font = `bold 20px ${FONT_FAMILY}`;
+  ctx.textAlign = 'right';
   ctx.textBaseline = 'top';
-  drawStrokedText(
-    ctx,
-    `版本 ${versionKey}`,
-    padding,
-    padding,
-    '#fff',
-    '#000',
-    3,
-  );
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  const versionTitle = `${displayName} ${planLabel}牌`;
+  ctx.strokeText(versionTitle, width - padding - 8, 60);
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillText(versionTitle, width - padding - 8, 60);
 
-  let cursorY = padding + 48;
+  // ── Level sections ──
+  let cursorY = firstStartY;
 
   for (const level of bucket.levels) {
-    ctx.font = `bold 16px ${FONT_FAMILY}`;
-    ctx.textAlign = 'left';
-    drawStrokedText(
-      ctx,
-      `等级 ${level.levelKey}`,
-      padding,
-      cursorY,
-      '#fff',
-      '#000',
-      2,
-    );
-    cursorY += headerHeight;
+    const count = level.items.length;
+    const completed = level.items.filter((e) =>
+      isPlateCompleted(e, plan),
+    ).length;
+    const sectionTitle = `${level.levelKey} (${completed}/${count})`;
 
-    await drawMinimalGrid(
+    ctx.font = `bold 20px ${FONT_FAMILY}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(255,255,255,1)';
+    ctx.strokeText(sectionTitle, padding + 8, cursorY - 30);
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillText(sectionTitle, padding + 8, cursorY - 30);
+
+    await drawPlateGrid(
       ctx,
       level.items,
       padding,
       cursorY,
-      columns,
-      cardSize,
-      gap,
+      plan,
       loadCoverImage,
-      loadIconImage,
     );
 
-    const rows = Math.max(1, Math.ceil(level.items.length / columns));
-    cursorY += rows * cardSize + (rows - 1) * gap + sectionGap;
+    const rows = Math.max(1, Math.ceil(level.items.length / PLATE_COLUMNS));
+    cursorY += rows * PLATE_CARD_STEP + sectionGap;
   }
+
+  // ── Footer ──
+  const footerY = height - footerH;
+  await drawFooter(ctx, width, footerY);
 
   return canvas.toBuffer('image/png');
 }
 
-// ─── Minimal grid (level / version views) ──────────────────────────────
+// ─── Plate helpers ─────────────────────────────────────────────────────
 
-async function drawMinimalGrid(
+/**
+ * Check if a chart entry is "completed" according to the given plate plan.
+ * - jiang (将): score >= 100%
+ * - ji (极): has FC (fc, fcp, ap, app)
+ * - wuwu (舞舞): has FS (fs, fsp, fsd, fsdp)
+ */
+function isPlateCompleted(entry: ChartEntry, plan: PlatePlan): boolean {
+  if (!entry.score) return false;
+  switch (plan) {
+    case 'jiang': {
+      const scoreText = entry.score.score ?? null;
+      if (!scoreText) return false;
+      const val = parseFloat(scoreText.replace('%', ''));
+      return !isNaN(val) && val >= 100;
+    }
+    case 'ji':
+      return !!entry.score.fc;
+    case 'shen':
+      return entry.score.fc === 'ap' || entry.score.fc === 'app';
+    case 'wuwu':
+      return entry.score.fs === 'fsd' || entry.score.fs === 'fsdp';
+  }
+}
+
+// ─── Plate grid (version view) ─────────────────────────────────────────
+
+async function drawPlateGrid(
   ctx: CanvasContext,
   items: ChartEntry[],
   startX: number,
   startY: number,
-  columns: number,
-  cardSize: number,
-  gap: number,
+  plan: PlatePlan,
   loadCoverImage: LoadCoverImage,
-  loadIconImage: (icon: string) => Promise<CanvasImage | null>,
 ) {
   for (let idx = 0; idx < items.length; idx++) {
     const entry = items[idx];
-    const row = Math.floor(idx / columns);
-    const col = idx % columns;
-    const x = startX + col * (cardSize + gap);
-    const y = startY + row * (cardSize + gap);
+    const row = Math.floor(idx / PLATE_COLUMNS);
+    const col = idx % PLATE_COLUMNS;
+    const x = startX + col * PLATE_CARD_STEP;
+    const y = startY + row * PLATE_CARD_STEP;
 
     const image = await loadCoverImage(entry.music.id);
-    const fcIcon = entry.score?.fc ? await loadIconImage(entry.score.fc) : null;
-    const fsIcon = entry.score?.fs ? await loadIconImage(entry.score.fs) : null;
-    drawMinimalCard(ctx, x, y, cardSize, entry, image ?? null, fcIcon, fsIcon);
+    await drawPlateCard(ctx, x, y, entry, image ?? null, plan);
   }
 }
 
-function drawMinimalCard(
+async function drawPlateCard(
   ctx: CanvasContext,
   x: number,
   y: number,
-  size: number,
   entry: ChartEntry,
   image: CanvasImage | null,
-  fcIcon: CanvasImage | null,
-  fsIcon: CanvasImage | null,
+  plan: PlatePlan,
 ) {
-  const color = LEVEL_COLORS[entry.chartIndex] ?? '#888';
-  const borderWidth = 3;
-  ctx.fillStyle = color;
-  ctx.fillRect(x, y, size, size);
+  const size = PLATE_CARD_SIZE;
+  const completed = isPlateCompleted(entry, plan);
 
-  const coverSize = size - borderWidth * 2;
-  const coverX = x + borderWidth;
-  const coverY = y + borderWidth;
+  // Cover image (no border, like reference project)
   ctx.fillStyle = '#1f2937';
-  ctx.fillRect(coverX, coverY, coverSize, coverSize);
-
+  ctx.fillRect(x, y, size, size);
   if (image) {
-    ctx.drawImage(image, coverX, coverY, coverSize, coverSize);
+    ctx.drawImage(image, x, y, size, size);
   }
 
-  // Dark overlay for readability
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.fillRect(coverX, coverY, coverSize, coverSize);
+  // Only completed entries get an overlay + icon (matching reference project behavior)
+  if (!completed) return;
 
-  // Rank text in center
-  const scoreText = entry.score?.score || entry.score?.dxScore || null;
-  const rank = getRankFromScore(scoreText);
-  if (rank) {
-    ctx.font = `bold 18px ${FONT_FAMILY}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    drawStrokedText(
-      ctx,
-      rank,
-      coverX + coverSize / 2,
-      coverY + coverSize / 2 - 10,
-      '#fff',
-      '#000',
-      3,
-    );
+  // complete_bg overlay
+  const completeBg = await loadAsset('complete_bg_2.png');
+  if (completeBg) {
+    ctx.drawImage(completeBg, x, y, size, size);
   }
 
-  // FC/FS icons at bottom
-  const iconSize = 28;
-  const iconY = coverY + coverSize - iconSize - 2;
-  const iconGap = 2;
+  // Plan-specific icon centered on the cover
+  const iconSize = 75;
+  const iconX = x + (size - iconSize) / 2;
+  const iconY = y + (size - iconSize) / 2 - 5;
 
-  const fcIconX = coverX + coverSize / 2 - iconSize - iconGap / 2;
-  if (fcIcon) {
-    ctx.drawImage(fcIcon, fcIconX, iconY, iconSize, iconSize);
-  } else if (entry.score?.fc) {
-    ctx.beginPath();
-    ctx.arc(fcIconX + iconSize / 2, iconY + iconSize / 2, 9, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.fill();
-  }
-
-  const fsIconX = coverX + coverSize / 2 + iconGap / 2;
-  if (fsIcon) {
-    ctx.drawImage(fsIcon, fsIconX, iconY, iconSize, iconSize);
-  } else if (entry.score?.fs) {
-    ctx.beginPath();
-    ctx.arc(fsIconX + iconSize / 2, iconY + iconSize / 2, 9, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.fill();
+  switch (plan) {
+    case 'jiang': {
+      // 将牌: show Rank icon
+      const scoreText = entry.score?.score ?? null;
+      const rank = getRankFromScore(scoreText);
+      if (rank) {
+        const rankImg = await loadRankAsset(rank);
+        if (rankImg) {
+          ctx.drawImage(
+            rankImg,
+            x + (size - 102) / 2,
+            y + (size - 46) / 2,
+            102,
+            46,
+          );
+        }
+      }
+      break;
+    }
+    case 'ji':
+    case 'shen': {
+      // 极牌/神牌: show FC/AP icon
+      const fc = entry.score?.fc;
+      if (fc) {
+        const fcImg = await loadFcAsset(fc);
+        if (fcImg) {
+          ctx.drawImage(fcImg, iconX, iconY, iconSize, iconSize);
+        }
+      }
+      break;
+    }
+    case 'wuwu': {
+      // 舞舞牌: show FS icon
+      const fs = entry.score?.fs;
+      if (fs) {
+        const fsImg = await loadFsAsset(fs);
+        if (fsImg) {
+          ctx.drawImage(fsImg, iconX, iconY, iconSize, iconSize);
+        }
+      }
+      break;
+    }
   }
 }

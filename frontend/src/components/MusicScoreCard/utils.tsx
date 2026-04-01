@@ -17,7 +17,7 @@ export function getRank(scoreVal: number): string {
 
 export function renderRank(
   r: string,
-  opts?: { compact?: boolean; stroke?: boolean }
+  opts?: { compact?: boolean; stroke?: boolean },
 ) {
   const isCompact = opts?.compact === true;
   const hasStroke = opts?.stroke === true;

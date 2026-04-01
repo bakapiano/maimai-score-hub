@@ -83,3 +83,6 @@ data/
 
 *.zip
 backend/score-exports/
+
+# Copilot instructions (contains server credentials)
+.github/copilot-instructions.md

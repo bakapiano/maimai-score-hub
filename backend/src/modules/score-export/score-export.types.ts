@@ -1,5 +1,5 @@
-import type { MusicEntity } from '../music/music.schema';
 import type { ChartPayload } from '../music/music.schema';
+import type { MusicEntity } from '../music/music.schema';
 import type { SyncScore } from '../sync/sync.schema';
 
 export type MusicRow = MusicEntity & { charts?: ChartPayload[] };
@@ -51,3 +51,6 @@ export type CompactCard = {
   title: string;
   detailLevelText: string;
 };
+
+/** Plate plan types for version completion table */
+export type PlatePlan = 'jiang' | 'ji' | 'wuwu' | 'shen';

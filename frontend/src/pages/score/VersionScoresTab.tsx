@@ -1,43 +1,35 @@
 import {
   Box,
   Button,
-  Divider,
   Group,
   LoadingOverlay,
+  SegmentedControl,
   Select,
   Stack,
   Switch,
   Text,
   Title,
 } from "@mantine/core";
+import { IconDownload } from "@tabler/icons-react";
+import type { MusicChartPayload, MusicRow } from "../../types/music";
+import { useMemo, useState, useTransition } from "react";
+
+import { type DetailedMusicScoreCardProps } from "../../components/MusicScoreCard";
+import { PlateGridView } from "../../components/PlateGridView";
 import {
-  CombinedBadges,
   ScoreSummaryCard,
   calculateAverageScore,
   summarizeRanks,
   summarizeStatuses,
 } from "../../components/ScoreSummaryBadges";
-import {
-  IconChevronDown,
-  IconChevronUp,
-  IconDownload,
-} from "@tabler/icons-react";
-import type { MusicChartPayload, MusicRow } from "../../types/music";
-import { useMemo, useState, useTransition } from "react";
-
-import {
-  MinimalMusicScoreCard,
-  type DetailedMusicScoreCardProps,
-} from "../../components/MusicScoreCard";
+import { PLAN_OPTIONS, type PlatePlan } from "../../constants/platePlan";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
-import {
-  ScoreDisplayFilter,
-  type DisplayFilterSettings,
-  DEFAULT_DISPLAY_FILTER,
-  matchesScoreFilter,
-} from "../../components/ScoreDisplayFilter";
 import type { SyncScore } from "../../types/syncScore";
-import { getVersionSortIndex } from "../../constants/versions";
+import {
+  getVersionSortIndex,
+  getVersionDisplayName,
+  MAI_LEGACY_VERSIONS,
+} from "../../constants/versions";
 import { useAuth } from "../../providers/AuthProvider";
 
 type ChartEntry = {
@@ -147,6 +139,11 @@ const buildBuckets = (
   return buckets;
 };
 
+/** Version pairs that share a plate and should be merged into one bucket */
+const MERGE_GROUPS: { key: string; versions: string[] }[] = [
+  { key: "maimai", versions: ["maimai", "maimai+"] },
+];
+
 type VersionScoresTabProps = {
   musics: MusicRow[];
   scores: SyncScore[];
@@ -161,20 +158,15 @@ export function VersionScoresTab({
 }: VersionScoresTabProps) {
   const { token } = useAuth();
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
-  const [showAllLevels, setShowAllLevels] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [exporting, setExporting] = useState(false);
+  const [platePlan, setPlatePlan] = useState<PlatePlan>("jiang");
+  const [showAllLevels, setShowAllLevels] = useState(false);
 
   // Modal state for score detail
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedScore, setSelectedScore] =
     useState<DetailedMusicScoreCardProps | null>(null);
-
-  // Export all levels toggle
-  const [exportAllLevels, setExportAllLevels] = useState(false);
-  const [displayFilter, setDisplayFilter] = useState<DisplayFilterSettings>(
-    DEFAULT_DISPLAY_FILTER,
-  );
 
   const handleScoreClick = (entry: ChartEntry) => {
     setSelectedScore({
@@ -217,42 +209,114 @@ export function VersionScoresTab({
     () => buildBuckets(filteredMusics, filteredScores),
     [filteredMusics, filteredScores],
   );
-  const versionOptions = buckets.map((b) => ({
+
+  // Merge version groups that share a plate (e.g. maimai + maimai+ → 真代)
+  const mergedBuckets = useMemo(() => {
+    const result = [...buckets];
+    for (const group of MERGE_GROUPS) {
+      const indices = group.versions
+        .map((v) => result.findIndex((b) => b.versionKey === v))
+        .filter((i) => i !== -1);
+      if (indices.length <= 1) continue;
+
+      // Merge into the first one
+      const mergedLevelMap = new Map<string, ChartEntry[]>();
+      for (const idx of indices) {
+        for (const level of result[idx].levels) {
+          const list = mergedLevelMap.get(level.levelKey) ?? [];
+          if (!mergedLevelMap.has(level.levelKey))
+            mergedLevelMap.set(level.levelKey, list);
+          list.push(...level.items);
+        }
+      }
+      const merged: VersionBucket = {
+        versionKey: group.key,
+        levels: Array.from(mergedLevelMap.entries())
+          .map(([levelKey, items]) => ({
+            levelKey,
+            levelNumeric: parseLevelValue(levelKey),
+            items: items.sort(
+              (a, b) => detailSortValue(b.chart) - detailSortValue(a.chart),
+            ),
+          }))
+          .sort(
+            (a, b) =>
+              (b.levelNumeric ?? -Infinity) - (a.levelNumeric ?? -Infinity),
+          ),
+      };
+      // Replace first, remove rest
+      result[indices[0]] = merged;
+      for (let i = indices.length - 1; i >= 1; i--) {
+        result.splice(indices[i], 1);
+      }
+    }
+    return result;
+  }, [buckets]);
+
+  // Build "舞代" virtual bucket: all legacy versions (maimai → FiNALE) merged
+  const maiBucket = useMemo(() => {
+    const legacyBuckets = mergedBuckets.filter((b) =>
+      MAI_LEGACY_VERSIONS.includes(b.versionKey),
+    );
+    if (legacyBuckets.length === 0) return null;
+    const mergedLevelMap = new Map<string, ChartEntry[]>();
+    for (const bucket of legacyBuckets) {
+      for (const level of bucket.levels) {
+        const list = mergedLevelMap.get(level.levelKey) ?? [];
+        if (!mergedLevelMap.has(level.levelKey))
+          mergedLevelMap.set(level.levelKey, list);
+        list.push(...level.items);
+      }
+    }
+    return {
+      versionKey: "__mai__",
+      levels: Array.from(mergedLevelMap.entries())
+        .map(([levelKey, items]) => ({
+          levelKey,
+          levelNumeric: parseLevelValue(levelKey),
+          items: items.sort(
+            (a, b) => detailSortValue(b.chart) - detailSortValue(a.chart),
+          ),
+        }))
+        .sort(
+          (a, b) =>
+            (b.levelNumeric ?? -Infinity) - (a.levelNumeric ?? -Infinity),
+        ),
+    } as VersionBucket;
+  }, [mergedBuckets]);
+
+  const allBuckets = useMemo(() => {
+    const list = [...mergedBuckets];
+    if (maiBucket) {
+      // Insert 舞代 between finale and 舞萌DX
+      const dxIndex = list.findIndex((b) => b.versionKey === "舞萌DX");
+      if (dxIndex !== -1) {
+        list.splice(dxIndex + 1, 0, maiBucket);
+      } else {
+        list.push(maiBucket);
+      }
+    }
+    return list;
+  }, [mergedBuckets, maiBucket]);
+
+  const versionOptions = allBuckets.map((b) => ({
     value: b.versionKey,
-    label: b.versionKey.charAt(0).toUpperCase() + b.versionKey.slice(1),
+    label:
+      b.versionKey === "__mai__"
+        ? "旧框 (舞代)"
+        : getVersionDisplayName(b.versionKey),
   }));
   const current =
-    buckets.find((b) => b.versionKey === selectedVersion) ?? buckets[0];
+    allBuckets.find((b) => b.versionKey === selectedVersion) ?? allBuckets[0];
 
-  const detailThreshold = 13;
-
-  const currentVisibleEntries = useMemo(() => {
-    if (!current) return [] as ChartEntry[];
-    return current.levels.flatMap((lvl) =>
-      (showAllLevels
-        ? lvl.items
-        : lvl.items.filter(
-            (entry) => detailSortValue(entry.chart) >= detailThreshold,
-          )
-      ).filter((entry) =>
-        matchesScoreFilter(
-          entry.score?.score || entry.score?.dxScore || null,
-          displayFilter,
-        ),
-      ),
-    );
-  }, [current, showAllLevels, displayFilter]);
-
-  const handleExport = async (minLevel?: number) => {
+  const handleExport = async () => {
     if (!token || !current) return;
     setExporting(true);
     try {
       const params = new URLSearchParams({
         version: current.versionKey,
+        plan: platePlan,
       });
-      if (minLevel !== undefined) {
-        params.set("minLevel", minLevel.toString());
-      }
       const res = await fetch(
         `/api/score-export/version?${params.toString()}`,
         {
@@ -266,7 +330,7 @@ export function VersionScoresTab({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `version-${current.versionKey}.png`;
+      a.download = `version-${current.versionKey}-${platePlan}.png`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -287,26 +351,32 @@ export function VersionScoresTab({
       <Group justify="space-between" align="center">
         <Group gap={8} align="center">
           <Title order={4} size="h5">
-            按版本查看
+            按牌子查看
           </Title>
+          <SegmentedControl
+            size="xs"
+            value={platePlan}
+            onChange={(v) =>
+              startTransition(() => setPlatePlan(v as PlatePlan))
+            }
+            data={PLAN_OPTIONS}
+          />
         </Group>
         <Group gap="xs" align="center">
-          <ScoreDisplayFilter
-            value={displayFilter}
-            onChange={setDisplayFilter}
-          />
           <Switch
             size="xs"
             labelPosition="left"
-            label={exportAllLevels ? "导出全部" : "导出13及以上"}
-            checked={exportAllLevels}
-            onChange={(e) => setExportAllLevels(e.currentTarget.checked)}
+            label="显示全部"
+            checked={showAllLevels}
+            onChange={(e) =>
+              startTransition(() => setShowAllLevels(e.currentTarget.checked))
+            }
           />
           <Button
             size="xs"
             variant="default"
             leftSection={<IconDownload size={14} />}
-            onClick={() => handleExport(exportAllLevels ? undefined : 13)}
+            onClick={handleExport}
             loading={exporting}
           >
             导出图片
@@ -319,7 +389,6 @@ export function VersionScoresTab({
           data={versionOptions}
           value={current?.versionKey ?? null}
           onChange={(value) => startTransition(() => setSelectedVersion(value))}
-          // label="选择版本"
           placeholder="选择要查看的版本"
           clearable={false}
           searchable
@@ -340,109 +409,62 @@ export function VersionScoresTab({
             zIndex={10}
             overlayProps={{ radius: "sm", blur: 2 }}
           />
-          <Stack gap="lg">
+          <Stack gap="md">
             <ScoreSummaryCard
-              rankSummary={summarizeRanks(currentVisibleEntries)}
-              statusSummary={summarizeStatuses(currentVisibleEntries)}
-              averageScore={calculateAverageScore(currentVisibleEntries)}
-            />
-
-            {current.levels.map((level, idx) => {
-              const visibleItems = (
-                showAllLevels
-                  ? level.items
-                  : level.items.filter(
-                      (entry) =>
-                        detailSortValue(entry.chart) >= detailThreshold,
+              rankSummary={summarizeRanks(
+                (showAllLevels
+                  ? current.levels
+                  : current.levels.filter(
+                      (lvl) => (lvl.levelNumeric ?? 0) >= 13,
                     )
-              ).filter((entry) =>
-                matchesScoreFilter(
-                  entry.score?.score || entry.score?.dxScore || null,
-                  displayFilter,
+                ).flatMap((lvl) =>
+                  current.versionKey === "__mai__"
+                    ? lvl.items
+                    : lvl.items.filter((e) => e.chartIndex !== 4),
                 ),
-              );
-              if (visibleItems.length === 0) return null;
-              const isLastVisible = (() => {
-                for (let j = idx + 1; j < current.levels.length; j++) {
-                  const nxt = current.levels[j];
-                  const nxtVisible = (
-                    showAllLevels
-                      ? nxt.items
-                      : nxt.items.filter(
-                          (entry) =>
-                            detailSortValue(entry.chart) >= detailThreshold,
-                        )
-                  ).filter((entry) =>
-                    matchesScoreFilter(
-                      entry.score?.score || entry.score?.dxScore || null,
-                      displayFilter,
-                    ),
-                  );
-                  if (nxtVisible.length > 0) return false;
-                }
-                return true;
-              })();
-
-              return (
-                <Stack key={`${current.versionKey}-${level.levelKey}`} gap="xs">
-                  <Group justify="space-between" align="center">
-                    <Text fw={700}>{level.levelKey}</Text>
-                  </Group>
-                  <CombinedBadges
-                    rankSummary={summarizeRanks(visibleItems)}
-                    statusSummary={summarizeStatuses(visibleItems)}
-                  />
-                  <Group
-                    gap="4"
-                    align="stretch"
-                    wrap="wrap"
-                    style={{ width: "100%" }}
-                  >
-                    {visibleItems.map((entry) => (
-                      <div
-                        key={`${entry.music.id}-${entry.chartIndex}`}
-                        style={{ cursor: "pointer" }}
-                        onClick={() => handleScoreClick(entry)}
-                      >
-                        <MinimalMusicScoreCard
-                          musicId={entry.music.id}
-                          chartIndex={entry.chartIndex}
-                          type={entry.music.type}
-                          score={
-                            entry.score?.score || entry.score?.dxScore || null
-                          }
-                          fs={entry.score?.fs ?? null}
-                          fc={entry.score?.fc ?? null}
-                          displaySettings={displayFilter}
-                        />
-                      </div>
-                    ))}
-                  </Group>
-                  {!isLastVisible && (
-                    <Divider variant="dashed" mt="md" mb="0" />
-                  )}
-                </Stack>
-              );
-            })}
-
-            <Group justify="center">
-              <Button
-                size="xs"
-                variant="light"
-                onClick={() =>
-                  startTransition(() => setShowAllLevels((v) => !v))
-                }
-                leftSection={
-                  showAllLevels ? (
-                    <IconChevronUp size={16} />
-                  ) : (
-                    <IconChevronDown size={16} />
-                  )
-                }
-              >
-                {showAllLevels ? "隐藏低难度" : "显示全部"}
-              </Button>
-            </Group>
+              )}
+              statusSummary={summarizeStatuses(
+                (showAllLevels
+                  ? current.levels
+                  : current.levels.filter(
+                      (lvl) => (lvl.levelNumeric ?? 0) >= 13,
+                    )
+                ).flatMap((lvl) =>
+                  current.versionKey === "__mai__"
+                    ? lvl.items
+                    : lvl.items.filter((e) => e.chartIndex !== 4),
+                ),
+              )}
+              averageScore={calculateAverageScore(
+                (showAllLevels
+                  ? current.levels
+                  : current.levels.filter(
+                      (lvl) => (lvl.levelNumeric ?? 0) >= 13,
+                    )
+                ).flatMap((lvl) =>
+                  current.versionKey === "__mai__"
+                    ? lvl.items
+                    : lvl.items.filter((e) => e.chartIndex !== 4),
+                ),
+              )}
+            />
+            <PlateGridView
+              levels={(showAllLevels
+                ? current.levels
+                : current.levels.filter((lvl) => (lvl.levelNumeric ?? 0) >= 13)
+              )
+                .map((lvl) =>
+                  current.versionKey === "__mai__"
+                    ? lvl
+                    : {
+                        ...lvl,
+                        items: lvl.items.filter((e) => e.chartIndex !== 4),
+                      },
+                )
+                .filter((lvl) => lvl.items.length > 0)}
+              plan={platePlan}
+              onCardClick={handleScoreClick}
+            />
           </Stack>
         </Box>
       )}

@@ -18,7 +18,13 @@ import {
   buildRatingSummary,
   buildVersionBuckets,
 } from './score-export.buckets';
-import type { CompactCard, MusicRow } from './score-export.types';
+import type {
+  ChartEntry,
+  CompactCard,
+  MusicRow,
+  PlatePlan,
+  VersionBucket,
+} from './score-export.types';
 import {
   renderBest50Image,
   renderLevelScoresImage,
@@ -94,11 +100,24 @@ export class ScoreExportService {
 
     const current = buckets.find((b) => b.levelKey === levelKey) ?? buckets[0];
 
+    // Load user profile for header display
+    let profile: UserNetProfile | null = null;
+    try {
+      const user = await this.users.findByFriendCode(friendCode);
+      profile = user?.profile ?? null;
+    } catch {
+      // Profile is optional, continue without it
+    }
+
+    const rating = profile?.rating ?? 0;
+
     return renderLevelScoresImage(
       current,
       levelKey ?? current.levelKey,
+      profile,
+      rating,
       (musicId) => this.loadCoverImage(musicId),
-      (icon) => this.loadIconImage(icon),
+      (url) => this.loadRemoteImage(url),
     );
   }
 
@@ -106,6 +125,7 @@ export class ScoreExportService {
     friendCode: string,
     versionKey?: string,
     minLevel?: number,
+    plan: PlatePlan = 'jiang',
   ): Promise<Buffer> {
     ensureFontsLoaded();
     const { scores, musics } = await this.loadData(friendCode, true);
@@ -116,8 +136,123 @@ export class ScoreExportService {
       throw new NotFoundException('No version data');
     }
 
-    let current =
-      buckets.find((b) => b.versionKey === versionKey) ?? buckets[0];
+    let current: VersionBucket;
+
+    if (versionKey === '__mai__') {
+      // 舞代: merge all legacy versions (maimai → FiNALE)
+      const legacyVersions = new Set([
+        'maimai',
+        'maimai+',
+        'green',
+        'green+',
+        'orange',
+        'orange+',
+        'pink',
+        'pink+',
+        'murasaki',
+        'murasaki+',
+        'milk',
+        'milk+',
+        'finale',
+      ]);
+      const legacyBuckets = buckets.filter((b) =>
+        legacyVersions.has(b.versionKey),
+      );
+      const mergedLevelMap = new Map<
+        string,
+        { items: ChartEntry[]; levelNumeric: number | null }
+      >();
+      for (const bucket of legacyBuckets) {
+        for (const level of bucket.levels) {
+          const existing = mergedLevelMap.get(level.levelKey);
+          if (existing) {
+            existing.items.push(...level.items);
+          } else {
+            mergedLevelMap.set(level.levelKey, {
+              items: [...level.items],
+              levelNumeric: level.levelNumeric,
+            });
+          }
+        }
+      }
+      current = {
+        versionKey: '__mai__',
+        levels: Array.from(mergedLevelMap.entries())
+          .map(([levelKey, { items, levelNumeric }]) => ({
+            levelKey,
+            levelNumeric,
+            items: items.sort((a, b) => {
+              const aDs =
+                typeof a.chart?.detailLevel === 'number'
+                  ? a.chart.detailLevel
+                  : -Infinity;
+              const bDs =
+                typeof b.chart?.detailLevel === 'number'
+                  ? b.chart.detailLevel
+                  : -Infinity;
+              return bDs - aDs;
+            }),
+          }))
+          .sort(
+            (a, b) =>
+              (b.levelNumeric ?? -Infinity) - (a.levelNumeric ?? -Infinity),
+          ),
+      };
+    } else {
+      // Merge groups that share a plate (e.g. maimai + maimai+ → 真代)
+      const MERGE_MAP: Record<string, string[]> = {
+        maimai: ['maimai', 'maimai+'],
+      };
+      const mergeVersions = MERGE_MAP[versionKey ?? ''];
+      if (mergeVersions) {
+        const mergeBuckets = buckets.filter((b) =>
+          mergeVersions.includes(b.versionKey),
+        );
+        const mergedLevelMap = new Map<
+          string,
+          { items: ChartEntry[]; levelNumeric: number | null }
+        >();
+        for (const bucket of mergeBuckets) {
+          for (const level of bucket.levels) {
+            const existing = mergedLevelMap.get(level.levelKey);
+            if (existing) {
+              existing.items.push(...level.items);
+            } else {
+              mergedLevelMap.set(level.levelKey, {
+                items: [...level.items],
+                levelNumeric: level.levelNumeric,
+              });
+            }
+          }
+        }
+        current = {
+          versionKey: versionKey!,
+          levels: Array.from(mergedLevelMap.entries())
+            .map(([levelKey, { items, levelNumeric }]) => ({
+              levelKey,
+              levelNumeric,
+              items: items.sort((a, b) => {
+                const aDs =
+                  typeof a.chart?.detailLevel === 'number'
+                    ? a.chart.detailLevel
+                    : -Infinity;
+                const bDs =
+                  typeof b.chart?.detailLevel === 'number'
+                    ? b.chart.detailLevel
+                    : -Infinity;
+                return bDs - aDs;
+              }),
+            }))
+            .sort(
+              (a, b) =>
+                (b.levelNumeric ?? -Infinity) - (a.levelNumeric ?? -Infinity),
+            ),
+        };
+      } else {
+        current =
+          buckets.find((b) => b.versionKey === versionKey) ?? buckets[0];
+      }
+    }
 
     // Filter by minLevel if specified
     if (minLevel !== undefined && !isNaN(minLevel)) {
@@ -140,11 +275,39 @@ export class ScoreExportService {
       };
     }
 
+    // Filter out Re:Master (chartIndex=4) for non-舞代 versions
+    // 舞代 (__mai__) includes Re:Master; individual versions don't
+    if (versionKey !== '__mai__') {
+      current = {
+        ...current,
+        levels: current.levels
+          .map((level) => ({
+            ...level,
+            items: level.items.filter((item) => item.chartIndex !== 4),
+          }))
+          .filter((level) => level.items.length > 0),
+      };
+    }
+
+    // Load user profile for header display
+    let profile: UserNetProfile | null = null;
+    try {
+      const user = await this.users.findByFriendCode(friendCode);
+      profile = user?.profile ?? null;
+    } catch {
+      // Profile is optional, continue without it
+    }
+
+    const rating = profile?.rating ?? 0;
+
     return renderVersionScoresImage(
       current,
       versionKey ?? current.versionKey,
+      profile,
+      rating,
+      plan,
       (musicId) => this.loadCoverImage(musicId),
-      (icon) => this.loadIconImage(icon),
+      (url) => this.loadRemoteImage(url),
     );
   }
 

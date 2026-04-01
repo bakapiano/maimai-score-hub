@@ -25,6 +25,10 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Credits
+
+The B50 score image renderer (`src/modules/score-export/rendering/`) is based on the layout and assets from [Yuri-YuzuChaN/maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX) (HoshinoBot maimai DX plugin).
+
 ## Music data sync job
 
 - Scheduled with `@nestjs/schedule`; cron expression comes from `MUSIC_SYNC_CRON` (default `0 */6 * * *`).

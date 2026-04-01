@@ -63,7 +63,11 @@ export default function ScorePage() {
         setScores([]);
         setLastSyncAt(null);
       } else if (latestRes.body) {
-        const { scores: syncScores, createdAt, updatedAt } = latestRes.body as {
+        const {
+          scores: syncScores,
+          createdAt,
+          updatedAt,
+        } = latestRes.body as {
           scores?: SyncScore[];
           createdAt?: string;
           updatedAt?: string;
@@ -122,8 +126,11 @@ export default function ScorePage() {
               <Tabs.Tab value="levels" leftSection={<IconChartBar size={16} />}>
                 按等级
               </Tabs.Tab>
-              <Tabs.Tab value="versions" leftSection={<IconVersions size={16} />}>
-                按版本
+              <Tabs.Tab
+                value="versions"
+                leftSection={<IconVersions size={16} />}
+              >
+                按牌子
               </Tabs.Tab>
               <Tabs.Tab value="all" leftSection={<IconList size={16} />}>
                 全部成绩
@@ -174,14 +181,16 @@ export default function ScorePage() {
           >
             <Stack align="center" gap="xs">
               {offline ? (
-                <Text size="sm" c="dimmed">暂无离线缓存的成绩数据</Text>
+                <Text size="sm" c="dimmed">
+                  暂无离线缓存的成绩数据
+                </Text>
               ) : (
-              <Anchor component={Link} to="/app/sync">
-                <Group gap={6} align="center">
-                  <IconRefresh size={16} />
-                  <span>同步数据以查看成绩</span>
-                </Group>
-              </Anchor>
+                <Anchor component={Link} to="/app/sync">
+                  <Group gap={6} align="center">
+                    <IconRefresh size={16} />
+                    <span>同步数据以查看成绩</span>
+                  </Group>
+                </Anchor>
               )}
             </Stack>
           </Box>

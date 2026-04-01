@@ -11,6 +11,7 @@ import type { Request, Response } from 'express';
 
 import { AuthGuard } from '../auth/auth.guard';
 import { ScoreExportService } from './score-export.service';
+import type { PlatePlan } from './score-export.types';
 
 type AuthedRequest = Request & {
   user?: { friendCode?: string; sub?: string };
@@ -63,13 +64,19 @@ export class ScoreExportController {
     @Res() res: Response,
     @Query('version') version?: string,
     @Query('minLevel') minLevel?: string,
+    @Query('plan') plan?: string,
   ) {
     const friendCode = requireFriendCode(req);
     const minLevelNum = minLevel ? parseFloat(minLevel) : undefined;
+    const validPlans = ['jiang', 'ji', 'wuwu', 'shen'];
+    const platePlan: PlatePlan = validPlans.includes(plan ?? '')
+      ? (plan as PlatePlan)
+      : 'jiang';
     const buffer = await this.exporter.generateVersionScoresImage(
       friendCode,
       version,
       minLevelNum,
+      platePlan,
     );
     res.setHeader('Content-Type', 'image/png');
     res.setHeader(
