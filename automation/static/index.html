@@ -79,18 +79,17 @@
   </header>
 
   <div class="tabs">
-    <div class="tab active" data-panel="devices">设备</div>
-    <div class="tab" data-panel="bindings">绑定</div>
+    <div class="tab active" data-panel="devices">设备管理</div>
     <div class="tab" data-panel="bots">Bot 状态</div>
     <div class="tab" data-panel="logs">日志</div>
     <div class="tab" data-panel="settings">设置</div>
   </div>
 
-  <!-- Devices Panel -->
+  <!-- Devices Panel (merged with bindings) -->
   <div class="panel active" id="panel-devices">
     <div class="card">
       <div class="card-header">
-        <h3>配对新设备</h3>
+        <h3>配对 / 连接设备</h3>
       </div>
       <div class="form-row">
         <label>IP</label><input id="pairIp" placeholder="192.168.1.x" style="width:140px">
@@ -106,41 +105,8 @@
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-header">
-        <h3>设备列表</h3>
-      </div>
-      <table>
-        <thead><tr><th>设备 ID</th><th>型号</th><th>备注</th><th>状态</th><th>最后在线</th><th>操作</th></tr></thead>
-        <tbody id="deviceTable"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Bindings Panel -->
-  <div class="panel" id="panel-bindings">
-    <div class="card">
-      <div class="card-header">
-        <h3>新建绑定</h3>
-      </div>
-      <div class="form-row">
-        <label>设备</label>
-        <select id="bindDevice" style="width:200px"></select>
-        <label>好友码</label><select id="bindFriendCode" style="width:200px"></select>
-      </div>
-      <div class="form-row">
-        <label>恢复URL</label><input id="bindUrl" placeholder="http://..." style="flex:1;min-width:200px">
-        <label>重试(s)</label><input id="bindRetry" type="number" value="30" style="width:70px">
-        <button class="btn btn-primary" onclick="createBinding()">创建</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header"><h3>绑定列表</h3></div>
-      <table>
-        <thead><tr><th>ID</th><th>设备</th><th>设备备注</th><th>好友码</th><th>恢复 URL</th><th>重试间隔</th><th>恢复次数</th><th>上次恢复</th><th>操作</th></tr></thead>
-        <tbody id="bindingTable"><tr><td colspan="9" class="empty">加载中...</td></tr></tbody>
-      </table>
+    <div id="deviceCards">
+      <div class="empty">加载中...</div>
     </div>
   </div>
 
@@ -257,32 +223,139 @@ function truncate(s, len = 50) {
   return s.length > len ? s.substring(0, len) + '...' : s;
 }
 
-// ====== Devices ======
+// ====== Devices (merged with bindings + proxy) ======
+let _allBindings = [];
+let _allDevices = [];
+
 async function loadDevices() {
-  const devices = await api('/api/devices');
-  const tbody = document.getElementById('deviceTable');
-  if (!devices.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">没有设备</td></tr>'; return; }
-  tbody.innerHTML = devices.map(d => `<tr>
-    <td>${d.id}</td>
-    <td>${d.model || d.name || '-'}</td>
-    <td id="remark-cell-${CSS.escape(d.id)}">
-      <span onclick="editRemark('${d.id}', this)" style="cursor:pointer;border-bottom:1px dashed var(--text-dim)" title="点击编辑备注">${d.remark || '<span style="color:var(--text-dim)">点击添加</span>'}</span>
-    </td>
-    <td><span class="badge ${d.status === 'online' ? 'badge-green' : 'badge-red'}">${d.status}</span></td>
-    <td class="time-ago">${timeAgo(d.last_seen)}</td>
-    <td style="white-space:nowrap">
-      <button class="btn btn-outline btn-small" onclick="notifyDevice('${d.id}')" ${d.status !== 'online' ? 'disabled' : ''} title="发送通知到设备">🔔 通知</button>
-      <button class="btn btn-danger btn-small" onclick="deleteDevice('${d.id}')">删除</button>
-    </td>
-  </tr>`).join('');
+  const [devices, bindings, bots] = await Promise.all([
+    api('/api/devices'),
+    api('/api/bindings'),
+    api('/api/bots').catch(() => []),
+  ]);
+  _allDevices = devices;
+  _allBindings = bindings;
+  _cachedBots = bots;
 
-  // 更新绑定设备下拉
-  const sel = document.getElementById('bindDevice');
-  const onlineDevices = devices.filter(d => d.status === 'online');
-  sel.innerHTML = onlineDevices.map(d => `<option value="${d.id}">${d.remark ? d.remark + ' - ' : ''}${d.model || d.id}</option>`).join('');
+  const container = document.getElementById('deviceCards');
+  if (!devices.length) {
+    container.innerHTML = '<div class="empty">没有设备，请先配对或连接</div>';
+    return;
+  }
 
-  // 更新绑定好友码下拉
-  await updateFriendCodeSelect();
+  // Map binding by device_id
+  const bindingByDevice = {};
+  bindings.forEach(b => bindingByDevice[b.device_id] = b);
+
+  container.innerHTML = devices.map(d => {
+    const b = bindingByDevice[d.id];
+    const isOnline = d.status === 'online';
+    const statusBadge = `<span class="badge ${isOnline ? 'badge-green' : 'badge-red'}">${d.status}</span>`;
+
+    let bindingHtml;
+    if (b) {
+      const bot = bots.find(bot => bot.friend_code === b.friend_code);
+      const botStatus = bot ? (bot.available ? '🟢' : '🔴') : '❓';
+      bindingHtml = `
+        <div class="form-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+          <span style="font-size:0.8rem;color:var(--text-dim)">绑定 Bot:</span>
+          <span style="font-size:0.85rem">${botStatus} ${b.friend_code}${bot?.remark ? ' (' + bot.remark + ')' : ''}</span>
+          <span style="font-size:0.75rem;color:var(--text-dim)">恢复 ${b.recovery_count} 次</span>
+          <button class="btn btn-primary btn-small" onclick="triggerRecovery('${b.friend_code}')" ${!isOnline ? 'disabled' : ''}>恢复</button>
+          <button class="btn btn-danger btn-small" onclick="unbindDevice(${b.id})">解绑</button>
+        </div>
+        <div class="form-row">
+          <span style="font-size:0.8rem;color:var(--text-dim)">恢复 URL:</span>
+          <input id="bind-url-edit-${b.id}" value="${b.recovery_url || ''}" style="flex:1;min-width:200px;font-size:0.8rem" placeholder="http://...">
+          <button class="btn btn-outline btn-small" onclick="updateBindingUrl(${b.id})">保存</button>
+        </div>
+      `;
+    } else {
+      const botOpts = bots.map(bot =>
+        `<option value="${bot.friend_code}">${bot.friend_code}${bot.remark ? ' (' + bot.remark + ')' : ''}</option>`
+      ).join('');
+      bindingHtml = `
+        <div class="form-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+          <span style="font-size:0.8rem;color:var(--text-dim)">绑定 Bot:</span>
+          <select id="bind-fc-${CSS.escape(d.id)}" style="width:180px;font-size:0.8rem">${botOpts || '<option>无可用 Bot</option>'}</select>
+          <input id="bind-url-${CSS.escape(d.id)}" placeholder="恢复URL" style="flex:1;min-width:150px;font-size:0.8rem">
+          <button class="btn btn-primary btn-small" onclick="bindDevice('${d.id}')" ${!isOnline ? 'disabled' : ''}>绑定</button>
+        </div>
+      `;
+    }
+
+    return `<div class="card" id="device-card-${CSS.escape(d.id)}">
+      <div class="card-header">
+        <div>
+          <strong>${d.remark || d.model || d.id}</strong>
+          <span style="font-size:0.8rem;color:var(--text-dim);margin-left:8px">${d.id}</span>
+          ${statusBadge}
+          <span class="time-ago" style="margin-left:8px">${timeAgo(d.last_seen)}</span>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-outline btn-small" onclick="editDeviceRemark('${d.id}')">备注</button>
+          <button class="btn btn-outline btn-small" onclick="notifyDevice('${d.id}')" ${!isOnline ? 'disabled' : ''}>🔔</button>
+          <button class="btn btn-danger btn-small" onclick="deleteDevice('${d.id}')">删除</button>
+        </div>
+      </div>
+
+      <!-- Tools -->
+      <div class="form-row">
+        <button class="btn btn-outline btn-small" onclick="pushApk('${d.id}')" ${!isOnline ? 'disabled' : ''}>📦 推送 Drony APK</button>
+        <button class="btn btn-outline btn-small" onclick="setWhitelist('${d.id}')" ${!isOnline ? 'disabled' : ''}>🔋 设置保活白名单</button>
+      </div>
+
+      ${bindingHtml}
+    </div>`;
+  }).join('');
+}
+
+async function pushApk(deviceId) {
+  try {
+    const res = await api('/api/devices/' + encodeURIComponent(deviceId) + '/push-apk', { method: 'POST' });
+    toast('APK 已推送: ' + (res.message || 'OK'));
+  } catch(e) { /* toast already shown */ }
+}
+
+async function setWhitelist(deviceId) {
+  try {
+    const res = await api('/api/devices/' + encodeURIComponent(deviceId) + '/whitelist', { method: 'POST' });
+    toast('保活设置完成: ' + (res.results || []).join(', '));
+  } catch(e) { /* toast already shown */ }
+}
+
+async function bindDevice(deviceId) {
+  const fcSel = document.getElementById('bind-fc-' + CSS.escape(deviceId));
+  const urlInput = document.getElementById('bind-url-' + CSS.escape(deviceId));
+  const friend_code = fcSel?.value;
+  const recovery_url = urlInput?.value;
+  if (!friend_code || !recovery_url) { toast('请选择 Bot 并填写恢复 URL', 'error'); return; }
+  await api('/api/bindings', { method: 'POST', body: { device_id: deviceId, friend_code, recovery_url, retry_interval: 30 } });
+  toast('绑定成功');
+  loadDevices();
+}
+
+async function unbindDevice(bindingId) {
+  if (!confirm('确定解绑？')) return;
+  await api('/api/bindings/' + bindingId, { method: 'DELETE' });
+  toast('已解绑');
+  loadDevices();
+}
+
+async function updateBindingUrl(bindingId) {
+  const url = document.getElementById('bind-url-edit-' + bindingId)?.value?.trim();
+  if (!url) { toast('请填写恢复 URL', 'error'); return; }
+  await api('/api/bindings/' + bindingId, { method: 'PUT', body: { recovery_url: url } });
+  toast('恢复 URL 已更新');
+}
+
+function editDeviceRemark(deviceId) {
+  const current = _allDevices.find(d => d.id === deviceId)?.remark || '';
+  const remark = prompt('输入备注:', current);
+  if (remark === null) return;
+  api('/api/devices/' + encodeURIComponent(deviceId) + '/remark', {
+    method: 'PUT', body: { remark }
+  }).then(() => { toast('备注已更新'); loadDevices(); });
 }
 
 async function scanDevices() {
@@ -327,134 +400,16 @@ async function notifyDevice(id) {
   } catch (e) { /* toast already shown */ }
 }
 
-function editRemark(deviceId, el) {
-  const cell = el.parentElement;
-  const current = el.textContent === '点击添加' ? '' : el.textContent;
-  cell.innerHTML = `
-    <input id="remark-input" value="${current}" style="width:100px" onkeydown="if(event.key==='Enter')saveRemark('${deviceId}')">
-    <button class="btn btn-primary btn-small" onclick="saveRemark('${deviceId}')">保存</button>
-  `;
-  cell.querySelector('input').focus();
-}
-
-async function saveRemark(deviceId) {
-  const remark = document.getElementById('remark-input').value;
-  await api('/api/devices/' + encodeURIComponent(deviceId) + '/remark', {
-    method: 'PUT',
-    body: { remark },
-  });
-  toast('备注已更新');
-  loadDevices();
-}
-
-// ====== Bindings ======
-let _allDevices = [];
-async function loadBindings() {
-  const bindings = await api('/api/bindings');
-  try { _allDevices = await api('/api/devices'); } catch(e) {}
-  const deviceMap = {};
-  _allDevices.forEach(d => deviceMap[d.id] = d);
-  const tbody = document.getElementById('bindingTable');
-  if (!bindings.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">没有绑定</td></tr>'; return; }
-  tbody.innerHTML = bindings.map(b => {
-    const dev = deviceMap[b.device_id];
-    const devRemark = dev && dev.remark ? dev.remark : '-';
-    return `<tr id="bind-row-${b.id}">
-    <td>${b.id}</td>
-    <td title="${b.device_id}">${truncate(b.device_id, 20)}</td>
-    <td style="color:var(--text-dim)">${devRemark}</td>
-    <td>${b.friend_code}</td>
-    <td class="log-msg" title="${b.recovery_url}">${truncate(b.recovery_url, 40)}</td>
-    <td>${b.retry_interval}s</td>
-    <td>${b.recovery_count}</td>
-    <td class="time-ago">${timeAgo(b.last_recovery_at)}</td>
-    <td style="white-space:nowrap">
-      <button class="btn btn-outline btn-small" onclick="editBinding(${b.id})">编辑</button>
-      <button class="btn btn-primary btn-small" onclick="triggerRecovery('${b.friend_code}')">恢复</button>
-      <button class="btn btn-danger btn-small" onclick="deleteBinding(${b.id})">删除</button>
-    </td>
-  </tr>`;
-  }).join('');
-}
-
-function editBinding(id) {
-  const row = document.getElementById('bind-row-' + id);
-  if (!row) return;
-  // read current values from cells (0:ID 1:设备 2:设备备注 3:好友码 4:URL 5:重试 ...)
-  const cells = row.children;
-  const curDevice = cells[1].getAttribute('title');
-  const curFc = cells[3].textContent;
-  const curUrl = cells[4].getAttribute('title');
-  const curRetry = parseInt(cells[5].textContent) || 30;
-
-  const devOpts = _allDevices.map(d => `<option value="${d.id}" ${d.id === curDevice ? 'selected' : ''}>${d.remark ? d.remark + ' - ' : ''}${d.model || d.id}</option>`).join('');
-  row.innerHTML = `
-    <td>${id}</td>
-    <td><select id="edit-dev-${id}" style="width:120px">${devOpts}</select></td>
-    <td></td>
-    <td><input id="edit-fc-${id}" value="${curFc}" style="width:100px"></td>
-    <td><input id="edit-url-${id}" value="${curUrl}" style="width:200px"></td>
-    <td><input id="edit-retry-${id}" type="number" value="${curRetry}" style="width:60px"></td>
-    <td colspan="2"></td>
-    <td style="white-space:nowrap">
-      <button class="btn btn-primary btn-small" onclick="saveBinding(${id})">保存</button>
-      <button class="btn btn-outline btn-small" onclick="loadBindings()">取消</button>
-    </td>
-  `;
-}
-
-async function saveBinding(id) {
-  const body = {
-    device_id: document.getElementById('edit-dev-' + id).value,
-    friend_code: document.getElementById('edit-fc-' + id).value,
-    recovery_url: document.getElementById('edit-url-' + id).value,
-    retry_interval: parseInt(document.getElementById('edit-retry-' + id).value) || 30,
-  };
-  await api('/api/bindings/' + id, { method: 'PUT', body });
-  toast('绑定已更新');
-  loadBindings();
-}
-
-async function createBinding() {
-  const device_id = document.getElementById('bindDevice').value;
-  const friend_code = document.getElementById('bindFriendCode').value;
-  const recovery_url = document.getElementById('bindUrl').value;
-  const retry_interval = parseInt(document.getElementById('bindRetry').value) || 30;
-  if (!device_id || !friend_code || !recovery_url) { toast('请填写完整', 'error'); return; }
-  await api('/api/bindings', { method: 'POST', body: { device_id, friend_code, recovery_url, retry_interval } });
-  toast('绑定已创建');
-  loadBindings();
-}
-
-async function deleteBinding(id) {
-  if (!confirm('确定删除绑定 #' + id + '？')) return;
-  await api('/api/bindings/' + id, { method: 'DELETE' });
-  toast('已删除');
-  loadBindings();
-}
+// ====== Bots ======
+let _cachedBots = [];
 
 async function triggerRecovery(fc) {
   try {
     const res = await api('/api/recovery/' + fc, { method: 'POST' });
     toast('恢复触发: ' + (res.message || 'OK'));
-    loadBindings();
+    loadDevices();
     loadLogs();
   } catch (e) { /* toast already shown */ }
-}
-
-// ====== Bots ======
-let _cachedBots = [];
-
-async function updateFriendCodeSelect() {
-  try { _cachedBots = await api('/api/bots'); } catch(e) {}
-  const sel = document.getElementById('bindFriendCode');
-  if (!_cachedBots.length) {
-    sel.innerHTML = '<option value="">无可用 Bot</option>';
-    return;
-  }
-  sel.innerHTML = _cachedBots.map(b =>
-    `<option value="${b.friend_code}">${b.friend_code}${b.remark ? ' (' + b.remark + ')' : ''}</option>`
-  ).join('');
 }
 
 async function loadBots() {
@@ -532,7 +487,6 @@ async function saveSettings() {
 // ====== Init ======
 async function init() {
   await Promise.all([loadDevices(), loadBots(), loadLogs(), loadStatus(), loadSettings()]);
-  loadBindings();
   // Auto-refresh
   setInterval(loadStatus, 10000);
   setInterval(loadDevices, 15000);

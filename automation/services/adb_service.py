@@ -285,6 +285,65 @@ async def send_notification(serial: str, title: str = "ADB Worker", message: str
         return False, output
 
 
+async def get_proxy(serial: str) -> str:
+    """获取设备当前的全局 HTTP 代理设置"""
+    code, stdout, _ = await _run_adb(
+        "shell", "settings get global http_proxy", device=serial, timeout=5
+    )
+    if code == 0:
+        val = stdout.strip()
+        if val == "null" or val == ":0" or not val:
+            return ""
+        return val
+    return ""
+
+
+async def set_proxy(serial: str, proxy: str) -> tuple[bool, str]:
+    """
+    设置或清除设备的全局 HTTP 代理。
+    proxy 为空字符串或 ":0" 时清除代理。
+    使用 iptables/redsocks 不现实，改用 settings put global 方式。
+    如果权限不足，先尝试授予 WRITE_SECURE_SETTINGS。
+    """
+    if not proxy or proxy == ":0":
+        # 清除代理
+        code, stdout, stderr = await _run_adb(
+            "shell", "settings put global http_proxy :0", device=serial
+        )
+        if code != 0 and "SecurityException" in (stdout + stderr):
+            # 尝试授权后重试
+            await _run_adb(
+                "shell", "pm grant com.android.shell android.permission.WRITE_SECURE_SETTINGS",
+                device=serial,
+            )
+            code, stdout, stderr = await _run_adb(
+                "shell", "settings put global http_proxy :0", device=serial
+            )
+        msg = "代理已清除"
+    else:
+        code, stdout, stderr = await _run_adb(
+            "shell", f"settings put global http_proxy {proxy}", device=serial
+        )
+        if code != 0 and "SecurityException" in (stdout + stderr):
+            # 尝试授权后重试
+            await _run_adb(
+                "shell", "pm grant com.android.shell android.permission.WRITE_SECURE_SETTINGS",
+                device=serial,
+            )
+            code, stdout, stderr = await _run_adb(
+                "shell", f"settings put global http_proxy {proxy}", device=serial
+            )
+        msg = f"代理已设置为 {proxy}"
+
+    output = (stdout + stderr).strip()
+    if code == 0:
+        logger.info(f"[{serial}] {msg}")
+        return True, msg
+    else:
+        logger.error(f"[{serial}] Proxy setting failed: {output}")
+        return False, output
+
+
 async def discover_mdns_services() -> list[dict]:
     """
     通过 adb mdns services 发现局域网内广播的 ADB 设备。

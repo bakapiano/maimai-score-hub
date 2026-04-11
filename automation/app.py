@@ -192,6 +192,39 @@ async def api_delete_device(device_id: str):
     return {"success": True}
 
 
+@app.post("/api/devices/{device_id:path}/whitelist")
+async def api_set_whitelist(device_id: str):
+    """Add app to Doze whitelist and allow background running (for Drony etc.)"""
+    results = []
+    # Doze whitelist for Drony
+    code, out, err = await adb_service._run_adb(
+        "shell", "dumpsys deviceidle whitelist +org.sandroproxy.drony", device=device_id
+    )
+    results.append(f"doze whitelist: {(out + err).strip()}")
+    # Allow background
+    for op in ["RUN_IN_BACKGROUND", "RUN_ANY_IN_BACKGROUND"]:
+        code, out, err = await adb_service._run_adb(
+            "shell", f"cmd appops set org.sandroproxy.drony {op} allow", device=device_id
+        )
+        results.append(f"{op}: ok" if code == 0 else f"{op}: {(out + err).strip()}")
+    return {"success": True, "results": results}
+
+
+@app.post("/api/devices/{device_id:path}/push-apk")
+async def api_push_apk(device_id: str):
+    """Push Drony APK to device's /sdcard/Download/"""
+    apk_path = Path(__file__).parent / "resources" / "drony.apk"
+    if not apk_path.exists():
+        raise HTTPException(404, "drony.apk not found in resources/")
+    code, out, err = await adb_service._run_adb(
+        "push", str(apk_path), "/sdcard/Download/drony.apk", device=device_id, timeout=30
+    )
+    output = (out + err).strip()
+    if code != 0:
+        raise HTTPException(400, output)
+    return {"success": True, "message": output}
+
+
 # ====== Bindings API ======
 @app.get("/api/bindings")
 async def api_list_bindings():

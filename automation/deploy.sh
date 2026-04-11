@@ -21,6 +21,7 @@ sudo mkdir -p "$APP_DIR"
 sudo cp app.py config.py db.py models.py requirements.txt adb-worker.service "$APP_DIR/"
 sudo cp -r services "$APP_DIR/"
 sudo cp -r static "$APP_DIR/"
+sudo cp -r resources "$APP_DIR/" 2>/dev/null || true
 
 # 3. 创建虚拟环境并安装依赖
 echo "[3/5] 创建虚拟环境并安装依赖..."
