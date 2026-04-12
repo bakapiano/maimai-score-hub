@@ -20,11 +20,11 @@ import {
   IconLink,
   IconUsers,
 } from "@tabler/icons-react";
-import { useNavigate } from "react-router-dom";
 
+import { AppFooter } from "../components/AppFooter";
 import { AppHeader } from "../components/AppHeader";
 import { AppShell } from "@mantine/core";
-import { AppFooter } from "../components/AppFooter";
+import { useNavigate } from "react-router-dom";
 
 export default function AboutPage() {
   const navigate = useNavigate();
@@ -32,7 +32,11 @@ export default function AboutPage() {
   return (
     <AppShell header={{ height: 56 }} padding={0}>
       <AppShell.Header>
-        <AppHeader profile={null} onLogout={() => navigate("/login")} offline={false} />
+        <AppHeader
+          profile={null}
+          onLogout={() => navigate("/login")}
+          offline={false}
+        />
       </AppShell.Header>
       <AppShell.Main
         style={{
@@ -55,7 +59,12 @@ export default function AboutPage() {
               <Paper withBorder shadow="sm" p="xl" radius="md">
                 <Stack gap="md">
                   <Group gap="sm">
-                    <ThemeIcon size={40} radius="md" color="red" variant="light">
+                    <ThemeIcon
+                      size={40}
+                      radius="md"
+                      color="red"
+                      variant="light"
+                    >
                       <IconHeart size={24} />
                     </ThemeIcon>
                     <Title order={3}>作者</Title>
@@ -74,7 +83,12 @@ export default function AboutPage() {
 
                   <Stack gap="xs">
                     <Group gap="sm">
-                      <ThemeIcon size={28} radius="md" color="dark" variant="light">
+                      <ThemeIcon
+                        size={28}
+                        radius="md"
+                        color="dark"
+                        variant="light"
+                      >
                         <IconBrandGithub size={18} />
                       </ThemeIcon>
                       <Anchor
@@ -87,7 +101,12 @@ export default function AboutPage() {
                     </Group>
 
                     <Group gap="sm">
-                      <ThemeIcon size={28} radius="md" color="blue" variant="light">
+                      <ThemeIcon
+                        size={28}
+                        radius="md"
+                        color="blue"
+                        variant="light"
+                      >
                         <IconBrandBilibili size={18} />
                       </ThemeIcon>
                       <Anchor
@@ -100,7 +119,12 @@ export default function AboutPage() {
                     </Group>
 
                     <Group gap="sm">
-                      <ThemeIcon size={28} radius="md" color="cyan" variant="light">
+                      <ThemeIcon
+                        size={28}
+                        radius="md"
+                        color="cyan"
+                        variant="light"
+                      >
                         <IconBrandQq size={18} />
                       </ThemeIcon>
                       <Text size="sm">QQ：2514965141</Text>
@@ -112,7 +136,12 @@ export default function AboutPage() {
               <Paper withBorder shadow="sm" p="xl" radius="md">
                 <Stack gap="md">
                   <Group gap="sm">
-                    <ThemeIcon size={40} radius="md" color="teal" variant="light">
+                    <ThemeIcon
+                      size={40}
+                      radius="md"
+                      color="teal"
+                      variant="light"
+                    >
                       <IconLink size={24} />
                     </ThemeIcon>
                     <Title order={3}>项目地址</Title>
@@ -121,7 +150,12 @@ export default function AboutPage() {
                   <Divider />
 
                   <Group gap="sm">
-                    <ThemeIcon size={28} radius="md" color="dark" variant="light">
+                    <ThemeIcon
+                      size={28}
+                      radius="md"
+                      color="dark"
+                      variant="light"
+                    >
                       <IconBrandGithub size={18} />
                     </ThemeIcon>
                     <Anchor
@@ -138,7 +172,12 @@ export default function AboutPage() {
               <Paper withBorder shadow="sm" p="xl" radius="md">
                 <Stack gap="md">
                   <Group gap="sm">
-                    <ThemeIcon size={40} radius="md" color="violet" variant="light">
+                    <ThemeIcon
+                      size={40}
+                      radius="md"
+                      color="violet"
+                      variant="light"
+                    >
                       <IconUsers size={24} />
                     </ThemeIcon>
                     <Title order={3}>交流群</Title>
@@ -147,10 +186,26 @@ export default function AboutPage() {
                   <Divider />
 
                   <Group gap="sm">
-                    <ThemeIcon size={28} radius="md" color="cyan" variant="light">
+                    <ThemeIcon
+                      size={28}
+                      radius="md"
+                      color="cyan"
+                      variant="light"
+                    >
                       <IconBrandQq size={18} />
                     </ThemeIcon>
-                    <Text size="sm">QQ 群：1078979790</Text>
+                    <Text size="sm">QQ 4群：1078979790</Text>
+                  </Group>
+                  <Group gap="sm">
+                    <ThemeIcon
+                      size={28}
+                      radius="md"
+                      color="cyan"
+                      variant="light"
+                    >
+                      <IconBrandQq size={18} />
+                    </ThemeIcon>
+                    <Text size="sm">QQ 5群：1098992498</Text>
                   </Group>
                 </Stack>
               </Paper>
