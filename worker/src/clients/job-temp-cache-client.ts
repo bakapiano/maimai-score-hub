@@ -7,11 +7,13 @@ import { initClient } from "@ts-rest/core";
 import * as sharedContract from "@maimai-score-hub/shared";
 
 import { getJobServiceBaseUrl } from "./job-service-client.ts";
+import { backendTsRestApi } from "./backend-http.ts";
 
 const { jobContract } = sharedContract;
 
 const client = initClient(jobContract, {
   baseUrl: `${getJobServiceBaseUrl()}/api`,
+  api: backendTsRestApi,
 });
 
 /**

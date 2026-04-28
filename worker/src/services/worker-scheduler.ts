@@ -14,6 +14,7 @@ import {
   claimNextJob,
   updateJob,
 } from "../clients/job-service-client.ts";
+import { shouldSkipForBackoff } from "../clients/backend-http.ts";
 import { DEFAULT_HEADERS, WORKER_DEFAULTS } from "../constants.ts";
 import { cleanupService } from "./cleanup-service.ts";
 
@@ -220,6 +221,9 @@ export class WorkerScheduler {
     );
 
     this.reportIntervalId = setInterval(() => {
+      if (shouldSkipForBackoff()) {
+        return;
+      }
       this.reportBotStatus().catch((err) =>
         console.error("[WorkerScheduler] Bot status report failed:", err),
       );
@@ -242,6 +246,14 @@ export class WorkerScheduler {
    */
   private async tick(): Promise<void> {
     if (this.paused || this.processingCount >= this.config.maxProcessJobs) {
+      return;
+    }
+
+    // If the backend has been unreachable for several ticks, skip this tick
+    // entirely. Without this, every tick + cookie check + bot report fires
+    // a new fetch that hangs for the full timeout, piling up sockets faster
+    // than they can be reaped — what put the worker at OOM on 2026-04-28.
+    if (shouldSkipForBackoff()) {
       return;
     }
 

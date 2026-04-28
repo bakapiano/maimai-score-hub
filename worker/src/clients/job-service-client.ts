@@ -9,6 +9,7 @@ import type { Job, JobPatch, JobResponse } from "../types/index.ts";
 
 import config from "../config.ts";
 import { initClient } from "@ts-rest/core";
+import { backendTsRestApi } from "./backend-http.ts";
 
 // Re-export types for backward compatibility
 export type { Job, JobPatch, JobResponse };
@@ -31,6 +32,7 @@ export function buildUrl(path: string): string {
 
 const client = initClient(jobContract, {
   baseUrl: `${ensureBaseUrl()}/api`,
+  api: backendTsRestApi,
 });
 
 function deserializeJob(payload: JobResponse): Job {
