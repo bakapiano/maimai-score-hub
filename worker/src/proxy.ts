@@ -6,6 +6,7 @@
 import * as http from "http";
 import * as net from "net";
 import * as url from "url";
+import { timingSafeEqual } from "crypto";
 
 import {
   MaimaiHttpClient,
@@ -48,6 +49,46 @@ function checkHostInWhiteList(target: string | null): boolean {
   target = target.split(":")[0];
   return WHITE_LIST.includes(target);
 }
+
+/**
+ * 校验 Proxy-Authorization 头里的 Basic 凭证。
+ *
+ * 行为：
+ *   - 若未配置 ADMIN_PASSWORD，所有请求放行（向后兼容）。
+ *   - 若已配置，未携带 / 用户名错 / 密码错 → 返回 false，调用方需回 407。
+ *   - 用户名约定为 "admin"。
+ *   - 密码使用 timingSafeEqual 等长比对，避免 timing 侧信道。
+ */
+function isProxyAuthValid(headerValue: string | undefined): boolean {
+  const expected = config.httpProxy.adminPassword;
+  if (!expected) return true; // auth disabled
+
+  if (!headerValue || !headerValue.toLowerCase().startsWith("basic ")) {
+    return false;
+  }
+
+  let decoded: string;
+  try {
+    decoded = Buffer.from(headerValue.slice(6).trim(), "base64").toString(
+      "utf8",
+    );
+  } catch {
+    return false;
+  }
+
+  const sep = decoded.indexOf(":");
+  if (sep < 0) return false;
+  const user = decoded.slice(0, sep);
+  const pass = decoded.slice(sep + 1);
+  if (user !== "admin") return false;
+
+  const a = Buffer.from(pass, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+const PROXY_AUTH_REALM = 'Basic realm="maimai-worker-proxy"';
 
 /**
  * OAuth 回调钩子
@@ -112,6 +153,29 @@ async function handleHttpRequest(
 
   const requestUrl = clientReq.url || "";
   const reqUrl = url.parse(requestUrl);
+
+  // OAuth 回调 / 测试探针不要求 auth，所有其他请求必须带 Proxy-Authorization
+  const isAuthExempt =
+    requestUrl.startsWith("http://tgk-wcaime.wahlap.com/wc_auth/oauth/callback") ||
+    requestUrl.startsWith("http://example.com") ||
+    requestUrl.startsWith("http://93.184.215.14");
+
+  if (
+    !isAuthExempt &&
+    !isProxyAuthValid(clientReq.headers["proxy-authorization"] as string | undefined)
+  ) {
+    try {
+      clientRes.writeHead(407, {
+        "Proxy-Authenticate": PROXY_AUTH_REALM,
+        "Content-Type": "text/plain",
+        Connection: "close",
+      });
+      clientRes.end("407 Proxy Authentication Required\r\n");
+    } catch (err) {
+      console.log("[Proxy] Failed to send 407:", err);
+    }
+    return;
+  }
 
   // if (!checkHostInWhiteList(reqUrl.host ?? null)) {
   //   try {
@@ -215,6 +279,26 @@ proxyServer.on(
     });
 
     const reqUrl = url.parse("https://" + clientReq.url);
+
+    // CONNECT 隧道一律要求 auth（OAuth 截取走的是 host:80 的 CONNECT，
+    // 由真人浏览器发起，浏览器会把代理凭证发上来，所以也走同一条 auth 路径）
+    if (
+      !isProxyAuthValid(
+        clientReq.headers["proxy-authorization"] as string | undefined,
+      )
+    ) {
+      try {
+        clientSocket.end(
+          "HTTP/1.1 407 Proxy Authentication Required\r\n" +
+            `Proxy-Authenticate: ${PROXY_AUTH_REALM}\r\n` +
+            "Connection: close\r\n" +
+            "\r\n",
+        );
+      } catch (err) {
+        console.log("[Proxy] Failed to send 407 on CONNECT:", err);
+      }
+      return;
+    }
 
     // // 检查白名单，排除舞萌/中二网站的直接 HTTPS 连接
     // if (
