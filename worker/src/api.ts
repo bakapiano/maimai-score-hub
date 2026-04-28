@@ -75,23 +75,17 @@ app.get("/api/status", async (_req, res) => {
     if (expired) {
       res.json({ expired: true, friendCode });
     } else {
+      // NOTE: 不要把 cookie 值放进响应里。前端只读 authOngoing/expired/friendCode；
+      // 把明文 bot session 暴露在公网 :3999 上是个真洞（任何人就能冒充 bot）。
       res.json({
         expired: false,
         friendCode,
-        cookie: cookieStore.extractValues(cj),
       });
     }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal Server Error" });
   }
-});
-
-/**
- * 获取 Job Service 配置
- */
-app.get("/api/job-service/config", (_req, res) => {
-  res.json({ baseUrl: config.jobService?.baseUrl ?? "" });
 });
 
 /**
