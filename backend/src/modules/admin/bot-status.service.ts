@@ -12,6 +12,7 @@ export interface BotStatus {
   lastReportedAt: string;
   friendCount: number | null;
   remark: string | null;
+  cabinetUserId: number | null;
 }
 
 /**
@@ -160,6 +161,7 @@ export class BotStatusService implements OnModuleDestroy {
         lastReportedAt: new Date(doc.lastReportedAt).toISOString(),
         friendCount: doc.friendCount,
         remark: doc.remark ?? null,
+        cabinetUserId: doc.cabinetUserId ?? null,
       };
     });
   }
@@ -183,6 +185,39 @@ export class BotStatusService implements OnModuleDestroy {
       { friendCode },
       { $set: { remark } },
     );
+  }
+
+  /**
+   * Set the cabinet (sdgb) userId for a bot. Used as `userId1` of
+   * UserFriendRegistApi when the auto-update flow needs the bot to add a
+   * user as a rival on the cabinet side.
+   */
+  async setCabinetUserId(
+    friendCode: string,
+    cabinetUserId: number | null,
+  ): Promise<void> {
+    await this.botStatusModel.updateOne(
+      { friendCode },
+      { $set: { cabinetUserId } },
+    );
+  }
+
+  /**
+   * Convenience: pick an available bot whose cabinetUserId is set, with
+   * the lowest current idle-update load. Returns null if none qualifies.
+   */
+  async pickAvailableCabinetBot(): Promise<{
+    friendCode: string;
+    cabinetUserId: number;
+  } | null> {
+    const all = await this.getAll();
+    const candidates = all.filter(
+      (b) => b.available && b.cabinetUserId != null,
+    );
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => (a.friendCount ?? 0) - (b.friendCount ?? 0));
+    const pick = candidates[0];
+    return { friendCode: pick.friendCode, cabinetUserId: pick.cabinetUserId! };
   }
 
   /**

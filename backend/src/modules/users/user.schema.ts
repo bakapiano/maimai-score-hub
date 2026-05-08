@@ -32,6 +32,28 @@ export class UserEntity {
 
   @Prop({ type: String, default: null })
   preferredBotFriendCode!: string | null;
+
+  /**
+   * Numeric maimai cabinet userId, populated by scanning the player's card
+   * QR through the sdgb-worker. null = unbound.
+   */
+  @Prop({ type: Number, default: null })
+  cabinetUserId!: number | null;
+
+  /**
+   * Whether the auto-update scheduler should poll this user's score hash
+   * and trigger refresh jobs. Requires cabinetUserId to be set.
+   */
+  @Prop({ type: Boolean, default: false })
+  autoUpdate!: boolean;
+
+  /**
+   * MD5 of the last (musicId,level,achievement,deluxscoreMax) tuples
+   * we observed for this user via sdgb-worker. Used to skip work when
+   * nothing changed since the previous tick.
+   */
+  @Prop({ type: String, default: null })
+  lastScoreHash!: string | null;
 }
 
 export type UserDocument = HydratedDocument<UserEntity>;

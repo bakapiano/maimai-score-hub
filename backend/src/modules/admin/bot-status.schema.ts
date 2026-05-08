@@ -22,6 +22,14 @@ export class BotStatusEntity {
   /** 是否已发送过不可用通知（用于去重） */
   @Prop({ type: Boolean, default: false })
   notifiedUnavailable!: boolean;
+
+  /**
+   * Numeric cabinet userId for this bot. Used by the auto-update scheduler
+   * as the `userId1` of UserFriendRegistApi when adding a user as the bot's
+   * rival on the cabinet side. null = bot cannot perform sdgb operations yet.
+   */
+  @Prop({ type: Number, default: null })
+  cabinetUserId!: number | null;
 }
 
 export type BotStatusDocument = HydratedDocument<BotStatusEntity>;

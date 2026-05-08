@@ -1,17 +1,26 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
+  HttpCode,
   Patch,
   Post,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  BindCabinetQrBodySchema,
   DivingFishTokenBodySchema,
+  SetAutoUpdateBodySchema,
   UpdateProfileBodySchema,
+  type BindCabinetQrBody,
   type DivingFishTokenBody,
+  type SetAutoUpdateBody,
   type UpdateProfileBody,
 } from '@maimai-score-hub/shared';
 import { UsersService } from './users.service';
@@ -21,6 +30,7 @@ import { getImportToken } from '../../common/prober/diving-fish/api';
 import { JobService } from '../job/job.service';
 import { BotStatusService } from '../admin/bot-status.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { CabinetService } from './cabinet.service';
 
 type AuthedRequest = Request & { userId?: string };
 
@@ -40,6 +50,7 @@ export class UsersController {
     private readonly users: UsersService,
     private readonly jobs: JobService,
     private readonly botStatus: BotStatusService,
+    private readonly cabinet: CabinetService,
   ) {}
 
   @Get('profile')
@@ -56,6 +67,9 @@ export class UsersController {
       ...rest,
       hasDivingFishImportToken: !!divingFishImportToken,
       hasLxnsImportToken: !!lxnsImportToken,
+      cabinetUserId: user.cabinetUserId ?? null,
+      autoUpdate: !!user.autoUpdate,
+      lastScoreHash: user.lastScoreHash ?? null,
     };
   }
 
@@ -215,5 +229,103 @@ export class UsersController {
       pendingJob: !!activeJob,
       activeJob,
     };
+  }
+
+  /**
+   * Bind a maimai cabinet (sdgb) userId to the current account by scanning
+   * the player's physical-card QR. Accepts EITHER:
+   *   - JSON  body { qrCode: "SGWCMAID..." }
+   *   - multipart/form-data field `image` (PNG/JPG)
+   *
+   * The endpoint is the only place we go from QR → cabinetUserId, so the
+   * verification step (≥5 score rows must match) lives here too. See
+   * CabinetService.bindByQr.
+   */
+  @Post('cabinet/bind-qr')
+  @HttpCode(201)
+  @UseInterceptors(FileInterceptor('image'))
+  async bindCabinetQr(
+    @Req() req: AuthedRequest,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() rawBody: unknown,
+  ) {
+    const userId = extractUserId(req);
+    if (!userId) {
+      throw new BadRequestException('No user context');
+    }
+
+    // multer eats the JSON body when content-type is multipart, so do
+    // schema validation only when we got JSON.
+    let qrFromBody: string | undefined;
+    if (!file) {
+      const parsed: BindCabinetQrBody = BindCabinetQrBodySchema.parse(
+        rawBody ?? {},
+      );
+      qrFromBody = parsed.qrCode ?? undefined;
+    } else {
+      // multer body fields are strings; allow `qrCode` as a fallback even
+      // when image is present (caller might want to pass a pre-decoded one).
+      const maybe = (rawBody as { qrCode?: unknown } | undefined)?.qrCode;
+      if (typeof maybe === 'string' && maybe.length > 0) {
+        qrFromBody = maybe;
+      }
+    }
+
+    let qrCode = qrFromBody;
+    if (!qrCode && file) {
+      qrCode = (await this.cabinet.decodeQrImage(file.buffer)) ?? undefined;
+      if (!qrCode) {
+        throw new BadRequestException('图片中未识别出二维码');
+      }
+    }
+    if (!qrCode) {
+      throw new BadRequestException(
+        '请提供 qrCode 字段或上传 image 字段的二维码图片',
+      );
+    }
+
+    const user = await this.users.getById(userId);
+    const result = await this.cabinet.bindByQr(user.friendCode, qrCode);
+
+    if (!result.ok) {
+      if (result.reason === 'no-sync') {
+        throw new BadRequestException(
+          '请先完成一次成绩同步后再绑定二维码',
+        );
+      }
+      throw new ConflictException({
+        error: 'user id not match',
+        matchedRows: result.matchedRows,
+      });
+    }
+
+    await this.users.update(userId, { cabinetUserId: result.cabinetUserId });
+    return { ok: true as const, cabinetUserId: result.cabinetUserId };
+  }
+
+  /**
+   * Toggle the auto-update opt-in. Requires cabinetUserId to already be
+   * bound; the scheduler ignores users without it anyway, but the explicit
+   * check here surfaces the requirement to the UI.
+   */
+  @Post('cabinet/auto-update')
+  @HttpCode(201)
+  async setAutoUpdate(
+    @Req() req: AuthedRequest,
+    @Body(new ZodValidationPipe(SetAutoUpdateBodySchema))
+    body: SetAutoUpdateBody,
+  ) {
+    const userId = extractUserId(req);
+    if (!userId) {
+      throw new BadRequestException('No user context');
+    }
+    const user = await this.users.getById(userId);
+    if (body.enabled && user.cabinetUserId == null) {
+      throw new BadRequestException('请先绑定二维码再开启自动更新');
+    }
+    const updated = await this.users.update(userId, {
+      autoUpdate: body.enabled,
+    });
+    return { ok: true as const, autoUpdate: !!updated.autoUpdate };
   }
 }

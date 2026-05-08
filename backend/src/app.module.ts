@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AdminModule } from './modules/admin/admin.module';
 import { AppController } from './app.controller';
 import { AuthModule } from './modules/auth/auth.module';
+import { AutoUpdateModule } from './modules/auto-update/auto-update.module';
 import { CoverModule } from './modules/cover/cover.module';
 import { JobModule } from './modules/job/job.module';
 import { Module } from '@nestjs/common';
@@ -10,6 +11,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MusicModule } from './modules/music/music.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ScoreExportModule } from './modules/score-export/score-export.module';
+import { SdgbWorkerModule } from './modules/sdgb-worker/sdgb-worker.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { UsersModule } from './modules/users/users.module';
 
@@ -49,10 +51,12 @@ import { UsersModule } from './modules/users/users.module';
     }),
     AuthModule,
     AdminModule,
+    AutoUpdateModule,
     CoverModule,
     JobModule,
     MusicModule,
     ScoreExportModule,
+    SdgbWorkerModule,
     SyncModule,
     UsersModule,
   ],

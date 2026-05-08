@@ -16,6 +16,7 @@ import { NotifyStateEntity, NotifyStateSchema } from './notify-state.schema';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MusicModule } from '../music/music.module';
 import { JobModule } from '../job/job.module';
+import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 
 @Module({
   imports: [
@@ -31,9 +32,10 @@ import { JobModule } from '../job/job.module';
     CoverModule,
     MusicModule,
     JobModule,
+    SdgbWorkerModule,
   ],
   controllers: [AdminController],
   providers: [AdminService, AdminGuard, BotStatusService, FeishuNotifyService],
-  exports: [BotStatusService],
+  exports: [BotStatusService, AdminGuard],
 })
 export class AdminModule {}

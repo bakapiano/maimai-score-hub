@@ -8,6 +8,7 @@ import {
   jobContract,
   musicContract,
   scoreExportContract,
+  sdgbWorkerContract,
   syncContract,
   usersContract,
 } from './modules';
@@ -24,4 +25,5 @@ export const openApiContract = c.router({
   admin: adminContract,
   cover: coverContract,
   scoreExport: scoreExportContract,
+  sdgbWorker: sdgbWorkerContract,
 });

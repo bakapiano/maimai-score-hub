@@ -7,16 +7,23 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { JobModule } from '../job/job.module';
 import { AdminModule } from '../admin/admin.module';
+import { CabinetService } from './cabinet.service';
+import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
+import { SyncEntity, SyncSchema } from '../sync/sync.schema';
 
 @Module({
   imports: [
     forwardRef(() => AuthModule),
     forwardRef(() => JobModule),
     forwardRef(() => AdminModule),
-    MongooseModule.forFeature([{ name: UserEntity.name, schema: UserSchema }]),
+    SdgbWorkerModule,
+    MongooseModule.forFeature([
+      { name: UserEntity.name, schema: UserSchema },
+      { name: SyncEntity.name, schema: SyncSchema },
+    ]),
   ],
   controllers: [UsersController],
-  providers: [UsersService],
-  exports: [UsersService],
+  providers: [UsersService, CabinetService],
+  exports: [UsersService, CabinetService],
 })
 export class UsersModule {}

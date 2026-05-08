@@ -11,9 +11,11 @@ import {
 import {
   ReportBotStatusBodySchema,
   SearchJobsQuerySchema,
+  UpdateBotCabinetUserIdBodySchema,
   UpdateBotRemarkBodySchema,
   type ReportBotStatusBody,
   type SearchJobsQuery,
+  type UpdateBotCabinetUserIdBody,
   type UpdateBotRemarkBody,
 } from '@maimai-score-hub/shared';
 
@@ -23,6 +25,7 @@ import { BotStatusService } from './bot-status.service';
 import { JobApiLogService } from '../job/api-log/api-log.service';
 import { JobService } from '../job/job.service';
 import { IdleUpdateSchedulerService } from '../job/idle-update/idle-update-scheduler.service';
+import { SdgbJobService } from '../sdgb-worker/sdgb-job.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 @Controller('admin')
@@ -33,6 +36,7 @@ export class AdminController {
     private readonly apiLogService: JobApiLogService,
     private readonly idleUpdateScheduler: IdleUpdateSchedulerService,
     private readonly jobService: JobService,
+    private readonly sdgbJobService: SdgbJobService,
   ) {}
 
   /**
@@ -64,6 +68,22 @@ export class AdminController {
     body: UpdateBotRemarkBody,
   ) {
     await this.botStatusService.updateRemark(friendCode, body.remark);
+    return { ok: true };
+  }
+
+  /**
+   * Configure the cabinet (sdgb) userId for a bot. The auto-update flow uses
+   * this id as `userId1` of UserFriendRegistApi when adding a user as the
+   * bot's rival on the cabinet side.
+   */
+  @Patch('bot-status/:friendCode/cabinet-user-id')
+  @UseGuards(AdminGuard)
+  async updateBotCabinetUserId(
+    @Param('friendCode') friendCode: string,
+    @Body(new ZodValidationPipe(UpdateBotCabinetUserIdBodySchema))
+    body: UpdateBotCabinetUserIdBody,
+  ) {
+    await this.botStatusService.setCabinetUserId(friendCode, body.cabinetUserId);
     return { ok: true };
   }
 
@@ -161,5 +181,15 @@ export class AdminController {
   async cleanupJobs() {
     const deletedCount = await this.jobService.cleanupOldJobs();
     return { ok: true, deletedCount };
+  }
+
+  /**
+   * sdgb-worker dashboard data: heartbeats, queue depth, recent jobs.
+   * Frontend admin portal polls this every few seconds.
+   */
+  @Get('sdgb-worker/status')
+  @UseGuards(AdminGuard)
+  async getSdgbWorkerStatus() {
+    return this.sdgbJobService.getAdminStatus();
   }
 }

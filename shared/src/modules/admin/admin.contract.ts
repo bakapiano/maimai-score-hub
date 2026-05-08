@@ -13,6 +13,7 @@ import {
   ReportBotStatusBodySchema,
   SearchJobsQuerySchema,
   SearchJobsResponseSchema,
+  UpdateBotCabinetUserIdBodySchema,
   UpdateBotRemarkBodySchema,
 } from './admin.schema';
 
@@ -80,6 +81,13 @@ export const adminContract = c.router({
     path: '/admin/bot-status/:friendCode/remark',
     headers: c.type<{ 'x-admin-password': string }>(),
     body: UpdateBotRemarkBodySchema,
+    responses: { 200: c.type<{ ok: true }>() },
+  },
+  updateBotCabinetUserId: {
+    method: 'PATCH',
+    path: '/admin/bot-status/:friendCode/cabinet-user-id',
+    headers: c.type<{ 'x-admin-password': string }>(),
+    body: UpdateBotCabinetUserIdBodySchema,
     responses: { 200: c.type<{ ok: true }>() },
   },
   getJobApiLogs: {

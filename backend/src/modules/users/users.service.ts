@@ -54,6 +54,9 @@ export class UsersService {
       autoExportDivingFish?: boolean;
       autoExportLxns?: boolean;
       preferredBotFriendCode?: string | null;
+      cabinetUserId?: number | null;
+      autoUpdate?: boolean;
+      lastScoreHash?: string | null;
     },
   ) {
     if (!isValidObjectId(id)) {
@@ -81,6 +84,15 @@ export class UsersService {
     }
     if ('preferredBotFriendCode' in input) {
       updateDoc.preferredBotFriendCode = input.preferredBotFriendCode ?? null;
+    }
+    if ('cabinetUserId' in input) {
+      updateDoc.cabinetUserId = input.cabinetUserId ?? null;
+    }
+    if ('autoUpdate' in input) {
+      updateDoc.autoUpdate = !!input.autoUpdate;
+    }
+    if ('lastScoreHash' in input) {
+      updateDoc.lastScoreHash = input.lastScoreHash ?? null;
     }
 
     const updated = await this.userModel.findByIdAndUpdate(id, updateDoc, {
@@ -163,5 +175,27 @@ export class UsersService {
     return this.userModel.countDocuments({
       idleUpdateBotFriendCode: botFriendCode,
     });
+  }
+
+  /**
+   * 获取所有开启了"自动更新"且已绑定 cabinetUserId 的用户。
+   * 由 auto-update scheduler 每隔 AUTO_UPDATE_CRON 扫描调用。
+   */
+  async getAutoUpdateUsers() {
+    return this.userModel
+      .find({ autoUpdate: true, cabinetUserId: { $ne: null } })
+      .lean();
+  }
+
+  /**
+   * 写入最新观察到的成绩 hash。无论触发出来的 job 是否成功都会更新，
+   * 因为我们要保证下一次扫到相同 hash 时不再重复触发。
+   */
+  async setLastScoreHash(id: string, hash: string): Promise<void> {
+    if (!isValidObjectId(id)) return;
+    await this.userModel.updateOne(
+      { _id: id },
+      { $set: { lastScoreHash: hash } },
+    );
   }
 }

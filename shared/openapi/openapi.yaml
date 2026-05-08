@@ -223,6 +223,14 @@ paths:
                     type: boolean
                   autoExportLxns:
                     type: boolean
+                  cabinetUserId:
+                    type: integer
+                    nullable: true
+                  autoUpdate:
+                    type: boolean
+                  lastScoreHash:
+                    type: string
+                    nullable: true
                 required:
                   - id
                   - friendCode
@@ -273,6 +281,14 @@ paths:
                     type: boolean
                   autoExportLxns:
                     type: boolean
+                  cabinetUserId:
+                    type: integer
+                    nullable: true
+                  autoUpdate:
+                    type: boolean
+                  lastScoreHash:
+                    type: string
+                    nullable: true
                 required:
                   - id
                   - friendCode
@@ -578,6 +594,79 @@ paths:
                   - enabled
                   - botFriendCode
                   - pendingJob
+  /users/cabinet/bind-qr:
+    post:
+      tags: *a3
+      parameters: []
+      operationId: users.bindCabinetQr
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                qrCode:
+                  type: string
+                  minLength: 1
+      responses:
+        "201":
+          description: "201"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  cabinetUserId:
+                    type: integer
+                    minimum: 0
+                    exclusiveMinimum: 0
+                required:
+                  - ok
+                  - cabinetUserId
+        "400":
+          description: "400"
+        "409":
+          description: "409"
+  /users/cabinet/auto-update:
+    post:
+      tags: *a3
+      parameters: []
+      operationId: users.setAutoUpdate
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+              required:
+                - enabled
+      responses:
+        "201":
+          description: "201"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  autoUpdate:
+                    type: boolean
+                required:
+                  - ok
+                  - autoUpdate
+        "400":
+          description: "400"
   /sync/latest:
     get:
       tags: &a4
@@ -1927,6 +2016,9 @@ paths:
                     remark:
                       type: string
                       nullable: true
+                    cabinetUserId:
+                      type: integer
+                      nullable: true
                   required:
                     - friendCode
                     - available
@@ -1953,6 +2045,33 @@ paths:
                   nullable: true
               required:
                 - remark
+      responses:
+        "200":
+          description: "200"
+  /admin/bot-status/{friendCode}/cabinet-user-id:
+    patch:
+      tags: *a7
+      parameters:
+        - name: friendCode
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: admin.updateBotCabinetUserId
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cabinetUserId:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: 0
+                  nullable: true
+              required:
+                - cabinetUserId
       responses:
         "200":
           description: "200"
@@ -2068,6 +2187,217 @@ paths:
       responses:
         "200":
           description: "200"
+        "404":
+          description: "404"
+  /sdgb-job/next:
+    post:
+      tags: &a9
+        - sdgbWorker
+      parameters: []
+      operationId: sdgbWorker.next
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workerId:
+                  type: string
+                  minLength: 1
+              required:
+                - workerId
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  jobType:
+                    type: string
+                    enum:
+                      - scan_qr
+                      - get_rival_hash
+                      - add_rival
+                  status:
+                    type: string
+                    enum:
+                      - queued
+                      - processing
+                      - completed
+                      - failed
+                  payload:
+                    type: object
+                    additionalProperties: {}
+                  result:
+                    type: object
+                    additionalProperties: {}
+                    nullable: true
+                  error:
+                    type: string
+                    nullable: true
+                  requesterTag:
+                    type: string
+                    nullable: true
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                required:
+                  - id
+                  - jobType
+                  - status
+                  - payload
+                  - result
+                  - error
+                  - createdAt
+                  - updatedAt
+        "204":
+          description: "204"
+  /sdgb-job/{jobId}:
+    get:
+      tags: *a9
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: sdgbWorker.get
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  jobType:
+                    type: string
+                    enum:
+                      - scan_qr
+                      - get_rival_hash
+                      - add_rival
+                  status:
+                    type: string
+                    enum:
+                      - queued
+                      - processing
+                      - completed
+                      - failed
+                  payload:
+                    type: object
+                    additionalProperties: {}
+                  result:
+                    type: object
+                    additionalProperties: {}
+                    nullable: true
+                  error:
+                    type: string
+                    nullable: true
+                  requesterTag:
+                    type: string
+                    nullable: true
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                required:
+                  - id
+                  - jobType
+                  - status
+                  - payload
+                  - result
+                  - error
+                  - createdAt
+                  - updatedAt
+        "404":
+          description: "404"
+    patch:
+      tags: *a9
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: sdgbWorker.patch
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - queued
+                    - processing
+                    - completed
+                    - failed
+                result:
+                  type: object
+                  additionalProperties: {}
+                  nullable: true
+                error:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  jobType:
+                    type: string
+                    enum:
+                      - scan_qr
+                      - get_rival_hash
+                      - add_rival
+                  status:
+                    type: string
+                    enum:
+                      - queued
+                      - processing
+                      - completed
+                      - failed
+                  payload:
+                    type: object
+                    additionalProperties: {}
+                  result:
+                    type: object
+                    additionalProperties: {}
+                    nullable: true
+                  error:
+                    type: string
+                    nullable: true
+                  requesterTag:
+                    type: string
+                    nullable: true
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                required:
+                  - id
+                  - jobType
+                  - status
+                  - payload
+                  - result
+                  - error
+                  - createdAt
+                  - updatedAt
         "404":
           description: "404"
 info:

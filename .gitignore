@@ -88,3 +88,5 @@ backend/score-exports/
 .github/copilot-instructions.md
 
 .mcp.json
+
+ocr/scripts/training/

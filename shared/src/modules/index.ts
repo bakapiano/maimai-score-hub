@@ -7,3 +7,4 @@ export * from './admin';
 export * from './app';
 export * from './cover';
 export * from './score-export';
+export * from './sdgb-worker';

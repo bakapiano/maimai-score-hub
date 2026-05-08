@@ -11,6 +11,7 @@ export const BotStatusItemSchema = z
     friendCount: z.number().nullable().optional(),
     lastReportedAt: z.string().optional(),
     remark: z.string().nullable().optional(),
+    cabinetUserId: z.number().int().nullable().optional(),
   })
   .passthrough();
 
@@ -26,6 +27,10 @@ export const ReportBotStatusBodySchema = z.object({
 
 export const UpdateBotRemarkBodySchema = z.object({
   remark: z.string().nullable(),
+});
+
+export const UpdateBotCabinetUserIdBodySchema = z.object({
+  cabinetUserId: z.number().int().positive().nullable(),
 });
 
 export const AdminStatsSchema = z
@@ -55,4 +60,7 @@ export const JobApiLogsSchema = z.array(z.unknown());
 
 export type ReportBotStatusBody = z.infer<typeof ReportBotStatusBodySchema>;
 export type UpdateBotRemarkBody = z.infer<typeof UpdateBotRemarkBodySchema>;
+export type UpdateBotCabinetUserIdBody = z.infer<
+  typeof UpdateBotCabinetUserIdBodySchema
+>;
 export type SearchJobsQuery = z.infer<typeof SearchJobsQuerySchema>;
