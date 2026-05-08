@@ -1,4 +1,11 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 
 import { AdminGuard } from '../admin/admin.guard';
 import { AutoUpdateSchedulerService } from './auto-update-scheduler.service';
@@ -15,5 +22,24 @@ export class AutoUpdateController {
   @UseGuards(AdminGuard)
   async run(@Body() _body: unknown) {
     return this.scheduler.runSweep();
+  }
+
+  /**
+   * Admin support tool: force a refresh for one specific user, regardless
+   * of whether their score hash actually changed. Skips the hash check.
+   */
+  @Post('trigger/:friendCode')
+  @UseGuards(AdminGuard)
+  async triggerByFriendCode(@Param('friendCode') friendCode: string) {
+    if (!friendCode || !/^\d+$/.test(friendCode)) {
+      throw new BadRequestException('friendCode must be a numeric string');
+    }
+    try {
+      const result = await this.scheduler.triggerByFriendCode(friendCode);
+      return { ok: true, ...result };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException(message);
+    }
   }
 }

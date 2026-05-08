@@ -221,4 +221,84 @@ export class AutoUpdateSchedulerService
         ),
     ]);
   }
+
+  /**
+   * Admin manual trigger: skip the hash-diff check and just kick off the
+   * full update flow for one user (add bot as cabinet rival + create
+   * idle_update_score job). Used by `POST /auto-update/trigger` for
+   * support-style "force-refresh this user now" use cases.
+   *
+   * Does NOT touch lastScoreHash so the next cron tick will still run
+   * naturally if the hash is different by then.
+   */
+  async triggerByFriendCode(friendCode: string): Promise<{
+    friendCode: string;
+    cabinetUserId: number;
+    bot: { friendCode: string; cabinetUserId: number };
+    jobId: string;
+    addRival:
+      | { returnCode1: number; returnCode2: number }
+      | { error: string };
+  }> {
+    const user = await this.users.findByFriendCode(friendCode);
+    if (!user) {
+      throw new Error(`user not found for friendCode=${friendCode}`);
+    }
+    const cabinetUserId = (user as { cabinetUserId?: number | null })
+      .cabinetUserId;
+    if (cabinetUserId == null) {
+      throw new Error(
+        `friendCode=${friendCode} 未绑定 cabinetUserId，请先在前台扫码绑定`,
+      );
+    }
+    const bot = await this.botStatus.pickAvailableCabinetBot();
+    if (!bot) {
+      throw new Error('没有可用的、配置了 cabinetUserId 的 bot');
+    }
+
+    const [addRivalResult, jobResult] = await Promise.all([
+      this.sdgb
+        .addRival(
+          {
+            botCabinetUserId: bot.cabinetUserId,
+            targetCabinetUserId: cabinetUserId,
+          },
+          { tag: `admin-trigger:${friendCode}`, timeoutMs: 120_000 },
+        )
+        .then((r) => {
+          this.logger.log(
+            `[admin-trigger] addRival fc=${friendCode} returnCodes=${r.returnCode1}/${r.returnCode2}`,
+          );
+          return r as
+            | { returnCode1: number; returnCode2: number }
+            | { error: string };
+        })
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.warn(
+            `[admin-trigger] addRival fc=${friendCode} failed (continuing): ${msg}`,
+          );
+          return { error: msg };
+        }),
+      this.jobs.create({
+        friendCode,
+        skipUpdateScore: false,
+        jobType: 'idle_update_score',
+        botUserFriendCode: bot.friendCode,
+        isAuthenticated: true,
+      }),
+    ]);
+
+    this.logger.log(
+      `[admin-trigger] job created fc=${friendCode} bot=${bot.friendCode} jobId=${jobResult.jobId}`,
+    );
+
+    return {
+      friendCode,
+      cabinetUserId,
+      bot,
+      jobId: jobResult.jobId,
+      addRival: addRivalResult,
+    };
+  }
 }
