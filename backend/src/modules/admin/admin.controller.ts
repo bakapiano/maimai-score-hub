@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -25,6 +26,7 @@ import { BotStatusService } from './bot-status.service';
 import { JobApiLogService } from '../job/api-log/api-log.service';
 import { JobService } from '../job/job.service';
 import { IdleUpdateSchedulerService } from '../job/idle-update/idle-update-scheduler.service';
+import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
 import { SdgbJobService } from '../sdgb-worker/sdgb-job.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
@@ -37,6 +39,7 @@ export class AdminController {
     private readonly idleUpdateScheduler: IdleUpdateSchedulerService,
     private readonly jobService: JobService,
     private readonly sdgbJobService: SdgbJobService,
+    private readonly sdgbDispatcher: SdgbJobDispatcher,
   ) {}
 
   /**
@@ -191,5 +194,44 @@ export class AdminController {
   @UseGuards(AdminGuard)
   async getSdgbWorkerStatus() {
     return this.sdgbJobService.getAdminStatus();
+  }
+
+  /**
+   * Bind a bot's cabinetUserId by scanning the bot's card QR. Routes
+   * through sdgb-worker (scan_qr job) so the cabinet contract / crypto
+   * stays in one place. Body: `{ qrCode: string }`.
+   *
+   * Admin-only: this writes the cabinetUserId of a bot, which the
+   * auto-update flow uses as the userId1 of UserFriendRegistApi.
+   */
+  @Post('bot-status/:friendCode/bind-cabinet-qr')
+  @UseGuards(AdminGuard)
+  async bindBotCabinetQr(
+    @Param('friendCode') friendCode: string,
+    @Body() body: { qrCode?: unknown },
+  ) {
+    const qrCode =
+      typeof body?.qrCode === 'string' ? body.qrCode.trim() : '';
+    if (!qrCode) {
+      throw new BadRequestException('qrCode (string) required');
+    }
+    try {
+      const result = await this.sdgbDispatcher.scanQr(
+        { qrCode },
+        { tag: `admin-bot-bind:${friendCode}`, timeoutMs: 120_000 },
+      );
+      await this.botStatusService.setCabinetUserId(
+        friendCode,
+        result.cabinetUserId,
+      );
+      return {
+        ok: true,
+        friendCode,
+        cabinetUserId: result.cabinetUserId,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException(`扫码绑定失败: ${message}`);
+    }
   }
 }
