@@ -90,3 +90,5 @@ backend/score-exports/
 .mcp.json
 
 ocr/scripts/training/
+
+sdgb-worker

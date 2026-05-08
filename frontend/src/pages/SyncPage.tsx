@@ -29,6 +29,7 @@ import {
   getRecentJobStats,
 } from "../api/jobClient";
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
+import { CabinetBindingCard } from "../components/CabinetBindingCard";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { useAuth } from "../providers/AuthProvider";
 import { useNavigate } from "react-router-dom";
@@ -40,6 +41,9 @@ type UserProfileResponse = {
   autoExportDivingFish?: boolean;
   autoExportLxns?: boolean;
   profile: UserProfile | null;
+  cabinetUserId?: number | null;
+  autoUpdate?: boolean;
+  lastScoreHash?: string | null;
 };
 
 type LastSyncInfo = {
@@ -891,6 +895,17 @@ export default function SyncPage() {
               />
             </Stack>
           </Card>
+
+          {token && profile && (
+            <CabinetBindingCard
+              token={token}
+              cabinetUserId={profile.cabinetUserId ?? null}
+              autoUpdate={profile.autoUpdate ?? false}
+              onChanged={() => {
+                void loadProfile();
+              }}
+            />
+          )}
 
           {lastSync && (
             <Card withBorder padding="sm" radius="md">

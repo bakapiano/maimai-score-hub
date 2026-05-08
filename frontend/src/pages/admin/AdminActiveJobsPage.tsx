@@ -29,10 +29,12 @@ import {
   IconCheck,
   IconClock,
   IconEdit,
+  IconQrcode,
   IconRefresh,
   IconRobot,
   IconTrash,
 } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -112,6 +114,114 @@ export default function AdminActiveJobsPage() {
       );
     },
     [password, editRemarkValue],
+  );
+
+  // ── Cabinet user-id edit / QR-bind ──
+  const [editingCabinet, setEditingCabinet] = useState<string | null>(null);
+  const [editCabinetValue, setEditCabinetValue] = useState("");
+  const [cabinetBindBusy, setCabinetBindBusy] = useState<string | null>(null);
+
+  const saveCabinetUserId = useCallback(
+    async (friendCode: string) => {
+      if (!password) return;
+      const trimmed = editCabinetValue.trim();
+      let cabinetUserId: number | null = null;
+      if (trimmed) {
+        if (!/^\d+$/.test(trimmed)) {
+          notifications.show({
+            color: "red",
+            message: "cabinetUserId 必须是纯数字，留空表示清除",
+          });
+          return;
+        }
+        cabinetUserId = Number(trimmed);
+      }
+      const res = await fetch(
+        `/api/admin/bot-status/${encodeURIComponent(friendCode)}/cabinet-user-id`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-admin-password": password,
+          },
+          body: JSON.stringify({ cabinetUserId }),
+        },
+      );
+      if (!res.ok) {
+        notifications.show({
+          color: "red",
+          title: "保存失败",
+          message: `HTTP ${res.status}`,
+        });
+        return;
+      }
+      setEditingCabinet(null);
+      setBotStatuses(
+        (prev) =>
+          prev?.map((b) =>
+            b.friendCode === friendCode ? { ...b, cabinetUserId } : b,
+          ) ?? null,
+      );
+      notifications.show({ color: "green", message: "已保存" });
+    },
+    [password, editCabinetValue],
+  );
+
+  const bindCabinetByQr = useCallback(
+    async (friendCode: string) => {
+      if (!password) return;
+      const qrCode = window.prompt(
+        `请粘贴 bot ${friendCode} 卡牌上的 QR 字符串 (SGWCMAID...)`,
+        "",
+      );
+      if (!qrCode || !qrCode.trim()) return;
+      setCabinetBindBusy(friendCode);
+      try {
+        const res = await fetch(
+          `/api/admin/bot-status/${encodeURIComponent(friendCode)}/bind-cabinet-qr`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-admin-password": password,
+            },
+            body: JSON.stringify({ qrCode: qrCode.trim() }),
+          },
+        );
+        const text = await res.text();
+        const json = text ? JSON.parse(text) : null;
+        if (!res.ok) {
+          notifications.show({
+            color: "red",
+            title: "绑定失败",
+            message: json?.message ?? json?.error ?? `HTTP ${res.status}`,
+          });
+          return;
+        }
+        setBotStatuses(
+          (prev) =>
+            prev?.map((b) =>
+              b.friendCode === friendCode
+                ? { ...b, cabinetUserId: json.cabinetUserId }
+                : b,
+            ) ?? null,
+        );
+        notifications.show({
+          color: "green",
+          title: "绑定成功",
+          message: `cabinetUserId = ${json.cabinetUserId}`,
+        });
+      } catch (err) {
+        notifications.show({
+          color: "red",
+          title: "绑定失败",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        setCabinetBindBusy(null);
+      }
+    },
+    [password],
   );
 
   // ── Loaders ──
@@ -316,6 +426,7 @@ export default function AdminActiveJobsPage() {
                   <Table.Th>状态</Table.Th>
                   <Table.Th ta="right">好友数量</Table.Th>
                   <Table.Th>备注</Table.Th>
+                  <Table.Th>Cabinet UserId</Table.Th>
                   <Table.Th>最近上报时间</Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -388,6 +499,84 @@ export default function AdminActiveJobsPage() {
                             color="gray"
                           >
                             <IconEdit size={12} />
+                          </ActionIcon>
+                        </Group>
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      {editingCabinet === bot.friendCode ? (
+                        <Group gap="xs" wrap="nowrap">
+                          <TextInput
+                            size="xs"
+                            placeholder="纯数字 / 留空清除"
+                            value={editCabinetValue}
+                            onChange={(e) =>
+                              setEditCabinetValue(e.currentTarget.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                void saveCabinetUserId(bot.friendCode);
+                              } else if (e.key === "Escape") {
+                                setEditingCabinet(null);
+                              }
+                            }}
+                            style={{ flex: 1, minWidth: 120 }}
+                            autoFocus
+                          />
+                          <ActionIcon
+                            size="sm"
+                            variant="light"
+                            color="green"
+                            onClick={() =>
+                              void saveCabinetUserId(bot.friendCode)
+                            }
+                          >
+                            <IconCheck size={14} />
+                          </ActionIcon>
+                        </Group>
+                      ) : (
+                        <Group gap="xs" wrap="nowrap">
+                          <Text
+                            size="sm"
+                            ff="monospace"
+                            c={bot.cabinetUserId == null ? "dimmed" : undefined}
+                            style={{ cursor: "pointer" }}
+                            onClick={() => {
+                              setEditingCabinet(bot.friendCode);
+                              setEditCabinetValue(
+                                bot.cabinetUserId != null
+                                  ? String(bot.cabinetUserId)
+                                  : "",
+                              );
+                            }}
+                          >
+                            {bot.cabinetUserId ?? "-"}
+                          </Text>
+                          <ActionIcon
+                            size="xs"
+                            variant="subtle"
+                            color="gray"
+                            title="手动编辑 cabinet userId"
+                            onClick={() => {
+                              setEditingCabinet(bot.friendCode);
+                              setEditCabinetValue(
+                                bot.cabinetUserId != null
+                                  ? String(bot.cabinetUserId)
+                                  : "",
+                              );
+                            }}
+                          >
+                            <IconEdit size={12} />
+                          </ActionIcon>
+                          <ActionIcon
+                            size="xs"
+                            variant="subtle"
+                            color="grape"
+                            title="扫码绑定 cabinet"
+                            loading={cabinetBindBusy === bot.friendCode}
+                            onClick={() => void bindCabinetByQr(bot.friendCode)}
+                          >
+                            <IconQrcode size={12} />
                           </ActionIcon>
                         </Group>
                       )}

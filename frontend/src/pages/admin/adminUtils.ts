@@ -10,6 +10,7 @@ export interface BotStatus {
   lastReportedAt: string;
   friendCount: number | null;
   remark: string | null;
+  cabinetUserId: number | null;
 }
 
 export interface AdminStats {
