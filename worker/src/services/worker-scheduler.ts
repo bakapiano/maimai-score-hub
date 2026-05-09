@@ -74,7 +74,6 @@ export class WorkerScheduler {
   private intervalId: NodeJS.Timeout | null = null;
   private healthCheckIntervalId: NodeJS.Timeout | null = null;
   private reportIntervalId: NodeJS.Timeout | null = null;
-  private refreshPollIntervalId: NodeJS.Timeout | null = null;
   private paused = false;
 
   constructor() {
@@ -136,10 +135,6 @@ export class WorkerScheduler {
     if (this.reportIntervalId) {
       clearInterval(this.reportIntervalId);
       this.reportIntervalId = null;
-    }
-    if (this.refreshPollIntervalId) {
-      clearInterval(this.refreshPollIntervalId);
-      this.refreshPollIntervalId = null;
     }
     cleanupService.stop();
     console.log("[WorkerScheduler] Stopped");
@@ -236,50 +231,6 @@ export class WorkerScheduler {
     console.log(
       `[WorkerScheduler] Bot status reporting started (interval: ${WORKER_DEFAULTS.botStatusReportIntervalMs}ms)`,
     );
-
-    // Backend-triggered on-demand refresh loop (5s by default).
-    // QR-login flips friendListRefreshRequestedAt on a bot after addRival;
-    // this loop notices and re-fetches that bot's friend list out of band
-    // so the snapshot lookup doesn't have to wait for the 5-min tick.
-    this.refreshPollIntervalId = setInterval(() => {
-      if (shouldSkipForBackoff()) return;
-      this.pollFriendListRefreshRequests().catch((err) =>
-        console.error(
-          "[WorkerScheduler] Friend list refresh poll failed:",
-          err,
-        ),
-      );
-    }, WORKER_DEFAULTS.friendListRefreshPollIntervalMs);
-    console.log(
-      `[WorkerScheduler] Friend list refresh poll started (interval: ${WORKER_DEFAULTS.friendListRefreshPollIntervalMs}ms)`,
-    );
-  }
-
-  /**
-   * Pull "which bots need a friend list refresh now" from backend.
-   * On hit, run reportBotStatus over just those bots — that re-fetches
-   * the friend list AND clears the server-side flag (the report path
-   * sets friendListRefreshRequestedAt = null whenever friendCount is
-   * present in the payload).
-   */
-  private async pollFriendListRefreshRequests(): Promise<void> {
-    let res: Response;
-    try {
-      res = await fetch(
-        buildUrl("/api/admin/bot-status/refresh-requests"),
-      );
-    } catch (err) {
-      // Backend may be transiently down; quiet about it.
-      return;
-    }
-    if (!res.ok) return;
-    const body = (await res.json()) as { friendCodes?: string[] };
-    const fcs = body?.friendCodes ?? [];
-    if (!fcs.length) return;
-    console.log(
-      `[WorkerScheduler] On-demand friend list refresh for ${fcs.length} bot(s): ${fcs.join(", ")}`,
-    );
-    await reportBotStatus(new Set(fcs));
   }
 
   /**

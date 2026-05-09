@@ -12,12 +12,18 @@ export const JobStageSchema = z.enum([
   "send_request",
   "wait_acceptance",
   "update_score",
+  "fetch_friend_list",
 ]);
 
 export const JobTypeSchema = z.enum([
   "immediate",
   "idle_add_friend",
   "idle_update_score",
+  // QR-login support: simply fetch the bot's friend list and return it
+  // in result.friends. No score sync, no add/remove. Job is queued
+  // pre-assigned to a specific bot (botUserFriendCode) so only the
+  // worker holding that cookie picks it up.
+  "fetch_friend_list",
 ]);
 
 export const ScoreProgressSchema = z.object({

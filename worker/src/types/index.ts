@@ -43,7 +43,11 @@ export type JobStatus =
   | "failed"
   | "canceled";
 
-export type JobStage = "send_request" | "wait_acceptance" | "update_score";
+export type JobStage =
+  | "send_request"
+  | "wait_acceptance"
+  | "update_score"
+  | "fetch_friend_list";
 export type JobType = "immediate" | "idle_add_friend" | "idle_update_score";
 
 /**
@@ -87,7 +91,10 @@ export interface JobPatch {
   friendRequestSentAt?: string | null;
   status?: JobStatus;
   stage?: JobStage;
-  result?: AggregatedScoreResult;
+  // result is loosely-typed because different jobTypes shape it differently:
+  //   immediate / idle_update_score → AggregatedScoreResult
+  //   fetch_friend_list             → { friends: FriendInfo[] }
+  result?: AggregatedScoreResult | Record<string, unknown>;
   profile?: UserProfile;
   error?: string | null;
   executing?: boolean;

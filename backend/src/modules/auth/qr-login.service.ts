@@ -2,24 +2,47 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
+import { randomUUID } from 'crypto';
 
 import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
 
-import { BotFriendSnapshotService } from '../admin/bot-friend-snapshot.service';
 import { BotStatusService } from '../admin/bot-status.service';
+import { JobService } from '../job/job.service';
 import { MusicEntity } from '../music/music.schema';
 import type { ChartPayload, MusicDocument } from '../music/music.schema';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
 import { UsersService } from '../users/users.service';
 import { getRating } from '../../common/rating';
+import {
+  QrLoginAttemptEntity,
+  type QrLoginAttemptDocument,
+  type QrLoginStatus,
+} from './qr-login-attempt.schema';
 
-const SNAPSHOT_POLL_INTERVAL_MS = 3_000;
-const SNAPSHOT_TIMEOUT_MS = 90_000;
+export interface QrLoginFastResult {
+  kind: 'fast';
+  token: string;
+  user: { id: string; friendCode: string; [key: string]: unknown };
+}
+
+export interface QrLoginAsyncResult {
+  kind: 'async';
+  attemptId: string;
+}
+
+export type QrLoginInitResult = QrLoginFastResult | QrLoginAsyncResult;
+
+export interface QrLoginPollResult {
+  attemptId: string;
+  status: QrLoginStatus;
+  token?: string | null;
+  user?: { id: string; friendCode: string; [key: string]: unknown } | null;
+  error?: string | null;
+}
 
 /**
  * Thrown when the cabinet rejects the QR string as expired (errorID!=0,
- * userID=-1). Carries a stable name so the controller can map it to a
- * specific 400 response instead of the raw "QR auth failed: {...}".
+ * userID=-1). Caller maps to a specific 400 response.
  */
 export class QrExpiredError extends Error {
   constructor() {
@@ -28,22 +51,22 @@ export class QrExpiredError extends Error {
   }
 }
 
-export interface QrLoginResult {
-  token: string;
-  user: { id: string; friendCode: string; [key: string]: unknown };
-}
-
 /**
  * QR-code login.
  *
  * Two paths:
- *  - FAST: user already has cabinetUserId bound → look them up directly,
- *    sign a token, done.
- *  - SLOW: brand-new user. Compute their b50 rating from sdgb's music
- *    response, ask one bot to addRival the cabinet user (UserFriendRegistApi
- *    is bidirectional and instant — no manual accept needed), then poll
- *    bot_friend_snapshots for a match on (rivalName, computed rating).
- *    Unique match → friendCode. Ambiguous → reject.
+ *  - FAST (sync): cabinetUserId already bound → look user up, sign a
+ *    token, return { kind:'fast', token, user } from the original POST.
+ *  - SLOW (async): brand-new user. The POST returns { kind:'async',
+ *    attemptId } immediately; the FE polls /auth/login-by-qr/:id every
+ *    second or two until status='matched' (token attached) or 'failed'
+ *    (error attached). The actual work runs in the background:
+ *      1. pick a bot
+ *      2. fetch_friend_list (before)  ← dxnet job
+ *      3. addRival                    ← sdgb job
+ *      4. fetch_friend_list (after)   ← dxnet job
+ *      5. diff result2 - result1 by friendCode
+ *      6. unique (name,rating) match in the candidate set → done
  */
 @Injectable()
 export class QrLoginService {
@@ -53,18 +76,23 @@ export class QrLoginService {
     private readonly sdgb: SdgbJobDispatcher,
     private readonly users: UsersService,
     private readonly botStatus: BotStatusService,
-    private readonly snapshot: BotFriendSnapshotService,
+    private readonly jobs: JobService,
     private readonly jwt: JwtService,
     @InjectModel(MusicEntity.name)
     private readonly musicModel: Model<MusicDocument>,
+    @InjectModel(QrLoginAttemptEntity.name)
+    private readonly attemptModel: Model<QrLoginAttemptDocument>,
   ) {}
 
-  async loginByQr(qrCode: string): Promise<QrLoginResult> {
+  /**
+   * Sync entry. Either signs a token immediately (fast path) or returns
+   * an attemptId that the FE polls.
+   */
+  async loginByQr(qrCode: string): Promise<QrLoginInitResult> {
     if (!qrCode || !qrCode.trim()) {
       throw new Error('qrCode required');
     }
 
-    // (1) Resolve the QR to a cabinet userId + display name + music list.
     let scan;
     try {
       scan = await this.sdgb.scanQr(
@@ -73,43 +101,37 @@ export class QrLoginService {
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      // sdgb-worker raises this exact sentinel when the cabinet returns
-      // userID=-1 (QR expired). Surface a typed error so the controller
-      // can map it to a 400 with a user-friendly Chinese message instead
-      // of "QR auth failed: {...}".
       if (message.includes('QR_EXPIRED')) {
         throw new QrExpiredError();
       }
       throw err;
     }
+
     const cabinetUserId = scan.cabinetUserId;
     const rivalName = scan.rivalName;
 
-    // (2) Fast path: cabinetUserId already bound to a user.
+    // Fast path.
     const existing = await this.users.findByCabinetUserId(cabinetUserId);
     if (existing) {
       this.logger.log(
         `QR-login fast path: cabinetUid=${cabinetUserId} → friendCode=${existing.friendCode}`,
       );
-      return this.signFor(existing);
+      return { kind: 'fast', ...(await this.signFor(existing as never)) };
     }
 
     if (!rivalName) {
       throw new Error('cabinet did not return rival name; cannot match');
     }
 
-    // (3) Compute the user's b50 rating from sdgb's music response.
     const myRating = await this.computeB50(scan.music);
     if (myRating == null) {
       throw new Error(
         '无法从机台成绩计算 rating（可能 music 表未同步），请稍后重试',
       );
     }
-    this.logger.log(
-      `QR-login slow path: cabinetUid=${cabinetUserId} name=${rivalName} computedRating=${myRating}`,
-    );
 
-    // (4) Pick a bot with a configured cabinetUserId.
+    // Pick a bot up-front so we can record it on the attempt and fail
+    // fast if there isn't one.
     const bot = await this.botStatus.pickAvailableCabinetBot();
     if (!bot) {
       throw new Error(
@@ -117,37 +139,137 @@ export class QrLoginService {
       );
     }
 
-    // (5) addRival is bidirectional + instant; no manual accept required.
-    // Fire it and don't wait — the bot's friend list will reflect the new
-    // friend after the worker re-fetches it. We also flag the bot for an
-    // out-of-band friend list refresh so the worker re-fetches in seconds
-    // instead of waiting up to 5 min for the next regular tick.
-    this.sdgb
-      .addRival(
-        {
-          botCabinetUserId: bot.cabinetUserId,
-          targetCabinetUserId: cabinetUserId,
-        },
-        { tag: `qr-login-add:${cabinetUserId}`, timeoutMs: 120_000 },
-      )
-      .then(() => this.botStatus.requestFriendListRefresh(bot.friendCode))
-      .catch((err) =>
-        this.logger.warn(
-          `QR-login addRival failed (continuing): ${err instanceof Error ? err.message : err}`,
-        ),
-      );
-
-    // (6) Poll bot's snapshot for the (name, rating) match.
-    const friendCode = await this.waitForMatch(
-      bot.friendCode,
+    const attemptId = randomUUID();
+    await this.attemptModel.create({
+      id: attemptId,
+      status: 'pending' as QrLoginStatus,
+      cabinetUserId,
       rivalName,
-      myRating,
+      computedRating: myRating,
+      botUserFriendCode: bot.friendCode,
+      resolvedFriendCode: null,
+      token: null,
+      error: null,
+    });
+    this.logger.log(
+      `QR-login slow path enqueued attemptId=${attemptId} cabinetUid=${cabinetUserId} name=${rivalName} rating=${myRating} bot=${bot.friendCode}`,
     );
 
-    // (7) Find or create the User row, persist cabinetUserId so next login
-    // hits the fast path. Also seed a minimal profile (just username +
-    // rating, no avatar) so the SPA's ProfileCard renders something
-    // before the user runs a manual sync.
+    // Fire and forget — FE polls.
+    this.runSlowPath(attemptId, cabinetUserId, rivalName, myRating, bot).catch(
+      (err) => {
+        this.logger.error(
+          `QR-login slow path attemptId=${attemptId} crashed: ${err instanceof Error ? err.message : err}`,
+        );
+        // Best effort: persist the failure so polling FE sees it.
+        this.attemptModel
+          .updateOne(
+            { id: attemptId },
+            {
+              $set: {
+                status: 'failed',
+                error: err instanceof Error ? err.message : String(err),
+              },
+            },
+          )
+          .catch(() => {});
+      },
+    );
+
+    return { kind: 'async', attemptId };
+  }
+
+  /**
+   * Background worker for the slow path. Updates the attempt row at
+   * each step so the FE can render progress (and we can debug).
+   */
+  private async runSlowPath(
+    attemptId: string,
+    cabinetUserId: number,
+    rivalName: string,
+    myRating: number,
+    bot: { friendCode: string; cabinetUserId: number },
+  ): Promise<void> {
+    const setStatus = async (
+      status: QrLoginStatus,
+      extra: Record<string, unknown> = {},
+    ) => {
+      await this.attemptModel.updateOne(
+        { id: attemptId },
+        { $set: { status, ...extra } },
+      );
+    };
+
+    // (1) Fetch friend list BEFORE addRival.
+    await setStatus('fetching_before');
+    const before = await this.jobs.fetchFriendList(bot.friendCode, 90_000);
+    const beforeCodes = new Set(before.friends.map((f) => f.friendCode));
+    this.logger.log(
+      `QR-login attemptId=${attemptId} before-fetch ${before.friends.length} friends`,
+    );
+
+    // (2) addRival on the cabinet (instant + bidirectional).
+    await setStatus('adding_rival');
+    const rival = await this.sdgb.addRival(
+      {
+        botCabinetUserId: bot.cabinetUserId,
+        targetCabinetUserId: cabinetUserId,
+      },
+      { tag: `qr-login-add:${cabinetUserId}`, timeoutMs: 60_000 },
+    );
+    this.logger.log(
+      `QR-login attemptId=${attemptId} addRival rc1=${rival.returnCode1} rc2=${rival.returnCode2}`,
+    );
+
+    // (3) Fetch friend list AFTER addRival. Retry up to 2× with a small
+    // sleep if the candidate set is empty — accounts for any propagation
+    // delay between the cabinet and DXNet.
+    let candidates: typeof before.friends = [];
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      await setStatus('fetching_after');
+      const after = await this.jobs.fetchFriendList(bot.friendCode, 90_000);
+      candidates = after.friends.filter((f) => !beforeCodes.has(f.friendCode));
+      this.logger.log(
+        `QR-login attemptId=${attemptId} after-fetch attempt=${attempt} candidates=${candidates.length}`,
+      );
+      if (candidates.length > 0) break;
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 3_000));
+      }
+    }
+
+    if (candidates.length === 0) {
+      throw new Error(
+        '已尝试将 bot 加为你的好友但未在 bot 好友列表里看到新增条目，请稍后重试或使用 friendCode 登录',
+      );
+    }
+
+    // (4) Within the candidate diff, find the unique (userName, rating)
+    // match. The diff already excludes pre-existing friends so a stale
+    // homonym from before the request can't cause a false positive.
+    const matches = candidates.filter(
+      (c) => c.userName === rivalName && c.rating === myRating,
+    );
+    if (matches.length === 0) {
+      // 1 candidate but name/rating mismatch — race with another QR-login
+      // adding a different user, or a backend-vs-cabinet rating skew.
+      const cand = candidates
+        .map((c) => `${c.friendCode}(${c.userName}|${c.rating})`)
+        .join(', ');
+      throw new Error(
+        `候选好友里未找到 name=${rivalName} rating=${myRating} 的记录 (candidates: ${cand})`,
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(
+        `候选好友里找到 ${matches.length} 个 name=${rivalName} rating=${myRating} 的记录，请使用 friendCode 登录`,
+      );
+    }
+
+    const friendCode = matches[0].friendCode;
+
+    // (5) Find or create the User row, persist cabinetUserId so the
+    // next QR login hits the fast path. Seed a placeholder profile.
     let user = await this.users.findByFriendCode(friendCode);
     const placeholderProfile = {
       avatarUrl: null,
@@ -167,42 +289,58 @@ export class QrLoginService {
         profile: placeholderProfile,
       });
       this.logger.log(
-        `QR-login created new user friendCode=${friendCode} cabinetUid=${cabinetUserId}`,
+        `QR-login attemptId=${attemptId} created user fc=${friendCode} cabinetUid=${cabinetUserId}`,
       );
     } else {
-      const updates: {
-        cabinetUserId?: number;
-        profile?: typeof placeholderProfile;
-      } = {};
+      const updates: Record<string, unknown> = {};
       if (
         (user as { cabinetUserId?: number | null }).cabinetUserId !==
         cabinetUserId
       ) {
         updates.cabinetUserId = cabinetUserId;
       }
-      // Only seed placeholder profile when user has none yet — don't
-      // overwrite a real DXNet-scraped profile.
       if (!(user as { profile?: unknown }).profile) {
         updates.profile = placeholderProfile;
       }
       if (Object.keys(updates).length > 0) {
         await this.users.update(String(user._id), updates);
-        this.logger.log(
-          `QR-login updated existing user friendCode=${friendCode} fields=${Object.keys(updates).join(',')}`,
-        );
         user = (await this.users.findByFriendCode(friendCode))!;
       }
     }
-    return this.signFor(user);
+    const signed = await this.signFor(user as never);
+    await setStatus('matched', {
+      resolvedFriendCode: friendCode,
+      token: signed.token,
+    });
+  }
+
+  /**
+   * FE poll endpoint backing /auth/login-by-qr/:attemptId.
+   */
+  async pollAttempt(attemptId: string): Promise<QrLoginPollResult> {
+    const doc = await this.attemptModel.findOne({ id: attemptId }).lean();
+    if (!doc) {
+      throw new Error('attempt not found');
+    }
+    const result: QrLoginPollResult = {
+      attemptId,
+      status: doc.status,
+      token: doc.token ?? null,
+      error: doc.error ?? null,
+    };
+    if (doc.status === 'matched' && doc.resolvedFriendCode) {
+      const u = await this.users.findByFriendCode(doc.resolvedFriendCode);
+      if (u) {
+        result.user = { ...u, id: String(u._id), friendCode: u.friendCode };
+      }
+    }
+    return result;
   }
 
   /** Standard maimai b50: top 15 new + top 35 old, sum of per-row ratings. */
   private async computeB50(
     music: SdgbWorkerMusicEntry[],
   ): Promise<number | null> {
-    // Build cabinet → mongo lookup. cabinet uses numeric musicId; mongo
-    // MusicEntity.id is a string like "11422" — Number(id) lets us cross-walk.
-    // Fetch all music once (~1.5k rows, cheap) and bucket by numeric id.
     const allMusic = (await this.musicModel.find().lean()) as Array<{
       id: string;
       isNew?: boolean | null;
@@ -224,13 +362,11 @@ export class QrLoginService {
       const meta = byNumericId.get(entry.musicId);
       if (!meta) continue;
       for (const detail of entry.userRivalMusicDetailList ?? []) {
-        // chartIndex 10 (UTAGE) doesn't count toward b50.
-        if (detail.level === 10) continue;
-        const chartIndex = detail.level;
-        const chart = meta.charts[chartIndex];
+        if (detail.level === 10) continue; // utage
+        const chart = meta.charts[detail.level];
         const detailLevel = chart?.detailLevel ?? null;
         if (detailLevel == null) continue;
-        const achv = detail.achievement / 10000; // cabinet stores ach × 10000
+        const achv = detail.achievement / 10000;
         const rating = getRating(detailLevel, achv);
         if (!Number.isFinite(rating) || rating <= 0) continue;
         rows.push({ isNew: meta.isNew, rating });
@@ -252,42 +388,14 @@ export class QrLoginService {
     );
   }
 
-  private async waitForMatch(
-    botFriendCode: string,
-    userName: string,
-    rating: number,
-  ): Promise<string> {
-    const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
-    let lastNotFoundLogged = false;
-    while (Date.now() < deadline) {
-      const res = await this.snapshot.findFriendByNameRating(
-        botFriendCode,
-        userName,
-        rating,
-      );
-      if (res.kind === 'found') return res.friendCode;
-      if (res.kind === 'ambiguous') {
-        throw new Error(
-          `bot 好友列表里有多名同名同 rating 用户(${res.matches} 条)，请改用 friendCode 登录`,
-        );
-      }
-      if (!lastNotFoundLogged) {
-        this.logger.log(
-          `QR-login waiting on snapshot for bot=${botFriendCode} name=${userName} rating=${rating}`,
-        );
-        lastNotFoundLogged = true;
-      }
-      await new Promise((r) => setTimeout(r, SNAPSHOT_POLL_INTERVAL_MS));
-    }
-    throw new Error(
-      '暂未在 bot 好友列表里找到该用户，请稍后重试或使用 friendCode 登录',
-    );
-  }
-
   private async signFor(user: {
     _id: unknown;
     friendCode: string;
-  }): Promise<QrLoginResult> {
+    [key: string]: unknown;
+  }): Promise<{
+    token: string;
+    user: { id: string; friendCode: string; [key: string]: unknown };
+  }> {
     const userId = String(user._id);
     const now = Math.floor(Date.now() / 1000);
     const token = await this.jwt.signAsync(
@@ -296,11 +404,7 @@ export class QrLoginService {
     );
     return {
       token,
-      user: {
-        ...(user as Record<string, unknown>),
-        id: userId,
-        friendCode: user.friendCode,
-      },
+      user: { ...user, id: userId, friendCode: user.friendCode },
     };
   }
 }

@@ -4,8 +4,16 @@ export type JobStatus =
   | 'completed'
   | 'failed'
   | 'canceled';
-export type JobStage = 'send_request' | 'wait_acceptance' | 'update_score';
-export type JobType = 'immediate' | 'idle_add_friend' | 'idle_update_score';
+export type JobStage =
+  | 'send_request'
+  | 'wait_acceptance'
+  | 'update_score'
+  | 'fetch_friend_list';
+export type JobType =
+  | 'immediate'
+  | 'idle_add_friend'
+  | 'idle_update_score'
+  | 'fetch_friend_list';
 
 /**
  * 成绩更新进度

@@ -9,6 +9,10 @@ import { JobModule } from '../job/job.module';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MusicEntity, MusicSchema } from '../music/music.schema';
+import {
+  QrLoginAttemptEntity,
+  QrLoginAttemptSchema,
+} from './qr-login-attempt.schema';
 import { QrLoginService } from './qr-login.service';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { UsersModule } from '../users/users.module';
@@ -29,6 +33,7 @@ import { randomBytes } from 'node:crypto';
     }),
     MongooseModule.forFeature([
       { name: MusicEntity.name, schema: MusicSchema },
+      { name: QrLoginAttemptEntity.name, schema: QrLoginAttemptSchema },
     ]),
     UsersModule,
     SdgbWorkerModule,

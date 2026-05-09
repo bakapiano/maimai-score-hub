@@ -108,6 +108,9 @@ export class JobHandler {
         case "update_score":
           await this.handleUpdateScore();
           break;
+        case "fetch_friend_list":
+          await this.handleFetchFriendList();
+          break;
       }
     } catch (e: unknown) {
       // CookieExpiredError 不标记为 failed，让任务可以重试
@@ -347,6 +350,24 @@ export class JobHandler {
         `[JobHandler] Job ${this.job.id}: Friend not yet accepted, delaying updatedAt by 30s`,
       );
     }
+  }
+
+  /**
+   * Per-request friend-list fetch for the QR-login flow.
+   *
+   * The QR-login service creates two of these jobs (one before addRival,
+   * one after) for the same bot, then diffs the resulting friend lists
+   * by friendCode to identify the user that just joined. We don't sync
+   * scores, don't add anything, don't remove anything — just GET the
+   * page and surface the parsed list in result.friends.
+   */
+  private async handleFetchFriendList(): Promise<void> {
+    const friends = await this.client.getFriendList();
+    await this.applyPatch({
+      status: "completed",
+      result: { friends },
+      updatedAt: new Date(),
+    });
   }
 
   /**

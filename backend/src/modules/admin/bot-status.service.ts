@@ -224,8 +224,17 @@ export class BotStatusService implements OnModuleDestroy {
   /**
    * Worker pull: which bots are awaiting a refresh. Returns just the
    * friendCodes; the worker calls report afterwards which clears the flag.
+   *
+   * Auto-clears flags older than 5 min so a refresh request that no
+   * worker can satisfy (e.g. all bots' cookies expired, or the bot is
+   * homed on a worker that's offline) doesn't loop forever.
    */
   async getRefreshRequests(): Promise<string[]> {
+    const cutoff = new Date(Date.now() - 5 * 60_000);
+    await this.botStatusModel.updateMany(
+      { friendListRefreshRequestedAt: { $lt: cutoff } },
+      { $set: { friendListRefreshRequestedAt: null } },
+    );
     const docs = await this.botStatusModel
       .find({ friendListRefreshRequestedAt: { $ne: null } })
       .select({ friendCode: 1 })
@@ -252,6 +261,14 @@ export class BotStatusService implements OnModuleDestroy {
   /**
    * Convenience: pick an available bot whose cabinetUserId is set, with
    * the lowest current idle-update load. Returns null if none qualifies.
+   *
+   * "Available" cross-checks BOTH sides:
+   *   1. sdgb side: cabinetUserId is configured.
+   *   2. dxnet side: the bot has reported in recently (lastReportedAt
+   *      within REPORT_TIMEOUT_MS) AND has produced a friendCount at
+   *      least once. A bot that has never reported friendCount has no
+   *      live dxnet cookie — picking it would silently break QR-login
+   *      since fetch_friend_list jobs would never be claimed.
    */
   async pickAvailableCabinetBot(): Promise<{
     friendCode: string;
@@ -259,7 +276,7 @@ export class BotStatusService implements OnModuleDestroy {
   } | null> {
     const all = await this.getAll();
     const candidates = all.filter(
-      (b) => b.available && b.cabinetUserId != null,
+      (b) => b.available && b.cabinetUserId != null && b.friendCount != null,
     );
     if (candidates.length === 0) return null;
     candidates.sort((a, b) => (a.friendCount ?? 0) - (b.friendCount ?? 0));

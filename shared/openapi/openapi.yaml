@@ -74,6 +74,7 @@ paths:
                           - immediate
                           - idle_add_friend
                           - idle_update_score
+                          - fetch_friend_list
                       skipUpdateScore:
                         type: boolean
                       botUserFriendCode:
@@ -96,6 +97,7 @@ paths:
                           - send_request
                           - wait_acceptance
                           - update_score
+                          - fetch_friend_list
                       profile:
                         nullable: true
                       error:
@@ -399,6 +401,7 @@ paths:
                           - immediate
                           - idle_add_friend
                           - idle_update_score
+                          - fetch_friend_list
                       skipUpdateScore:
                         type: boolean
                       botUserFriendCode:
@@ -421,6 +424,7 @@ paths:
                           - send_request
                           - wait_acceptance
                           - update_score
+                          - fetch_friend_list
                       profile:
                         nullable: true
                       error:
@@ -544,6 +548,7 @@ paths:
                           - immediate
                           - idle_add_friend
                           - idle_update_score
+                          - fetch_friend_list
                       skipUpdateScore:
                         type: boolean
                       botUserFriendCode:
@@ -566,6 +571,7 @@ paths:
                           - send_request
                           - wait_acceptance
                           - update_score
+                          - fetch_friend_list
                       profile:
                         nullable: true
                       error:
@@ -855,6 +861,7 @@ paths:
                           - immediate
                           - idle_add_friend
                           - idle_update_score
+                          - fetch_friend_list
                       skipUpdateScore:
                         type: boolean
                       botUserFriendCode:
@@ -877,6 +884,7 @@ paths:
                           - send_request
                           - wait_acceptance
                           - update_score
+                          - fetch_friend_list
                       profile:
                         nullable: true
                       error:
@@ -973,6 +981,7 @@ paths:
                       - immediate
                       - idle_add_friend
                       - idle_update_score
+                      - fetch_friend_list
                   skipUpdateScore:
                     type: boolean
                   botUserFriendCode:
@@ -995,6 +1004,7 @@ paths:
                       - send_request
                       - wait_acceptance
                       - update_score
+                      - fetch_friend_list
                   profile:
                     nullable: true
                   error:
@@ -1093,6 +1103,7 @@ paths:
                     - send_request
                     - wait_acceptance
                     - update_score
+                    - fetch_friend_list
                 result:
                   nullable: true
                 profile:
@@ -1147,6 +1158,7 @@ paths:
                       - immediate
                       - idle_add_friend
                       - idle_update_score
+                      - fetch_friend_list
                   skipUpdateScore:
                     type: boolean
                   botUserFriendCode:
@@ -1169,6 +1181,7 @@ paths:
                       - send_request
                       - wait_acceptance
                       - update_score
+                      - fetch_friend_list
                   profile:
                     nullable: true
                   error:
@@ -1270,6 +1283,7 @@ paths:
                           - immediate
                           - idle_add_friend
                           - idle_update_score
+                          - fetch_friend_list
                       skipUpdateScore:
                         type: boolean
                       botUserFriendCode:
@@ -1292,6 +1306,7 @@ paths:
                           - send_request
                           - wait_acceptance
                           - update_score
+                          - fetch_friend_list
                       profile:
                         nullable: true
                       error:
@@ -1428,6 +1443,7 @@ paths:
                       - immediate
                       - idle_add_friend
                       - idle_update_score
+                      - fetch_friend_list
                   skipUpdateScore:
                     type: boolean
                   botUserFriendCode:
@@ -1450,6 +1466,7 @@ paths:
                       - send_request
                       - wait_acceptance
                       - update_score
+                      - fetch_friend_list
                   profile:
                     nullable: true
                   error:

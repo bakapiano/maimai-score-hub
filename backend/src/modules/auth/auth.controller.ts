@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Param,
   Post,
   Query,
   UploadedFile,
@@ -99,6 +100,24 @@ export class AuthController {
           message,
         });
       }
+      throw new BadRequestException(message);
+    }
+  }
+
+  /**
+   * QR-login progress poll (slow path). FE hits this every 1-2s after
+   * the original POST returned `{kind:'async', attemptId}`. Response
+   * statuses: pending / fetching_before / adding_rival / fetching_after /
+   * matched (token attached) / failed (error attached).
+   */
+  @Get('login-by-qr/:attemptId')
+  async pollLoginByQr(
+    @Param('attemptId') attemptId: string,
+  ) {
+    try {
+      return await this.qrLogin.pollAttempt(attemptId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       throw new BadRequestException(message);
     }
   }

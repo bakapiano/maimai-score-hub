@@ -79,6 +79,7 @@ const VALID_STAGE: readonly JobStage[] = [
   'send_request',
   'wait_acceptance',
   'update_score',
+  'fetch_friend_list',
 ] as const;
 
 @Injectable()
@@ -136,8 +137,14 @@ export class JobService {
       },
     );
 
-    const resolvedStage: 'send_request' | 'update_score' =
-      resolvedJobType === 'idle_update_score' ? 'update_score' : 'send_request';
+    let resolvedStage: JobStage;
+    if (resolvedJobType === 'idle_update_score') {
+      resolvedStage = 'update_score';
+    } else if (resolvedJobType === 'fetch_friend_list') {
+      resolvedStage = 'fetch_friend_list';
+    } else {
+      resolvedStage = 'send_request';
+    }
 
     const created = await this.jobModel.create({
       id,
@@ -158,6 +165,79 @@ export class JobService {
     });
 
     return { jobId: id, job: toJobResponse(created.toObject() as JobEntity) };
+  }
+
+  /**
+   * Out-of-band helper for QR-login: enqueue a fetch_friend_list job
+   * pre-assigned to a specific bot, then await its completion. We
+   * bypass the regular create() because:
+   *  - the friendCode column is the BOT's own friendCode (not a user's),
+   *    so the "cancel sibling jobs for same friendCode" rule there
+   *    would clobber unrelated immediate / idle jobs for that bot.
+   *  - we want to await the result inline.
+   *
+   * Throws if the job ends up in failed/canceled or if `timeoutMs` elapses.
+   */
+  async fetchFriendList(
+    botUserFriendCode: string,
+    timeoutMs = 60_000,
+  ): Promise<{
+    jobId: string;
+    friends: Array<{
+      friendCode: string;
+      userName: string | null;
+      rating: number | null;
+    }>;
+  }> {
+    const id = randomUUID();
+    const now = new Date();
+    await this.jobModel.create({
+      id,
+      // friendCode here identifies the bot (not a user) — informational only
+      // for fetch_friend_list jobs.
+      friendCode: botUserFriendCode,
+      jobType: 'fetch_friend_list',
+      skipUpdateScore: true,
+      botUserFriendCode,
+      friendRequestSentAt: null,
+      status: 'queued',
+      stage: 'fetch_friend_list',
+      executing: false,
+      error: null,
+      result: undefined,
+      isAuthenticated: true,
+      sourceScoreHash: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const doc = await this.jobModel.findOne({ id }).lean();
+      if (!doc) throw new Error(`fetch_friend_list job ${id} disappeared`);
+      if (doc.status === 'completed') {
+        const friends =
+          (doc.result as { friends?: unknown } | undefined)?.friends;
+        if (!Array.isArray(friends)) {
+          throw new Error(`fetch_friend_list job ${id} result missing friends`);
+        }
+        return {
+          jobId: id,
+          friends: friends as Array<{
+            friendCode: string;
+            userName: string | null;
+            rating: number | null;
+          }>,
+        };
+      }
+      if (doc.status === 'failed' || doc.status === 'canceled') {
+        throw new Error(
+          `fetch_friend_list job ${id} ended ${doc.status}: ${doc.error ?? '(no detail)'}`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, 1_500));
+    }
+    throw new Error(`fetch_friend_list job ${id} timed out after ${timeoutMs}ms`);
   }
 
   async get(jobId: string): Promise<JobResponse> {
@@ -294,7 +374,29 @@ export class JobService {
       return toJobResponse(processing.toObject() as JobEntity);
     }
 
-    // 2) Idle pool: claim pre-assigned queued jobs (e.g. idle_update_score)
+    // 2a) High-priority pre-assigned jobs: fetch_friend_list (QR-login
+     //     blocks on this — needs to jump the idle queue).
+    const fetchFL = await this.jobModel.findOneAndUpdate(
+      {
+        status: 'queued',
+        executing: false,
+        botUserFriendCode,
+        jobType: 'fetch_friend_list',
+      },
+      {
+        $set: {
+          status: 'processing',
+          executing: true,
+          updatedAt: now,
+        },
+      },
+      { new: true, sort: { createdAt: 1 } },
+    );
+    if (fetchFL) {
+      return toJobResponse(fetchFL.toObject() as JobEntity);
+    }
+
+    // 2b) Idle pool: claim pre-assigned queued jobs (e.g. idle_update_score)
     //    Lowest priority — only picked when no main pool jobs are available.
     const idle = await this.jobModel.findOneAndUpdate(
       { status: 'queued', executing: false, botUserFriendCode },
