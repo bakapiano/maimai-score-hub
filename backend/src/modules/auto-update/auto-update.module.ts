@@ -8,6 +8,10 @@ import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { SdgbJobEntity, SdgbJobSchema } from '../sdgb-worker/sdgb-job.schema';
 import { UsersModule } from '../users/users.module';
 import { AutoUpdateController } from './auto-update.controller';
+import {
+  AutoUpdateRunEntity,
+  AutoUpdateRunSchema,
+} from './auto-update-run.schema';
 import { AutoUpdateSchedulerService } from './auto-update-scheduler.service';
 
 @Module({
@@ -19,6 +23,7 @@ import { AutoUpdateSchedulerService } from './auto-update-scheduler.service';
     MongooseModule.forFeature([
       { name: JobEntity.name, schema: JobSchema },
       { name: SdgbJobEntity.name, schema: SdgbJobSchema },
+      { name: AutoUpdateRunEntity.name, schema: AutoUpdateRunSchema },
     ]),
   ],
   controllers: [AutoUpdateController],

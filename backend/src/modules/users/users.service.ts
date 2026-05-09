@@ -198,4 +198,29 @@ export class UsersService {
       { $set: { lastScoreHash: hash } },
     );
   }
+
+  /**
+   * Conditional CAS variant of setLastScoreHash, used by the auto-update
+   * sweep to settle a per-user race between multiple backend instances.
+   *
+   * Returns true only when the user document still had `expected` as its
+   * lastScoreHash (so we successfully "won" the hash flip). When false,
+   * another instance already observed and recorded this transition — the
+   * caller should NOT trigger a duplicate update job.
+   */
+  async tryAdvanceLastScoreHash(
+    id: string,
+    expected: string | null,
+    next: string,
+  ): Promise<boolean> {
+    if (!isValidObjectId(id)) return false;
+    const filter: Record<string, unknown> = { _id: id };
+    // Mongo treats `field: null` as matching documents where the field is
+    // null OR missing, which is what we want for first-time runs.
+    filter.lastScoreHash = expected;
+    const res = await this.userModel.updateOne(filter, {
+      $set: { lastScoreHash: next },
+    });
+    return res.modifiedCount === 1;
+  }
 }

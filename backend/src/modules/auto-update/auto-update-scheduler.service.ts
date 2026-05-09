@@ -15,6 +15,7 @@ import { JobEntity } from '../job/job.schema';
 import { BotStatusService } from '../admin/bot-status.service';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
 import { SdgbJobEntity } from '../sdgb-worker/sdgb-job.schema';
+import { AutoUpdateRunEntity } from './auto-update-run.schema';
 
 /**
  * Polls every AUTO_UPDATE_CRON tick (default: every 15 minutes) and, for
@@ -50,6 +51,8 @@ export class AutoUpdateSchedulerService
     private readonly jobsModel: Model<JobEntity>,
     @InjectModel(SdgbJobEntity.name)
     private readonly sdgbJobsModel: Model<SdgbJobEntity>,
+    @InjectModel(AutoUpdateRunEntity.name)
+    private readonly runsModel: Model<AutoUpdateRunEntity>,
     config: ConfigService,
   ) {
     this.cronExpr = config.get<string>('AUTO_UPDATE_CRON', '*/15 * * * *');
@@ -59,8 +62,12 @@ export class AutoUpdateSchedulerService
     this.cron = new CronJob(
       this.cronExpr,
       () => {
-        this.runSweep().catch((err) =>
-          this.logger.error('Auto-update sweep failed', err),
+        // Cron-fired sweeps must claim the bucket so that multiple backend
+        // instances do not all run the same sweep at the same tick. Manual
+        // admin-triggered sweeps go through runSweep() directly with no
+        // claim, which is intentional ("force run now").
+        this.runSweepClaimed().catch((err) =>
+          this.logger.error('Auto-update cron sweep failed', err),
         );
       },
       null,
@@ -72,6 +79,88 @@ export class AutoUpdateSchedulerService
   onModuleDestroy() {
     this.cron?.stop();
     this.cron = null;
+  }
+
+  /**
+   * Compute the bucket key for the cron tick that JUST fired (or, for
+   * out-of-cron callers, the closest preceding tick). We use the CronJob's
+   * own `lastDate()` when available so the key is exactly aligned with the
+   * cron expression — no separate rounding logic to drift out of sync.
+   */
+  private currentBucketKey(): string {
+    const last = this.cron?.lastDate();
+    const ref = last instanceof Date ? last : new Date();
+    // ISO minute precision in UTC. Using UTC avoids two instances in
+    // different timezones disagreeing on the bucket.
+    return ref.toISOString().slice(0, 16);
+  }
+
+  /**
+   * Cron-driven entrypoint. Tries to claim the current bucket; if some
+   * other instance already won, returns null without doing any work.
+   */
+  private async runSweepClaimed(): Promise<ReturnType<
+    AutoUpdateSchedulerService['runSweep']
+  > | null> {
+    const bucketKey = this.currentBucketKey();
+    let won = false;
+    try {
+      // Atomic upsert + returnDocument: 'before' — same trick
+      // IdleUpdateLogService.tryAcquire uses for the nightly sweep.
+      const previous = await this.runsModel.findOneAndUpdate(
+        { bucketKey },
+        {
+          $setOnInsert: {
+            bucketKey,
+            triggeredAt: new Date(),
+            ranOn: process.env.HOSTNAME || 'unknown',
+            status: 'running',
+            totalUsers: 0,
+            triggered: 0,
+            skippedNoChange: 0,
+            failed: 0,
+          },
+        },
+        { upsert: true, returnDocument: 'before' },
+      );
+      won = previous === null;
+    } catch (err) {
+      // Duplicate-key race: another instance got the doc inserted between
+      // our findOne (which returned null) and our upsert. Treat as "lost".
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('E11000')) {
+        won = false;
+      } else {
+        throw err;
+      }
+    }
+
+    if (!won) {
+      this.logger.debug?.(
+        `auto-update bucket=${bucketKey} already claimed by another instance, skipping`,
+      );
+      return null;
+    }
+
+    this.logger.log(`auto-update bucket=${bucketKey} claimed, running sweep`);
+    const summary = await this.runSweep();
+    await this.runsModel
+      .updateOne(
+        { bucketKey },
+        {
+          $set: {
+            status: 'completed',
+            totalUsers: summary.totalUsers,
+            triggered: summary.triggered,
+            skippedNoChange: summary.skippedNoChange,
+            failed: summary.failed,
+          },
+        },
+      )
+      .catch((err) =>
+        this.logger.warn(`failed to finalize auto-update run row: ${err}`),
+      );
+    return summary;
   }
 
   /**
@@ -132,10 +221,26 @@ export class AutoUpdateSchedulerService
             continue;
           }
 
-          // Store the hash unconditionally before doing any side-effecting
-          // work; per spec, a failed job should not cause us to retrigger
-          // on the same observed hash.
-          await this.users.setLastScoreHash(String(u._id), hash);
+          // Per-user CAS: only the instance that successfully flips
+          // lastScoreHash from `u.lastScoreHash` → `hash` proceeds to
+          // trigger the update. This makes the sweep safe even when the
+          // bucket-level claim is bypassed (e.g. the manual /run endpoint
+          // is hit on multiple instances at once).
+          const advanced = await this.users.tryAdvanceLastScoreHash(
+            String(u._id),
+            (u as { lastScoreHash?: string | null }).lastScoreHash ?? null,
+            hash,
+          );
+          if (!advanced) {
+            skippedNoChange++;
+            entries.push({
+              friendCode: u.friendCode,
+              cabinetUserId,
+              action: 'skipped',
+              message: 'hash already advanced by another instance',
+            });
+            continue;
+          }
 
           await this.triggerUpdateForUser(u.friendCode, cabinetUserId);
           triggered++;
