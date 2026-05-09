@@ -86,6 +86,8 @@ backend/score-exports/
 
 # Copilot instructions (contains server credentials)
 .github/copilot-instructions.md
+# CLAUDE.md mirrors copilot-instructions.md with the same secrets
+CLAUDE.md
 
 .mcp.json
 
