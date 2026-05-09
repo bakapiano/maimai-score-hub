@@ -173,12 +173,9 @@ export function CabinetBindingCard({
     <Card withBorder padding="md" radius="md">
       <Stack gap="sm">
         <Group justify="space-between" align="center">
-          <Group gap="xs" align="center">
-            <Text fw={600}>神秘二维码绑定</Text>
-            <Badge color="orange" variant="light" size="sm">
-              测试中
-            </Badge>
-          </Group>
+          <Badge color="orange" variant="light" size="sm">
+            测试中
+          </Badge>
           {cabinetUserId != null ? (
             <Badge color="green" variant="light">
               已绑定 #{cabinetUserId}

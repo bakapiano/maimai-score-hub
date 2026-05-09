@@ -16,7 +16,14 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { IconClock, IconInfoCircle, IconLogin } from "@tabler/icons-react";
+import {
+  IconClock,
+  IconCloudUpload,
+  IconInfoCircle,
+  IconLogin,
+  IconMoon,
+  IconRefresh,
+} from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useState } from "react";
 import type { JobResponse as JobStatus } from "@maimai-score-hub/shared";
@@ -243,6 +250,52 @@ function formatDate(dateString: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/**
+ * Section heading used at the top level of SyncPage. Keeps the visual
+ * rhythm consistent across "同步成绩 / 神秘二维码绑定 / 夜间更新 /
+ * 更新查分器" without each section reinventing its own title row.
+ */
+function SectionHeader({
+  icon,
+  color,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactNode;
+  color: string;
+  title: string;
+  subtitle?: React.ReactNode;
+}) {
+  return (
+    <Group gap="sm" align="center" mb={4}>
+      <Box
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 8,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: `var(--mantine-color-${color}-light)`,
+          color: `var(--mantine-color-${color}-filled)`,
+        }}
+      >
+        {icon}
+      </Box>
+      <Stack gap={0}>
+        <Text fw={700} size="lg" style={{ lineHeight: 1.2 }}>
+          {title}
+        </Text>
+        {subtitle && (
+          <Text size="xs" c="dimmed">
+            {subtitle}
+          </Text>
+        )}
+      </Stack>
+    </Group>
+  );
 }
 
 export default function SyncPage() {
@@ -854,13 +907,12 @@ export default function SyncPage() {
 
         {/* Sync Section */}
         <Stack gap="md">
-          <Text fw={600} size="lg">
-            同步成绩
-          </Text>
-
-          <Text size="sm" c="dimmed">
-            从 maimai DX NET 同步你的最新游戏成绩数据。
-          </Text>
+          <SectionHeader
+            icon={<IconCloudUpload size={18} />}
+            color="blue"
+            title="同步成绩"
+            subtitle="从 maimai DX NET 拉取最新游戏成绩"
+          />
 
           <Card withBorder padding="md" radius="md">
             <Stack gap="md">
@@ -895,17 +947,6 @@ export default function SyncPage() {
               />
             </Stack>
           </Card>
-
-          {token && profile && (
-            <CabinetBindingCard
-              token={token}
-              cabinetUserId={profile.cabinetUserId ?? null}
-              autoUpdate={profile.autoUpdate ?? false}
-              onChanged={() => {
-                void loadProfile();
-              }}
-            />
-          )}
 
           {lastSync && (
             <Card withBorder padding="sm" radius="md">
@@ -1243,18 +1284,34 @@ export default function SyncPage() {
           )}
         </Stack>
 
+        {/* Cabinet QR Section */}
+        {token && profile && (
+          <Stack gap="md">
+            <SectionHeader
+              icon={<IconRefresh size={18} />}
+              color="grape"
+              title="神秘二维码绑定"
+              subtitle="绑定后可在推分时自动同步成绩"
+            />
+            <CabinetBindingCard
+              token={token}
+              cabinetUserId={profile.cabinetUserId ?? null}
+              autoUpdate={profile.autoUpdate ?? false}
+              onChanged={() => {
+                void loadProfile();
+              }}
+            />
+          </Stack>
+        )}
+
         {/* Idle Update Section */}
         <Stack gap="md">
-          <Group gap="xs">
-            <Text fw={600} size="lg">
-              夜间更新
-            </Text>
-          </Group>
-
-          <Text size="sm" c="dimmed">
-            添加 Bot
-            为好友但不立即更新，在凌晨高成功率时段自动更新成绩；推荐在当前立即更新成功率较低的时候使用
-          </Text>
+          <SectionHeader
+            icon={<IconMoon size={18} />}
+            color="indigo"
+            title="夜间更新"
+            subtitle="将 Bot 加为不互删好友，凌晨成功率高时自动更新"
+          />
 
           {recentStats && recentStats.totalCount >= 5 && (
             <Group gap="xl">
@@ -1481,17 +1538,14 @@ export default function SyncPage() {
           )}
         </Stack>
 
-        <Divider />
-
         {/* Token Settings & Export Section */}
         <Stack gap="md">
-          <Text fw={600} size="lg">
-            更新查分器
-          </Text>
-
-          <Text size="sm" c="dimmed">
-            将同步的成绩导出到查分器，方便你在更多平台查看和分析成绩。
-          </Text>
+          <SectionHeader
+            icon={<IconCloudUpload size={18} />}
+            color="teal"
+            title="更新查分器"
+            subtitle="将成绩自动导出到水鱼 / 落雪查分器"
+          />
 
           {/* Diving-Fish Section */}
           <Card withBorder padding="md" radius="md">
