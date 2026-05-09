@@ -308,6 +308,14 @@ export class QrLoginService {
       }
     }
     const signed = await this.signFor(user as never);
+    // Mark the user active NOW so the dxnet worker's cleanup loop
+    // (which evicts friends inactive > 1h) doesn't immediately drop the
+    // friend we just added on the bot side. Without this, a
+    // brand-new user can lose the bot-side friendship before they
+    // ever finish syncing.
+    await this.users
+      .updateLastActiveAt(String(user._id))
+      .catch(() => undefined);
     await setStatus('matched', {
       resolvedFriendCode: friendCode,
       token: signed.token,

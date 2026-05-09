@@ -181,7 +181,12 @@ export class CleanupService {
         const inactiveFriends = nonIdleFriends.filter((fc) => {
           if (activeSet.has(fc)) return false;
           const lastActive = activityMap.get(fc);
-          if (!lastActive) return true; // 从未活跃过，清除
+          // Conservative: if backend has no activity record for this
+          // friendCode (e.g. brand-new account just created via QR
+          // login, or user that's never logged in), don't evict —
+          // we have no evidence they're stale. The bot's hard cap
+          // (top-20 by recency below) will still bound friend count.
+          if (!lastActive) return false;
           return nowMs - new Date(lastActive).getTime() > ONE_HOUR_MS;
         });
 
