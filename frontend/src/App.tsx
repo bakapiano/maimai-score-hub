@@ -23,6 +23,9 @@ const AdminSdgbWorkerPage = lazy(
 );
 const AdminSyncPage = lazy(() => import("./pages/admin/AdminSyncPage"));
 const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage"));
+const AdminWorkerLogsPage = lazy(
+  () => import("./pages/admin/AdminWorkerLogsPage"),
+);
 const AboutPage = lazy(() => import("./pages/AboutPage"));
 
 function PageLoader() {
@@ -65,6 +68,7 @@ function App() {
                 <Route path="job-debug" element={<AdminJobDebugPage />} />
                 <Route path="users" element={<AdminUsersPage />} />
                 <Route path="sdgb-worker" element={<AdminSdgbWorkerPage />} />
+                <Route path="worker-logs" element={<AdminWorkerLogsPage />} />
               </Route>
               <Route
                 element={

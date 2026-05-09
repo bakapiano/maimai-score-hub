@@ -14,6 +14,7 @@ import { ScoreExportModule } from './modules/score-export/score-export.module';
 import { SdgbWorkerModule } from './modules/sdgb-worker/sdgb-worker.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { UsersModule } from './modules/users/users.module';
+import { WorkerLogsModule } from './modules/worker-logs/worker-logs.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { UsersModule } from './modules/users/users.module';
     SdgbWorkerModule,
     SyncModule,
     UsersModule,
+    WorkerLogsModule,
   ],
   controllers: [AppController],
 })

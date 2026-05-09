@@ -8,7 +8,18 @@ import "./env.ts";
 import config from "./config.ts";
 import { proxy } from "./proxy.ts";
 import { startServer } from "./api.ts";
+import { startLogShipper } from "./log-shipper.ts";
 import { startWorker } from "./services/index.ts";
+
+// Tap console first so even early lines reach the admin log stream.
+// `kind: "dxnet"` matches the backend-side discriminator in WorkerLogEntity.
+startLogShipper({
+  backendUrl: (config.jobService?.baseUrl ?? "").replace(/\/$/, ""),
+  kind: "dxnet",
+  workerId:
+    process.env.WORKER_ID ||
+    `dxnet-worker-${process.env.HOSTNAME || "unknown"}`,
+});
 
 // 全局异常处理
 process.on("uncaughtException", (error) => {

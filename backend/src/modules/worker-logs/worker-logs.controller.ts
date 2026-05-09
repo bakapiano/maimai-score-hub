@@ -1,0 +1,91 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+
+import { AdminGuard } from '../admin/admin.guard';
+import {
+  WorkerLogsService,
+  type WorkerLogIngestEntry,
+} from './worker-logs.service';
+
+interface IngestBody {
+  workerId?: unknown;
+  entries?: unknown;
+}
+
+/**
+ * Two halves:
+ *   - POST /worker-logs/:kind/ingest — workers stream batches here. NO
+ *     admin guard (same posture as /sdgb-job/next and /job/next: workers
+ *     are trusted by virtue of network reachability, not by header).
+ *   - GET  /worker-logs/* — admin-only inspection endpoints.
+ */
+@Controller('worker-logs')
+export class WorkerLogsController {
+  constructor(private readonly logs: WorkerLogsService) {}
+
+  @Post(':kind/ingest')
+  async ingest(@Param('kind') kind: string, @Body() body: IngestBody) {
+    if (kind !== 'sdgb' && kind !== 'dxnet') {
+      throw new BadRequestException('kind must be one of: sdgb, dxnet');
+    }
+    const workerId =
+      typeof body.workerId === 'string' && body.workerId.trim()
+        ? body.workerId.trim()
+        : null;
+    if (!workerId) throw new BadRequestException('workerId required');
+    if (!Array.isArray(body.entries)) {
+      throw new BadRequestException('entries must be an array');
+    }
+    return this.logs.ingest(
+      kind,
+      workerId,
+      body.entries as WorkerLogIngestEntry[],
+    );
+  }
+
+  @Get()
+  @UseGuards(AdminGuard)
+  async list(
+    @Query('workerKind') workerKind?: string,
+    @Query('workerId') workerId?: string,
+    @Query('level') level?: string,
+    @Query('q') q?: string,
+    @Query('sinceMinutes') sinceMinutes?: string,
+    @Query('limit') limitStr?: string,
+  ) {
+    const since = sinceMinutes
+      ? new Date(
+          Date.now() -
+            Math.max(1, Math.min(24 * 60, parseInt(sinceMinutes, 10) || 60)) *
+              60 *
+              1000,
+        )
+      : undefined;
+    return this.logs.list({
+      workerKind:
+        workerKind === 'sdgb' || workerKind === 'dxnet' ? workerKind : undefined,
+      workerId: workerId?.trim() || undefined,
+      level:
+        level === 'log' || level === 'warn' || level === 'error'
+          ? level
+          : undefined,
+      q,
+      since,
+      limit: limitStr ? parseInt(limitStr, 10) : undefined,
+    });
+  }
+
+  @Get('workers')
+  @UseGuards(AdminGuard)
+  async workers() {
+    return this.logs.listWorkerIds();
+  }
+}

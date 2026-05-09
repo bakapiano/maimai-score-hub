@@ -17,6 +17,7 @@ import {
   IconBug,
   IconClock,
   IconDatabase,
+  IconLogs,
   IconRobot,
   IconUsers,
 } from "@tabler/icons-react";
@@ -64,6 +65,12 @@ const adminPages: AdminPageMeta[] = [
     to: "/admin/sdgb-worker",
     icon: <IconRobot size={18} />,
     color: "grape",
+  },
+  {
+    label: "Worker 日志",
+    to: "/admin/worker-logs",
+    icon: <IconLogs size={18} />,
+    color: "teal",
   },
 ];
 
