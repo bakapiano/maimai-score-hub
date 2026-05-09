@@ -5,12 +5,16 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectModel } from '@nestjs/mongoose';
+import type { Model } from 'mongoose';
 import { CronJob } from 'cron';
 
 import { UsersService } from '../users/users.service';
 import { JobService } from '../job/job.service';
+import { JobEntity } from '../job/job.schema';
 import { BotStatusService } from '../admin/bot-status.service';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
+import { SdgbJobEntity } from '../sdgb-worker/sdgb-job.schema';
 
 /**
  * Polls every AUTO_UPDATE_CRON tick (default: every 15 minutes) and, for
@@ -42,6 +46,10 @@ export class AutoUpdateSchedulerService
     private readonly jobs: JobService,
     private readonly botStatus: BotStatusService,
     private readonly sdgb: SdgbJobDispatcher,
+    @InjectModel(JobEntity.name)
+    private readonly jobsModel: Model<JobEntity>,
+    @InjectModel(SdgbJobEntity.name)
+    private readonly sdgbJobsModel: Model<SdgbJobEntity>,
     config: ConfigService,
   ) {
     this.cronExpr = config.get<string>('AUTO_UPDATE_CRON', '*/15 * * * *');
@@ -300,5 +308,150 @@ export class AutoUpdateSchedulerService
       jobId: jobResult.jobId,
       addRival: addRivalResult,
     };
+  }
+
+  /**
+   * Admin overview: every user that has autoUpdate=true, plus the most
+   * recent dxnet idle_update_score job per friendCode and the latest sdgb
+   * "auto-hash" job (so the admin can see whether the scheduler observed
+   * a hash change recently).
+   */
+  async listAutoUpdateUsers(): Promise<
+    Array<{
+      friendCode: string;
+      cabinetUserId: number | null;
+      lastScoreHash: string | null;
+      preferredBotFriendCode: string | null;
+      lastIdleJob: {
+        id: string;
+        botUserFriendCode: string | null;
+        status: string;
+        stage: string;
+        createdAt: string;
+        updatedAt: string;
+        error: string | null;
+      } | null;
+      lastHashJob: {
+        id: string;
+        status: string;
+        result: Record<string, unknown> | null;
+        error: string | null;
+        createdAt: string;
+        updatedAt: string;
+      } | null;
+    }>
+  > {
+    const users = await this.users.getAutoUpdateUsers();
+    if (!users.length) return [];
+
+    const friendCodes = users.map((u) => u.friendCode);
+
+    // Get latest idle_update_score job per friendCode
+    const latestIdleJobs = await this.jobsModel.aggregate<{
+      _id: string;
+      doc: {
+        id: string;
+        friendCode: string;
+        botUserFriendCode: string | null;
+        status: string;
+        stage: string;
+        error: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+      };
+    }>([
+      {
+        $match: {
+          friendCode: { $in: friendCodes },
+          jobType: 'idle_update_score',
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: '$friendCode',
+          doc: { $first: '$$ROOT' },
+        },
+      },
+    ]);
+    const idleByFc = new Map(latestIdleJobs.map((row) => [row._id, row.doc]));
+
+    // Get latest sdgb get_rival_hash job per friendCode (matched via tag).
+    // Tag format is "auto-hash:<friendCode>" or "admin-trigger:<friendCode>".
+    const tags = friendCodes.flatMap((fc) => [
+      `auto-hash:${fc}`,
+      `admin-trigger:${fc}`,
+    ]);
+    const latestHashJobs = await this.sdgbJobsModel.aggregate<{
+      _id: string;
+      doc: {
+        id: string;
+        status: string;
+        result: Record<string, unknown> | null;
+        error: string | null;
+        requesterTag: string;
+        createdAt: Date;
+        updatedAt: Date;
+      };
+    }>([
+      {
+        $match: {
+          jobType: 'get_rival_hash',
+          requesterTag: { $in: tags },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: '$requesterTag',
+          doc: { $first: '$$ROOT' },
+        },
+      },
+    ]);
+    const hashByFc = new Map<string, (typeof latestHashJobs)[number]['doc']>();
+    for (const row of latestHashJobs) {
+      const fc = row._id.split(':')[1];
+      if (!fc) continue;
+      const existing = hashByFc.get(fc);
+      if (!existing || existing.createdAt < row.doc.createdAt) {
+        hashByFc.set(fc, row.doc);
+      }
+    }
+
+    return users.map((u) => {
+      const idle = idleByFc.get(u.friendCode);
+      const hash = hashByFc.get(u.friendCode);
+      return {
+        friendCode: u.friendCode,
+        cabinetUserId:
+          (u as { cabinetUserId?: number | null }).cabinetUserId ?? null,
+        lastScoreHash:
+          (u as { lastScoreHash?: string | null }).lastScoreHash ?? null,
+        preferredBotFriendCode:
+          (u as { preferredBotFriendCode?: string | null })
+            .preferredBotFriendCode ?? null,
+        lastIdleJob: idle
+          ? {
+              id: idle.id,
+              botUserFriendCode: idle.botUserFriendCode ?? null,
+              status: idle.status,
+              stage: idle.stage,
+              createdAt: idle.createdAt.toISOString(),
+              updatedAt: idle.updatedAt.toISOString(),
+              error: idle.error ?? null,
+            }
+          : null,
+        lastHashJob: hash
+          ? {
+              id: hash.id,
+              status: hash.status,
+              result: hash.result ?? null,
+              error: hash.error ?? null,
+              createdAt: hash.createdAt.toISOString(),
+              updatedAt: hash.updatedAt.toISOString(),
+            }
+          : null,
+      };
+    });
   }
 }

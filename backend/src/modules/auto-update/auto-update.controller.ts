@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Param,
   Post,
   UseGuards,
@@ -41,5 +42,16 @@ export class AutoUpdateController {
       const message = err instanceof Error ? err.message : String(err);
       throw new BadRequestException(message);
     }
+  }
+
+  /**
+   * Admin overview: list every user that has autoUpdate=true plus their
+   * latest hash-check + idle_update_score job, so the admin portal can show
+   * "who is using auto-update and how recent was the last refresh".
+   */
+  @Get('users')
+  @UseGuards(AdminGuard)
+  async listUsers() {
+    return this.scheduler.listAutoUpdateUsers();
   }
 }

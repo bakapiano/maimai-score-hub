@@ -91,4 +91,9 @@ backend/score-exports/
 
 ocr/scripts/training/
 
-sdgb-worker
+# Top-level sdgb-worker source isn't tracked in this repo
+# (deployed separately). Restrict to the root path so it doesn't shadow
+# backend/src/modules/sdgb-worker.
+/sdgb-worker
+# Local deployment scaffolding for sdgb-worker (compose + readme).
+/deploy

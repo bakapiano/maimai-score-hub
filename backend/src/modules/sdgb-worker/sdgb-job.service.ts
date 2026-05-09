@@ -398,4 +398,57 @@ export class SdgbJobService {
       recentJobs,
     };
   }
+
+  /**
+   * Paginated, filterable list of sdgb jobs for the admin portal. Filters
+   * are all optional and combined with AND. Sorted by createdAt desc so
+   * the newest job is on page 1.
+   */
+  async listJobs(opts: {
+    jobType?: SdgbJobType;
+    status?: SdgbJobStatus;
+    /** Substring match against requesterTag (case-insensitive). */
+    tag?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{
+    items: Array<SdgbJobView & { ageSeconds: number; durationMs: number | null }>;
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const page = Math.max(1, Math.floor(opts.page ?? 1));
+    const pageSize = Math.min(200, Math.max(1, Math.floor(opts.pageSize ?? 20)));
+    const filter: Record<string, unknown> = {};
+    if (opts.jobType) filter.jobType = opts.jobType;
+    if (opts.status) filter.status = opts.status;
+    if (opts.tag && opts.tag.trim()) {
+      // Escape regex meta-chars; simple safe approach
+      const safe = opts.tag.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.requesterTag = { $regex: safe, $options: 'i' };
+    }
+    const [docs, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .lean(),
+      this.model.countDocuments(filter),
+    ]);
+    const now = Date.now();
+    const items = docs.map((doc) => {
+      const view = toView(doc as SdgbJobEntity);
+      const created = new Date(view.createdAt).getTime();
+      const updated = new Date(view.updatedAt).getTime();
+      const isTerminal =
+        view.status === 'completed' || view.status === 'failed';
+      return {
+        ...view,
+        ageSeconds: Math.round((now - created) / 1000),
+        durationMs: isTerminal ? updated - created : null,
+      };
+    });
+    return { items, total, page, pageSize };
+  }
 }
