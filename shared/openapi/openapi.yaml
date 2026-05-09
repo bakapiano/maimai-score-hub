@@ -223,9 +223,8 @@ paths:
                     type: boolean
                   autoExportLxns:
                     type: boolean
-                  cabinetUserId:
-                    type: integer
-                    nullable: true
+                  hasCabinetUserId:
+                    type: boolean
                   autoUpdate:
                     type: boolean
                   lastScoreHash:
@@ -281,9 +280,8 @@ paths:
                     type: boolean
                   autoExportLxns:
                     type: boolean
-                  cabinetUserId:
-                    type: integer
-                    nullable: true
+                  hasCabinetUserId:
+                    type: boolean
                   autoUpdate:
                     type: boolean
                   lastScoreHash:
@@ -621,13 +619,8 @@ paths:
                     type: boolean
                     enum:
                       - true
-                  cabinetUserId:
-                    type: integer
-                    minimum: 0
-                    exclusiveMinimum: 0
                 required:
                   - ok
-                  - cabinetUserId
         "400":
           description: "400"
         "409":

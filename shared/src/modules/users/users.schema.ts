@@ -11,7 +11,7 @@ export const UserProfileSchema = z
     idleUpdateBotFriendCode: z.string().nullable().optional(),
     autoExportDivingFish: z.boolean().optional(),
     autoExportLxns: z.boolean().optional(),
-    cabinetUserId: z.number().int().nullable().optional(),
+    hasCabinetUserId: z.boolean().optional(),
     autoUpdate: z.boolean().optional(),
     lastScoreHash: z.string().nullable().optional(),
   })
@@ -75,7 +75,6 @@ export const BindCabinetQrBodySchema = z.object({
 
 export const BindCabinetQrResponseSchema = z.object({
   ok: z.literal(true),
-  cabinetUserId: z.number().int().positive(),
 });
 
 export const SetAutoUpdateBodySchema = z.object({

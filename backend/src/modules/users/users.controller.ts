@@ -61,13 +61,16 @@ export class UsersController {
       throw new BadRequestException('No user context');
     }
     const user = await this.users.getById(userId);
-    // Never expose actual tokens to the client
-    const { divingFishImportToken, lxnsImportToken, ...rest } = user;
+    // Never expose actual tokens to the client; the raw cabinetUserId is
+    // also intentionally NOT echoed back — it's only useful to backend /
+    // sdgb-worker. Frontend just needs the boolean "is it bound".
+    const { divingFishImportToken, lxnsImportToken, cabinetUserId, ...rest } =
+      user;
     return {
       ...rest,
       hasDivingFishImportToken: !!divingFishImportToken,
       hasLxnsImportToken: !!lxnsImportToken,
-      cabinetUserId: user.cabinetUserId ?? null,
+      hasCabinetUserId: cabinetUserId != null,
       autoUpdate: !!user.autoUpdate,
       lastScoreHash: user.lastScoreHash ?? null,
     };
@@ -300,7 +303,7 @@ export class UsersController {
     }
 
     await this.users.update(userId, { cabinetUserId: result.cabinetUserId });
-    return { ok: true as const, cabinetUserId: result.cabinetUserId };
+    return { ok: true as const };
   }
 
   /**
