@@ -262,13 +262,11 @@ export class BotStatusService implements OnModuleDestroy {
    * Convenience: pick an available bot whose cabinetUserId is set, with
    * the lowest current idle-update load. Returns null if none qualifies.
    *
-   * "Available" cross-checks BOTH sides:
-   *   1. sdgb side: cabinetUserId is configured.
-   *   2. dxnet side: the bot has reported in recently (lastReportedAt
-   *      within REPORT_TIMEOUT_MS) AND has produced a friendCount at
-   *      least once. A bot that has never reported friendCount has no
-   *      live dxnet cookie — picking it would silently break QR-login
-   *      since fetch_friend_list jobs would never be claimed.
+   * Only filters on `available` (worker is reporting in regularly) +
+   * `cabinetUserId` (admin has configured the sdgb id). We trust
+   * available-ness as a single signal — if dxnet side is dead the
+   * fetch_friend_list job will time out cleanly and the caller can
+   * surface it.
    */
   async pickAvailableCabinetBot(): Promise<{
     friendCode: string;
@@ -276,7 +274,7 @@ export class BotStatusService implements OnModuleDestroy {
   } | null> {
     const all = await this.getAll();
     const candidates = all.filter(
-      (b) => b.available && b.cabinetUserId != null && b.friendCount != null,
+      (b) => b.available && b.cabinetUserId != null,
     );
     if (candidates.length === 0) return null;
     candidates.sort((a, b) => (a.friendCount ?? 0) - (b.friendCount ?? 0));
