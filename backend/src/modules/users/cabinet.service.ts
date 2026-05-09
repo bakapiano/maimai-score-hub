@@ -1,13 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
-import jsQR from 'jsqr';
-import sharp from 'sharp';
 
 import { SyncEntity } from '../sync/sync.schema';
 import type { SyncDocument, SyncScore } from '../sync/sync.schema';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
 import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
+import { decodeQrImage } from '../../common/qr-decode';
 
 /**
  * Minimum number of (musicId,level) rows that must match between
@@ -53,19 +52,12 @@ export class CabinetService {
 
   /**
    * Decode a QR code from an image buffer (PNG/JPG/WebP/...). Returns the
-   * embedded string, or null when no QR was found.
+   * embedded string, or null when no QR was found. Thin re-export so
+   * existing callers keep working — implementation moved to
+   * common/qr-decode.ts so AuthModule can reuse it.
    */
   async decodeQrImage(buf: Buffer): Promise<string | null> {
-    const { data, info } = await sharp(buf)
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    const result = jsQR(
-      new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength),
-      info.width,
-      info.height,
-    );
-    return result?.data ?? null;
+    return decodeQrImage(buf);
   }
 
   /**

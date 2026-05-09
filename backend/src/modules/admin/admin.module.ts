@@ -7,6 +7,11 @@ import { UserEntity, UserSchema } from '../users/user.schema';
 import { AdminController } from './admin.controller';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
+import {
+  BotFriendSnapshotEntity,
+  BotFriendSnapshotSchema,
+} from './bot-friend-snapshot.schema';
+import { BotFriendSnapshotService } from './bot-friend-snapshot.service';
 import { BotStatusEntity, BotStatusSchema } from './bot-status.schema';
 import { BotStatusService } from './bot-status.service';
 import { CoverModule } from '../cover/cover.module';
@@ -27,6 +32,10 @@ import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
       { name: JobEntity.name, schema: JobSchema },
       { name: JobApiLogEntity.name, schema: JobApiLogSchema },
       { name: BotStatusEntity.name, schema: BotStatusSchema },
+      {
+        name: BotFriendSnapshotEntity.name,
+        schema: BotFriendSnapshotSchema,
+      },
       { name: NotifyStateEntity.name, schema: NotifyStateSchema },
     ]),
     CoverModule,
@@ -35,7 +44,13 @@ import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
     SdgbWorkerModule,
   ],
   controllers: [AdminController],
-  providers: [AdminService, AdminGuard, BotStatusService, FeishuNotifyService],
-  exports: [BotStatusService, AdminGuard],
+  providers: [
+    AdminService,
+    AdminGuard,
+    BotStatusService,
+    BotFriendSnapshotService,
+    FeishuNotifyService,
+  ],
+  exports: [BotStatusService, BotFriendSnapshotService, AdminGuard],
 })
 export class AdminModule {}

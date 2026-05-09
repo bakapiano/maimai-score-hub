@@ -17,6 +17,17 @@ export class UsersService {
     return doc ? doc.toObject() : null;
   }
 
+  /**
+   * Look up a user by their bound cabinet (sdgb) userId. Used by the
+   * QR-login flow's fast path: if the user has bound their cabinet id
+   * before, we skip the addRival → snapshot reverse-map dance and
+   * sign a token immediately.
+   */
+  async findByCabinetUserId(cabinetUserId: number) {
+    const doc = await this.userModel.findOne({ cabinetUserId });
+    return doc ? doc.toObject() : null;
+  }
+
   async getById(id: string) {
     if (!isValidObjectId(id)) {
       throw new NotFoundException('User not found');
@@ -34,12 +45,15 @@ export class UsersService {
     divingFishImportToken?: string | null;
     lxnsImportToken?: string | null;
     profile?: UserNetProfile | null;
+    /** QR-login flow seeds this so subsequent logins hit the fast path. */
+    cabinetUserId?: number | null;
   }) {
     const created = await this.userModel.create({
       friendCode: input.friendCode,
       divingFishImportToken: input.divingFishImportToken ?? null,
       lxnsImportToken: input.lxnsImportToken ?? null,
       profile: input.profile ?? null,
+      cabinetUserId: input.cabinetUserId ?? null,
     });
     return created.toObject();
   }

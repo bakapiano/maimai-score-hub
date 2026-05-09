@@ -22,6 +22,7 @@ import {
 
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
+import { BotFriendSnapshotService } from './bot-friend-snapshot.service';
 import { BotStatusService } from './bot-status.service';
 import { JobApiLogService } from '../job/api-log/api-log.service';
 import { JobService } from '../job/job.service';
@@ -35,6 +36,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly botStatusService: BotStatusService,
+    private readonly botFriendSnapshotService: BotFriendSnapshotService,
     private readonly apiLogService: JobApiLogService,
     private readonly idleUpdateScheduler: IdleUpdateSchedulerService,
     private readonly jobService: JobService,
@@ -51,7 +53,35 @@ export class AdminController {
     body: ReportBotStatusBody,
   ) {
     await this.botStatusService.report(body.bots);
+    // Side-channel: any bot row that included a `friends` array also
+    // gets full-overwritten into bot_friend_snapshots for the QR-login
+    // reverse-map flow. Workers send this opportunistically on every tick.
+    for (const b of body.bots) {
+      if (Array.isArray(b.friends)) {
+        await this.botFriendSnapshotService.report(
+          b.friendCode,
+          b.friends.map((f) => ({
+            friendCode: f.friendCode,
+            userName: f.userName ?? null,
+            rating: f.rating ?? null,
+          })),
+        );
+      }
+    }
     return { ok: true };
+  }
+
+  /**
+   * Admin 查询某个 bot 的好友 snapshot（debug 用）。
+   */
+  @Get('bot-friend-snapshots/:botFriendCode')
+  @UseGuards(AdminGuard)
+  async getBotFriendSnapshot(
+    @Param('botFriendCode') botFriendCode: string,
+  ) {
+    const snap = await this.botFriendSnapshotService.get(botFriendCode);
+    if (!snap) return { botFriendCode, friends: [], updatedAt: null };
+    return snap;
   }
 
   /**

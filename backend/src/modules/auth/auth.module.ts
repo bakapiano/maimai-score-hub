@@ -7,6 +7,10 @@ import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { JobModule } from '../job/job.module';
 import { JwtModule } from '@nestjs/jwt';
+import { MongooseModule } from '@nestjs/mongoose';
+import { MusicEntity, MusicSchema } from '../music/music.schema';
+import { QrLoginService } from './qr-login.service';
+import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { UsersModule } from '../users/users.module';
 import { randomBytes } from 'node:crypto';
 
@@ -23,12 +27,16 @@ import { randomBytes } from 'node:crypto';
         signOptions: { expiresIn: '7d' },
       }),
     }),
+    MongooseModule.forFeature([
+      { name: MusicEntity.name, schema: MusicSchema },
+    ]),
     UsersModule,
+    SdgbWorkerModule,
     forwardRef(() => AdminModule),
     forwardRef(() => JobModule),
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthGuard],
+  providers: [AuthService, AuthGuard, QrLoginService],
   exports: [AuthService, AuthGuard],
 })
 export class AuthModule {}
