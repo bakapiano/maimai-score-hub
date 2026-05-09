@@ -86,8 +86,11 @@ export class JobHandler {
       this.startHeartbeat();
       this.client.jobId = this.job.id;
 
-      // 获取用户资料（如果 job 上已有 profile 则跳过）
-      if (!this.job.profile) {
+      // fetch_friend_list jobs aren't tied to a target user — friendCode
+      // on the job is just the bot's own friendCode for routing. Skip
+      // the user-profile lookup; the handler only fetches the bot's
+      // friend list.
+      if (this.job.jobType !== "fetch_friend_list" && !this.job.profile) {
         const profile = await this.client.getUserProfile(this.job.friendCode);
         if (!profile) {
           throw new Error(
