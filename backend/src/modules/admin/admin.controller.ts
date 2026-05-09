@@ -304,4 +304,17 @@ export class AdminController {
       throw new BadRequestException(`扫码绑定失败: ${message}`);
     }
   }
+
+  /**
+   * Worker pull: list of bots flagged for an out-of-band friend list
+   * refresh. Worker polls every few seconds; on hit, it fetches +
+   * reports the friend list and the report path clears the flag.
+   * Same trust model as POST /admin/bot-status (no admin guard,
+   * worker integration endpoint).
+   */
+  @Get('bot-status/refresh-requests')
+  async getFriendListRefreshRequests() {
+    const friendCodes = await this.botStatusService.getRefreshRequests();
+    return { friendCodes };
+  }
 }

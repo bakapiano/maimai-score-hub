@@ -12,8 +12,12 @@ import { decodeQrImage } from '../../common/qr-decode';
  * Minimum number of (musicId,level) rows that must match between
  * the user's stored sync and the cabinet's GetUserRivalMusicApi response
  * for us to accept the QR-derived cabinetUserId as belonging to this user.
+ *
+ * If the user's stored sync has fewer than this many rows, we just require
+ * "all of them match" (capped at the row count). This handles brand-new
+ * accounts with very few plays without weakening the check for typical users.
  */
-const MIN_MATCH_ROWS = 5;
+const MIN_MATCH_ROWS = 10;
 
 /**
  * Convert deluxScore string (sometimes formatted like "1234" or "1,234")
@@ -91,12 +95,19 @@ export class CabinetService {
       { tag: `bind:${friendCode}`, timeoutMs: 120_000 },
     );
 
-    const matchedRows = await this.countMatchingRows(localScores, music);
+    // Effective threshold: usually MIN_MATCH_ROWS, but if the user has
+    // synced fewer than that we just require all of them to match.
+    const required = Math.min(MIN_MATCH_ROWS, localScores.length);
+    const matchedRows = await this.countMatchingRows(
+      localScores,
+      music,
+      required,
+    );
     this.logger.log(
-      `bindByQr fc=${friendCode} cabinetUserId=${cabinetUserId} matched=${matchedRows}`,
+      `bindByQr fc=${friendCode} cabinetUserId=${cabinetUserId} matched=${matchedRows}/${required}`,
     );
 
-    if (matchedRows < MIN_MATCH_ROWS) {
+    if (matchedRows < required) {
       return { ok: false, reason: 'mismatch', matchedRows };
     }
     return { ok: true, cabinetUserId };
@@ -115,6 +126,7 @@ export class CabinetService {
   private async countMatchingRows(
     localScores: SyncScore[],
     cabinetMusic: SdgbWorkerMusicEntry[],
+    earlyExitAt: number = MIN_MATCH_ROWS,
   ): Promise<number> {
     const cabinetMap = new Map<string, { ach: number; dx: number }>();
     for (const m of cabinetMusic) {
@@ -140,7 +152,7 @@ export class CabinetService {
 
       if (localAch === cabinet.ach && localDx === cabinet.dx) {
         matched++;
-        if (matched >= MIN_MATCH_ROWS) {
+        if (matched >= earlyExitAt) {
           // Early exit — we only need to prove we're at the threshold.
           return matched;
         }

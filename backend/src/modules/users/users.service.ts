@@ -28,6 +28,23 @@ export class UsersService {
     return doc ? doc.toObject() : null;
   }
 
+  /**
+   * Hard-delete a user document. Caller (UsersController) is responsible
+   * for fanning out to the join-on-friendCode collections owned by other
+   * services (syncs, jobs) so we don't have to import those models here.
+   */
+  async deleteAccount(id: string): Promise<{
+    deleted: boolean;
+    friendCode: string;
+  }> {
+    if (!isValidObjectId(id)) throw new NotFoundException('User not found');
+    const user = await this.userModel.findById(id);
+    if (!user) throw new NotFoundException('User not found');
+    const friendCode = user.friendCode;
+    await this.userModel.deleteOne({ _id: id });
+    return { deleted: true, friendCode };
+  }
+
   async getById(id: string) {
     if (!isValidObjectId(id)) {
       throw new NotFoundException('User not found');

@@ -3,6 +3,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Patch,
@@ -31,6 +32,11 @@ import { JobService } from '../job/job.service';
 import { BotStatusService } from '../admin/bot-status.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CabinetService } from './cabinet.service';
+import { InjectModel } from '@nestjs/mongoose';
+import type { Model } from 'mongoose';
+import { SyncEntity } from '../sync/sync.schema';
+import type { SyncDocument } from '../sync/sync.schema';
+import { JobEntity } from '../job/job.schema';
 
 type AuthedRequest = Request & { userId?: string };
 
@@ -51,6 +57,10 @@ export class UsersController {
     private readonly jobs: JobService,
     private readonly botStatus: BotStatusService,
     private readonly cabinet: CabinetService,
+    @InjectModel(SyncEntity.name)
+    private readonly syncModel: Model<SyncDocument>,
+    @InjectModel(JobEntity.name)
+    private readonly jobModel: Model<JobEntity>,
   ) {}
 
   @Get('profile')
@@ -288,6 +298,13 @@ export class UsersController {
     }
 
     const user = await this.users.getById(userId);
+    if (
+      (user as { cabinetUserId?: number | null }).cabinetUserId != null
+    ) {
+      throw new BadRequestException(
+        '该账号已绑定二维码，无法重复绑定',
+      );
+    }
     const result = await this.cabinet.bindByQr(user.friendCode, qrCode);
 
     if (!result.ok) {
@@ -330,5 +347,41 @@ export class UsersController {
       autoUpdate: body.enabled,
     });
     return { ok: true as const, autoUpdate: !!updated.autoUpdate };
+  }
+
+  /**
+   * Hard delete the current user and all data joined on friendCode.
+   *
+   * - users (this row)
+   * - syncs   (latest sync snapshot keyed by friendCode)
+   * - jobs    (every dxnet job — immediate / idle_add_friend / idle_update_score)
+   *
+   * NOT touched (intentional, since they aren't user-specific or auto-expire):
+   * - sdgb_jobs (TTL'd, plus tagged by friendCode in requesterTag — would need
+   *   a $regex sweep; deleting auto-expires within 24h)
+   * - bot_friend_snapshots (rebuilt on next worker tick)
+   * - auto_update_runs (per-cron-bucket, not per-user)
+   */
+  @Delete('me')
+  @HttpCode(200)
+  async deleteMyAccount(@Req() req: AuthedRequest) {
+    const userId = extractUserId(req);
+    if (!userId) {
+      throw new BadRequestException('No user context');
+    }
+    const { friendCode } = await this.users.deleteAccount(userId);
+    const [syncRes, jobRes] = await Promise.all([
+      this.syncModel.deleteMany({ friendCode }),
+      this.jobModel.deleteMany({ friendCode }),
+    ]);
+    return {
+      ok: true as const,
+      friendCode,
+      deleted: {
+        user: 1,
+        syncs: syncRes.deletedCount ?? 0,
+        jobs: jobRes.deletedCount ?? 0,
+      },
+    };
   }
 }

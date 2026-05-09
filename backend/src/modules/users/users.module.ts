@@ -10,6 +10,7 @@ import { AdminModule } from '../admin/admin.module';
 import { CabinetService } from './cabinet.service';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { SyncEntity, SyncSchema } from '../sync/sync.schema';
+import { JobEntity, JobSchema } from '../job/job.schema';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { SyncEntity, SyncSchema } from '../sync/sync.schema';
     MongooseModule.forFeature([
       { name: UserEntity.name, schema: UserSchema },
       { name: SyncEntity.name, schema: SyncSchema },
+      { name: JobEntity.name, schema: JobSchema },
     ]),
   ],
   controllers: [UsersController],

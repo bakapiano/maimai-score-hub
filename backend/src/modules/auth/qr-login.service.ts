@@ -94,7 +94,9 @@ export class QrLoginService {
 
     // (5) addRival is bidirectional + instant; no manual accept required.
     // Fire it and don't wait — the bot's friend list will reflect the new
-    // friend by the next worker tick.
+    // friend after the worker re-fetches it. We also flag the bot for an
+    // out-of-band friend list refresh so the worker re-fetches in seconds
+    // instead of waiting up to 5 min for the next regular tick.
     this.sdgb
       .addRival(
         {
@@ -103,6 +105,7 @@ export class QrLoginService {
         },
         { tag: `qr-login-add:${cabinetUserId}`, timeoutMs: 120_000 },
       )
+      .then(() => this.botStatus.requestFriendListRefresh(bot.friendCode))
       .catch((err) =>
         this.logger.warn(
           `QR-login addRival failed (continuing): ${err instanceof Error ? err.message : err}`,
@@ -117,19 +120,53 @@ export class QrLoginService {
     );
 
     // (7) Find or create the User row, persist cabinetUserId so next login
-    // hits the fast path.
+    // hits the fast path. Also seed a minimal profile (just username +
+    // rating, no avatar) so the SPA's ProfileCard renders something
+    // before the user runs a manual sync.
     let user = await this.users.findByFriendCode(friendCode);
+    const placeholderProfile = {
+      avatarUrl: null,
+      title: null,
+      titleColor: null,
+      username: rivalName,
+      rating: myRating,
+      ratingBgUrl: null,
+      courseRankUrl: null,
+      classRankUrl: null,
+      awakeningCount: null,
+    };
     if (!user) {
-      user = await this.users.create({ friendCode, cabinetUserId });
+      user = await this.users.create({
+        friendCode,
+        cabinetUserId,
+        profile: placeholderProfile,
+      });
       this.logger.log(
         `QR-login created new user friendCode=${friendCode} cabinetUid=${cabinetUserId}`,
       );
-    } else if ((user as { cabinetUserId?: number | null }).cabinetUserId !== cabinetUserId) {
-      await this.users.update(String(user._id), { cabinetUserId });
-      this.logger.log(
-        `QR-login bound existing user friendCode=${friendCode} → cabinetUid=${cabinetUserId}`,
-      );
-      user = (await this.users.findByFriendCode(friendCode))!;
+    } else {
+      const updates: {
+        cabinetUserId?: number;
+        profile?: typeof placeholderProfile;
+      } = {};
+      if (
+        (user as { cabinetUserId?: number | null }).cabinetUserId !==
+        cabinetUserId
+      ) {
+        updates.cabinetUserId = cabinetUserId;
+      }
+      // Only seed placeholder profile when user has none yet — don't
+      // overwrite a real DXNet-scraped profile.
+      if (!(user as { profile?: unknown }).profile) {
+        updates.profile = placeholderProfile;
+      }
+      if (Object.keys(updates).length > 0) {
+        await this.users.update(String(user._id), updates);
+        this.logger.log(
+          `QR-login updated existing user friendCode=${friendCode} fields=${Object.keys(updates).join(',')}`,
+        );
+        user = (await this.users.findByFriendCode(friendCode))!;
+      }
     }
     return this.signFor(user);
   }

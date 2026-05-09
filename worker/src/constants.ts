@@ -123,8 +123,11 @@ export const WORKER_DEFAULTS = {
   cleanupIntervalMs: 5 * 60_000,
   /** Cookie 健康检查间隔 (ms) - 默认 1 分钟 */
   cookieHealthCheckIntervalMs: 60 * 1000,
-  /** Bot 状态上报间隔 (ms) - 默认 20 秒 */
-  botStatusReportIntervalMs: 60_000,
+  /** Bot 状态上报间隔 (ms) - 默认 5 分钟（兜底）。需要更快刷新时由
+   *  backend 通过 friendListRefreshRequestedAt 标志触发 */
+  botStatusReportIntervalMs: 5 * 60_000,
+  /** Backend 触发的 friend list 刷新 - 拉取间隔 (ms) - 默认 5 秒 */
+  friendListRefreshPollIntervalMs: 5_000,
 } as const;
 
 // ============================================================================

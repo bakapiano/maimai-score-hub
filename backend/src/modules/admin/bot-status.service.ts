@@ -91,6 +91,11 @@ export class BotStatusService implements OnModuleDestroy {
               available: bot.available,
               lastReportedAt: now,
               friendCount: bot.friendCount ?? null,
+              // Worker reported friends → satisfies any pending refresh
+              // request for this bot.
+              ...(bot.friendCount !== undefined
+                ? { friendListRefreshRequestedAt: null }
+                : {}),
               ...notifiedUpdate,
             },
           },
@@ -199,6 +204,48 @@ export class BotStatusService implements OnModuleDestroy {
     await this.botStatusModel.updateOne(
       { friendCode },
       { $set: { cabinetUserId } },
+    );
+  }
+
+  /**
+   * Mark a bot's friend list as needing an out-of-band refresh. The worker
+   * polls `getRefreshRequests()` every few seconds; when it sees this bot,
+   * it pulls + reports the friend list immediately, bypassing the 5-min
+   * tick. Used by QR-login after addRival to shrink the "wait for snapshot"
+   * window from ~60s down to ~15-20s.
+   */
+  async requestFriendListRefresh(friendCode: string): Promise<void> {
+    await this.botStatusModel.updateOne(
+      { friendCode },
+      { $set: { friendListRefreshRequestedAt: new Date() } },
+    );
+  }
+
+  /**
+   * Worker pull: which bots are awaiting a refresh. Returns just the
+   * friendCodes; the worker calls report afterwards which clears the flag.
+   */
+  async getRefreshRequests(): Promise<string[]> {
+    const docs = await this.botStatusModel
+      .find({ friendListRefreshRequestedAt: { $ne: null } })
+      .select({ friendCode: 1 })
+      .lean();
+    return docs.map((d) => d.friendCode);
+  }
+
+  /**
+   * Clear the refresh flag once the worker has actually re-reported the
+   * friend list. We clear conditionally on "stamp earlier than now" so
+   * a refresh request landing AFTER the worker started fetching but
+   * before it finished isn't accidentally swallowed.
+   */
+  async clearRefreshRequest(friendCode: string, asOf: Date): Promise<void> {
+    await this.botStatusModel.updateOne(
+      {
+        friendCode,
+        friendListRefreshRequestedAt: { $lte: asOf },
+      },
+      { $set: { friendListRefreshRequestedAt: null } },
     );
   }
 

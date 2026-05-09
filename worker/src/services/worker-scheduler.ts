@@ -74,6 +74,7 @@ export class WorkerScheduler {
   private intervalId: NodeJS.Timeout | null = null;
   private healthCheckIntervalId: NodeJS.Timeout | null = null;
   private reportIntervalId: NodeJS.Timeout | null = null;
+  private refreshPollIntervalId: NodeJS.Timeout | null = null;
   private paused = false;
 
   constructor() {
@@ -135,6 +136,10 @@ export class WorkerScheduler {
     if (this.reportIntervalId) {
       clearInterval(this.reportIntervalId);
       this.reportIntervalId = null;
+    }
+    if (this.refreshPollIntervalId) {
+      clearInterval(this.refreshPollIntervalId);
+      this.refreshPollIntervalId = null;
     }
     cleanupService.stop();
     console.log("[WorkerScheduler] Stopped");
@@ -231,6 +236,50 @@ export class WorkerScheduler {
     console.log(
       `[WorkerScheduler] Bot status reporting started (interval: ${WORKER_DEFAULTS.botStatusReportIntervalMs}ms)`,
     );
+
+    // Backend-triggered on-demand refresh loop (5s by default).
+    // QR-login flips friendListRefreshRequestedAt on a bot after addRival;
+    // this loop notices and re-fetches that bot's friend list out of band
+    // so the snapshot lookup doesn't have to wait for the 5-min tick.
+    this.refreshPollIntervalId = setInterval(() => {
+      if (shouldSkipForBackoff()) return;
+      this.pollFriendListRefreshRequests().catch((err) =>
+        console.error(
+          "[WorkerScheduler] Friend list refresh poll failed:",
+          err,
+        ),
+      );
+    }, WORKER_DEFAULTS.friendListRefreshPollIntervalMs);
+    console.log(
+      `[WorkerScheduler] Friend list refresh poll started (interval: ${WORKER_DEFAULTS.friendListRefreshPollIntervalMs}ms)`,
+    );
+  }
+
+  /**
+   * Pull "which bots need a friend list refresh now" from backend.
+   * On hit, run reportBotStatus over just those bots — that re-fetches
+   * the friend list AND clears the server-side flag (the report path
+   * sets friendListRefreshRequestedAt = null whenever friendCount is
+   * present in the payload).
+   */
+  private async pollFriendListRefreshRequests(): Promise<void> {
+    let res: Response;
+    try {
+      res = await fetch(
+        buildUrl("/api/admin/bot-status/refresh-requests"),
+      );
+    } catch (err) {
+      // Backend may be transiently down; quiet about it.
+      return;
+    }
+    if (!res.ok) return;
+    const body = (await res.json()) as { friendCodes?: string[] };
+    const fcs = body?.friendCodes ?? [];
+    if (!fcs.length) return;
+    console.log(
+      `[WorkerScheduler] On-demand friend list refresh for ${fcs.length} bot(s): ${fcs.join(", ")}`,
+    );
+    await reportBotStatus(new Set(fcs));
   }
 
   /**
@@ -332,9 +381,31 @@ export class WorkerScheduler {
  * 向后端上报所有 Bot 的状态
  * 可由 WorkerScheduler 定时调用，也可在 Bot 登录成功后主动调用
  */
-export async function reportBotStatus(): Promise<void> {
+/**
+ * Per-bot in-memory cache of "we just fetched the friend list at T".
+ * The 5-min wall-clock report tick checks this and skips bots that
+ * were recently refreshed via the on-demand path; the on-demand path
+ * always runs (it's gated server-side).
+ */
+const FRIEND_LIST_FRESH_WINDOW_MS = 5 * 60_000;
+const lastFriendListFetchAt = new Map<string, number>();
+
+/**
+ * Report bot status to the backend.
+ *
+ * @param onlyBots if non-empty, only this subset of bots is processed.
+ *                 Used by the on-demand refresh path.
+ */
+export async function reportBotStatus(
+  onlyBots?: ReadonlySet<string>,
+): Promise<void> {
   const allBots = cookieStore.getAllBotFriendCodes();
   if (!allBots.length) return;
+
+  const targets = onlyBots
+    ? allBots.filter((fc) => onlyBots.has(fc))
+    : allBots;
+  if (!targets.length) return;
 
   const botsData: {
     friendCode: string;
@@ -347,8 +418,21 @@ export async function reportBotStatus(): Promise<void> {
     }>;
   }[] = [];
 
-  for (const friendCode of allBots) {
+  const now = Date.now();
+  for (const friendCode of targets) {
     if (cookieStore.isExpired(friendCode)) continue;
+
+    // The 5-min tick can skip bots that were just refreshed on-demand.
+    // The on-demand path (onlyBots set) always proceeds.
+    if (!onlyBots) {
+      const lastAt = lastFriendListFetchAt.get(friendCode);
+      if (lastAt !== undefined && now - lastAt < FRIEND_LIST_FRESH_WINDOW_MS) {
+        // Still send a minimal availability ping so the backend can update
+        // lastReportedAt, but skip the expensive friend list pagination.
+        botsData.push({ friendCode, available: true });
+        continue;
+      }
+    }
 
     let friendCount: number | undefined;
     let friends:
@@ -369,6 +453,7 @@ export async function reportBotStatus(): Promise<void> {
           userName: f.userName ?? null,
           rating: f.rating ?? null,
         }));
+        lastFriendListFetchAt.set(friendCode, Date.now());
       }
     } catch {
       // Best effort - don't fail the report
