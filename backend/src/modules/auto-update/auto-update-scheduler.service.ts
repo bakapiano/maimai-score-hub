@@ -454,4 +454,100 @@ export class AutoUpdateSchedulerService
       };
     });
   }
+
+  /**
+   * Per-user activity timeline used by the admin "查看历史" modal. Pulls
+   * the last N sdgb hash-check jobs (matched by requesterTag) and the
+   * last N dxnet idle_update_score jobs for that friendCode, then merges
+   * them by createdAt desc so the admin can see whether the hash actually
+   * changed at each tick — and whether the resulting refresh job ran.
+   *
+   * Each entry carries `kind` so the FE can render heterogeneously.
+   */
+  async getUserJobHistory(
+    friendCode: string,
+    limit = 30,
+  ): Promise<UserJobHistoryEntry[]> {
+    const tags = [
+      `auto-hash:${friendCode}`,
+      `admin-trigger:${friendCode}`,
+      `auto-add:${friendCode}`,
+    ];
+    const [hashDocs, jobDocs] = await Promise.all([
+      this.sdgbJobsModel
+        .find({
+          jobType: 'get_rival_hash',
+          requesterTag: { $in: tags },
+        })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean(),
+      this.jobsModel
+        .find({
+          friendCode,
+          jobType: 'idle_update_score',
+        })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean(),
+    ]);
+
+    const merged: Array<{ createdAt: Date; entry: UserJobHistoryEntry }> = [
+      ...hashDocs.map((d) => ({
+        createdAt: d.createdAt,
+        entry: {
+          kind: 'hash_check' as const,
+          id: d.id,
+          status: d.status,
+          requesterTag: d.requesterTag ?? null,
+          hash:
+            d.result && typeof d.result.hash === 'string'
+              ? (d.result.hash as string)
+              : null,
+          error: d.error ?? null,
+          createdAt: d.createdAt.toISOString(),
+          updatedAt: d.updatedAt.toISOString(),
+        },
+      })),
+      ...jobDocs.map((d) => ({
+        createdAt: d.createdAt,
+        entry: {
+          kind: 'update_job' as const,
+          id: d.id,
+          status: d.status,
+          stage: d.stage,
+          botUserFriendCode: d.botUserFriendCode ?? null,
+          error: d.error ?? null,
+          createdAt: d.createdAt.toISOString(),
+          updatedAt: d.updatedAt.toISOString(),
+        },
+      })),
+    ];
+    merged.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return merged.slice(0, limit).map((m) => m.entry);
+  }
 }
+
+export type UserJobHistoryEntry =
+  | {
+      kind: 'hash_check';
+      id: string;
+      status: string;
+      requesterTag: string | null;
+      /** md5 from result.hash, when present */
+      hash: string | null;
+      /** error message when status === failed */
+      error: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }
+  | {
+      kind: 'update_job';
+      id: string;
+      status: string;
+      stage: string;
+      botUserFriendCode: string | null;
+      error: string | null;
+      createdAt: string;
+      updatedAt: string;
+    };

@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 
@@ -53,5 +54,27 @@ export class AutoUpdateController {
   @UseGuards(AdminGuard)
   async listUsers() {
     return this.scheduler.listAutoUpdateUsers();
+  }
+
+  /**
+   * Per-user job timeline (sdgb hash checks + dxnet idle_update_score
+   * jobs, merged by createdAt desc). Used by the admin UI to verify that
+   * the hash-diff guard is working — i.e. a hash_check entry with the
+   * same hash should NOT be followed by an update_job.
+   */
+  @Get('users/:friendCode/history')
+  @UseGuards(AdminGuard)
+  async getUserHistory(
+    @Param('friendCode') friendCode: string,
+    @Query('limit') limitStr?: string,
+  ) {
+    if (!/^\d+$/.test(friendCode)) {
+      throw new BadRequestException('friendCode must be a numeric string');
+    }
+    const limit = Math.min(
+      200,
+      Math.max(1, limitStr ? parseInt(limitStr, 10) || 30 : 30),
+    );
+    return this.scheduler.getUserJobHistory(friendCode, limit);
   }
 }

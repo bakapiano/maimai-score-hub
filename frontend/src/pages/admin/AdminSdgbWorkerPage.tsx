@@ -3,6 +3,7 @@ import {
   Button,
   Card,
   Group,
+  Modal,
   Pagination,
   ScrollArea,
   Select,
@@ -12,7 +13,12 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { IconBolt, IconRefresh, IconRobot } from "@tabler/icons-react";
+import {
+  IconBolt,
+  IconHistory,
+  IconRefresh,
+  IconRobot,
+} from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -88,6 +94,28 @@ interface AutoUpdateUserRow {
     updatedAt: string;
   } | null;
 }
+
+type UserHistoryEntry =
+  | {
+      kind: "hash_check";
+      id: string;
+      status: string;
+      requesterTag: string | null;
+      hash: string | null;
+      error: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }
+  | {
+      kind: "update_job";
+      id: string;
+      status: string;
+      stage: string;
+      botUserFriendCode: string | null;
+      error: string | null;
+      createdAt: string;
+      updatedAt: string;
+    };
 
 const POLL_INTERVAL_MS = 5_000;
 
@@ -305,6 +333,41 @@ export default function AdminSdgbWorkerPage() {
     const id = window.setInterval(loadAutoUsers, POLL_INTERVAL_MS * 2);
     return () => window.clearInterval(id);
   }, [loadAutoUsers]);
+
+  // ── per-user history modal ──
+  const [historyFc, setHistoryFc] = useState<string | null>(null);
+  const [historyEntries, setHistoryEntries] = useState<
+    UserHistoryEntry[] | null
+  >(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const openHistory = useCallback(
+    async (friendCode: string) => {
+      setHistoryFc(friendCode);
+      setHistoryEntries(null);
+      if (!password) return;
+      setHistoryLoading(true);
+      try {
+        const res = await fetch(
+          `/api/auto-update/users/${friendCode}/history?limit=50`,
+          { headers: { "x-admin-password": password } },
+        );
+        if (!res.ok) {
+          notifications.show({
+            color: "red",
+            title: "加载历史失败",
+            message: `HTTP ${res.status}`,
+          });
+          return;
+        }
+        const body = (await res.json()) as UserHistoryEntry[];
+        setHistoryEntries(body);
+      } finally {
+        setHistoryLoading(false);
+      }
+    },
+    [password],
+  );
 
   useEffect(() => {
     cancelled.current = false;
@@ -773,18 +836,27 @@ export default function AdminSdgbWorkerPage() {
                       )}
                     </Table.Td>
                     <Table.Td>
-                      <Button
-                        size="xs"
-                        variant="light"
-                        leftSection={<IconBolt size={12} />}
-                        onClick={() => {
-                          setTriggerFc(u.friendCode);
-                          // Don't auto-fire — admin still has to confirm by
-                          // clicking the trigger button above. Just pre-fill.
-                        }}
-                      >
-                        填入触发框
-                      </Button>
+                      <Group gap={6} wrap="nowrap">
+                        <Button
+                          size="xs"
+                          variant="light"
+                          leftSection={<IconBolt size={12} />}
+                          onClick={() => {
+                            setTriggerFc(u.friendCode);
+                          }}
+                        >
+                          填入触发框
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="light"
+                          color="cyan"
+                          leftSection={<IconHistory size={12} />}
+                          onClick={() => void openHistory(u.friendCode)}
+                        >
+                          查看历史
+                        </Button>
+                      </Group>
                     </Table.Td>
                   </Table.Tr>
                 ))}
@@ -802,6 +874,160 @@ export default function AdminSdgbWorkerPage() {
           </ScrollArea>
         </Stack>
       </Card>
+
+      <Modal
+        opened={historyFc !== null}
+        onClose={() => setHistoryFc(null)}
+        size="xl"
+        title={
+          <Text fw={600}>
+            自动更新历史 — friendCode {historyFc ?? ""}
+          </Text>
+        }
+      >
+        {historyLoading && !historyEntries && (
+          <Text size="sm" c="dimmed">
+            加载中…
+          </Text>
+        )}
+        {historyEntries && historyEntries.length === 0 && (
+          <Text size="sm" c="dimmed">
+            该用户暂无历史
+          </Text>
+        )}
+        {historyEntries && historyEntries.length > 0 && (
+          <Stack gap="xs">
+            <Text size="xs" c="dimmed">
+              按时间倒序，hash_check 是 sdgb-worker 取的成绩 hash；update_job
+              是 dxnet 那边的 idle_update_score。如果一行 hash_check 的 hash
+              与上一行（更早的）相同，则不会有紧跟着的 update_job — 这表示
+              hash 比对生效。
+            </Text>
+            <ScrollArea.Autosize mah={500}>
+              <Table withTableBorder withColumnBorders striped fz="xs">
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>时间</Table.Th>
+                    <Table.Th>kind</Table.Th>
+                    <Table.Th>状态</Table.Th>
+                    <Table.Th>详情</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {historyEntries.map((e, idx) => {
+                    // Detect "hash unchanged from previous tick" so we can
+                    // visually flag it. Walk forward (older) entries to find
+                    // the previous hash_check.
+                    let unchangedFromPrev = false;
+                    if (e.kind === "hash_check") {
+                      for (let j = idx + 1; j < historyEntries.length; j++) {
+                        const prev = historyEntries[j];
+                        if (prev.kind === "hash_check") {
+                          unchangedFromPrev =
+                            !!prev.hash &&
+                            !!e.hash &&
+                            prev.hash === e.hash;
+                          break;
+                        }
+                      }
+                    }
+                    return (
+                      <Table.Tr key={`${e.kind}-${e.id}`}>
+                        <Table.Td>
+                          <Text size="xs" c="dimmed">
+                            {new Date(e.createdAt).toLocaleString("zh-CN", {
+                              hour12: false,
+                            })}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Badge
+                            size="xs"
+                            variant="light"
+                            color={
+                              e.kind === "hash_check" ? "violet" : "blue"
+                            }
+                          >
+                            {e.kind === "hash_check" ? "hash 检查" : "更新 job"}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td>
+                          <Badge
+                            size="xs"
+                            variant="light"
+                            color={
+                              e.status === "completed"
+                                ? "green"
+                                : e.status === "failed"
+                                  ? "red"
+                                  : e.status === "processing"
+                                    ? "blue"
+                                    : "gray"
+                            }
+                          >
+                            {e.status}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td>
+                          {e.kind === "hash_check" ? (
+                            <Stack gap={2}>
+                              <Group gap={6}>
+                                <Text
+                                  size="xs"
+                                  ff="monospace"
+                                  c={unchangedFromPrev ? "dimmed" : undefined}
+                                  fw={unchangedFromPrev ? 400 : 500}
+                                >
+                                  {e.hash
+                                    ? e.hash.slice(0, 12) + "…"
+                                    : "—"}
+                                </Text>
+                                {unchangedFromPrev && (
+                                  <Badge
+                                    size="xs"
+                                    color="gray"
+                                    variant="outline"
+                                  >
+                                    与上次相同 → skip update
+                                  </Badge>
+                                )}
+                                {e.requesterTag && (
+                                  <Text size="xs" c="dimmed">
+                                    tag={e.requesterTag}
+                                  </Text>
+                                )}
+                              </Group>
+                              {e.error && (
+                                <Text size="xs" c="red">
+                                  {e.error}
+                                </Text>
+                              )}
+                            </Stack>
+                          ) : (
+                            <Stack gap={2}>
+                              <Group gap={6}>
+                                <Text size="xs" c="dimmed">
+                                  stage={e.stage} bot=
+                                  {e.botUserFriendCode ?? "-"}
+                                </Text>
+                              </Group>
+                              {e.error && (
+                                <Text size="xs" c="red">
+                                  {e.error}
+                                </Text>
+                              )}
+                            </Stack>
+                          )}
+                        </Table.Td>
+                      </Table.Tr>
+                    );
+                  })}
+                </Table.Tbody>
+              </Table>
+            </ScrollArea.Autosize>
+          </Stack>
+        )}
+      </Modal>
     </Stack>
   );
 }
