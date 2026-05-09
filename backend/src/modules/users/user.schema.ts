@@ -54,6 +54,25 @@ export class UserEntity {
    */
   @Prop({ type: String, default: null })
   lastScoreHash!: string | null;
+
+  /**
+   * Last time AutoUpdateScheduler actually called sdgb-worker to fetch
+   * this user's hash. Throttle: at most once per 15 min per user, even
+   * across backend instances.
+   */
+  @Prop({ type: Date, default: null })
+  lastHashCheckAt!: Date | null;
+
+  /**
+   * Last time AutoUpdateScheduler actually created an idle_update_score
+   * job for this user. Throttle: at most once per 30 min per user.
+   * Combined with an in-flight check (any queued/processing job for the
+   * same friendCode → skip), this prevents both fan-out under failure
+   * and back-to-back jobs canceling each other out via the
+   * "JobService.create cancels older jobs" rule.
+   */
+  @Prop({ type: Date, default: null })
+  lastAutoUpdateJobAt!: Date | null;
 }
 
 export type UserDocument = HydratedDocument<UserEntity>;

@@ -223,4 +223,60 @@ export class UsersService {
     });
     return res.modifiedCount === 1;
   }
+
+  /**
+   * Throttle CAS for the auto-update sweep's hash-check phase. The user
+   * document is updated only if `lastHashCheckAt` is null or older than
+   * `now - throttleMs`. Returns true on success (the caller goes on to
+   * actually call sdgb-worker).
+   *
+   * The "winner takes it" semantic is enforced by the atomic updateOne;
+   * multiple backend instances racing on the same user will see exactly
+   * one modifiedCount=1, the rest get 0.
+   */
+  async tryClaimHashCheck(
+    id: string,
+    throttleMs: number,
+    now: Date = new Date(),
+  ): Promise<boolean> {
+    if (!isValidObjectId(id)) return false;
+    const cutoff = new Date(now.getTime() - throttleMs);
+    const res = await this.userModel.updateOne(
+      {
+        _id: id,
+        $or: [
+          { lastHashCheckAt: null },
+          { lastHashCheckAt: { $lte: cutoff } },
+        ],
+      },
+      { $set: { lastHashCheckAt: now } },
+    );
+    return res.modifiedCount === 1;
+  }
+
+  /**
+   * Throttle CAS for the auto-update sweep's job-creation phase.
+   * Identical contract to tryClaimHashCheck but scoped to job creation.
+   * Combined with an in-flight idle_update_score check, prevents both
+   * back-to-back duplicate jobs and the "create cancels in-flight" foot-gun.
+   */
+  async tryClaimAutoUpdateJob(
+    id: string,
+    throttleMs: number,
+    now: Date = new Date(),
+  ): Promise<boolean> {
+    if (!isValidObjectId(id)) return false;
+    const cutoff = new Date(now.getTime() - throttleMs);
+    const res = await this.userModel.updateOne(
+      {
+        _id: id,
+        $or: [
+          { lastAutoUpdateJobAt: null },
+          { lastAutoUpdateJobAt: { $lte: cutoff } },
+        ],
+      },
+      { $set: { lastAutoUpdateJobAt: now } },
+    );
+    return res.modifiedCount === 1;
+  }
 }

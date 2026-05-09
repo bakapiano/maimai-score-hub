@@ -100,6 +100,12 @@ export class JobService {
     jobType?: JobType;
     botUserFriendCode?: string | null;
     isAuthenticated?: boolean;
+    /**
+     * Only meaningful when jobType=`idle_update_score`. Set by
+     * AutoUpdateScheduler to the score hash it observed; propagates to
+     * `user.lastScoreHash` only after this job completes successfully.
+     */
+    sourceScoreHash?: string | null;
   }) {
     const id = randomUUID();
     const now = new Date();
@@ -146,6 +152,7 @@ export class JobService {
       error: null,
       result: undefined,
       isAuthenticated: input.isAuthenticated ?? false,
+      sourceScoreHash: input.sourceScoreHash ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -462,6 +469,32 @@ export class JobService {
           `Auto-export failed for job ${jobId}: ${err?.message}`,
         );
       });
+    }
+
+    // Auto-update bookkeeping: when an idle_update_score job that was
+    // launched by AutoUpdateScheduler completes successfully, promote
+    // its sourceScoreHash onto the user's lastScoreHash. We deliberately
+    // wait for completion so a failed/canceled job does not "burn" the
+    // hash transition — the next sweep should see the same diff and try
+    // again.
+    if (
+      updated.status === 'completed' &&
+      updated.jobType === 'idle_update_score' &&
+      updated.sourceScoreHash
+    ) {
+      this.usersService
+        .findByFriendCode(updated.friendCode)
+        .then((user) => {
+          if (!user) return;
+          return this.usersService.update(String(user._id), {
+            lastScoreHash: updated.sourceScoreHash,
+          });
+        })
+        .catch((err: Error) => {
+          this.logger.warn(
+            `Failed to promote sourceScoreHash for job ${jobId}: ${err?.message}`,
+          );
+        });
     }
 
     return toJobResponse(updated.toObject() as JobEntity);

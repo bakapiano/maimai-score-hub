@@ -58,6 +58,16 @@ export class JobEntity {
   @Prop({ required: true, default: false })
   isAuthenticated!: boolean;
 
+  /**
+   * Score hash observed by the auto-update sweep at the moment this job
+   * was created. Set ONLY for jobType=`idle_update_score` jobs created by
+   * AutoUpdateScheduler. When the job completes successfully, JobService
+   * uses this to advance the user's `lastScoreHash` — that way a failed
+   * job doesn't burn the hash transition the next sweep should retry.
+   */
+  @Prop({ type: String, default: null })
+  sourceScoreHash!: string | null;
+
   @Prop({ required: true })
   createdAt!: Date;
 

@@ -17,20 +17,34 @@ import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
 import { SdgbJobEntity } from '../sdgb-worker/sdgb-job.schema';
 import { AutoUpdateRunEntity } from './auto-update-run.schema';
 
+/** Per-user throttle for the sdgb hash-check call. */
+const HASH_CHECK_THROTTLE_MS = 15 * 60 * 1000;
+/** Per-user throttle for the dxnet idle_update_score job creation. */
+const AUTO_UPDATE_JOB_THROTTLE_MS = 30 * 60 * 1000;
+
 /**
- * Polls every AUTO_UPDATE_CRON tick (default: every 15 minutes) and, for
+ * Polls every AUTO_UPDATE_CRON tick (default: every 5 minutes) and, for
  * each user that has cabinetUserId bound + autoUpdate=true:
  *
- *   1. Ask sdgb-worker for the user's current rival-music hash.
- *   2. If the hash is unchanged from `lastScoreHash`, skip.
- *   3. Otherwise unconditionally store the new hash, then in parallel:
+ *   0. If the user already has an in-flight idle_update_score job, skip
+ *      (we never want two competing jobs for the same user — the second
+ *      one would cancel the first via JobService.create's "cancel older"
+ *      rule).
+ *   1. Try to claim a hash-check slot (CAS on user.lastHashCheckAt; at
+ *      most once per HASH_CHECK_THROTTLE_MS).
+ *   2. Ask sdgb-worker for the user's current rival-music hash.
+ *   3. If the hash is unchanged from `lastScoreHash`, skip.
+ *   4. Try to claim a job-creation slot (CAS on user.lastAutoUpdateJobAt;
+ *      at most once per AUTO_UPDATE_JOB_THROTTLE_MS).
+ *   5. In parallel:
  *        - Tell sdgb-worker to add the bot as the user's cabinet rival
  *          (replaces the manual "accept friend on cabinet" step).
- *        - Create an `idle_update_score` job for the worker/ service to
- *          actually scrape DXNet and persist the new scores.
+ *        - Create an `idle_update_score` job carrying the observed hash
+ *          as `sourceScoreHash`. JobService.patch promotes that hash to
+ *          user.lastScoreHash ONLY after the job completes successfully.
  *
- * Storing the hash before kicking off the work is intentional (per spec):
- * even if the job fails, we should not retrigger on the same hash.
+ * The "promote on success" rule means a failed/canceled job leaves the
+ * stored hash alone, so the next sweep retries the same diff.
  */
 @Injectable()
 export class AutoUpdateSchedulerService
@@ -55,7 +69,7 @@ export class AutoUpdateSchedulerService
     private readonly runsModel: Model<AutoUpdateRunEntity>,
     config: ConfigService,
   ) {
-    this.cronExpr = config.get<string>('AUTO_UPDATE_CRON', '*/15 * * * *');
+    this.cronExpr = config.get<string>('AUTO_UPDATE_CRON', '*/5 * * * *');
   }
 
   onModuleInit() {
@@ -202,9 +216,55 @@ export class AutoUpdateSchedulerService
         message?: string;
       }> = [];
 
+      // One-shot lookup of every friendCode that already has a queued or
+      // processing idle_update_score job. We never want to fire a second
+      // one for the same user — JobService.create cancels older jobs of
+      // the same friendCode, which would waste the work in flight.
+      const inflightRows = await this.jobsModel.aggregate<{ _id: string }>([
+        {
+          $match: {
+            jobType: 'idle_update_score',
+            status: { $in: ['queued', 'processing'] },
+          },
+        },
+        { $group: { _id: '$friendCode' } },
+      ]);
+      const inflightFc = new Set(inflightRows.map((r) => r._id));
+
       for (const u of users) {
         const cabinetUserId = u.cabinetUserId;
         if (cabinetUserId == null) continue;
+
+        // (0) skip users whose previous job hasn't finished — checking the
+        // hash again here would just produce noise.
+        if (inflightFc.has(u.friendCode)) {
+          skippedNoChange++;
+          entries.push({
+            friendCode: u.friendCode,
+            cabinetUserId,
+            action: 'skipped',
+            message: 'idle_update_score job still in flight',
+          });
+          continue;
+        }
+
+        // (1) hash-check throttle: at most one sdgb call per user per
+        // HASH_CHECK_THROTTLE_MS, even across backend instances.
+        const claimedCheck = await this.users.tryClaimHashCheck(
+          String(u._id),
+          HASH_CHECK_THROTTLE_MS,
+        );
+        if (!claimedCheck) {
+          skippedNoChange++;
+          entries.push({
+            friendCode: u.friendCode,
+            cabinetUserId,
+            action: 'skipped',
+            message: 'hash check throttled',
+          });
+          continue;
+        }
+
         try {
           const { hash } = await this.sdgb.getRivalHash(
             { cabinetUserId },
@@ -221,28 +281,29 @@ export class AutoUpdateSchedulerService
             continue;
           }
 
-          // Per-user CAS: only the instance that successfully flips
-          // lastScoreHash from `u.lastScoreHash` → `hash` proceeds to
-          // trigger the update. This makes the sweep safe even when the
-          // bucket-level claim is bypassed (e.g. the manual /run endpoint
-          // is hit on multiple instances at once).
-          const advanced = await this.users.tryAdvanceLastScoreHash(
+          // (3) job-creation throttle: at most one idle_update_score job
+          // per AUTO_UPDATE_JOB_THROTTLE_MS. Combined with the in-flight
+          // check above, this stops a long-running job from ever being
+          // shadowed by a fresh one once the throttle window expires.
+          const claimedJob = await this.users.tryClaimAutoUpdateJob(
             String(u._id),
-            (u as { lastScoreHash?: string | null }).lastScoreHash ?? null,
-            hash,
+            AUTO_UPDATE_JOB_THROTTLE_MS,
           );
-          if (!advanced) {
+          if (!claimedJob) {
             skippedNoChange++;
             entries.push({
               friendCode: u.friendCode,
               cabinetUserId,
               action: 'skipped',
-              message: 'hash already advanced by another instance',
+              message: 'auto-update job throttled',
             });
             continue;
           }
 
-          await this.triggerUpdateForUser(u.friendCode, cabinetUserId);
+          // (5) create job + addRival; sourceScoreHash piggybacks on the
+          // job and is promoted to user.lastScoreHash by JobService.patch
+          // ONLY after the job completes successfully.
+          await this.triggerUpdateForUser(u.friendCode, cabinetUserId, hash);
           triggered++;
           entries.push({
             friendCode: u.friendCode,
@@ -290,6 +351,7 @@ export class AutoUpdateSchedulerService
   private async triggerUpdateForUser(
     friendCode: string,
     cabinetUserId: number,
+    sourceScoreHash: string | null,
   ): Promise<void> {
     const bot = await this.botStatus.pickAvailableCabinetBot();
     if (!bot) {
@@ -326,10 +388,11 @@ export class AutoUpdateSchedulerService
           jobType: 'idle_update_score',
           botUserFriendCode: bot.friendCode,
           isAuthenticated: true,
+          sourceScoreHash,
         })
         .then(({ jobId }) =>
           this.logger.log(
-            `auto-update job created fc=${friendCode} bot=${bot.friendCode} jobId=${jobId}`,
+            `auto-update job created fc=${friendCode} bot=${bot.friendCode} jobId=${jobId} sourceHash=${sourceScoreHash?.slice(0, 8) ?? '-'}`,
           ),
         ),
     ]);
