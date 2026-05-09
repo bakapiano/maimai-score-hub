@@ -391,6 +391,15 @@ const FRIEND_LIST_FRESH_WINDOW_MS = 5 * 60_000;
 const lastFriendListFetchAt = new Map<string, number>();
 
 /**
+ * Per-bot in-flight guard. The on-demand refresh poll fires every 5s,
+ * but a single getFriendList round-trip (with pagination) can easily
+ * exceed that. Without a guard we fan out concurrent fetches against
+ * the same cookie jar, slowing each one down and starving the original
+ * QR-login request that triggered the refresh.
+ */
+const fetchingFriendList = new Set<string>();
+
+/**
  * Report bot status to the backend.
  *
  * @param onlyBots if non-empty, only this subset of bots is processed.
@@ -442,6 +451,14 @@ export async function reportBotStatus(
           rating: number | null;
         }>
       | undefined;
+    if (fetchingFriendList.has(friendCode)) {
+      // Another report is already pulling this bot's friend list. Send a
+      // cheap availability ping so backend knows the bot is alive, but
+      // don't double-fetch.
+      botsData.push({ friendCode, available: true });
+      continue;
+    }
+    fetchingFriendList.add(friendCode);
     try {
       const jar = cookieStore.get(friendCode);
       if (jar) {
@@ -457,6 +474,8 @@ export async function reportBotStatus(
       }
     } catch {
       // Best effort - don't fail the report
+    } finally {
+      fetchingFriendList.delete(friendCode);
     }
 
     botsData.push({ friendCode, available: true, friendCount, friends });

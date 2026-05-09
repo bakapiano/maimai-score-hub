@@ -16,6 +16,18 @@ import { getRating } from '../../common/rating';
 const SNAPSHOT_POLL_INTERVAL_MS = 3_000;
 const SNAPSHOT_TIMEOUT_MS = 90_000;
 
+/**
+ * Thrown when the cabinet rejects the QR string as expired (errorID!=0,
+ * userID=-1). Carries a stable name so the controller can map it to a
+ * specific 400 response instead of the raw "QR auth failed: {...}".
+ */
+export class QrExpiredError extends Error {
+  constructor() {
+    super('二维码已过期，请刷新机台二维码后再试');
+    this.name = 'QrExpiredError';
+  }
+}
+
 export interface QrLoginResult {
   token: string;
   user: { id: string; friendCode: string; [key: string]: unknown };
@@ -53,10 +65,23 @@ export class QrLoginService {
     }
 
     // (1) Resolve the QR to a cabinet userId + display name + music list.
-    const scan = await this.sdgb.scanQr(
-      { qrCode: qrCode.trim() },
-      { tag: `qr-login`, timeoutMs: 120_000 },
-    );
+    let scan;
+    try {
+      scan = await this.sdgb.scanQr(
+        { qrCode: qrCode.trim() },
+        { tag: `qr-login`, timeoutMs: 120_000 },
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // sdgb-worker raises this exact sentinel when the cabinet returns
+      // userID=-1 (QR expired). Surface a typed error so the controller
+      // can map it to a 400 with a user-friendly Chinese message instead
+      // of "QR auth failed: {...}".
+      if (message.includes('QR_EXPIRED')) {
+        throw new QrExpiredError();
+      }
+      throw err;
+    }
     const cabinetUserId = scan.cabinetUserId;
     const rivalName = scan.rivalName;
 

@@ -20,7 +20,7 @@ import {
 } from '@maimai-score-hub/shared';
 
 import { AuthService } from './auth.service';
-import { QrLoginService } from './qr-login.service';
+import { QrExpiredError, QrLoginService } from './qr-login.service';
 import { decodeQrImage } from '../../common/qr-decode';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
@@ -92,6 +92,13 @@ export class AuthController {
       return await this.qrLogin.loginByQr(qrCode);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      // Surface a stable error code for the FE to render targeted UI.
+      if (err instanceof QrExpiredError) {
+        throw new BadRequestException({
+          code: 'qr_expired',
+          message,
+        });
+      }
       throw new BadRequestException(message);
     }
   }
