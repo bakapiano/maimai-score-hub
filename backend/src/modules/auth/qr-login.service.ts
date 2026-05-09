@@ -236,44 +236,40 @@ export class QrLoginService {
       `QR-login attemptId=${attemptId} addRival rc1=${rival.returnCode1} rc2=${rival.returnCode2}`,
     );
 
-    // (3) Fetch friend list AFTER addRival. Retry up to 2× with a small
-    // sleep if the candidate set is empty — accounts for any propagation
-    // delay between the cabinet and DXNet.
-    type Friend = { friendCode: string; userName: string | null; rating: number | null };
-    let candidates: Friend[] = [];
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      await setStatus('fetching_after');
-      const after = await this.jobs.fetchFriendList(bot.friendCode, 90_000);
-      candidates = after.friends.filter((f) => !beforeCodes.has(f.friendCode));
-      this.logger.log(
-        `QR-login attemptId=${attemptId} after-fetch attempt=${attempt} candidates=${candidates.length}`,
-      );
-      if (candidates.length > 0) break;
-      if (attempt < 3) {
-        await new Promise((r) => setTimeout(r, 3_000));
-      }
-    }
+    // (3) Fetch friend list AFTER addRival (single attempt — retrying is
+    // expensive, and candidate=0 most of the time means "user was
+    // already this bot's friend before", handled below).
+    type Friend = {
+      friendCode: string;
+      userName: string | null;
+      rating: number | null;
+    };
+    await setStatus('fetching_after');
+    const after = await this.jobs.fetchFriendList(bot.friendCode, 90_000);
+    const candidates: Friend[] = after.friends.filter(
+      (f) => !beforeCodes.has(f.friendCode),
+    );
+    this.logger.log(
+      `QR-login attemptId=${attemptId} after-fetch ${after.friends.length} friends, ${candidates.length} candidates`,
+    );
 
-    if (candidates.length === 0) {
-      throw new Error(
-        '已尝试将 bot 加为你的好友但未在 bot 好友列表里看到新增条目，请稍后重试或使用 friendCode 登录',
-      );
-    }
-
-    // (4) Within the candidate diff, find the unique (userName, rating)
-    // match. The diff already excludes pre-existing friends so a stale
-    // homonym from before the request can't cause a false positive.
-    const matches = candidates.filter(
+    // (4) Pick the search pool:
+    //   - candidates non-empty → diff (the user just got added)
+    //   - candidates empty     → user was already a friend before
+    //                            this request (idempotent re-login).
+    //                            Search the full friend list instead.
+    const pool: Friend[] =
+      candidates.length > 0 ? candidates : after.friends;
+    const matches = pool.filter(
       (c) => c.userName === rivalName && c.rating === myRating,
     );
     if (matches.length === 0) {
-      // 1 candidate but name/rating mismatch — race with another QR-login
-      // adding a different user, or a backend-vs-cabinet rating skew.
-      const cand = candidates
+      const sample = pool
+        .slice(0, 5)
         .map((c) => `${c.friendCode}(${c.userName}|${c.rating})`)
         .join(', ');
       throw new Error(
-        `候选好友里未找到 name=${rivalName} rating=${myRating} 的记录 (candidates: ${cand})`,
+        `${candidates.length > 0 ? '新加' : '现有'}好友里未找到 name=${rivalName} rating=${myRating} 的记录 (sample: ${sample})`,
       );
     }
     if (matches.length > 1) {
