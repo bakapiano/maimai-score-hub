@@ -192,6 +192,50 @@ paths:
                   message:
                     type: string
                 additionalProperties: true
+  /auth/login-by-qr:
+    post:
+      tags: *a2
+      parameters: []
+      operationId: auth.loginByQr
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                qrCode:
+                  type: string
+                  minLength: 1
+      responses:
+        "201":
+          description: "201"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      friendCode:
+                        type: string
+                    required:
+                      - friendCode
+                    additionalProperties: true
+                required:
+                  - token
+                  - user
+        "400":
+          description: "400"
+        "404":
+          description: "404"
+        "409":
+          description: "409"
   /users/profile:
     get:
       tags: &a3
@@ -1975,6 +2019,21 @@ paths:
                         type: boolean
                       friendCount:
                         type: number
+                      friends:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            friendCode:
+                              type: string
+                            userName:
+                              type: string
+                              nullable: true
+                            rating:
+                              type: integer
+                              nullable: true
+                          required:
+                            - friendCode
                     required:
                       - friendCode
                       - available

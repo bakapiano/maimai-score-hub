@@ -21,6 +21,21 @@ export const ReportBotStatusBodySchema = z.object({
       friendCode: z.string(),
       available: z.boolean(),
       friendCount: z.number().optional(),
+      /**
+       * Optional rich friend list for the QR-login reverse-mapping
+       * feature. Workers populate this on every status tick when the bot
+       * cookie is healthy; absent → backend leaves the existing snapshot
+       * untouched.
+       */
+      friends: z
+        .array(
+          z.object({
+            friendCode: z.string(),
+            userName: z.string().nullable().optional(),
+            rating: z.number().int().nullable().optional(),
+          }),
+        )
+        .optional(),
     }),
   ),
 });

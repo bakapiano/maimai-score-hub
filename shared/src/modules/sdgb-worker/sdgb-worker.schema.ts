@@ -44,6 +44,11 @@ export const AddRivalPayloadSchema = z.object({
 // Per-job results (set by sdgb-worker via PATCH).
 export const ScanQrResultSchema = z.object({
   cabinetUserId: z.number().int().positive(),
+  /**
+   * Optional for backward compatibility with sdgb-worker instances that
+   * predate the QR-login feature; new workers always populate it.
+   */
+  rivalName: z.string().optional(),
   music: z.array(MusicEntrySchema),
   hash: z.string(),
 });

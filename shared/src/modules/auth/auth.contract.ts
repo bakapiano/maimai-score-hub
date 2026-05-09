@@ -1,6 +1,8 @@
 import { initContract } from '@ts-rest/core';
 
 import {
+  LoginByQrBodySchema,
+  LoginByQrResponseSchema,
   LoginRequestBodySchema,
   LoginRequestResponseSchema,
   LoginStatusQuerySchema,
@@ -21,5 +23,16 @@ export const authContract = c.router({
     path: '/auth/login-status',
     query: LoginStatusQuerySchema,
     responses: { 200: LoginStatusResponseSchema },
+  },
+  loginByQr: {
+    method: 'POST',
+    path: '/auth/login-by-qr',
+    body: LoginByQrBodySchema,
+    responses: {
+      201: LoginByQrResponseSchema,
+      400: c.type<{ error: string }>(),
+      404: c.type<{ error: string }>(),
+      409: c.type<{ error: string }>(),
+    },
   },
 });

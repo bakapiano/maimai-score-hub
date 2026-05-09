@@ -35,3 +35,24 @@ export const LoginStatusResponseSchema = z
 
 export type LoginRequestBody = z.infer<typeof LoginRequestBodySchema>;
 export type LoginStatusQuery = z.infer<typeof LoginStatusQuerySchema>;
+
+/**
+ * QR-code login. Body accepts EITHER multipart with field `image`
+ * (handled at controller level, not in this zod schema) OR JSON
+ * `{ qrCode }` with the SGWCMAID... string.
+ */
+export const LoginByQrBodySchema = z.object({
+  qrCode: z.string().min(1).optional(),
+});
+
+export const LoginByQrResponseSchema = z.object({
+  token: z.string(),
+  user: z
+    .object({
+      id: z.string().optional(),
+      friendCode: z.string(),
+    })
+    .passthrough(),
+});
+
+export type LoginByQrBody = z.infer<typeof LoginByQrBodySchema>;
