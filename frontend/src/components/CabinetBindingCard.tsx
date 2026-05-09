@@ -18,36 +18,38 @@ import { useCallback, useEffect, useState } from "react";
  *
  * Lives in its own component because SyncPage.tsx is already a 1700-line
  * monolith and the binding flow is self-contained.
+ *
+ * The cabinetUserId is intentionally NEVER sent to the frontend in any
+ * form — backend only exposes hasCabinetUserId.
  */
 export interface CabinetCardProps {
   token: string;
-  /** Initial values pulled from /api/users/profile so we can render eagerly. */
-  cabinetUserId: number | null;
+  /** Whether the user has bound a cabinet user id at all. */
+  hasCabinetUserId: boolean;
   autoUpdate: boolean;
   /** Called after a successful bind / toggle so the parent can re-pull profile. */
   onChanged?: () => void;
 }
 
 type ProfileResp = {
-  cabinetUserId: number | null;
+  hasCabinetUserId: boolean;
   autoUpdate: boolean;
 };
 
 export function CabinetBindingCard({
   token,
-  cabinetUserId: initialCabinetUserId,
+  hasCabinetUserId: initialHasCabinet,
   autoUpdate: initialAutoUpdate,
   onChanged,
 }: CabinetCardProps) {
-  const [cabinetUserId, setCabinetUserId] = useState<number | null>(
-    initialCabinetUserId,
-  );
+  const [hasCabinetUserId, setHasCabinetUserId] =
+    useState<boolean>(initialHasCabinet);
   const [autoUpdate, setAutoUpdate] = useState<boolean>(initialAutoUpdate);
   const [qrText, setQrText] = useState("");
   const [busy, setBusy] = useState<"bind" | "toggle" | null>(null);
 
   // Keep state in sync if parent reloads profile.
-  useEffect(() => setCabinetUserId(initialCabinetUserId), [initialCabinetUserId]);
+  useEffect(() => setHasCabinetUserId(initialHasCabinet), [initialHasCabinet]);
   useEffect(() => setAutoUpdate(initialAutoUpdate), [initialAutoUpdate]);
 
   const refreshFromServer = useCallback(async () => {
@@ -56,7 +58,7 @@ export function CabinetBindingCard({
     });
     if (res.ok) {
       const data = (await res.json()) as ProfileResp;
-      setCabinetUserId(data.cabinetUserId ?? null);
+      setHasCabinetUserId(!!data.hasCabinetUserId);
       setAutoUpdate(!!data.autoUpdate);
     }
     onChanged?.();
@@ -82,11 +84,11 @@ export function CabinetBindingCard({
         });
         const text = await res.text();
         const json = text ? JSON.parse(text) : null;
-        if (res.status === 201 && json?.cabinetUserId) {
+        if (res.status === 201 && json?.ok) {
           notifications.show({
             color: "green",
             title: "绑定成功",
-            message: `cabinet userId = ${json.cabinetUserId}`,
+            message: "二维码已绑定",
           });
           setQrText("");
           await refreshFromServer();
@@ -176,9 +178,9 @@ export function CabinetBindingCard({
           <Badge color="orange" variant="light" size="sm">
             测试中
           </Badge>
-          {cabinetUserId != null ? (
+          {hasCabinetUserId ? (
             <Badge color="green" variant="light">
-              已绑定 #{cabinetUserId}
+              已绑定
             </Badge>
           ) : (
             <Badge color="gray" variant="light">
@@ -191,7 +193,7 @@ export function CabinetBindingCard({
           扫描你的神秘二维码以完成绑定。
         </Text>
 
-        {!cabinetUserId && (
+        {!hasCabinetUserId && (
           <Alert color="yellow" variant="light">
             必须先完成一次成绩同步，才能绑定二维码（用于身份校验）。
           </Alert>
@@ -231,7 +233,7 @@ export function CabinetBindingCard({
           label="自动更新分数"
           description="开启后会在你推分的时候自动更新成绩。"
           checked={autoUpdate}
-          disabled={cabinetUserId == null || busy !== null}
+          disabled={!hasCabinetUserId || busy !== null}
           onChange={(e) => toggleAutoUpdate(e.currentTarget.checked)}
         />
       </Stack>

@@ -351,7 +351,7 @@ export function VersionScoresTab({
       <Group justify="space-between" align="center">
         <Group gap={8} align="center">
           <Title order={4} size="h5">
-            按牌子查看
+            按版本查看
           </Title>
           <SegmentedControl
             size="xs"

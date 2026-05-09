@@ -1,9 +1,9 @@
 import {
+  IconCalendarStar,
   IconChartBar,
   IconList,
   IconRefresh,
   IconTrophy,
-  IconVersions,
 } from "@tabler/icons-react";
 import { Anchor, Box, Group, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
@@ -128,9 +128,9 @@ export default function ScorePage() {
               </Tabs.Tab>
               <Tabs.Tab
                 value="versions"
-                leftSection={<IconVersions size={16} />}
+                leftSection={<IconCalendarStar size={16} />}
               >
-                按牌子
+                按版本
               </Tabs.Tab>
               <Tabs.Tab value="all" leftSection={<IconList size={16} />}>
                 全部成绩

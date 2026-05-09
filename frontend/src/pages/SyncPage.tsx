@@ -48,7 +48,7 @@ type UserProfileResponse = {
   autoExportDivingFish?: boolean;
   autoExportLxns?: boolean;
   profile: UserProfile | null;
-  cabinetUserId?: number | null;
+  hasCabinetUserId?: boolean;
   autoUpdate?: boolean;
   lastScoreHash?: string | null;
 };
@@ -1295,7 +1295,7 @@ export default function SyncPage() {
             />
             <CabinetBindingCard
               token={token}
-              cabinetUserId={profile.cabinetUserId ?? null}
+              hasCabinetUserId={profile.hasCabinetUserId ?? false}
               autoUpdate={profile.autoUpdate ?? false}
               onChanged={() => {
                 void loadProfile();
