@@ -58,6 +58,18 @@ export class CookieExpiredError extends Error {
 }
 
 /**
+ * Permanent failure inside a response assertion — should bypass retry.
+ * Use for cases where retrying makes no sense, e.g. friend has not been
+ * added on the cabinet so the friend_vs page will never render.
+ */
+export class NonRetryableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NonRetryableError";
+  }
+}
+
+/**
  * 从 HTML 中提取 container_red 错误信息
  */
 export function extractContainerRedMessage(body: string): string | null {
@@ -251,6 +263,9 @@ export class MaimaiHttpClient {
         logError = e instanceof Error ? e.message : String(e);
 
         if (e instanceof CookieExpiredError) {
+          throw e;
+        }
+        if (e instanceof NonRetryableError) {
           throw e;
         }
 
@@ -570,7 +585,10 @@ export class MaimaiHttpClient {
       RETRY.rateLimitFriendVSMaxCount,
       (body) => {
         if (!body.includes('<div class="friend_vs_block">')) {
-          throw new Error(
+          // Page renders fine but the friend isn't actually friends with
+          // the bot — retrying won't fix this; fail fast so the job ends
+          // quickly with a clear error.
+          throw new NonRetryableError(
             "获取 Friend VS 页面失败：页面不包含 friend_vs_block，可能是好友没有添加成功",
           );
         }

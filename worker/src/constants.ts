@@ -93,7 +93,7 @@ export const RETRY = {
   /** 默认重试次数 */
   defaultCount: 3,
   /** Friend VS 重试次数 */
-  friendVSCount: 10,
+  friendVSCount: 4,
   /** 基础重试间隔 (ms)，实际间隔为 min(baseDelayMs * 2^attempt, maxDelayMs) + jitter */
   baseDelayMs: 1000,
   /** 最大重试间隔 (ms) */
@@ -101,7 +101,7 @@ export const RETRY = {
   /** 限流 (567) 默认最大重试次数 */
   rateLimitMaxCount: 5,
   /** 限流 (567) Friend VS 最大重试次数 */
-  rateLimitFriendVSMaxCount: 10,
+  rateLimitFriendVSMaxCount: 4,
   /** 限流重试基础间隔 (ms)，实际间隔为 min(rateLimitBaseDelayMs * 2^attempt, rateLimitMaxDelayMs) + jitter */
   rateLimitBaseDelayMs: 5_000,
   /** 限流重试最大间隔 (ms) */
