@@ -333,15 +333,6 @@ export class WorkerScheduler {
  * 可由 WorkerScheduler 定时调用，也可在 Bot 登录成功后主动调用
  */
 /**
- * Per-bot in-memory cache of "we just fetched the friend list at T".
- * The 5-min wall-clock report tick checks this and skips bots that
- * were recently refreshed via the on-demand path; the on-demand path
- * always runs (it's gated server-side).
- */
-const FRIEND_LIST_FRESH_WINDOW_MS = 5 * 60_000;
-const lastFriendListFetchAt = new Map<string, number>();
-
-/**
  * Per-bot in-flight guard. The on-demand refresh poll fires every 5s,
  * but a single getFriendList round-trip (with pagination) can easily
  * exceed that. Without a guard we fan out concurrent fetches against
@@ -378,21 +369,8 @@ export async function reportBotStatus(
     }>;
   }[] = [];
 
-  const now = Date.now();
   for (const friendCode of targets) {
     if (cookieStore.isExpired(friendCode)) continue;
-
-    // The 5-min tick can skip bots that were just refreshed on-demand.
-    // The on-demand path (onlyBots set) always proceeds.
-    if (!onlyBots) {
-      const lastAt = lastFriendListFetchAt.get(friendCode);
-      if (lastAt !== undefined && now - lastAt < FRIEND_LIST_FRESH_WINDOW_MS) {
-        // Still send a minimal availability ping so the backend can update
-        // lastReportedAt, but skip the expensive friend list pagination.
-        botsData.push({ friendCode, available: true });
-        continue;
-      }
-    }
 
     let friendCount: number | undefined;
     let friends:
@@ -421,7 +399,6 @@ export async function reportBotStatus(
           userName: f.userName ?? null,
           rating: f.rating ?? null,
         }));
-        lastFriendListFetchAt.set(friendCode, Date.now());
       }
     } catch {
       // Best effort - don't fail the report
