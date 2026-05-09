@@ -3,7 +3,9 @@ import {
   Button,
   Card,
   Group,
+  Pagination,
   ScrollArea,
+  Select,
   SimpleGrid,
   Stack,
   Table,
@@ -12,7 +14,7 @@ import {
 } from "@mantine/core";
 import { IconBolt, IconRefresh, IconRobot } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAdminContext } from "./adminUtils";
 
@@ -54,6 +56,37 @@ interface SdgbWorkerStatusResponse {
   oldestQueuedAgeSeconds: number | null;
   oldestProcessingAgeSeconds: number | null;
   recentJobs: SdgbRecentJob[];
+}
+
+interface SdgbJobListResponse {
+  items: SdgbRecentJob[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+interface AutoUpdateUserRow {
+  friendCode: string;
+  cabinetUserId: number | null;
+  lastScoreHash: string | null;
+  preferredBotFriendCode: string | null;
+  lastIdleJob: {
+    id: string;
+    botUserFriendCode: string | null;
+    status: string;
+    stage: string;
+    createdAt: string;
+    updatedAt: string;
+    error: string | null;
+  } | null;
+  lastHashJob: {
+    id: string;
+    status: string;
+    result: Record<string, unknown> | null;
+    error: string | null;
+    createdAt: string;
+    updatedAt: string;
+  } | null;
 }
 
 const POLL_INTERVAL_MS = 5_000;
@@ -192,6 +225,86 @@ export default function AdminSdgbWorkerPage() {
       setLoading(false);
     }
   }, [password]);
+
+  // ── Paginated job list ──
+  const [jobsList, setJobsList] = useState<SdgbJobListResponse | null>(null);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [filterType, setFilterType] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string | null>(null);
+  const [filterTag, setFilterTag] = useState("");
+  // Debounced tag value to avoid hammering the backend on every keystroke.
+  const [filterTagDebounced, setFilterTagDebounced] = useState("");
+  useEffect(() => {
+    const id = window.setTimeout(() => setFilterTagDebounced(filterTag), 300);
+    return () => window.clearTimeout(id);
+  }, [filterTag]);
+
+  const [jobsPage, setJobsPage] = useState(1);
+  const pageSize = 20;
+  // Reset to page 1 when filters change.
+  useEffect(() => {
+    setJobsPage(1);
+  }, [filterType, filterStatus, filterTagDebounced]);
+
+  const loadJobs = useCallback(async () => {
+    if (!password) return;
+    setJobsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (filterType) params.set("jobType", filterType);
+      if (filterStatus) params.set("status", filterStatus);
+      if (filterTagDebounced.trim()) params.set("tag", filterTagDebounced.trim());
+      params.set("page", String(jobsPage));
+      params.set("pageSize", String(pageSize));
+      const res = await fetch(
+        `/api/admin/sdgb-worker/jobs?${params.toString()}`,
+        { headers: { "x-admin-password": password } },
+      );
+      if (!res.ok) return;
+      const body = (await res.json()) as SdgbJobListResponse;
+      if (cancelled.current) return;
+      setJobsList(body);
+    } finally {
+      setJobsLoading(false);
+    }
+  }, [password, filterType, filterStatus, filterTagDebounced, jobsPage]);
+
+  useEffect(() => {
+    void loadJobs();
+    const id = window.setInterval(loadJobs, POLL_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [loadJobs]);
+
+  const totalJobsPages = useMemo(
+    () => (jobsList ? Math.max(1, Math.ceil(jobsList.total / pageSize)) : 1),
+    [jobsList],
+  );
+
+  // ── auto-update users overview ──
+  const [autoUsers, setAutoUsers] = useState<AutoUpdateUserRow[] | null>(null);
+  const [autoUsersLoading, setAutoUsersLoading] = useState(false);
+
+  const loadAutoUsers = useCallback(async () => {
+    if (!password) return;
+    setAutoUsersLoading(true);
+    try {
+      const res = await fetch("/api/auto-update/users", {
+        headers: { "x-admin-password": password },
+      });
+      if (!res.ok) return;
+      const body = (await res.json()) as AutoUpdateUserRow[];
+      if (cancelled.current) return;
+      setAutoUsers(body);
+    } finally {
+      setAutoUsersLoading(false);
+    }
+  }, [password]);
+
+  useEffect(() => {
+    void loadAutoUsers();
+    const id = window.setInterval(loadAutoUsers, POLL_INTERVAL_MS * 2);
+    return () => window.clearInterval(id);
+  }, [loadAutoUsers]);
 
   useEffect(() => {
     cancelled.current = false;
@@ -387,9 +500,64 @@ export default function AdminSdgbWorkerPage() {
 
       <Card withBorder padding="md" radius="md">
         <Stack gap="xs">
-          <Text fw={600} size="sm">
-            最近 20 条任务
-          </Text>
+          <Group justify="space-between" align="center" wrap="wrap">
+            <Text fw={600} size="sm">
+              所有任务
+              {jobsList && (
+                <Text component="span" size="xs" c="dimmed" ml={6}>
+                  共 {jobsList.total} 条
+                </Text>
+              )}
+            </Text>
+            <Group gap="xs" wrap="wrap">
+              <Select
+                size="xs"
+                placeholder="类型"
+                value={filterType}
+                onChange={setFilterType}
+                clearable
+                data={[
+                  { value: "scan_qr", label: JOB_TYPE_LABEL.scan_qr },
+                  {
+                    value: "get_rival_hash",
+                    label: JOB_TYPE_LABEL.get_rival_hash,
+                  },
+                  { value: "add_rival", label: JOB_TYPE_LABEL.add_rival },
+                ]}
+                w={130}
+              />
+              <Select
+                size="xs"
+                placeholder="状态"
+                value={filterStatus}
+                onChange={setFilterStatus}
+                clearable
+                data={[
+                  { value: "queued", label: "queued" },
+                  { value: "processing", label: "processing" },
+                  { value: "completed", label: "completed" },
+                  { value: "failed", label: "failed" },
+                ]}
+                w={130}
+              />
+              <TextInput
+                size="xs"
+                placeholder="tag 包含..."
+                value={filterTag}
+                onChange={(e) => setFilterTag(e.currentTarget.value)}
+                w={180}
+              />
+              <Button
+                size="xs"
+                variant="light"
+                leftSection={<IconRefresh size={12} />}
+                loading={jobsLoading}
+                onClick={loadJobs}
+              >
+                刷新
+              </Button>
+            </Group>
+          </Group>
           <ScrollArea>
             <Table withTableBorder withColumnBorders striped fz="xs">
               <Table.Thead>
@@ -404,7 +572,7 @@ export default function AdminSdgbWorkerPage() {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {data?.recentJobs.map((job) => (
+                {jobsList?.items.map((job) => (
                   <Table.Tr key={job.id}>
                     <Table.Td>
                       <Badge
@@ -442,11 +610,189 @@ export default function AdminSdgbWorkerPage() {
                     <Table.Td>{fmtAge(job.ageSeconds)}</Table.Td>
                   </Table.Tr>
                 ))}
-                {data && data.recentJobs.length === 0 && (
+                {jobsList && jobsList.items.length === 0 && (
                   <Table.Tr>
                     <Table.Td colSpan={7}>
                       <Text size="sm" c="dimmed" ta="center">
-                        暂无任务记录
+                        暂无符合条件的任务
+                      </Text>
+                    </Table.Td>
+                  </Table.Tr>
+                )}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea>
+          {totalJobsPages > 1 && (
+            <Group justify="center" mt="xs">
+              <Pagination
+                size="sm"
+                total={totalJobsPages}
+                value={jobsPage}
+                onChange={setJobsPage}
+              />
+            </Group>
+          )}
+        </Stack>
+      </Card>
+
+      <Card withBorder padding="md" radius="md">
+        <Stack gap="xs">
+          <Group justify="space-between" align="center">
+            <Text fw={600} size="sm">
+              开启了自动更新的用户
+              {autoUsers && (
+                <Text component="span" size="xs" c="dimmed" ml={6}>
+                  共 {autoUsers.length} 人
+                </Text>
+              )}
+            </Text>
+            <Button
+              size="xs"
+              variant="light"
+              leftSection={<IconRefresh size={12} />}
+              loading={autoUsersLoading}
+              onClick={loadAutoUsers}
+            >
+              刷新
+            </Button>
+          </Group>
+          <ScrollArea>
+            <Table withTableBorder withColumnBorders striped fz="xs">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>friendCode</Table.Th>
+                  <Table.Th>cabinetUserId</Table.Th>
+                  <Table.Th>lastScoreHash</Table.Th>
+                  <Table.Th>最近一次 hash 检查</Table.Th>
+                  <Table.Th>最近一次更新 job</Table.Th>
+                  <Table.Th>操作</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {autoUsers?.map((u) => (
+                  <Table.Tr key={u.friendCode}>
+                    <Table.Td>
+                      <Text size="xs" ff="monospace">
+                        {u.friendCode}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs" ff="monospace">
+                        {u.cabinetUserId ?? "-"}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs" ff="monospace" c="dimmed">
+                        {u.lastScoreHash
+                          ? u.lastScoreHash.slice(0, 8) + "…"
+                          : "—"}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      {u.lastHashJob ? (
+                        <Stack gap={0}>
+                          <Group gap={6}>
+                            <Badge
+                              color={
+                                STATUS_COLOR[
+                                  u.lastHashJob.status as SdgbRecentJob["status"]
+                                ] ?? "gray"
+                              }
+                              variant="light"
+                              size="xs"
+                            >
+                              {u.lastHashJob.status}
+                            </Badge>
+                            <Text size="xs" c="dimmed">
+                              {fmtAge(
+                                Math.round(
+                                  (Date.now() -
+                                    new Date(u.lastHashJob.createdAt).getTime()) /
+                                    1000,
+                                ),
+                              )}{" "}
+                              前
+                            </Text>
+                          </Group>
+                          {u.lastHashJob.error && (
+                            <Text size="xs" c="red">
+                              {u.lastHashJob.error.slice(0, 60)}
+                            </Text>
+                          )}
+                        </Stack>
+                      ) : (
+                        <Text size="xs" c="dimmed">
+                          —
+                        </Text>
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      {u.lastIdleJob ? (
+                        <Stack gap={0}>
+                          <Group gap={6}>
+                            <Badge
+                              color={
+                                u.lastIdleJob.status === "completed"
+                                  ? "green"
+                                  : u.lastIdleJob.status === "failed"
+                                    ? "red"
+                                    : u.lastIdleJob.status === "processing"
+                                      ? "blue"
+                                      : "gray"
+                              }
+                              variant="light"
+                              size="xs"
+                            >
+                              {u.lastIdleJob.status}
+                            </Badge>
+                            <Text size="xs" c="dimmed">
+                              bot=
+                              {u.lastIdleJob.botUserFriendCode ?? "-"}
+                            </Text>
+                            <Text size="xs" c="dimmed">
+                              {fmtAge(
+                                Math.round(
+                                  (Date.now() -
+                                    new Date(u.lastIdleJob.createdAt).getTime()) /
+                                    1000,
+                                ),
+                              )}{" "}
+                              前
+                            </Text>
+                          </Group>
+                          {u.lastIdleJob.error && (
+                            <Text size="xs" c="red">
+                              {u.lastIdleJob.error.slice(0, 60)}
+                            </Text>
+                          )}
+                        </Stack>
+                      ) : (
+                        <Text size="xs" c="dimmed">
+                          —
+                        </Text>
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      <Button
+                        size="xs"
+                        variant="light"
+                        leftSection={<IconBolt size={12} />}
+                        onClick={() => {
+                          setTriggerFc(u.friendCode);
+                          // Don't auto-fire — admin still has to confirm by
+                          // clicking the trigger button above. Just pre-fill.
+                        }}
+                      >
+                        填入触发框
+                      </Button>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+                {autoUsers && autoUsers.length === 0 && (
+                  <Table.Tr>
+                    <Table.Td colSpan={6}>
+                      <Text size="sm" c="dimmed" ta="center">
+                        暂无开启自动更新的用户
                       </Text>
                     </Table.Td>
                   </Table.Tr>
