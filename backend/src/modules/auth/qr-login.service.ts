@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 
 import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
 
+import { BotFriendSnapshotService } from '../admin/bot-friend-snapshot.service';
 import { BotStatusService } from '../admin/bot-status.service';
 import { JobService } from '../job/job.service';
 import { MusicEntity } from '../music/music.schema';
@@ -76,6 +77,7 @@ export class QrLoginService {
     private readonly sdgb: SdgbJobDispatcher,
     private readonly users: UsersService,
     private readonly botStatus: BotStatusService,
+    private readonly snapshot: BotFriendSnapshotService,
     private readonly jobs: JobService,
     private readonly jwt: JwtService,
     @InjectModel(MusicEntity.name)
@@ -200,12 +202,25 @@ export class QrLoginService {
       );
     };
 
-    // (1) Fetch friend list BEFORE addRival.
+    // (1) "Before" snapshot: piggy-back on the worker's regular 60s
+    // bot status report (which already POSTs the full friend list to
+    // bot_friend_snapshots). Saves one fetch_friend_list job
+    // (~10-50s + paged HTTP) per QR-login. Worst-case staleness = 60s,
+    // i.e. another QR-login in that window could leak a fresh friend
+    // into our diff — but the (userName, rating) match below will
+    // still reject it unless it happens to look identical.
     await setStatus('fetching_before');
-    const before = await this.jobs.fetchFriendList(bot.friendCode, 90_000);
-    const beforeCodes = new Set(before.friends.map((f) => f.friendCode));
+    const beforeSnap = await this.snapshot.get(bot.friendCode);
+    if (!beforeSnap) {
+      throw new Error(
+        `bot ${bot.friendCode} 没有最近的好友列表快照，请稍后重试`,
+      );
+    }
+    const beforeCodes = new Set(
+      beforeSnap.friends.map((f) => f.friendCode),
+    );
     this.logger.log(
-      `QR-login attemptId=${attemptId} before-fetch ${before.friends.length} friends`,
+      `QR-login attemptId=${attemptId} before (snapshot updatedAt=${beforeSnap.updatedAt?.toISOString()}) ${beforeSnap.friends.length} friends`,
     );
 
     // (2) addRival on the cabinet (instant + bidirectional).
@@ -224,7 +239,8 @@ export class QrLoginService {
     // (3) Fetch friend list AFTER addRival. Retry up to 2× with a small
     // sleep if the candidate set is empty — accounts for any propagation
     // delay between the cabinet and DXNet.
-    let candidates: typeof before.friends = [];
+    type Friend = { friendCode: string; userName: string | null; rating: number | null };
+    let candidates: Friend[] = [];
     for (let attempt = 1; attempt <= 3; attempt++) {
       await setStatus('fetching_after');
       const after = await this.jobs.fetchFriendList(bot.friendCode, 90_000);
