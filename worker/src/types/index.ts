@@ -111,6 +111,10 @@ export interface SentFriendRequest {
 export interface FriendInfo {
   friendCode: string;
   isFavorite: boolean;
+  /** Display name from the friend list page (full-width characters). */
+  userName?: string | null;
+  /** maimai DX rating displayed on the friend list page. */
+  rating?: number | null;
 }
 
 // ============================================================================

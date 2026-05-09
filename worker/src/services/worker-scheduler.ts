@@ -340,24 +340,41 @@ export async function reportBotStatus(): Promise<void> {
     friendCode: string;
     available: boolean;
     friendCount?: number;
+    friends?: Array<{
+      friendCode: string;
+      userName: string | null;
+      rating: number | null;
+    }>;
   }[] = [];
 
   for (const friendCode of allBots) {
     if (cookieStore.isExpired(friendCode)) continue;
 
     let friendCount: number | undefined;
+    let friends:
+      | Array<{
+          friendCode: string;
+          userName: string | null;
+          rating: number | null;
+        }>
+      | undefined;
     try {
       const jar = cookieStore.get(friendCode);
       if (jar) {
         const client = new MaimaiHttpClient(jar);
-        const friends = await client.getFriendList();
-        friendCount = friends.length;
+        const list = await client.getFriendList();
+        friendCount = list.length;
+        friends = list.map((f) => ({
+          friendCode: f.friendCode,
+          userName: f.userName ?? null,
+          rating: f.rating ?? null,
+        }));
       }
     } catch {
       // Best effort - don't fail the report
     }
 
-    botsData.push({ friendCode, available: true, friendCount });
+    botsData.push({ friendCode, available: true, friendCount, friends });
   }
 
   if (!botsData.length) return;

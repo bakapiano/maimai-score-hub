@@ -87,30 +87,54 @@ export function parseFriendCount(html: string): number | null {
 }
 
 /**
- * 解析好友列表页面，提取好友代码及收藏状态
- * 每个好友对应一个 form，如果 form 的 action 包含 favoriteOff 则说明已收藏
+ * 解析好友列表页面，提取好友信息：friendCode、收藏状态、用户名、rating。
  *
- * HTML 结构示例:
- *   <form action="https://maimai.wahlap.com/maimai-mobile/friend/favoriteOff/" ...>
+ * 每个好友对应一个 see_through_block 块，块内顺序：
+ *   <div class="trophy_block trophy_<color> ...">
+ *     <div class="trophy_inner_block f_13">称号</div>
+ *   </div>
+ *   <div class="name_block t_l f_l f_16 underline">玩家名（全角）</div>
+ *   <div class="rating_block">16029</div>
+ *   <form action=".../favoriteOn/" or favoriteOff/" ...>
  *     <input type="hidden" name="idx" value="FRIEND_CODE">
  *   </form>
- * action 为 favoriteOff → 已收藏；action 为 favoriteOn → 未收藏
+ *
+ * 老调用方只读 friendCode + isFavorite；新加的 userName / rating 在
+ * QR 登录流程里用于反向 map cabinetUserId → friendCode。
  */
 export function parseFriendList(html: string): FriendInfo[] {
-  // 匹配每个 form: 提取 action URL 和内嵌的 idx hidden input 值
-  const formRegex =
-    /<form[^>]*action="([^"]*)"[^>]*>[\s\S]*?<input type="hidden" name="idx" value="(.*?)"[\s\S]*?<\/form>/g;
+  // 一个块的开始：<div class="see_through_block ...">；下一个块（或文档其他东西）出现前
+  // 就是它的范围。non-greedy 到下一个 see_through_block 起点。
+  const blockRegex =
+    /<div class="see_through_block[^"]*">([\s\S]*?)(?=<div class="see_through_block|<\/body>)/g;
+
   const seen = new Set<string>();
   const results: FriendInfo[] = [];
-  for (const m of html.matchAll(formRegex)) {
-    const action = m[1];
-    const friendCode = m[2];
+  for (const m of html.matchAll(blockRegex)) {
+    const block = m[1];
+    // friendCode is the source of truth — skip the block if we can't find it.
+    const idxMatch = block.match(
+      /<input type="hidden" name="idx" value="(.*?)"/,
+    );
+    if (!idxMatch) continue;
+    const friendCode = idxMatch[1];
     if (seen.has(friendCode)) continue;
     seen.add(friendCode);
-    results.push({
-      friendCode,
-      isFavorite: action.includes("favoriteOff"),
-    });
+
+    const formAction = block.match(/<form[^>]*action="([^"]*)"/);
+    const isFavorite = !!formAction && formAction[1].includes('favoriteOff');
+
+    const nameMatch = block.match(
+      /<div class="name_block[^"]*">([\s\S]*?)<\/div>/,
+    );
+    const userName = nameMatch ? nameMatch[1].trim() : null;
+
+    const ratingMatch = block.match(
+      /<div class="rating_block">(\d+)<\/div>/,
+    );
+    const rating = ratingMatch ? parseInt(ratingMatch[1], 10) : null;
+
+    results.push({ friendCode, isFavorite, userName, rating });
   }
   return results;
 }
