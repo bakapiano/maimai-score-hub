@@ -275,6 +275,31 @@ export class JobService {
       },
     );
 
+    // 0) Top priority: fetch_friend_list jobs pre-assigned to this bot.
+    //    These back blocking QR-login requests, so they jump ahead of
+    //    everything — even resume-in-progress and the unassigned queue.
+    {
+      const fetchFL = await this.jobModel.findOneAndUpdate(
+        {
+          status: 'queued',
+          executing: false,
+          botUserFriendCode,
+          jobType: 'fetch_friend_list',
+        },
+        {
+          $set: {
+            status: 'processing',
+            executing: true,
+            updatedAt: now,
+          },
+        },
+        { new: true, sort: { createdAt: 1 } },
+      );
+      if (fetchFL) {
+        return toJobResponse(fetchFL.toObject() as JobEntity);
+      }
+    }
+
     // 1a) Queued first: claim the oldest unassigned queued job.
     //     To balance load across bots, only allow this bot to claim a new queued
     //     job if it doesn't already have more active jobs than any other bot.
@@ -374,29 +399,7 @@ export class JobService {
       return toJobResponse(processing.toObject() as JobEntity);
     }
 
-    // 2a) High-priority pre-assigned jobs: fetch_friend_list (QR-login
-     //     blocks on this — needs to jump the idle queue).
-    const fetchFL = await this.jobModel.findOneAndUpdate(
-      {
-        status: 'queued',
-        executing: false,
-        botUserFriendCode,
-        jobType: 'fetch_friend_list',
-      },
-      {
-        $set: {
-          status: 'processing',
-          executing: true,
-          updatedAt: now,
-        },
-      },
-      { new: true, sort: { createdAt: 1 } },
-    );
-    if (fetchFL) {
-      return toJobResponse(fetchFL.toObject() as JobEntity);
-    }
-
-    // 2b) Idle pool: claim pre-assigned queued jobs (e.g. idle_update_score)
+    // 2) Idle pool: claim pre-assigned queued jobs (e.g. idle_update_score)
     //    Lowest priority — only picked when no main pool jobs are available.
     const idle = await this.jobModel.findOneAndUpdate(
       { status: 'queued', executing: false, botUserFriendCode },
