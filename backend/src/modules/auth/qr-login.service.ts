@@ -202,28 +202,7 @@ export class QrLoginService {
       );
     };
 
-    // (1) "Before" snapshot: piggy-back on the worker's regular 60s
-    // bot status report (which already POSTs the full friend list to
-    // bot_friend_snapshots). Saves one fetch_friend_list job
-    // (~10-50s + paged HTTP) per QR-login. Worst-case staleness = 60s,
-    // i.e. another QR-login in that window could leak a fresh friend
-    // into our diff — but the (userName, rating) match below will
-    // still reject it unless it happens to look identical.
-    await setStatus('fetching_before');
-    const beforeSnap = await this.snapshot.get(bot.friendCode);
-    if (!beforeSnap) {
-      throw new Error(
-        `bot ${bot.friendCode} 没有最近的好友列表快照，请稍后重试`,
-      );
-    }
-    const beforeCodes = new Set(
-      beforeSnap.friends.map((f) => f.friendCode),
-    );
-    this.logger.log(
-      `QR-login attemptId=${attemptId} before (snapshot updatedAt=${beforeSnap.updatedAt?.toISOString()}) ${beforeSnap.friends.length} friends`,
-    );
-
-    // (2) addRival on the cabinet (instant + bidirectional).
+    // (1) addRival on the cabinet (instant + bidirectional).
     await setStatus('adding_rival');
     const rival = await this.sdgb.addRival(
       {
@@ -232,44 +211,58 @@ export class QrLoginService {
       },
       { tag: `qr-login-add:${cabinetUserId}`, timeoutMs: 60_000 },
     );
+    const triggeredAt = new Date();
     this.logger.log(
       `QR-login attemptId=${attemptId} addRival rc1=${rival.returnCode1} rc2=${rival.returnCode2}`,
     );
 
-    // (3) Fetch friend list AFTER addRival (single attempt — retrying is
-    // expensive, and candidate=0 most of the time means "user was
-    // already this bot's friend before", handled below).
+    // (2) Wait for the bot's regular 60s status report to land a fresh
+    // snapshot (`updatedAt > triggeredAt`), then look up (userName,
+    // rating) in it. We never call fetch_friend_list ourselves — that
+    // job class is reserved for future use; the snapshot is good
+    // enough and saves dxnet round-trips.
+    await setStatus('fetching_after');
     type Friend = {
       friendCode: string;
       userName: string | null;
       rating: number | null;
     };
-    await setStatus('fetching_after');
-    const after = await this.jobs.fetchFriendList(bot.friendCode, 90_000);
-    const candidates: Friend[] = after.friends.filter(
-      (f) => !beforeCodes.has(f.friendCode),
-    );
+    const SNAPSHOT_WAIT_DEADLINE_MS = 90_000;
+    const SNAPSHOT_POLL_INTERVAL_MS = 2_000;
+    const deadline = Date.now() + SNAPSHOT_WAIT_DEADLINE_MS;
+    let snap = await this.snapshot.get(bot.friendCode);
+    while (
+      Date.now() < deadline &&
+      (!snap?.updatedAt || snap.updatedAt.getTime() <= triggeredAt.getTime())
+    ) {
+      await new Promise((r) => setTimeout(r, SNAPSHOT_POLL_INTERVAL_MS));
+      snap = await this.snapshot.get(bot.friendCode);
+    }
+    if (
+      !snap ||
+      !snap.updatedAt ||
+      snap.updatedAt.getTime() <= triggeredAt.getTime()
+    ) {
+      throw new Error(
+        '未在超时时间内拿到 bot 最新好友列表快照（worker 未上报），请稍后重试',
+      );
+    }
+    const friends: Friend[] = snap.friends;
     this.logger.log(
-      `QR-login attemptId=${attemptId} after-fetch ${after.friends.length} friends, ${candidates.length} candidates`,
+      `QR-login attemptId=${attemptId} snapshot updatedAt=${snap.updatedAt.toISOString()} friends=${friends.length}`,
     );
 
-    // (4) Pick the search pool:
-    //   - candidates non-empty → diff (the user just got added)
-    //   - candidates empty     → user was already a friend before
-    //                            this request (idempotent re-login).
-    //                            Search the full friend list instead.
-    const pool: Friend[] =
-      candidates.length > 0 ? candidates : after.friends;
-    const matches = pool.filter(
+    // (3) Match (userName, rating) inside the snapshot. Unique → win.
+    const matches = friends.filter(
       (c) => c.userName === rivalName && c.rating === myRating,
     );
     if (matches.length === 0) {
-      const sample = pool
+      const sample = friends
         .slice(0, 5)
         .map((c) => `${c.friendCode}(${c.userName}|${c.rating})`)
         .join(', ');
       throw new Error(
-        `${candidates.length > 0 ? '新加' : '现有'}好友里未找到 name=${rivalName} rating=${myRating} 的记录 (sample: ${sample})`,
+        `bot 好友列表里未找到 name=${rivalName} rating=${myRating} 的记录 (sample: ${sample})`,
       );
     }
     if (matches.length > 1) {
