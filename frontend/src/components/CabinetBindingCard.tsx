@@ -6,10 +6,10 @@ import {
   Card,
   FileButton,
   Group,
+  PasswordInput,
   Stack,
   Switch,
   Text,
-  TextInput,
 } from "@mantine/core";
 import { IconLinkOff, IconUpload } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
@@ -277,7 +277,7 @@ export function CabinetBindingCard({
           </Group>
 
           <Group gap="xs" wrap="nowrap">
-            <TextInput
+            <PasswordInput
               placeholder="SGWCMAID..."
               value={qrText}
               onChange={(e) => setQrText(e.currentTarget.value)}

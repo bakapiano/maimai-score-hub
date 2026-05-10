@@ -6,9 +6,9 @@ import {
   FileButton,
   Group,
   Loader,
+  PasswordInput,
   Stack,
   Text,
-  TextInput,
 } from "@mantine/core";
 import {
   HttpClientError,
@@ -344,7 +344,7 @@ export function QrLoginForm({
         </Group>
 
         <Group gap="xs" wrap="nowrap">
-          <TextInput
+          <PasswordInput
             placeholder="SGWCMAID..."
             value={qrText}
             onChange={(e) => setQrText(e.currentTarget.value)}
