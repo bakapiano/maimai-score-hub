@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        instance: [1, 2] # 添加更多实例编号
+        instance: [1, 2, 3] # 添加更多实例编号
       fail-fast: false # 一个失败不影响其他部署
       max-parallel: 3 # 同时部署的最大数量
     concurrency:
@@ -29,7 +29,10 @@ jobs:
         with:
           host: ${{ secrets[format('WORKER_{0}_HOST', matrix.instance)] }}
           username: ${{ secrets[format('WORKER_{0}_USER', matrix.instance)] }}
+          # WORKER_N_PORT is optional; appleboy/ssh-action falls back to 22.
+          port: ${{ secrets[format('WORKER_{0}_PORT', matrix.instance)] }}
           key: ${{ secrets.SSH_KEY }}
+          command_timeout: 30m
           script: |
             cd ${{ secrets[format('WORKER_{0}_PATH', matrix.instance)] }}
             sudo chown -R "$USER:$USER" "$(pwd)" || true
@@ -37,10 +40,19 @@ jobs:
             git fetch --all
             git checkout main
             git pull
+            # Worker 3 (101) has no public IP and goes through a great-firewall
+            # constrained link; route docker pulls through the host's clash proxy.
+            # The proxy lives on the host's loopback so daemon already has it
+            # via /etc/systemd/system/docker.service.d/*.conf — but build-time
+            # network calls (npm install, apt) still need these env vars.
+            EXTRA_ENV=""
+            if [ "${{ matrix.instance }}" = "3" ]; then
+              EXTRA_ENV="HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 NO_PROXY=localhost,127.0.0.1"
+            fi
             if command -v docker-compose >/dev/null 2>&1; then
-              sudo docker-compose -f worker/docker-compose.yml up -d --build || exit 1
+              sudo env $EXTRA_ENV docker-compose -f worker/docker-compose.yml up -d --build || exit 1
             else
-              sudo docker compose -f worker/docker-compose.yml up -d --build || exit 1
+              sudo env $EXTRA_ENV docker compose -f worker/docker-compose.yml up -d --build || exit 1
             fi
             sudo docker image prune -f
             for i in 1 2 3 4 5; do
