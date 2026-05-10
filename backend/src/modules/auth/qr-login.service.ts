@@ -221,7 +221,7 @@ export class QrLoginService {
     // rating) in it. We never call fetch_friend_list ourselves — that
     // job class is reserved for future use; the snapshot is good
     // enough and saves dxnet round-trips.
-    await setStatus('fetching_after');
+    await setStatus('waiting_snapshot');
     type Friend = {
       friendCode: string;
       userName: string | null;

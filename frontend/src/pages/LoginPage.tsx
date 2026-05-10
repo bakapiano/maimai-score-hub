@@ -14,6 +14,7 @@ import {
   Progress,
   Checkbox,
   Stack,
+  Tabs,
   Text,
   TextInput,
   Tooltip,
@@ -30,6 +31,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useMemo, useState } from "react";
 
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
+import { QrLoginForm } from "../components/QrLoginForm";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
@@ -129,6 +131,9 @@ export default function LoginPage() {
       return "";
     }
   });
+  // QR-login (other tab) reports its busy state up so we can lock the
+  // friend-code tab while it's running, and vice-versa via `polling`.
+  const [qrBusy, setQrBusy] = useState(false);
   const [_jobStatus, setJobStatus] = useState("");
   const [polling, setPolling] = useState(() => {
     try {
@@ -195,19 +200,50 @@ export default function LoginPage() {
   useEffect(() => {
     if (!jobId || polling === false) return;
 
-    const handle = setInterval(async () => {
-      const res = await authApi.loginStatus({ query: { jobId } });
+    let consecutiveFails = 0;
+    const MAX_FAILS = 5;
+    const BACKOFF = [1_000, 2_000, 4_000, 8_000, 16_000];
+    let scheduled: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const runOnce = async () => {
+      let res;
+      try {
+        res = await authApi.loginStatus({ query: { jobId } });
+      } catch (err) {
+        // network failure → counted as 5xx
+        consecutiveFails++;
+        if (consecutiveFails >= MAX_FAILS) {
+          setJobStatus(`network error: ${String(err)}`);
+          return;
+        }
+        scheduleNext(BACKOFF[Math.min(consecutiveFails - 1, BACKOFF.length - 1)]);
+        return;
+      }
+
+      if (res.status >= 500) {
+        consecutiveFails++;
+        if (consecutiveFails >= MAX_FAILS) {
+          setJobStatus(`HTTP ${res.status} (after ${MAX_FAILS} retries)`);
+          return;
+        }
+        scheduleNext(BACKOFF[Math.min(consecutiveFails - 1, BACKOFF.length - 1)]);
+        return;
+      }
+
+      consecutiveFails = 0;
 
       if (res.status !== 200) {
         setJobStatus(`HTTP ${res.status}`);
-        // If job not found (404), clear localStorage
         if (res.status === 404) {
           setPolling(false);
           setJobId("");
           try {
             localStorage.removeItem("pendingLoginJobId");
           } catch {}
+          return;
         }
+        scheduleNext(1_000);
         return;
       }
 
@@ -243,7 +279,9 @@ export default function LoginPage() {
           color: "green",
         });
         navigate("/app", { replace: true });
-      } else if (data?.status === "failed") {
+        return;
+      }
+      if (data?.status === "failed") {
         setPolling(false);
         setJobStage("");
         setJobStatusValue("");
@@ -256,10 +294,23 @@ export default function LoginPage() {
           message: String(data?.job?.error || "未知错误"),
           color: "red",
         });
+        return;
       }
-    }, 1400);
+      scheduleNext(1_000);
+    };
 
-    return () => clearInterval(handle);
+    const scheduleNext = (ms: number) => {
+      if (cancelled) return;
+      scheduled = setTimeout(() => {
+        void runOnce();
+      }, ms);
+    };
+
+    void runOnce();
+    return () => {
+      cancelled = true;
+      if (scheduled !== null) clearTimeout(scheduled);
+    };
   }, [jobId, polling, setToken, navigate]);
 
   useEffect(() => {
@@ -420,7 +471,14 @@ export default function LoginPage() {
                 </>
               ) : (
                 <>
-                  <Paper shadow="xs" p="lg" radius="md" withBorder>
+                  <Tabs defaultValue="friendCode" keepMounted={false}>
+                    <Tabs.List grow>
+                      <Tabs.Tab value="friendCode">好友码登录</Tabs.Tab>
+                      <Tabs.Tab value="qr">神秘二维码登录</Tabs.Tab>
+                    </Tabs.List>
+
+                    <Tabs.Panel value="friendCode" pt="md">
+                      <Paper shadow="xs" p="lg" radius="md" withBorder>
                     <Stack gap="md">
                       <Group align="flex-end" gap="xs">
                         <TextInput
@@ -433,7 +491,7 @@ export default function LoginPage() {
                               setFriendCode(val);
                             }
                           }}
-                          disabled={polling}
+                          disabled={polling || qrBusy}
                           required
                           styles={{ label: { textAlign: "left" } }}
                           error={
@@ -473,7 +531,7 @@ export default function LoginPage() {
                             setUseIdleUpdate(false);
                           }
                         }}
-                        disabled={polling}
+                        disabled={polling || qrBusy}
                       />
 
                       {!skipUpdateScore && (
@@ -489,7 +547,7 @@ export default function LoginPage() {
                           onChange={(e) =>
                             setUseIdleUpdate(e.currentTarget.checked)
                           }
-                          disabled={polling}
+                          disabled={polling || qrBusy}
                         />
                       )}
 
@@ -588,6 +646,21 @@ export default function LoginPage() {
                         )}
                     </Stack>
                   </Paper>
+                    </Tabs.Panel>
+
+                    <Tabs.Panel value="qr" pt="md">
+                      <Paper shadow="xs" p="lg" radius="md" withBorder>
+                        <QrLoginForm
+                          onSuccess={(t) => {
+                            setToken(t);
+                            navigate("/");
+                          }}
+                          onBusyChange={setQrBusy}
+                          disabled={polling}
+                        />
+                      </Paper>
+                    </Tabs.Panel>
+                  </Tabs>
 
                   <FriendCodeGuide />
                 </>

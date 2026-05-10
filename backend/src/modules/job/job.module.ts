@@ -10,6 +10,7 @@ import {
 } from './idle-update/idle-update-log.schema';
 import { Module, forwardRef } from '@nestjs/common';
 
+import { AdminModule } from '../admin/admin.module';
 import { AuthModule } from '../auth/auth.module';
 import { ApiLogController } from './api-log/api-log.controller';
 import { IdleUpdateController } from './idle-update/idle-update.controller';
@@ -21,6 +22,7 @@ import { JobService } from './job.service';
 import { JobTempCacheService } from './cache/temp-cache.service';
 import { TempCacheController } from './cache/temp-cache.controller';
 import { MongooseModule } from '@nestjs/mongoose';
+import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { SyncModule } from '../sync/sync.module';
 import { UsersModule } from '../users/users.module';
 
@@ -32,9 +34,11 @@ import { UsersModule } from '../users/users.module';
       { name: JobApiLogEntity.name, schema: JobApiLogSchema },
       { name: IdleUpdateLogEntity.name, schema: IdleUpdateLogSchema },
     ]),
+    SdgbWorkerModule,
     forwardRef(() => SyncModule),
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
+    forwardRef(() => AdminModule),
   ],
   controllers: [
     JobController,

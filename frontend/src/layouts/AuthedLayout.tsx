@@ -311,7 +311,7 @@ export default function AuthedLayout() {
               overflowX: "hidden",
             }}
           >
-            <Outlet />
+            <Outlet context={{ openSettings }} />
           </div>
         </Box>
 

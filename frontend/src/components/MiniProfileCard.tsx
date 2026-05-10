@@ -43,7 +43,7 @@ export function HeaderProfileCard({ profile, onLogout, offline }: HeaderProps) {
                 src={
                   profile?.avatarUrl
                     ? normalizeMaimaiImgUrl(profile.avatarUrl)
-                    : null
+                    : "/avatar-placeholder.svg"
                 }
                 alt={profile?.username ?? "avatar"}
                 size={36}
@@ -72,10 +72,10 @@ export function HeaderProfileCard({ profile, onLogout, offline }: HeaderProps) {
     );
   }
 
-  if (!profile) {
-    return null;
-  }
-
+  // No profile yet (e.g. brand-new user that hasn't run a sync) — still
+  // render the menu so the user has a way to log out / get to settings.
+  // The label falls back to "我的账号"; avatar falls back to the same
+  // placeholder ProfileCard uses.
   return (
     <Menu shadow="md" width={160} position="bottom-end">
       <Menu.Target>
@@ -88,15 +88,15 @@ export function HeaderProfileCard({ profile, onLogout, offline }: HeaderProps) {
               style={{ maxWidth: 120 }}
               visibleFrom="sm"
             >
-              {profile.username ?? "未知用户"}
+              {profile?.username ?? "我的账号"}
             </Text>
             <Avatar
               src={
-                profile.avatarUrl
+                profile?.avatarUrl
                   ? normalizeMaimaiImgUrl(profile.avatarUrl)
-                  : null
+                  : "/avatar-placeholder.svg"
               }
-              alt={profile.username ?? "avatar"}
+              alt={profile?.username ?? "avatar"}
               size={36}
               radius="0"
               imageProps={{

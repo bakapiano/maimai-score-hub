@@ -4,9 +4,8 @@ import { Schema as MongooseSchema } from 'mongoose';
 
 export type QrLoginStatus =
   | 'pending'
-  | 'fetching_before'
   | 'adding_rival'
-  | 'fetching_after'
+  | 'waiting_snapshot'
   | 'matched'
   | 'failed';
 

@@ -30,17 +30,20 @@ export function ProfileCard({ profile }: Props) {
   return (
     <Card withBorder shadow="xs" padding="sm" radius="md">
       <Group align="flex-start" gap="md" wrap="nowrap">
-        {profile.avatarUrl && (
-          <Box p={4} style={{ flexShrink: 0 }}>
-            <Image
-              src={normalizeMaimaiImgUrl(profile.avatarUrl)}
-              alt={profile.username ?? "avatar"}
-              width={128}
-              height={128}
-              referrerPolicy="no-referrer"
-            />
-          </Box>
-        )}
+        <Box p={4} style={{ flexShrink: 0 }}>
+          <Image
+            src={
+              profile.avatarUrl
+                ? normalizeMaimaiImgUrl(profile.avatarUrl)
+                : "/avatar-placeholder.svg"
+            }
+            alt={profile.username ?? "avatar"}
+            width={128}
+            height={128}
+            referrerPolicy="no-referrer"
+            fallbackSrc="/avatar-placeholder.svg"
+          />
+        </Box>
 
         <Stack
           gap={6}

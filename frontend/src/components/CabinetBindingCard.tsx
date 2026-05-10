@@ -1,6 +1,7 @@
 import {
   Alert,
   Badge,
+  Box,
   Button,
   Card,
   FileButton,
@@ -10,8 +11,10 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
+import { IconLinkOff, IconUpload } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
+
+import { notifications } from "@mantine/notifications";
 
 /**
  * Cabinet (sdgb) binding + auto-update opt-in.
@@ -46,7 +49,7 @@ export function CabinetBindingCard({
     useState<boolean>(initialHasCabinet);
   const [autoUpdate, setAutoUpdate] = useState<boolean>(initialAutoUpdate);
   const [qrText, setQrText] = useState("");
-  const [busy, setBusy] = useState<"bind" | "toggle" | null>(null);
+  const [busy, setBusy] = useState<"bind" | "toggle" | "unbind" | null>(null);
 
   // Keep state in sync if parent reloads profile.
   useEffect(() => setHasCabinetUserId(initialHasCabinet), [initialHasCabinet]);
@@ -171,9 +174,42 @@ export function CabinetBindingCard({
     }
   };
 
+  const unbind = async () => {
+    if (
+      !window.confirm(
+        "确定要解绑当前账号的二维码吗？\n\n解绑后自动更新会一并关闭。",
+      )
+    ) {
+      return;
+    }
+    setBusy("unbind");
+    try {
+      const res = await fetch("/api/users/cabinet/unbind", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const text = await res.text();
+      const json = text ? JSON.parse(text) : null;
+      if (res.status === 201 && json?.ok) {
+        setHasCabinetUserId(false);
+        setAutoUpdate(false);
+        notifications.show({ color: "green", message: "已解绑" });
+        onChanged?.();
+      } else {
+        notifications.show({
+          color: "red",
+          title: "解绑失败",
+          message: json?.message ?? json?.error ?? `HTTP ${res.status}`,
+        });
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <Card withBorder padding="md" radius="md">
-      <Stack gap="sm">
+      <Stack gap="md">
         <Group justify="space-between" align="center">
           <Badge color="orange" variant="light" size="sm">
             测试中
@@ -189,45 +225,76 @@ export function CabinetBindingCard({
           )}
         </Group>
 
-        <Text size="xs" c="dimmed">
-          扫描你的神秘二维码以完成绑定。
-        </Text>
-
         {!hasCabinetUserId && (
           <Alert color="yellow" variant="light">
-            必须先完成一次成绩同步，才能绑定二维码（用于身份校验）。
+            请在绑定二维码前至少完成一次成绩同步
           </Alert>
         )}
 
-        <Group gap="sm" wrap="wrap">
+        {/* {hasCabinetUserId && (
+          <Alert color="gray" variant="light">
+            已绑定，无法重复绑定二维码。
+          </Alert>
+        )} */}
+
+        <Stack gap="sm">
           <FileButton
             onChange={onPickFile}
             accept="image/png,image/jpeg,image/webp"
+            disabled={hasCabinetUserId}
           >
             {(props) => (
               <Button
                 {...props}
                 variant="light"
+                fullWidth
+                size="md"
+                leftSection={<IconUpload size={16} />}
                 loading={busy === "bind"}
+                disabled={hasCabinetUserId}
               >
                 上传二维码图片
               </Button>
             )}
           </FileButton>
-          <TextInput
-            placeholder="或粘贴 SGWCMAID... 字符串"
-            value={qrText}
-            onChange={(e) => setQrText(e.currentTarget.value)}
-            style={{ flex: 1, minWidth: 220 }}
-          />
-          <Button
-            onClick={onSubmitText}
-            loading={busy === "bind"}
-            disabled={!qrText.trim()}
-          >
-            提交字符串
-          </Button>
-        </Group>
+
+          <Group gap={6} c="dimmed">
+            <Box
+              style={{
+                flex: 1,
+                height: 1,
+                background: "var(--mantine-color-default-border)",
+              }}
+            />
+            <Text size="xs">或粘贴字符串</Text>
+            <Box
+              style={{
+                flex: 1,
+                height: 1,
+                background: "var(--mantine-color-default-border)",
+              }}
+            />
+          </Group>
+
+          <Group gap="xs" wrap="nowrap">
+            <TextInput
+              placeholder="SGWCMAID..."
+              value={qrText}
+              onChange={(e) => setQrText(e.currentTarget.value)}
+              style={{ flex: 1 }}
+              size="md"
+              disabled={hasCabinetUserId}
+            />
+            <Button
+              size="md"
+              onClick={onSubmitText}
+              loading={busy === "bind"}
+              disabled={!qrText.trim() || hasCabinetUserId}
+            >
+              提交
+            </Button>
+          </Group>
+        </Stack>
 
         <Switch
           label="自动更新分数"
@@ -236,6 +303,30 @@ export function CabinetBindingCard({
           disabled={!hasCabinetUserId || busy !== null}
           onChange={(e) => toggleAutoUpdate(e.currentTarget.checked)}
         />
+
+        {hasCabinetUserId && (
+          <Group justify="space-between" align="center" wrap="nowrap" mt={4}>
+            <Stack gap={2}>
+              <Text size="sm" fw={500}>
+                解绑二维码
+              </Text>
+              {/* <Text size="xs" c="dimmed">
+                解绑后自动更新会一并关闭
+              </Text> */}
+            </Stack>
+            <Button
+              variant="light"
+              color="red"
+              size="xs"
+              leftSection={<IconLinkOff size={14} />}
+              loading={busy === "unbind"}
+              disabled={busy !== null}
+              onClick={unbind}
+            >
+              解绑
+            </Button>
+          </Group>
+        )}
       </Stack>
     </Card>
   );

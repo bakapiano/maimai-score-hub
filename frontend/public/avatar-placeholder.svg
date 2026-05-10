@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Simple placeholder avatar: maimai-blue rounded square + generic user silhouette.
+       Used by ProfileCard when the user has no DXNet profile yet (e.g. QR-login
+       users who haven't run a sync yet). -->
+  <rect width="128" height="128" rx="16" fill="#7ed3ff"/>
+  <circle cx="64" cy="50" r="22" fill="#fff" opacity="0.85"/>
+  <path d="M 22 110 Q 22 78 64 78 Q 106 78 106 110 L 106 128 L 22 128 Z" fill="#fff" opacity="0.85"/>
+</svg>

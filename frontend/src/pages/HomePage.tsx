@@ -7,12 +7,24 @@ import {
   ThemeIcon,
   UnstyledButton,
 } from "@mantine/core";
-import { IconMusic, IconRefresh } from "@tabler/icons-react";
+import {
+  IconInfoCircle,
+  IconMusic,
+  IconRefresh,
+  IconSettings,
+} from "@tabler/icons-react";
 
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router-dom";
 import { useAuth } from "../providers/AuthProvider";
 
-const banners = [
+type Banner = {
+  title: string;
+  description: string;
+  icon: typeof IconRefresh;
+  color: string;
+} & ({ to: string } | { action: "openSettings" });
+
+const banners: Banner[] = [
   {
     title: "同步数据",
     description: "从 maimai DX NET 同步游戏成绩",
@@ -27,44 +39,76 @@ const banners = [
     color: "grape",
     to: "/app/scores",
   },
+  {
+    title: "网站设置",
+    description: "主题、账号、危险操作",
+    icon: IconSettings,
+    color: "gray",
+    action: "openSettings",
+  },
+  {
+    title: "关于网站",
+    description: "项目说明、致谢、链接",
+    icon: IconInfoCircle,
+    color: "teal",
+    to: "/about",
+  },
 ];
+
+type AuthedOutlet = { openSettings: () => void };
 
 export default function HomePage() {
   const navigate = useNavigate();
   const { offline } = useAuth();
+  const { openSettings } = useOutletContext<AuthedOutlet>();
+
+  const handleClick = (banner: Banner) => {
+    if ("action" in banner && banner.action === "openSettings") {
+      openSettings();
+      return;
+    }
+    if ("to" in banner) {
+      navigate(banner.to);
+    }
+  };
+
+  const isDisabled = (banner: Banner) =>
+    offline && "to" in banner && banner.to === "/app/sync";
 
   return (
     <Stack gap="md">
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-        {banners.map((banner) => (
-          <UnstyledButton
-            key={banner.to}
-            onClick={() => navigate(banner.to)}
-            disabled={offline && banner.to === "/app/sync"}
-            style={{
-              width: "100%",
-              opacity: offline && banner.to === "/app/sync" ? 0.5 : 1,
-            }}
-          >
-            <Card withBorder shadow="sm" padding="lg" radius="md">
-              <Group wrap="nowrap">
-                <ThemeIcon size={48} radius="md" color={banner.color}>
-                  <banner.icon size={28} />
-                </ThemeIcon>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Text fw={600} size="lg">
-                    {banner.title}
-                  </Text>
-                  <Text size="sm" c="dimmed" lineClamp={1}>
-                    {offline && banner.to === "/app/sync"
-                      ? "需要登录后使用"
-                      : banner.description}
-                  </Text>
-                </div>
-              </Group>
-            </Card>
-          </UnstyledButton>
-        ))}
+        {banners.map((banner) => {
+          const disabled = isDisabled(banner);
+          const key = "to" in banner ? banner.to : banner.action;
+          return (
+            <UnstyledButton
+              key={key}
+              onClick={() => handleClick(banner)}
+              disabled={disabled}
+              style={{
+                width: "100%",
+                opacity: disabled ? 0.5 : 1,
+              }}
+            >
+              <Card withBorder shadow="sm" padding="lg" radius="md">
+                <Group wrap="nowrap">
+                  <ThemeIcon size={48} radius="md" color={banner.color}>
+                    <banner.icon size={28} />
+                  </ThemeIcon>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Text fw={600} size="lg">
+                      {banner.title}
+                    </Text>
+                    <Text size="sm" c="dimmed" lineClamp={1}>
+                      {disabled ? "需要登录后使用" : banner.description}
+                    </Text>
+                  </div>
+                </Group>
+              </Card>
+            </UnstyledButton>
+          );
+        })}
       </SimpleGrid>
     </Stack>
   );

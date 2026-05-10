@@ -99,3 +99,5 @@ ocr/scripts/training/
 /sdgb-worker
 # Local deployment scaffolding for sdgb-worker (compose + readme).
 /deploy
+
+.playwright-mcp/.claude/

@@ -350,6 +350,29 @@ export class UsersController {
   }
 
   /**
+   * Unbind the cabinet (sdgb) userId from the current account. Also
+   * turns auto-update off (it can't fire without cabinetUserId).
+   * Returns no identifying data — only `ok`.
+   */
+  @Post('cabinet/unbind')
+  @HttpCode(201)
+  async unbindCabinet(@Req() req: AuthedRequest) {
+    const userId = extractUserId(req);
+    if (!userId) {
+      throw new BadRequestException('No user context');
+    }
+    const user = await this.users.getById(userId);
+    if (user.cabinetUserId == null) {
+      throw new BadRequestException('当前账号未绑定二维码');
+    }
+    await this.users.update(userId, {
+      cabinetUserId: null,
+      autoUpdate: false,
+    });
+    return { ok: true as const };
+  }
+
+  /**
    * Hard delete the current user and all data joined on friendCode.
    *
    * - users (this row)

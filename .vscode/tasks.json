@@ -69,7 +69,12 @@
       "label": "worker:dev",
       "type": "shell",
       "command": "npm run start:dev",
-      "options": { "cwd": "${workspaceFolder}/worker" },
+      "options": {
+        "cwd": "${workspaceFolder}/worker",
+        "env": {
+          "JOB_SERVICE_BASE_URL": "http://localhost:9050"
+        }
+      },
       "dependsOn": "shared:build",
       "isBackground": true,
       "group": "build",
@@ -84,6 +89,39 @@
           "activeOnStart": true,
           "beginsPattern": ".",
           "endsPattern": "."
+        }
+      }
+    },
+
+    // ─── sdgb-worker (cabinet binary protocol; not in repo) ───
+    // Talks to the maimai cabinet sdgb endpoints. Long-polls backend
+    // for sdgb_jobs. Lives outside source control because it carries
+    // protocol secrets — see deploy/sdgb-worker/README.md.
+    {
+      "label": "sdgb-worker:dev",
+      "type": "shell",
+      "command": "npm run start:dev",
+      "options": {
+        "cwd": "${workspaceFolder}/sdgb-worker",
+        "env": {
+          "BACKEND_URL": "http://localhost:9050",
+          "WORKER_ID": "sdgb-worker-local-dev"
+        }
+      },
+      "dependsOn": "shared:build",
+      "isBackground": true,
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev"
+      },
+      "problemMatcher": {
+        "pattern": { "regexp": "^(.*)$", "file": 1, "location": 2, "message": 3 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "sdgb-worker.*starting"
         }
       }
     },
@@ -118,6 +156,7 @@
         "backend:dev",
         "frontend:dev",
         "worker:dev",
+        "sdgb-worker:dev",
         "automation:dev"
       ],
       "dependsOrder": "parallel",

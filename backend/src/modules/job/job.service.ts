@@ -13,6 +13,8 @@ import { randomUUID } from 'crypto';
 import { SyncService } from '../sync/sync.service';
 import { UsersService } from '../users/users.service';
 import { JobTempCacheService } from './cache/temp-cache.service';
+import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
+import { BotStatusService } from '../admin/bot-status.service';
 import type {
   JobPatchBody,
   JobResponse,
@@ -93,6 +95,9 @@ export class JobService {
     private readonly tempCacheService: JobTempCacheService,
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
+    private readonly sdgb: SdgbJobDispatcher,
+    @Inject(forwardRef(() => BotStatusService))
+    private readonly botStatus: BotStatusService,
   ) {}
 
   async create(input: {
@@ -144,6 +149,62 @@ export class JobService {
       resolvedStage = 'fetch_friend_list';
     } else {
       resolvedStage = 'send_request';
+    }
+
+    // Cabinet-bound user fast-path: if the user has cabinetUserId, ask
+    // sdgb to addRival on their behalf and skip the dxnet
+    // send_request → wait_acceptance dance entirely. Applies to any
+    // jobType that ends up scraping scores; explicit non-update jobs
+    // (idle_add_friend / fetch_friend_list / skipUpdateScore) keep the
+    // original flow.
+    const isScoreUpdateJob =
+      (resolvedJobType === 'immediate' ||
+        resolvedJobType === 'idle_update_score') &&
+      !input.skipUpdateScore;
+    if (isScoreUpdateJob && input.botUserFriendCode) {
+      try {
+        const user = await this.usersService.findByFriendCode(input.friendCode);
+        const userCabinetUid = (user as { cabinetUserId?: number | null } | null)
+          ?.cabinetUserId;
+        if (userCabinetUid != null) {
+          const allBots = await this.botStatus.getAll();
+          const bot = allBots.find(
+            (b) => b.friendCode === input.botUserFriendCode,
+          );
+          const botCabinetUid = bot?.cabinetUserId ?? null;
+          if (botCabinetUid != null) {
+            // Skip the dxnet handshake; jump to update_score.
+            resolvedStage = 'update_score';
+            // Fire-and-forget addRival. UserFriendRegistApi is
+            // bidirectional + instant; if it errors (e.g. already
+            // friends, returnCode 1), the dxnet worker's friend
+            // check at update_score will catch it.
+            this.sdgb
+              .addRival(
+                {
+                  botCabinetUserId: botCabinetUid,
+                  targetCabinetUserId: userCabinetUid,
+                },
+                { tag: `score-update-add:${input.friendCode}`, timeoutMs: 60_000 },
+              )
+              .then((r) =>
+                this.logger.log(
+                  `Cabinet-bound score-update fast-path fc=${input.friendCode} bot=${input.botUserFriendCode} addRival rc=${r.returnCode1}/${r.returnCode2}`,
+                ),
+              )
+              .catch((err) =>
+                this.logger.warn(
+                  `addRival in score-update fast-path failed (job continues): ${err instanceof Error ? err.message : err}`,
+                ),
+              );
+          }
+        }
+      } catch (err) {
+        // Lookup failure is non-fatal — fall back to original send_request flow.
+        this.logger.warn(
+          `cabinet-bound fast-path lookup failed for ${input.friendCode}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
     }
 
     const created = await this.jobModel.create({

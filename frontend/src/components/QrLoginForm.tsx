@@ -1,71 +1,165 @@
 import {
   Alert,
   Badge,
+  Box,
   Button,
   FileButton,
   Group,
+  Loader,
   Stack,
   Text,
   TextInput,
 } from "@mantine/core";
-import { IconQrcode } from "@tabler/icons-react";
+import {
+  HttpClientError,
+  PollDead,
+  PollTimeout,
+  fetchForPoll,
+  pollWithBackoff,
+} from "../utils/poll";
+import { IconQrcode, IconUpload } from "@tabler/icons-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import { notifications } from "@mantine/notifications";
-import { useState } from "react";
+
+const QR_ATTEMPT_KEY = "pendingQrLoginAttemptId";
 
 /**
- * QR-code login form. Mirrors the dual file/text input pattern from
- * CabinetBindingCard but submits to /api/auth/login-by-qr (no auth required;
- * returns a fresh JWT on success).
+ * QR-code login form.
  *
- * The actual reverse-mapping from QR → friendCode happens server-side via
- * sdgb addRival + bot friend-list snapshot lookup; the user just sees a
- * spinner until the token arrives. ~5–60s slow path on first login,
- * ~1s on subsequent logins (cabinetUserId already bound).
+ * Resilience design:
+ *  - The POST returns either {kind:'fast', token} (binding already
+ *    existed) or {kind:'async', attemptId} (slow path queued server-
+ *    side). We persist the attemptId to localStorage so a navigation
+ *    or full reload can resume the same poll instead of starting a
+ *    second login attempt.
+ *  - Polling uses pollWithBackoff: 1s steady cadence, 5xx/network
+ *    failures get exponentially backed off and only count as a real
+ *    failure after 5 in a row. 4xx propagates immediately.
+ *  - onBusyChange lets the parent disable the friend-code tab while
+ *    a QR attempt is in flight.
  */
 export interface QrLoginFormProps {
   onSuccess: (token: string) => void;
+  onBusyChange?: (busy: boolean) => void;
+  /** Disabled by parent when the friend-code tab has its own job. */
+  disabled?: boolean;
 }
 
-export function QrLoginForm({ onSuccess }: QrLoginFormProps) {
+export function QrLoginForm({
+  onSuccess,
+  onBusyChange,
+  disabled,
+}: QrLoginFormProps) {
   const [qrText, setQrText] = useState("");
   const [busy, setBusy] = useState(false);
   // Slow-path progress message rendered to the user while we poll.
   const [progress, setProgress] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const STATUS_LABEL: Record<string, string> = {
-    pending: "正在准备...",
-    fetching_before: "正在拉取 bot 当前好友列表 (1/2)...",
-    adding_rival: "正在让 bot 添加你为好友...",
-    fetching_after: "正在拉取 bot 最新好友列表 (2/2)...",
+    pending: "正在准备登录…",
+    adding_rival: "正在添加好友…",
+    waiting_snapshot: "确认好友身份中（通常需要 1 分钟）…",
   };
+
+  // Bubble busy state up so the parent can disable other login modes.
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
 
   /**
    * Poll the slow-path attempt status until terminal. Returns a token on
    * success; throws on failure or timeout.
    */
-  async function pollAttempt(attemptId: string): Promise<string> {
-    const deadline = Date.now() + 5 * 60_000; // generous 5 min
-    while (Date.now() < deadline) {
-      const res = await fetch(`/api/auth/login-by-qr/${attemptId}`);
-      const text = await res.text();
-      const json = text ? JSON.parse(text) : null;
-      if (!res.ok) {
-        throw new Error(
-          json?.message?.message ?? json?.message ?? `HTTP ${res.status}`,
-        );
-      }
-      const status: string = json?.status ?? "pending";
-      setProgress(STATUS_LABEL[status] ?? status);
-      if (status === "matched" && json?.token) {
-        return String(json.token);
-      }
-      if (status === "failed") {
-        throw new Error(json?.error ?? "扫码登录失败");
-      }
-      await new Promise((r) => setTimeout(r, 1500));
+  const pollAttempt = useCallback(
+    async (attemptId: string, signal?: AbortSignal): Promise<string> => {
+      return pollWithBackoff<string>(
+        async () => {
+          const { body } = await fetchForPoll(
+            `/api/auth/login-by-qr/${attemptId}`,
+            { signal },
+          );
+          const json = body as {
+            status?: string;
+            token?: string | null;
+            error?: string | null;
+          } | null;
+          const status = json?.status ?? "pending";
+          setProgress(STATUS_LABEL[status] ?? status);
+          if (status === "matched" && json?.token) {
+            return { done: true, value: String(json.token) };
+          }
+          if (status === "failed") {
+            throw new HttpClientError(
+              400,
+              { message: json?.error },
+              json?.error || "神秘二维码登录失败",
+            );
+          }
+          return { done: false };
+        },
+        { intervalMs: 1_000, maxFailures: 5, signal, timeoutMs: 5 * 60_000 },
+      );
+    },
+    [STATUS_LABEL],
+  );
+
+  // Resume an in-flight attempt persisted in localStorage. Runs once
+  // on mount; if the attempt has already terminated we surface the
+  // result and clear the cache.
+  useEffect(() => {
+    let cached: string | null = null;
+    try {
+      cached = localStorage.getItem(QR_ATTEMPT_KEY);
+    } catch {
+      // ignore
     }
-    throw new Error("扫码登录超时，请稍后重试");
-  }
+    if (!cached) return;
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setBusy(true);
+    setProgress(STATUS_LABEL.pending);
+    pollAttempt(cached, ctrl.signal)
+      .then((token) => {
+        try {
+          localStorage.removeItem(QR_ATTEMPT_KEY);
+        } catch {
+          // ignore
+        }
+        notifications.show({ color: "green", message: "神秘二维码登录成功" });
+        onSuccess(token);
+      })
+      .catch((err) => {
+        try {
+          localStorage.removeItem(QR_ATTEMPT_KEY);
+        } catch {
+          // ignore
+        }
+        if (err instanceof PollTimeout || err instanceof PollDead) {
+          notifications.show({
+            color: "red",
+            title: "神秘二维码登录失败",
+            message: err.message,
+          });
+        } else if (err instanceof HttpClientError) {
+          notifications.show({
+            color: "red",
+            title: "神秘二维码登录失败",
+            message: err.message,
+          });
+        }
+      })
+      .finally(() => {
+        setBusy(false);
+        setProgress(null);
+        abortRef.current = null;
+      });
+    return () => {
+      ctrl.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function submit(payload: FormData | string) {
     setBusy(true);
@@ -85,23 +179,46 @@ export function QrLoginForm({ onSuccess }: QrLoginFormProps) {
       const text = await res.text();
       const json = text ? JSON.parse(text) : null;
       if (res.ok && json?.kind === "fast" && json?.token) {
-        notifications.show({ color: "green", message: "扫码登录成功" });
+        notifications.show({ color: "green", message: "神秘二维码登录成功" });
         onSuccess(String(json.token));
         return;
       }
       if (res.ok && json?.kind === "async" && json?.attemptId) {
-        setProgress(STATUS_LABEL.pending);
+        const attemptId = String(json.attemptId);
+        // Persist so a reload / navigation can resume the same attempt
+        // instead of starting another one. Cleared in both success and
+        // failure branches below.
         try {
-          const token = await pollAttempt(String(json.attemptId));
-          notifications.show({ color: "green", message: "扫码登录成功" });
+          localStorage.setItem(QR_ATTEMPT_KEY, attemptId);
+        } catch {
+          // ignore
+        }
+        setProgress(STATUS_LABEL.pending);
+        const ctrl = new AbortController();
+        abortRef.current = ctrl;
+        try {
+          const token = await pollAttempt(attemptId, ctrl.signal);
+          try {
+            localStorage.removeItem(QR_ATTEMPT_KEY);
+          } catch {
+            // ignore
+          }
+          notifications.show({ color: "green", message: "神秘二维码登录成功" });
           onSuccess(token);
         } catch (pollErr) {
+          try {
+            localStorage.removeItem(QR_ATTEMPT_KEY);
+          } catch {
+            // ignore
+          }
           notifications.show({
             color: "red",
-            title: "扫码登录失败",
+            title: "神秘二维码登录失败",
             message:
               pollErr instanceof Error ? pollErr.message : String(pollErr),
           });
+        } finally {
+          abortRef.current = null;
         }
         return;
       }
@@ -109,7 +226,7 @@ export function QrLoginForm({ onSuccess }: QrLoginFormProps) {
       // {token, user} directly without a `kind` discriminator. Remove
       // once all backend instances ship the new flow.
       if (res.ok && json?.token) {
-        notifications.show({ color: "green", message: "扫码登录成功" });
+        notifications.show({ color: "green", message: "神秘二维码登录成功" });
         onSuccess(String(json.token));
         return;
       }
@@ -118,23 +235,31 @@ export function QrLoginForm({ onSuccess }: QrLoginFormProps) {
       if (json?.message?.code === "qr_expired") {
         notifications.show({
           color: "orange",
-          title: "二维码已过期",
-          message:
-            "机台二维码每隔几分钟会换新，请回到机台刷新二维码后重新上传。",
+          title: "神秘二维码已过期",
+          message: "神秘二维码每隔几分钟会换新，请刷新二维码后重新上传。",
           autoClose: 8000,
         });
         return;
       }
+      // NestJS BadRequestException renders as
+      //   { statusCode: 400, message: <string|object>, error: "Bad Request" }
+      // so we always prefer the inner message and only fall back to a
+      // generic banner. Don't surface "Bad Request" itself — it leaks
+      // framework noise to the end user.
       const msg =
-        json?.message?.message ??
-        json?.error ??
-        json?.message ??
+        (typeof json?.message === "object" && json.message?.message) ||
+        (typeof json?.message === "string" && json.message) ||
+        json?.error ||
         `HTTP ${res.status}`;
-      notifications.show({ color: "red", title: "扫码登录失败", message: msg });
+      notifications.show({
+        color: "red",
+        title: "神秘二维码登录失败",
+        message: msg,
+      });
     } catch (err) {
       notifications.show({
         color: "red",
-        title: "扫码登录失败",
+        title: "神秘二维码登录失败",
         message: err instanceof Error ? err.message : String(err),
       });
     } finally {
@@ -145,22 +270,37 @@ export function QrLoginForm({ onSuccess }: QrLoginFormProps) {
 
   return (
     <Stack gap="md">
-      <Group justify="space-between" align="center">
+      <Group justify="space-between" align="center" mb={4}>
         <Group gap="xs">
-          <IconQrcode size={18} />
-          <Text fw={600}>扫码登录</Text>
+          <Box
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "var(--mantine-color-grape-light)",
+              color: "var(--mantine-color-grape-filled)",
+            }}
+          >
+            <IconQrcode size={18} />
+          </Box>
+          <Stack gap={0}>
+            <Text fw={700} size="md" style={{ lineHeight: 1.2 }}>
+              神秘二维码登录
+            </Text>
+            <Text size="xs" c="dimmed">
+              首次登陆可能会需要 30–60 秒，请耐心等待
+            </Text>
+          </Stack>
         </Group>
         <Badge color="orange" variant="light" size="sm">
           测试中
         </Badge>
       </Group>
 
-      <Text size="xs" c="dimmed">
-        上传你卡牌上的二维码图片，或直接粘贴 QR
-        字符串。首次扫码登录会自动绑定，后续扫同一张卡可秒登。
-      </Text>
-
-      <Group gap="sm" wrap="wrap">
+      <Stack gap="sm">
         <FileButton
           onChange={(file) => {
             if (!file) return;
@@ -171,43 +311,73 @@ export function QrLoginForm({ onSuccess }: QrLoginFormProps) {
           accept="image/png,image/jpeg,image/webp"
         >
           {(p) => (
-            <Button {...p} variant="light" loading={busy}>
+            <Button
+              {...p}
+              variant="light"
+              fullWidth
+              size="md"
+              leftSection={<IconUpload size={16} />}
+              loading={busy}
+              disabled={disabled}
+            >
               上传二维码图片
             </Button>
           )}
         </FileButton>
-        <TextInput
-          placeholder="或粘贴 SGWCMAID... 字符串"
-          value={qrText}
-          onChange={(e) => setQrText(e.currentTarget.value)}
-          style={{ flex: 1, minWidth: 220 }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && qrText.trim() && !busy) {
-              void submit(qrText.trim());
-            }
-          }}
-        />
-        <Button
-          onClick={() => void submit(qrText.trim())}
-          disabled={!qrText.trim() || busy}
-          loading={busy}
-        >
-          提交字符串
-        </Button>
-      </Group>
+
+        <Group gap={6} c="dimmed">
+          <Box
+            style={{
+              flex: 1,
+              height: 1,
+              background: "var(--mantine-color-default-border)",
+            }}
+          />
+          <Text size="xs">或粘贴字符串</Text>
+          <Box
+            style={{
+              flex: 1,
+              height: 1,
+              background: "var(--mantine-color-default-border)",
+            }}
+          />
+        </Group>
+
+        <Group gap="xs" wrap="nowrap">
+          <TextInput
+            placeholder="SGWCMAID..."
+            value={qrText}
+            onChange={(e) => setQrText(e.currentTarget.value)}
+            style={{ flex: 1 }}
+            size="md"
+            disabled={disabled || busy}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && qrText.trim() && !busy) {
+                void submit(qrText.trim());
+              }
+            }}
+          />
+          <Button
+            size="md"
+            onClick={() => void submit(qrText.trim())}
+            disabled={!qrText.trim() || busy || disabled}
+            loading={busy}
+          >
+            提交
+          </Button>
+        </Group>
+      </Stack>
 
       {progress && (
-        <Alert variant="light" color="blue" radius="md">
+        <Alert
+          variant="light"
+          color="blue"
+          radius="md"
+          icon={<Loader size="xs" />}
+        >
           <Text size="sm">{progress}</Text>
         </Alert>
       )}
-
-      <Alert variant="light" color="gray" radius="md">
-        <Text size="xs">
-          首次登录可能需要 30–60 秒（系统需要让 bot 添加你为好友再反查）。
-          若反复失败，请改用上方的好友码登录。
-        </Text>
-      </Alert>
     </Stack>
   );
 }

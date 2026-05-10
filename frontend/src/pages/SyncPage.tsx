@@ -914,40 +914,6 @@ export default function SyncPage() {
             subtitle="从 maimai DX NET 拉取最新游戏成绩"
           />
 
-          <Card withBorder padding="md" radius="md">
-            <Stack gap="md">
-              <Switch
-                label="同步后自动更新水鱼查分器"
-                description={
-                  !profile?.hasDivingFishImportToken
-                    ? "请先配置水鱼 Import Token"
-                    : undefined
-                }
-                checked={profile?.autoExportDivingFish ?? false}
-                disabled={!profile?.hasDivingFishImportToken}
-                onChange={(e) =>
-                  toggleAutoExport(
-                    "autoExportDivingFish",
-                    e.currentTarget.checked,
-                  )
-                }
-              />
-              <Switch
-                label="同步后自动更新落雪查分器"
-                description={
-                  !profile?.hasLxnsImportToken
-                    ? "请先配置落雪 Personal Token"
-                    : undefined
-                }
-                checked={profile?.autoExportLxns ?? false}
-                disabled={!profile?.hasLxnsImportToken}
-                onChange={(e) =>
-                  toggleAutoExport("autoExportLxns", e.currentTarget.checked)
-                }
-              />
-            </Stack>
-          </Card>
-
           {lastSync && (
             <Card withBorder padding="sm" radius="md">
               <Group justify="space-between" align="center">
@@ -1546,6 +1512,40 @@ export default function SyncPage() {
             title="更新查分器"
             subtitle="将成绩自动导出到水鱼 / 落雪查分器"
           />
+
+          <Card withBorder padding="md" radius="md">
+            <Stack gap="md">
+              <Switch
+                label="同步后自动更新水鱼查分器"
+                description={
+                  !profile?.hasDivingFishImportToken
+                    ? "请先配置水鱼 Import Token"
+                    : undefined
+                }
+                checked={profile?.autoExportDivingFish ?? false}
+                disabled={!profile?.hasDivingFishImportToken}
+                onChange={(e) =>
+                  toggleAutoExport(
+                    "autoExportDivingFish",
+                    e.currentTarget.checked,
+                  )
+                }
+              />
+              <Switch
+                label="同步后自动更新落雪查分器"
+                description={
+                  !profile?.hasLxnsImportToken
+                    ? "请先配置落雪 Personal Token"
+                    : undefined
+                }
+                checked={profile?.autoExportLxns ?? false}
+                disabled={!profile?.hasLxnsImportToken}
+                onChange={(e) =>
+                  toggleAutoExport("autoExportLxns", e.currentTarget.checked)
+                }
+              />
+            </Stack>
+          </Card>
 
           {/* Diving-Fish Section */}
           <Card withBorder padding="md" radius="md">

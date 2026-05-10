@@ -121,8 +121,14 @@ export function parseFriendList(html: string): FriendInfo[] {
     if (seen.has(friendCode)) continue;
     seen.add(friendCode);
 
-    const formAction = block.match(/<form[^>]*action="([^"]*)"/);
-    const isFavorite = !!formAction && formAction[1].includes('favoriteOff');
+    // A friend block contains multiple <form>s (friendDetail, friendGenreVs,
+    // favoriteOn/Off). We specifically want the favorite toggle one to
+    // tell the current state — its action is favoriteOn/ when not yet
+    // favorited, favoriteOff/ when already favorited.
+    const favForm = block.match(
+      /<form[^>]*action="[^"]*\/(favoriteOn|favoriteOff)\/[^"]*"/,
+    );
+    const isFavorite = favForm?.[1] === 'favoriteOff';
 
     const nameMatch = block.match(
       /<div class="name_block[^"]*">([\s\S]*?)<\/div>/,
