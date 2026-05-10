@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import {
   TempCacheBodySchema,
@@ -15,9 +16,11 @@ import {
 } from '@maimai-score-hub/shared';
 
 import { JobTempCacheService } from './temp-cache.service';
+import { WorkerAuthGuard } from '../../../common/guards/worker-auth.guard';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 
 @Controller('job')
+@UseGuards(WorkerAuthGuard)
 export class TempCacheController {
   constructor(private readonly tempCache: JobTempCacheService) {}
 

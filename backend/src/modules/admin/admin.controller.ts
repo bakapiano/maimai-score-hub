@@ -21,6 +21,7 @@ import {
 } from '@maimai-score-hub/shared';
 
 import { AdminGuard } from './admin.guard';
+import { WorkerAuthGuard } from '../../common/guards/worker-auth.guard';
 import { AdminService } from './admin.service';
 import { BotFriendSnapshotService } from './bot-friend-snapshot.service';
 import { BotStatusService } from './bot-status.service';
@@ -45,9 +46,11 @@ export class AdminController {
   ) {}
 
   /**
-   * Worker 上报 Bot 状态（无需 admin 密码）
+   * Worker 上报 Bot 状态（X-Admin-Password 校验，
+   * 与 admin guard 共享同一个 ADMIN_PASSWORD 但接受 worker 心跳）
    */
   @Post('bot-status')
+  @UseGuards(WorkerAuthGuard)
   async reportBotStatus(
     @Body(new ZodValidationPipe(ReportBotStatusBodySchema))
     body: ReportBotStatusBody,

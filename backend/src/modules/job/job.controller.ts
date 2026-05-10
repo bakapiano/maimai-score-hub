@@ -21,6 +21,7 @@ import {
 } from '@maimai-score-hub/shared';
 
 import { AuthGuard } from '../auth/auth.guard';
+import { WorkerAuthGuard } from '../../common/guards/worker-auth.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { JobService } from './job.service';
 import { UsersService } from '../users/users.service';
@@ -86,6 +87,7 @@ export class JobController {
   }
 
   @Get('active/:botUserFriendCode')
+  @UseGuards(WorkerAuthGuard)
   async getActiveFriendCodes(
     @Param('botUserFriendCode') botUserFriendCode: string,
   ) {
@@ -98,6 +100,7 @@ export class JobController {
   }
 
   @Post('next')
+  @UseGuards(WorkerAuthGuard)
   @HttpCode(200)
   async next(
     @Res() res: Response,
@@ -113,6 +116,7 @@ export class JobController {
   }
 
   @Patch(':jobId')
+  @UseGuards(WorkerAuthGuard)
   async patch(
     @Param('jobId') jobId: string,
     @Body(new ZodValidationPipe(JobPatchBodySchema)) body: JobPatchBody,

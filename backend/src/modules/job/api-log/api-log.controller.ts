@@ -4,6 +4,7 @@ import {
   HttpCode,
   Param,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import {
   AddApiLogsBodySchema,
@@ -11,9 +12,11 @@ import {
 } from '@maimai-score-hub/shared';
 
 import { JobApiLogService, type ApiLogEntry } from './api-log.service';
+import { WorkerAuthGuard } from '../../../common/guards/worker-auth.guard';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 
 @Controller('job')
+@UseGuards(WorkerAuthGuard)
 export class ApiLogController {
   constructor(private readonly apiLog: JobApiLogService) {}
 

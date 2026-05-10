@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import {
   IdleUpdateMarkReadyBodySchema,
@@ -13,9 +14,11 @@ import {
 } from '@maimai-score-hub/shared';
 
 import { UsersService } from '../../users/users.service';
+import { WorkerAuthGuard } from '../../../common/guards/worker-auth.guard';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 
 @Controller('job')
+@UseGuards(WorkerAuthGuard)
 export class IdleUpdateController {
   constructor(private readonly users: UsersService) {}
 

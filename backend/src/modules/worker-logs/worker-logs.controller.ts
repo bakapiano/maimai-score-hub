@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 
 import { AdminGuard } from '../admin/admin.guard';
+import { WorkerAuthGuard } from '../../common/guards/worker-auth.guard';
 import {
   WorkerLogsService,
   type WorkerLogIngestEntry,
@@ -32,6 +33,7 @@ export class WorkerLogsController {
   constructor(private readonly logs: WorkerLogsService) {}
 
   @Post(':kind/ingest')
+  @UseGuards(WorkerAuthGuard)
   async ingest(@Param('kind') kind: string, @Body() body: IngestBody) {
     if (kind !== 'sdgb' && kind !== 'dxnet') {
       throw new BadRequestException('kind must be one of: sdgb, dxnet');

@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import {
@@ -16,18 +17,20 @@ import {
   type SdgbJobPatchBody,
 } from '@maimai-score-hub/shared';
 
+import { WorkerAuthGuard } from '../../common/guards/worker-auth.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { SdgbJobService } from './sdgb-job.service';
 
 /**
- * HTTP surface that the standalone sdgb-worker polls. Only the worker should
- * hit these — there is no auth guard yet because the existing dxnet
- * /api/job/next isn't guarded either; both rely on network-level isolation.
+ * HTTP surface that the standalone sdgb-worker polls. Guarded by
+ * WorkerAuthGuard (X-Admin-Password). Falls open when ADMIN_PASSWORD
+ * env is unset on the backend so local dev keeps working.
  *
  * Producers (CabinetService, AutoUpdateScheduler, ...) MUST go through
  * SdgbJobService.enqueue, never through these HTTP endpoints.
  */
 @Controller('sdgb-job')
+@UseGuards(WorkerAuthGuard)
 export class SdgbJobController {
   constructor(private readonly jobs: SdgbJobService) {}
 
