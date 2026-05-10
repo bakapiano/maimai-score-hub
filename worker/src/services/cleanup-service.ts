@@ -164,8 +164,8 @@ export class CleanupService {
         }
       }
 
-      // 4. 当非闲时更新好友 > 20 时，按活跃度排序，保留最活跃的 20 个，淘汰其余
-      //    同时清除超过 1 小时未活跃的用户
+      // 4. 当非闲时更新好友 > 19 时，按活跃度排序，保留最活跃的 19 个，淘汰其余
+      //    同时清除超过 30 分钟未活跃的用户
       let friendsToRemove: string[] = [];
       {
         const nonIdleFriends = friends.filter((fc) => !idleUpdateSet.has(fc));
@@ -174,10 +174,10 @@ export class CleanupService {
           activityData.map((u) => [u.friendCode, u.lastActiveAt]),
         );
 
-        const ONE_HOUR_MS = 60 * 60 * 1000;
+        const THIRTY_MIN_MS = 30 * 60 * 1000;
         const nowMs = Date.now();
 
-        // 先淘汰超过 1 小时未活跃且不在活跃任务中的好友
+        // 先淘汰超过 30 分钟未活跃且不在活跃任务中的好友
         const inactiveFriends = nonIdleFriends.filter((fc) => {
           if (activeSet.has(fc)) return false;
           const lastActive = activityMap.get(fc);
@@ -185,22 +185,22 @@ export class CleanupService {
           // friendCode (e.g. brand-new account just created via QR
           // login, or user that's never logged in), don't evict —
           // we have no evidence they're stale. The bot's hard cap
-          // (top-20 by recency below) will still bound friend count.
+          // (top-19 by recency below) will still bound friend count.
           if (!lastActive) return false;
-          return nowMs - new Date(lastActive).getTime() > ONE_HOUR_MS;
+          return nowMs - new Date(lastActive).getTime() > THIRTY_MIN_MS;
         });
 
         if (inactiveFriends.length > 0) {
           console.log(
-            `[CleanupService] Bot ${botFriendCode} evicting ${inactiveFriends.length} friends inactive for > 1 hour`,
+            `[CleanupService] Bot ${botFriendCode} evicting ${inactiveFriends.length} friends inactive for > 30 min`,
           );
           friendsToRemove.push(...inactiveFriends);
         }
 
-        // 剔除已标记移除的后，如果剩余非闲时好友仍 > 20，按活跃度排序保留前 20
+        // 剔除已标记移除的后，如果剩余非闲时好友仍 > 19，按活跃度排序保留前 19
         const removeSet = new Set(friendsToRemove);
         const remaining = nonIdleFriends.filter((fc) => !removeSet.has(fc));
-        if (remaining.length > 20) {
+        if (remaining.length > 19) {
           remaining.sort((a, b) => {
             const ta = activityMap.get(a);
             const tb = activityMap.get(b);
@@ -209,10 +209,10 @@ export class CleanupService {
             if (!tb) return -1;
             return new Date(tb).getTime() - new Date(ta).getTime();
           });
-          const excess = remaining.slice(20);
+          const excess = remaining.slice(19);
           friendsToRemove.push(...excess);
           console.log(
-            `[CleanupService] Bot ${botFriendCode} has ${remaining.length} remaining non-idle friends (> 20), evicting ${excess.length} least-active friends`,
+            `[CleanupService] Bot ${botFriendCode} has ${remaining.length} remaining non-idle friends (> 19), evicting ${excess.length} least-active friends`,
           );
         }
       }
