@@ -51,6 +51,7 @@ export class JobController {
     const result = await this.jobs.create({
       friendCode: body.friendCode,
       skipUpdateScore: body.skipUpdateScore,
+      fullSync: body.fullSync,
       isAuthenticated: true,
     });
 

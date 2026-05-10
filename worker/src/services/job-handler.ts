@@ -406,8 +406,14 @@ export class JobHandler {
     console.log(`[JobHandler] Job ${this.job.id}: Updating scores...`);
     const updateScoreStartTime = Date.now();
 
+    // 默认跳过 BASIC(0) / ADVANCED(1) / 宴会场(10)，只有显式 fullSync 才爬全部
+    const SKIP_DEFAULT = new Set([0, 1, 10]);
+    const effectiveDiffs = this.job.fullSync
+      ? [...DIFFICULTIES]
+      : DIFFICULTIES.filter((d) => !SKIP_DEFAULT.has(d));
+
     // 初始化进度跟踪
-    const totalDiffs = DIFFICULTIES.length;
+    const totalDiffs = effectiveDiffs.length;
     let completedCount = 0;
 
     // 初始化进度状态
@@ -425,7 +431,7 @@ export class JobHandler {
       aggregated = await this.loadMockResult();
       // Mock 模式下直接标记所有难度完成
       await this.applyPatch({
-        scoreProgress: { completedDiffs: [...DIFFICULTIES], totalDiffs },
+        scoreProgress: { completedDiffs: [...effectiveDiffs], totalDiffs },
         updatedAt: new Date(),
       });
     } else {
@@ -436,6 +442,7 @@ export class JobHandler {
         this.job.friendCode,
         {
           jobId: this.job.id,
+          diffs: effectiveDiffs,
           dumpHtml: this.config.dumpFriendVsHtml
             ? (html, meta) => this.dumpFriendVsHtml(html, meta)
             : undefined,

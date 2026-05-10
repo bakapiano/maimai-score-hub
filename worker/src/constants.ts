@@ -50,8 +50,16 @@ export const MAIMAI_URLS = {
       code,
     )}`,
   friendSearchInvite: `${MAIMAI_BASE_URL}/friend/search/invite/`,
-  friendVS: (code: string, scoreType: number, diff: number) =>
-    `${MAIMAI_BASE_URL}/friend/friendGenreVs/battleStart/?scoreType=${scoreType}&genre=99&diff=${diff}&idx=${code}`,
+  friendVS: (
+    code: string,
+    scoreType: number,
+    diff: number,
+    side?: "win" | "lose",
+  ) => {
+    const sideQuery =
+      side === "win" ? "&winOnly=on" : side === "lose" ? "&loseOnly=on" : "";
+    return `${MAIMAI_BASE_URL}/friend/friendGenreVs/battleStart/?scoreType=${scoreType}&genre=99&diff=${diff}${sideQuery}&idx=${code}`;
+  },
   userFriendCode: `${MAIMAI_BASE_URL}/friend/userFriendCode/`,
 
   // Cookie 过期检测

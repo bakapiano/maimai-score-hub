@@ -353,6 +353,9 @@ export default function SyncPage() {
     "diving-fish" | "lxns" | null
   >(null);
 
+  // 是否同步全部难度（默认关闭，仅同步 EXPERT/MASTER/Re:MASTER）
+  const [fullSync, setFullSync] = useState(false);
+
   // Loading state
   const [loading, setLoading] = useState(true);
 
@@ -641,6 +644,7 @@ export default function SyncPage() {
         {
           friendCode: profile.friendCode,
           skipUpdateScore: false,
+          fullSync,
         },
         token!,
       );
@@ -981,14 +985,23 @@ export default function SyncPage() {
                     </Stack>
                   )}
                 </Group>
-                <Button
-                  onClick={startSync}
-                  disabled={!profile?.friendCode || syncing}
-                  variant="light"
-                  size="sm"
-                >
-                  更新数据
-                </Button>
+                <Group gap="sm">
+                  <Switch
+                    size="sm"
+                    label="同步全部难度"
+                    checked={fullSync}
+                    onChange={(e) => setFullSync(e.currentTarget.checked)}
+                    disabled={syncing}
+                  />
+                  <Button
+                    onClick={startSync}
+                    disabled={!profile?.friendCode || syncing}
+                    variant="light"
+                    size="sm"
+                  >
+                    更新数据
+                  </Button>
+                </Group>
               </Group>
               {syncing && syncStatus && (
                 <Group gap="xs" mt={4}>
@@ -1024,6 +1037,13 @@ export default function SyncPage() {
                 <Text size="sm" c="dimmed" ta="center">
                   暂无同步记录，点击下方按钮开始首次同步。
                 </Text>
+                <Switch
+                  size="sm"
+                  label="同步全部难度"
+                  checked={fullSync}
+                  onChange={(e) => setFullSync(e.currentTarget.checked)}
+                  disabled={syncing}
+                />
                 <Button
                   onClick={startSync}
                   disabled={!profile?.friendCode || syncing}

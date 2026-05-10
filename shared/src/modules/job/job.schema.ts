@@ -50,6 +50,7 @@ export const JobResponseSchema = z.object({
   friendCode: z.string(),
   jobType: JobTypeSchema,
   skipUpdateScore: z.boolean(),
+  fullSync: z.boolean().optional(),
   botUserFriendCode: z.string().nullable().optional(),
   friendRequestSentAt: z.string().nullable().optional(),
   status: JobStatusSchema,
@@ -68,6 +69,7 @@ export const JobResponseSchema = z.object({
 export const JobCreateBodySchema = z.object({
   friendCode: z.string().min(1),
   skipUpdateScore: z.boolean().optional().default(false),
+  fullSync: z.boolean().optional().default(false),
 });
 
 export const JobCreateResponseSchema = z.object({

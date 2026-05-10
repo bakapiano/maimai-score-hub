@@ -53,6 +53,7 @@ export interface JobResponse {
   friendCode: string;
   jobType: JobType;
   skipUpdateScore: boolean;
+  fullSync?: boolean;
   botUserFriendCode?: string | null;
   friendRequestSentAt?: string | null;
   status: JobStatus;

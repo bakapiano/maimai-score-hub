@@ -568,15 +568,27 @@ export class MaimaiHttpClient {
   }
 
   /**
-   * 获取 Friend VS 页面 HTML
+   * 获取 Friend VS 页面 HTML.
+   *
+   * `side`:
+   *   undefined - default page (only songs that fit on the default
+   *               cap; can miss songs in either direction)
+   *   "win"     - only songs where the bot beats the friend
+   *   "lose"    - only songs where the friend beats the bot
+   *
+   * For complete coverage we call this twice (win + lose) and merge.
+   * The default-page schema is the same for all three; we just gate
+   * on `friend_vs_block` presence so paginated/empty results don't
+   * trigger NonRetryableError.
    */
   async getFriendVS(
     friendCode: string,
     scoreType: 1 | 2,
     diff: number,
+    side?: "win" | "lose",
   ): Promise<string> {
     const startTime = Date.now();
-    const url = MAIMAI_URLS.friendVS(friendCode, scoreType, diff);
+    const url = MAIMAI_URLS.friendVS(friendCode, scoreType, diff, side);
     const result = await this.fetch(
       url,
       { headers: DEFAULT_HEADERS },
@@ -597,7 +609,7 @@ export class MaimaiHttpClient {
     const text = await result.text();
     const cost = Date.now() - startTime;
     console.log(
-      `[MaimaiClient] getFriendVS friendCode=${friendCode} scoreType=${scoreType} diff=${diff} cost=${cost}ms`,
+      `[MaimaiClient] getFriendVS friendCode=${friendCode} scoreType=${scoreType} diff=${diff} side=${side ?? "all"} cost=${cost}ms`,
     );
 
     return text;
