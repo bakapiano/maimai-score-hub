@@ -43,11 +43,13 @@ export class PollTimeout extends Error {
   }
 }
 export class PollDead extends Error {
-  constructor(public readonly lastError: unknown) {
+  readonly lastError: unknown;
+  constructor(lastError: unknown) {
     super(
       `polling failed (${lastError instanceof Error ? lastError.message : String(lastError)})`,
     );
     this.name = "PollDead";
+    this.lastError = lastError;
   }
 }
 
@@ -56,22 +58,21 @@ export class PollDead extends Error {
  * (which should propagate immediately, NOT retry).
  */
 export class HttpServerError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-  ) {
+  readonly status: number;
+  constructor(status: number, message: string) {
     super(message);
     this.name = "HttpServerError";
+    this.status = status;
   }
 }
 export class HttpClientError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly body: unknown,
-    message: string,
-  ) {
+  readonly status: number;
+  readonly body: unknown;
+  constructor(status: number, body: unknown, message: string) {
     super(message);
     this.name = "HttpClientError";
+    this.status = status;
+    this.body = body;
   }
 }
 
