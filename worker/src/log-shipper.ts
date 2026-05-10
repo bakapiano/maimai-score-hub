@@ -79,7 +79,12 @@ export function startLogShipper(opts: Opts): { stop: () => void } {
       try {
         await fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(process.env.ADMIN_PASSWORD
+              ? { "X-Admin-Password": process.env.ADMIN_PASSWORD }
+              : {}),
+          },
           body: JSON.stringify({
             workerId: opts.workerId,
             entries: batch,

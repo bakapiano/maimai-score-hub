@@ -116,11 +116,18 @@ export const backendTsRestApi: NonNullable<
   Parameters<typeof import("@ts-rest/core").initClient>[1]["api"]
 > = async ({ path, method, headers, body, fetchOptions, route, validateResponse }) => {
   let result: Response;
+  // Worker→backend RPC auth: shared secret echoed back via X-Admin-Password.
+  // Empty when ADMIN_PASSWORD is unset (local dev) — backend guard treats
+  // that as "auth not configured" and lets the request through, so this is
+  // safe to roll out before all hosts pin a real value.
+  const authHeaders: Record<string, string> = process.env.ADMIN_PASSWORD
+    ? { "X-Admin-Password": process.env.ADMIN_PASSWORD }
+    : {};
   try {
     result = (await undiciFetch(path, {
       ...(fetchOptions as RequestInit | undefined),
       method,
-      headers: headers as Record<string, string>,
+      headers: { ...authHeaders, ...(headers as Record<string, string>) },
       body: body as any,
       dispatcher: backendDispatcher,
     })) as unknown as Response;
