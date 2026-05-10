@@ -159,22 +159,40 @@ export class JobService {
     // jobType that ends up scraping scores; explicit non-update jobs
     // (idle_add_friend / fetch_friend_list / skipUpdateScore) keep the
     // original flow.
+    //
+    // 调用方（FE / scheduler）传 botUserFriendCode 是可选的：
+    //   - AutoUpdateScheduler / IdleUpdateScheduler 会预先 pickAvailableCabinetBot
+    //     再 enqueue，所以总有 bot
+    //   - JobController.create（用户点"更新数据"）不传 bot，这里需要自己挑一个
+    //     cabinet-bound 的，否则 fast-path 永远进不去，用户还得手动接好友
     const isScoreUpdateJob =
       (resolvedJobType === 'immediate' ||
         resolvedJobType === 'idle_update_score') &&
       !input.skipUpdateScore;
-    if (isScoreUpdateJob && input.botUserFriendCode) {
+    if (isScoreUpdateJob) {
       try {
         const user = await this.usersService.findByFriendCode(input.friendCode);
         const userCabinetUid = (user as { cabinetUserId?: number | null } | null)
           ?.cabinetUserId;
         if (userCabinetUid != null) {
-          const allBots = await this.botStatus.getAll();
-          const bot = allBots.find(
-            (b) => b.friendCode === input.botUserFriendCode,
-          );
-          const botCabinetUid = bot?.cabinetUserId ?? null;
-          if (botCabinetUid != null) {
+          // 找当前要用的 bot — 调用方指定就用指定的；否则自动选一个有 cabinetUserId 的
+          let botCabinetUid: number | null = null;
+          let botFc: string | null = input.botUserFriendCode ?? null;
+          if (botFc) {
+            const allBots = await this.botStatus.getAll();
+            const bot = allBots.find((b) => b.friendCode === botFc);
+            botCabinetUid = bot?.cabinetUserId ?? null;
+          } else {
+            const picked = await this.botStatus.pickAvailableCabinetBot();
+            if (picked) {
+              botFc = picked.friendCode;
+              botCabinetUid = picked.cabinetUserId ?? null;
+              // Tell the rest of create() about the chosen bot so the
+              // job row is pre-assigned and worker.claimNext sees it.
+              input.botUserFriendCode = botFc;
+            }
+          }
+          if (botCabinetUid != null && botFc) {
             // Skip the dxnet handshake; jump to update_score.
             resolvedStage = 'update_score';
             // Fire-and-forget addRival. UserFriendRegistApi is
@@ -191,7 +209,7 @@ export class JobService {
               )
               .then((r) =>
                 this.logger.log(
-                  `Cabinet-bound score-update fast-path fc=${input.friendCode} bot=${input.botUserFriendCode} addRival rc=${r.returnCode1}/${r.returnCode2}`,
+                  `Cabinet-bound score-update fast-path fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
                 ),
               )
               .catch((err) =>
