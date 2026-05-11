@@ -205,11 +205,11 @@ export class JobHandler {
         `[JobHandler] Job ${this.job.id}: Send threshold (UTC): ${new Date(sendThreshold).toISOString()}`,
       );
 
-      // 先执行一次发送 + 验证
-      await this.friendManager.sendFriendRequest(this.job.friendCode);
+      // 先执行一次发送 + 验证（batch：两步紧邻，跳过 spacing）
+      await MaimaiHttpClient.runInBatch(async () => {
+        await this.friendManager.sendFriendRequest(this.job.friendCode);
 
-      // 检查初次发送的结果
-      {
+        // 检查初次发送的结果
         const sentRequests = await this.friendManager.getSentRequests();
         const found = sentRequests.find(
           (s) => s.friendCode === this.job.friendCode,
@@ -221,7 +221,7 @@ export class JobHandler {
             match = found;
           }
         }
-      }
+      }, "send+verify-friend-request");
     } catch (err) {
       console.warn(
         `[JobHandler] Job ${this.job.id}: Failed to verify sent friend request:`,
@@ -238,21 +238,32 @@ export class JobHandler {
       const maxRetries = 3;
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        await this.friendManager.sendFriendRequest(this.job.friendCode);
+        // batch：send + isFriend + getSent 视为一次操作，跳过 spacing
+        const result = await MaimaiHttpClient.runInBatch(async () => {
+          await this.friendManager.sendFriendRequest(this.job.friendCode);
 
-        // 发送后检查是否已经是好友
-        const alreadyFriend = await this.friendManager.isFriend(
-          this.job.friendCode,
-        );
-        if (alreadyFriend) {
+          // 发送后检查是否已经是好友
+          const alreadyFriend = await this.friendManager.isFriend(
+            this.job.friendCode,
+          );
+          if (alreadyFriend) {
+            return { kind: "already-friend" as const };
+          }
+
+          const sentRequests = await this.friendManager.getSentRequests();
+          const m = sentRequests.find(
+            (s) => s.friendCode === this.job.friendCode,
+          );
+          return { kind: "checked" as const, match: m };
+        }, "send+verify-friend-request-retry");
+
+        if (result.kind === "already-friend") {
           console.log(
             `[JobHandler] Job ${this.job.id}: Already friends after sending request, treating as success`,
           );
           break;
         }
-
-        const sentRequests = await this.friendManager.getSentRequests();
-        match = sentRequests.find((s) => s.friendCode === this.job.friendCode);
+        match = result.match;
 
         if (match || this.config.skipCleanUpFriend) {
           break;

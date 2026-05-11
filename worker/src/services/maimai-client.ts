@@ -4,6 +4,7 @@
  */
 
 import { Agent, setGlobalDispatcher } from "undici";
+import { AsyncLocalStorage } from "async_hooks";
 import {
   COOKIE_EXPIRE_LOCATIONS,
   COOKIE_EXPIRE_MARKERS,
@@ -96,10 +97,17 @@ export class MaimaiHttpClient {
 
   // =========================================================================
   // 全局限流 —— 所有实例共享，保证相邻请求发起时间间隔 ≥ 2.5 秒以防限流
+  //
+  // 例外：通过 `runInBatch(fn)` 包裹的请求被视为同一个 batch，batch 内部
+  //   不强制间隔（可串行 / 并发都行）。batch 结束时统一把
+  //   `lastRequestStartTime` 推迟 `count * REQUEST_INTERVAL_MS`，让后续
+  //   非 batch 请求等到等价的 spacing。这样既能让 send_friend_request +
+  //   get_sent_requests 这种紧密耦合的两步调用快速完成，又不会突破整体
+  //   速率上限。
   // =========================================================================
   /** 请求发起间最小间隔（毫秒） */
   private static readonly REQUEST_INTERVAL_MS = 2_500;
-  /** 上一次请求发起的时间戳 */
+  /** 上一次请求发起的时间戳（也是 batch 计费的基准） */
   private static lastRequestStartTime = 0;
   /** 限流锁：保证等待+更新时间戳的原子性 */
   private static throttleLock: Promise<void> = Promise.resolve();
@@ -107,6 +115,52 @@ export class MaimaiHttpClient {
   private static frozenUntil = 0;
   /** 冻结时长（毫秒） */
   private static readonly FREEZE_DURATION_MS = 60_000;
+
+  /**
+   * batch 上下文：所有在 `runInBatch` 异步范围内发出的请求会共享同一个
+   * counter，互相之间不等 spacing；batch 结束后再把 spacing 一次性补回。
+   */
+  private static readonly batchStorage = new AsyncLocalStorage<{
+    count: number;
+    label?: string;
+  }>();
+
+  /**
+   * 在一个 "batch" 范围内运行 fn。fn 内部所有 client 请求都被算作一个
+   * 整体，batch 内不强制 2.5s 间隔；batch 结束后 lastRequestStartTime
+   * 会被推到 `batchStartTime + (count-1) * 2.5s`，下一个非 batch 请求
+   * 自然要等到 `batchStartTime + count * 2.5s`。
+   *
+   * batch 不可嵌套（嵌套时内层共享外层 counter，效果等同单一 batch）。
+   */
+  static async runInBatch<T>(fn: () => Promise<T>, label?: string): Promise<T> {
+    const existing = MaimaiHttpClient.batchStorage.getStore();
+    if (existing) {
+      // 已在 batch 中 — 直接复用，不开新 scope
+      return fn();
+    }
+    const ctx = { count: 0, label };
+    const batchStart = Date.now();
+    try {
+      return await MaimaiHttpClient.batchStorage.run(ctx, fn);
+    } finally {
+      // 把 spacing 一次性补回：占用 count * REQUEST_INTERVAL_MS 的"配额"。
+      // 这里直接更新 lastRequestStartTime 到 batchStart + (count-1)*interval，
+      // 下一个非 batch 请求的 waitForSlot 会从 lastRequestStartTime + interval
+      // 开始等，等价于把整个 batch 视为 count 次串行请求消耗的时间。
+      if (ctx.count > 0) {
+        const charged =
+          batchStart + (ctx.count - 1) * MaimaiHttpClient.REQUEST_INTERVAL_MS;
+        // 不要回退（万一 batch 内部物理用时已经超过 charged）
+        if (charged > MaimaiHttpClient.lastRequestStartTime) {
+          MaimaiHttpClient.lastRequestStartTime = charged;
+        }
+        console.log(
+          `[MaimaiClient] batch${label ? ` "${label}"` : ""} done: ${ctx.count} requests in ${Date.now() - batchStart}ms; throttle credit ${ctx.count * MaimaiHttpClient.REQUEST_INTERVAL_MS}ms`,
+        );
+      }
+    }
+  }
 
   /**
    * 触发全局冻结，所有请求将等待至冻结结束
@@ -122,18 +176,28 @@ export class MaimaiHttpClient {
   /**
    * 等待直到距上次请求发起时间 ≥ REQUEST_INTERVAL_MS，然后标记本次发起时间
    * 同时检查全局冻结状态，若被冻结则等待至解冻
+   *
+   * batch 模式下：跳过 spacing wait，仅检查冻结，并把 batch counter +1。
    */
   private static async waitForSlot(): Promise<void> {
+    const batch = MaimaiHttpClient.batchStorage.getStore();
     return new Promise<void>((resolve) => {
       MaimaiHttpClient.throttleLock = MaimaiHttpClient.throttleLock.then(
         async () => {
-          // 检查全局冻结
+          // 检查全局冻结（batch 也要遵守，这是被服务端打回的硬指标）
           const freezeRemaining = MaimaiHttpClient.frozenUntil - Date.now();
           if (freezeRemaining > 0) {
             console.log(
               `[MaimaiClient] 请求等待全局冻结解除，剩余 ${Math.ceil(freezeRemaining / 1000)} 秒`,
             );
             await sleep(freezeRemaining);
+          }
+
+          if (batch) {
+            // batch 内：不等 spacing，只记账
+            batch.count++;
+            resolve();
+            return;
           }
 
           const now = Date.now();
