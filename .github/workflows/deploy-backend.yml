@@ -42,7 +42,12 @@ jobs:
             fi
 
             cd backend
-            sudo $COMPOSE_CMD build
+            # Cap docker build cache BEFORE build (FE+BE share the
+            # host; without this we hit ENOSPC mid-build, which then
+            # silently rebuilds from a stale layer or restarts the old
+            # image — masking failures as "success").
+            sudo docker builder prune --force --keep-storage=2GB || true
+            sudo $COMPOSE_CMD build || { echo "❌ Build failed"; exit 1; }
 
             # Clean up any unhealthy containers from previous failed deployments
             echo "Cleaning up unhealthy containers..."

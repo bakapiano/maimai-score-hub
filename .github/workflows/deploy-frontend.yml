@@ -33,6 +33,9 @@ jobs:
             git fetch --all
             git checkout main
             git pull
+            # Cap docker build cache BEFORE build to avoid ENOSPC
+            # mid-build silently falling back to stale layers.
+            sudo docker builder prune --force --keep-storage=2GB || true
             if command -v docker-compose >/dev/null 2>&1; then
               sudo docker-compose -f frontend/docker-compose.yml up -d --build || exit 1
             else

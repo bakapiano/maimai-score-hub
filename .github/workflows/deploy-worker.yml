@@ -49,6 +49,8 @@ jobs:
             if [ "${{ matrix.instance }}" = "3" ]; then
               EXTRA_ENV="HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 NO_PROXY=localhost,127.0.0.1"
             fi
+            # Cap docker build cache before build to avoid ENOSPC
+            sudo docker builder prune --force --keep-storage=2GB || true
             if command -v docker-compose >/dev/null 2>&1; then
               sudo env $EXTRA_ENV docker-compose -f worker/docker-compose.yml up -d --build || exit 1
             else
