@@ -72,6 +72,7 @@ export const SearchJobsQuerySchema = z.object({
 
 export const SearchJobsResponseSchema = z.unknown();
 export const JobApiLogsSchema = z.array(z.unknown());
+export const AutoUpdateMetricsSchema = z.unknown();
 
 export type ReportBotStatusBody = z.infer<typeof ReportBotStatusBodySchema>;
 export type UpdateBotRemarkBody = z.infer<typeof UpdateBotRemarkBodySchema>;

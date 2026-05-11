@@ -135,6 +135,17 @@ export class AdminController {
     return await this.adminService.getJobStats();
   }
 
+  /**
+   * Aggregated dashboard for /admin/auto-update.
+   * window: '24h' (5min buckets) or '7d' (1h buckets).
+   */
+  @Get('auto-update-metrics')
+  @UseGuards(AdminGuard)
+  async getAutoUpdateMetrics(@Query('window') window?: string) {
+    const w: '24h' | '7d' = window === '7d' ? '7d' : '24h';
+    return this.adminService.getAutoUpdateMetrics(w);
+  }
+
   @Get('job-trend')
   @UseGuards(AdminGuard)
   async getJobTrend(@Query('hours') hoursStr?: string) {

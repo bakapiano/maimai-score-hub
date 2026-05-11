@@ -3,6 +3,10 @@ import { JobApiLogEntity, JobApiLogSchema } from '../job/api-log/api-log.schema'
 import { MusicEntity, MusicSchema } from '../music/music.schema';
 import { SyncEntity, SyncSchema } from '../sync/sync.schema';
 import { UserEntity, UserSchema } from '../users/user.schema';
+import {
+  WorkerLogEntity,
+  WorkerLogSchema,
+} from '../worker-logs/worker-log.schema';
 
 import { AdminController } from './admin.controller';
 import { AdminGuard } from './admin.guard';
@@ -37,6 +41,7 @@ import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
         schema: BotFriendSnapshotSchema,
       },
       { name: NotifyStateEntity.name, schema: NotifyStateSchema },
+      { name: WorkerLogEntity.name, schema: WorkerLogSchema },
     ]),
     CoverModule,
     MusicModule,

@@ -5,6 +5,8 @@ import { UserEntity } from '../users/user.schema';
 import { MusicEntity } from '../music/music.schema';
 import { SyncEntity } from '../sync/sync.schema';
 import { JobEntity } from '../job/job.schema';
+import { BotStatusEntity } from './bot-status.schema';
+import { WorkerLogEntity } from '../worker-logs/worker-log.schema';
 import { CoverService } from '../cover/cover.service';
 import { MusicService } from '../music/music.service';
 
@@ -104,6 +106,10 @@ export class AdminService {
     private readonly syncModel: Model<SyncEntity>,
     @InjectModel(JobEntity.name)
     private readonly jobModel: Model<JobEntity>,
+    @InjectModel(BotStatusEntity.name)
+    private readonly botStatusModel: Model<BotStatusEntity>,
+    @InjectModel(WorkerLogEntity.name)
+    private readonly workerLogModel: Model<WorkerLogEntity>,
     private readonly coverService: CoverService,
     private readonly musicService: MusicService,
   ) {}
@@ -551,6 +557,317 @@ export class AdminService {
       total,
       page: params.page,
       pageSize: params.pageSize,
+    };
+  }
+
+  /**
+   * Aggregated dashboard for the auto-update subsystem. Returns:
+   *   - timeline buckets: triggered / skippedHashUnchanged / skippedThrottled
+   *     / failed counts per bucket (5min for 24h window, 1h for 7d window)
+   *   - duration trend per bucket: avg, p50, p99 of updateScoreDuration
+   *   - 567 rate-limit hits per bucket (parsed from worker_logs)
+   *   - "now" snapshot: queued + processing counts, per-bot inflight,
+   *     active auto-update user count
+   *   - capacity estimate: throughput vs current load
+   *   - cabinet-optimization hit rate: % of recent idle_update_score jobs
+   *     that received a cabinetScoreMap; avg friend-VS request count saved
+   */
+  async getAutoUpdateMetrics(window: '24h' | '7d') {
+    const now = Date.now();
+    const windowMs =
+      window === '24h' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+    const bucketMinutes = window === '24h' ? 5 : 60;
+    const bucketMs = bucketMinutes * 60 * 1000;
+    const since = new Date(now - windowMs);
+
+    // ---- (1) timeline: jobs created in window ----
+    // We only have the user's own actions from the auto sweep when
+    // jobType === 'idle_update_score' (sweep-created). The "skipped"
+    // axis isn't directly stored — but worker_logs captures the
+    // sweep summary line `auto-update sweep done: X triggered, Y
+    // skipped, Z failed (of N users)` once per tick. Easier path:
+    // parse those summary lines for triggered/skipped/failed.
+    const sweepLogs = await this.workerLogModel
+      .find({
+        ts: { $gte: since },
+        message: /auto-update sweep done:/,
+      })
+      .select({ ts: 1, message: 1 })
+      .lean()
+      .exec();
+    type Bucket = {
+      bucketStart: string;
+      triggered: number;
+      skipped: number;
+      failed: number;
+      sweepCount: number;
+    };
+    const bucketMap = new Map<number, Bucket>();
+    const bucketKey = (d: Date | number) =>
+      Math.floor((d instanceof Date ? d.getTime() : d) / bucketMs) * bucketMs;
+    const ensureBucket = (k: number): Bucket => {
+      let b = bucketMap.get(k);
+      if (!b) {
+        b = {
+          bucketStart: new Date(k).toISOString(),
+          triggered: 0,
+          skipped: 0,
+          failed: 0,
+          sweepCount: 0,
+        };
+        bucketMap.set(k, b);
+      }
+      return b;
+    };
+    const sweepRe = /(\d+)\s+triggered,\s+(\d+)\s+skipped,\s+(\d+)\s+failed/;
+    for (const log of sweepLogs) {
+      const m = sweepRe.exec(log.message ?? '');
+      if (!m) continue;
+      const b = ensureBucket(bucketKey(log.ts));
+      b.triggered += Number(m[1]);
+      b.skipped += Number(m[2]);
+      b.failed += Number(m[3]);
+      b.sweepCount += 1;
+    }
+
+    // ---- (2) duration trend per bucket ----
+    const durationsByBucket = await this.jobModel
+      .aggregate<{
+        _id: Date;
+        avg: number;
+        count: number;
+        durations: number[];
+      }>([
+        {
+          $match: {
+            jobType: 'idle_update_score',
+            status: 'completed',
+            updateScoreDuration: { $ne: null, $gt: 0 },
+            createdAt: { $gte: since },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $dateTrunc: {
+                date: '$createdAt',
+                unit: 'minute',
+                binSize: bucketMinutes,
+              },
+            },
+            avg: { $avg: '$updateScoreDuration' },
+            count: { $sum: 1 },
+            durations: { $push: '$updateScoreDuration' },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ])
+      .exec();
+    const percentile = (sorted: number[], q: number): number => {
+      if (!sorted.length) return 0;
+      const idx = Math.min(
+        sorted.length - 1,
+        Math.floor(sorted.length * q),
+      );
+      return sorted[idx];
+    };
+    const durationBuckets = durationsByBucket.map((d) => {
+      const sorted = [...d.durations].sort((a, b) => a - b);
+      return {
+        bucketStart: d._id.toISOString(),
+        count: d.count,
+        avgMs: Math.round(d.avg),
+        p50Ms: percentile(sorted, 0.5),
+        p99Ms: percentile(sorted, 0.99),
+      };
+    });
+
+    // ---- (3) 567 rate-limit hits per bucket ----
+    const limitLogs = await this.workerLogModel
+      .find({ ts: { $gte: since }, message: /\(567\)/ })
+      .select({ ts: 1 })
+      .lean()
+      .exec();
+    const limitByBucket = new Map<number, number>();
+    for (const l of limitLogs) {
+      const k = bucketKey(l.ts);
+      limitByBucket.set(k, (limitByBucket.get(k) ?? 0) + 1);
+    }
+
+    // ---- (4) merged timeline ----
+    const allBucketKeys = new Set<number>([
+      ...bucketMap.keys(),
+      ...durationBuckets.map((d) => bucketKey(new Date(d.bucketStart))),
+      ...limitByBucket.keys(),
+    ]);
+    const timeline = [...allBucketKeys]
+      .sort((a, b) => a - b)
+      .map((k) => {
+        const b = bucketMap.get(k);
+        const dur = durationBuckets.find(
+          (d) => bucketKey(new Date(d.bucketStart)) === k,
+        );
+        return {
+          bucketStart: new Date(k).toISOString(),
+          triggered: b?.triggered ?? 0,
+          skipped: b?.skipped ?? 0,
+          failed: b?.failed ?? 0,
+          sweepCount: b?.sweepCount ?? 0,
+          completedJobs: dur?.count ?? 0,
+          avgDurationMs: dur?.avgMs ?? null,
+          p50Ms: dur?.p50Ms ?? null,
+          p99Ms: dur?.p99Ms ?? null,
+          rateLimit567: limitByBucket.get(k) ?? 0,
+        };
+      });
+
+    // ---- (5) "now" snapshot ----
+    const [queuedCount, processingCount, perBotInflight, autoUpdateUsers] =
+      await Promise.all([
+        this.jobModel.countDocuments({
+          jobType: 'idle_update_score',
+          status: 'queued',
+        }),
+        this.jobModel.countDocuments({
+          jobType: 'idle_update_score',
+          status: 'processing',
+        }),
+        this.jobModel.aggregate<{ _id: string; count: number }>([
+          {
+            $match: {
+              status: { $in: ['queued', 'processing'] },
+              botUserFriendCode: { $ne: null },
+            },
+          },
+          { $group: { _id: '$botUserFriendCode', count: { $sum: 1 } } },
+          { $sort: { count: -1 } },
+        ]),
+        this.userModel.countDocuments({ autoUpdate: true }),
+      ]);
+
+    // ---- (6) cabinet optimization hit rate (last 200 idle_update_score jobs) ----
+    const recentIdle = await this.jobModel
+      .find({ jobType: 'idle_update_score' })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .select({ cabinetScoreMap: 1, diffsToScrape: 1, createdAt: 1 })
+      .lean()
+      .exec();
+    let withCabinet = 0;
+    let withDiffsToScrape = 0;
+    let totalDiffsScraped = 0;
+    let diffsToScrapeCount = 0;
+    for (const j of recentIdle) {
+      const csm = (j as { cabinetScoreMap?: unknown }).cabinetScoreMap;
+      const dts = (j as { diffsToScrape?: number[] | null }).diffsToScrape;
+      if (csm && Object.keys(csm as Record<string, unknown>).length > 0) {
+        withCabinet++;
+      }
+      if (Array.isArray(dts) && dts.length > 0) {
+        withDiffsToScrape++;
+        totalDiffsScraped += dts.length;
+        diffsToScrapeCount++;
+      }
+    }
+    const cabinetHitRate = recentIdle.length
+      ? Math.round((withCabinet / recentIdle.length) * 1000) / 10
+      : 0;
+    const diffSkipHitRate = recentIdle.length
+      ? Math.round((withDiffsToScrape / recentIdle.length) * 1000) / 10
+      : 0;
+    const avgDiffsScraped = diffsToScrapeCount
+      ? Math.round((totalDiffsScraped / diffsToScrapeCount) * 10) / 10
+      : null;
+
+    // ---- (7) capacity estimate ----
+    // Active cabinet-bound bots (the only ones that take auto-update jobs).
+    const activeCabinetBots = await this.botStatusModel.countDocuments({
+      available: true,
+      cabinetUserId: { $ne: null },
+    });
+    // Per-bot throughput rough estimate: 60s/2.5s spacing = 24 req/min;
+    // a typical idle_update_score job under cabinet path needs ~16 req
+    // (8 diffs × 2 sides for scoreType=2 only). Without cabinet (rare
+    // now): ~32 req. Assume cabinet hit rate from recent.
+    const reqsPerJob = 16 * (1 - cabinetHitRate / 100) + 8 * (cabinetHitRate / 100);
+    const reqsPerMinPerBot = 24;
+    const jobsPerMin = (activeCabinetBots * reqsPerMinPerBot) / Math.max(reqsPerJob, 1);
+    const jobsPerSweep = jobsPerMin * 5;
+    // sweep触发率 = recent triggered / sweepCount → per-user trigger probability ≈
+    // (total triggered in window) / (total sweeps in window × N users)
+    const totalTriggered = timeline.reduce((s, b) => s + b.triggered, 0);
+    const totalSkipped = timeline.reduce((s, b) => s + b.skipped, 0);
+    const totalSweepCount = timeline.reduce((s, b) => s + b.sweepCount, 0);
+    const triggerRatePerSweep =
+      autoUpdateUsers > 0 && totalSweepCount > 0
+        ? totalTriggered / (totalSweepCount * autoUpdateUsers)
+        : 0;
+    // Peak factor: max bucket triggered / mean bucket triggered
+    const triggeredPerBucket = timeline.map((b) => b.triggered);
+    const meanTriggered =
+      triggeredPerBucket.length > 0
+        ? triggeredPerBucket.reduce((s, x) => s + x, 0) /
+          triggeredPerBucket.length
+        : 0;
+    const maxTriggered = Math.max(0, ...triggeredPerBucket);
+    const peakFactor = meanTriggered > 0 ? maxTriggered / meanTriggered : 1;
+    // Sustainable user upper bound: at peak, expected triggered per sweep
+    // shouldn't exceed jobsPerSweep / safetyFactor.
+    const safetyFactor = 0.7;
+    const maxUsersAvg =
+      triggerRatePerSweep > 0
+        ? Math.floor(jobsPerSweep / triggerRatePerSweep)
+        : null;
+    const maxUsersPeak =
+      triggerRatePerSweep > 0 && peakFactor > 0
+        ? Math.floor((jobsPerSweep * safetyFactor) / (triggerRatePerSweep * peakFactor))
+        : null;
+
+    return {
+      window,
+      bucketMinutes,
+      generatedAt: new Date(now).toISOString(),
+      timeline,
+      now: {
+        autoUpdateUsers,
+        queued: queuedCount,
+        processing: processingCount,
+        perBotInflight: perBotInflight.map((b) => ({
+          friendCode: b._id,
+          count: b.count,
+        })),
+        activeCabinetBots,
+      },
+      optimization: {
+        sampleSize: recentIdle.length,
+        cabinetHitRate, // %
+        diffSkipHitRate, // %
+        avgDiffsScraped, // when diffsToScrape used, average size
+        // estimated friend-VS reqs per job under current optimization
+        // (16 = full no-cabinet, 8 = cabinet path, 2 per scraped diff)
+        estimatedReqsPerJob: Math.round(reqsPerJob * 10) / 10,
+      },
+      capacity: {
+        activeCabinetBots,
+        reqsPerMinPerBot,
+        estimatedJobsPerMin: Math.round(jobsPerMin * 10) / 10,
+        estimatedJobsPerSweep: Math.round(jobsPerSweep * 10) / 10,
+        triggerRatePerUserPerSweep:
+          Math.round(triggerRatePerSweep * 10000) / 10000,
+        peakFactor: Math.round(peakFactor * 10) / 10,
+        maxUsersAvg, // upper bound under average load
+        maxUsersPeak, // upper bound respecting peak factor + safety
+        currentUtilization:
+          maxUsersPeak && maxUsersPeak > 0
+            ? Math.round((autoUpdateUsers / maxUsersPeak) * 100)
+            : null, // %
+      },
+      summary: {
+        totalTriggered,
+        totalSkipped,
+        totalSweepCount,
+        total567: timeline.reduce((s, b) => s + b.rateLimit567, 0),
+      },
     };
   }
 }
