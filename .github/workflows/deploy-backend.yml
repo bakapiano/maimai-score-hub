@@ -98,9 +98,27 @@ jobs:
                 sudo $COMPOSE_CMD logs --tail=100 backend
                 exit 1
               fi
-              # Step B: scale back to 2. compose will SIGTERM the
-              # oldest container; stop_grace_period=60s lets in-flight
-              # requests drain before SIGKILL.
+              # Step B: explicitly stop the OLDEST container (by
+              # creation time). compose's own scale-down picks the
+              # highest-numbered container, which is the NEW one we
+              # just added — exactly the opposite of what we want.
+              # Sort by .Created ascending and pick the first.
+              local oldest_id
+              oldest_id=$(sudo $COMPOSE_CMD ps -q backend \
+                | xargs -r sudo docker inspect \
+                    --format '{{.Created}} {{.Id}}' \
+                | sort \
+                | head -1 \
+                | awk '{print $2}')
+              if [ -z "$oldest_id" ]; then
+                echo "❌ Could not identify oldest container"
+                exit 1
+              fi
+              echo "Stopping oldest container $oldest_id (graceful, up to 60s)..."
+              sudo docker stop --time=60 "$oldest_id"
+              sudo docker rm "$oldest_id"
+              # compose now has 2 containers; sync desired-state to
+              # avoid stale runtime metadata.
               sudo $COMPOSE_CMD up -d --no-deps --no-recreate --scale backend=2 backend
               echo "Scaled back to 2; waiting for new state to settle..."
               sleep 5
