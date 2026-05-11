@@ -63,6 +63,8 @@ function toJobResponse(job: JobEntity): JobResponse {
     updateScoreDuration: job.updateScoreDuration ?? null,
     autoExportResult: job.autoExportResult ?? null,
     isAuthenticated: job.isAuthenticated ?? false,
+    cabinetScoreMap: job.cabinetScoreMap ?? null,
+    diffsToScrape: job.diffsToScrape ?? null,
     error: job.error ?? null,
     executing: job.executing,
     createdAt: job.createdAt.toISOString(),
@@ -114,6 +116,21 @@ export class JobService {
      * `user.lastScoreHash` only after this job completes successfully.
      */
     sourceScoreHash?: string | null;
+    /**
+     * Optional cabinet-derived score data (set by AutoUpdateScheduler when
+     * sdgb getRivalHash returned music in addition to hash). Worker uses
+     * this to skip half the friend-VS requests (achievement + dxScore are
+     * authoritative from cabinet; only fc/fs still need scraping).
+     * Shape: { "<musicId>_<chartIndex>": { achievement, dxScore } }.
+     */
+    cabinetScoreMap?: Record<string, { achievement: number; dxScore: number }> | null;
+    /**
+     * Optional list of difficulties the worker should scrape. When set,
+     * worker only fetches friend-VS for these diffs (typical: only the
+     * diffs whose cabinet scores actually changed since last sync). When
+     * absent, worker uses its default diff list.
+     */
+    diffsToScrape?: number[] | null;
   }) {
     const id = randomUUID();
     const now = new Date();
@@ -165,6 +182,15 @@ export class JobService {
     //     再 enqueue，所以总有 bot
     //   - JobController.create（用户点"更新数据"）不传 bot，这里需要自己挑一个
     //     cabinet-bound 的，否则 fast-path 永远进不去，用户还得手动接好友
+    //
+    // sdgb 失败处理（用户区分）：
+    //   - immediate（用户从前端点"更新数据"）：await addRival；如果 sdgb
+    //     挂了，**fallback 走原 send_request 流程让用户手动接好友**，
+    //     不能让 sdgb 一挂用户就完全不能更新
+    //   - idle_update_score（自动更新）：scheduler 在 enqueue 前已经做过
+    //     一次 addRival 了（auto-update-scheduler.ts），那里的 addRival
+    //     是 required 的；这里再做一次只是冗余的 best-effort，保留
+    //     fire-and-forget 即可
     const isScoreUpdateJob =
       (resolvedJobType === 'immediate' ||
         resolvedJobType === 'idle_update_score') &&
@@ -193,30 +219,85 @@ export class JobService {
             }
           }
           if (botCabinetUid != null && botFc) {
-            // Skip the dxnet handshake; jump to update_score.
-            resolvedStage = 'update_score';
-            // Fire-and-forget addRival. UserFriendRegistApi is
-            // bidirectional + instant; if it errors (e.g. already
-            // friends, returnCode 1), the dxnet worker's friend
-            // check at update_score will catch it.
-            this.sdgb
-              .addRival(
-                {
-                  botCabinetUserId: botCabinetUid,
-                  targetCabinetUserId: userCabinetUid,
-                },
-                { tag: `score-update-add:${input.friendCode}`, timeoutMs: 60_000 },
-              )
-              .then((r) =>
+            if (resolvedJobType === 'idle_update_score') {
+              // Scheduler already addRival'd; this is best-effort backup.
+              resolvedStage = 'update_score';
+              this.sdgb
+                .addRival(
+                  {
+                    botCabinetUserId: botCabinetUid,
+                    targetCabinetUserId: userCabinetUid,
+                  },
+                  { tag: `score-update-add:${input.friendCode}`, timeoutMs: 60_000 },
+                )
+                .then((r) =>
+                  this.logger.log(
+                    `Cabinet-bound score-update (idle, redundant) fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
+                  ),
+                )
+                .catch((err) =>
+                  this.logger.warn(
+                    `addRival (idle redundant) failed: ${err instanceof Error ? err.message : err}`,
+                  ),
+                );
+            } else {
+              // immediate: await; on failure roll back to send_request so
+              // the user can still complete via the friend-request flow.
+              try {
+                const r = await this.sdgb.addRival(
+                  {
+                    botCabinetUserId: botCabinetUid,
+                    targetCabinetUserId: userCabinetUid,
+                  },
+                  { tag: `score-update-add:${input.friendCode}`, timeoutMs: 60_000 },
+                );
+                resolvedStage = 'update_score';
                 this.logger.log(
                   `Cabinet-bound score-update fast-path fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
-                ),
-              )
-              .catch((err) =>
+                );
+
+                // Best-effort: while we're already talking to sdgb, grab
+                // the current cabinet music so the worker can skip the
+                // friend-VS scoreType=1 (dxScore) pass — cabinet is
+                // authoritative for dxScore + achievement, worker only
+                // needs scoreType=2 to pick up fc/fs. If this fails the
+                // worker just falls back to scraping both passes.
+                try {
+                  const { music } = await this.sdgb.getRivalHash(
+                    { cabinetUserId: userCabinetUid },
+                    { tag: `score-update-music:${input.friendCode}`, timeoutMs: 60_000 },
+                  );
+                  const cabinetScoreMap: Record<
+                    string,
+                    { achievement: number; dxScore: number }
+                  > = {};
+                  for (const m of music) {
+                    for (const d of m.userRivalMusicDetailList ?? []) {
+                      cabinetScoreMap[`${m.musicId}_${d.level}`] = {
+                        achievement: d.achievement,
+                        dxScore: d.deluxscoreMax,
+                      };
+                    }
+                  }
+                  if (Object.keys(cabinetScoreMap).length > 0) {
+                    input.cabinetScoreMap = cabinetScoreMap;
+                    this.logger.log(
+                      `immediate fast-path: captured cabinet music for fc=${input.friendCode}, ${Object.keys(cabinetScoreMap).length} entries`,
+                    );
+                  }
+                } catch (err) {
+                  this.logger.warn(
+                    `immediate fast-path: getRivalHash failed for fc=${input.friendCode}, worker will scrape both VS passes: ${err instanceof Error ? err.message : err}`,
+                  );
+                }
+              } catch (err) {
                 this.logger.warn(
-                  `addRival in score-update fast-path failed (job continues): ${err instanceof Error ? err.message : err}`,
-                ),
-              );
+                  `Cabinet fast-path addRival failed for fc=${input.friendCode}; falling back to send_request flow: ${err instanceof Error ? err.message : err}`,
+                );
+                // resolvedStage stays at default (send_request), user
+                // gets the original friend-add flow.
+              }
+            }
           }
         }
       } catch (err) {
@@ -242,6 +323,8 @@ export class JobService {
       result: undefined,
       isAuthenticated: input.isAuthenticated ?? false,
       sourceScoreHash: input.sourceScoreHash ?? null,
+      cabinetScoreMap: input.cabinetScoreMap ?? null,
+      diffsToScrape: input.diffsToScrape ?? null,
       createdAt: now,
       updatedAt: now,
     });

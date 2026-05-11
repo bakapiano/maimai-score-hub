@@ -71,6 +71,24 @@ export class JobEntity {
   @Prop({ type: String, default: null })
   sourceScoreHash!: string | null;
 
+  /**
+   * Cabinet-derived score data captured at job creation time. Worker
+   * uses this to skip half the friend-VS requests (achievement +
+   * dxScore are authoritative from cabinet; only fc/fs need scraping).
+   * Shape: { "<musicId>_<chartIndex>": { achievement, dxScore } }.
+   * Only populated for idle_update_score jobs from AutoUpdateScheduler.
+   */
+  @Prop({ type: MongooseSchema.Types.Mixed, default: null })
+  cabinetScoreMap!: Record<string, { achievement: number; dxScore: number }> | null;
+
+  /**
+   * Subset of difficulties to scrape via friend-VS. When set, worker
+   * only fetches these (typical: only diffs whose cabinet scores
+   * changed since last sync). When null, worker uses its default set.
+   */
+  @Prop({ type: [Number], default: null })
+  diffsToScrape!: number[] | null;
+
   @Prop({ required: true })
   createdAt!: Date;
 

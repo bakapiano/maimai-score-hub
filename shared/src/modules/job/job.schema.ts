@@ -62,6 +62,11 @@ export const JobResponseSchema = z.object({
   updateScoreDuration: z.number().nullable().optional(),
   autoExportResult: AutoExportResultSchema,
   isAuthenticated: z.boolean().optional(),
+  cabinetScoreMap: z
+    .record(z.object({ achievement: z.number(), dxScore: z.number() }))
+    .nullable()
+    .optional(),
+  diffsToScrape: z.array(z.number().int()).nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

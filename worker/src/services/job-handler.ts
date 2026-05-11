@@ -419,9 +419,32 @@ export class JobHandler {
 
     // 默认跳过 BASIC(0) / ADVANCED(1) / 宴会场(10)，只有显式 fullSync 才爬全部
     const SKIP_DEFAULT = new Set([0, 1, 10]);
-    const effectiveDiffs = this.job.fullSync
+    let effectiveDiffs = this.job.fullSync
       ? [...DIFFICULTIES]
       : DIFFICULTIES.filter((d) => !SKIP_DEFAULT.has(d));
+
+    // backend 已经基于 cabinet diff 算好"哪些 diff 真有变化"，只爬这些。
+    // 跟 fullSync / 默认 skip 取交集，确保不会反向扩大爬取范围。
+    if (Array.isArray(this.job.diffsToScrape) && this.job.diffsToScrape.length > 0) {
+      const requested = new Set(this.job.diffsToScrape);
+      effectiveDiffs = effectiveDiffs.filter((d) => requested.has(d));
+      console.log(
+        `[JobHandler] Job ${this.job.id}: backend pinned diffsToScrape=[${this.job.diffsToScrape.join(',')}], scraping [${effectiveDiffs.join(',')}]`,
+      );
+    }
+
+    // 当 backend 已经拿到了 cabinet 上的 dxScore + achievement 时，
+    // worker 只需要 scrape friend-VS scoreType=2 (拿 fc/fs)，dxScore
+    // 那一遍可以省掉。backend 在 sync.service 里把 cabinet 数据 merge
+    // 到最终 ScoreSnapshot。
+    const skipDxScoreFetch =
+      !!this.job.cabinetScoreMap &&
+      Object.keys(this.job.cabinetScoreMap).length > 0;
+    if (skipDxScoreFetch) {
+      console.log(
+        `[JobHandler] Job ${this.job.id}: skipDxScoreFetch=true (cabinet data has ${Object.keys(this.job.cabinetScoreMap!).length} entries)`,
+      );
+    }
 
     // 初始化进度跟踪
     const totalDiffs = effectiveDiffs.length;
@@ -454,6 +477,7 @@ export class JobHandler {
         {
           jobId: this.job.id,
           diffs: effectiveDiffs,
+          skipDxScoreFetch,
           dumpHtml: this.config.dumpFriendVsHtml
             ? (html, meta) => this.dumpFriendVsHtml(html, meta)
             : undefined,

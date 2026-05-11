@@ -69,6 +69,8 @@ export interface JobResponse {
     lxns?: { status: string; message?: string } | null;
   } | null;
   isAuthenticated?: boolean;
+  cabinetScoreMap?: Record<string, { achievement: number; dxScore: number }> | null;
+  diffsToScrape?: number[] | null;
   createdAt: string;
   updatedAt: string;
 }

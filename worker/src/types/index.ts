@@ -82,6 +82,21 @@ export interface Job {
   scoreProgress?: ScoreProgress | null;
   updateScoreDuration?: number | null;
   isAuthenticated?: boolean;
+  /**
+   * Cabinet-derived score map (set by backend AutoUpdateScheduler when
+   * sdgb returned music alongside hash). Lets the worker skip half the
+   * friend-VS requests: dxScore + achievement come from cabinet,
+   * worker only needs to scrape one friend-VS page per (diff) for fc/fs.
+   * Key: "<musicId>_<chartIndex>". achievement is int * 10000 (so
+   * 100.3107% = 1003107). dxScore is the raw int.
+   */
+  cabinetScoreMap?: Record<string, { achievement: number; dxScore: number }> | null;
+  /**
+   * If set, worker only scrapes friend-VS for these difficulties. When
+   * absent / null, worker uses its default diff list (BASIC/ADVANCED/
+   * 宴会 skipped unless fullSync is true).
+   */
+  diffsToScrape?: number[] | null;
   createdAt: Date;
   updatedAt: Date;
 }

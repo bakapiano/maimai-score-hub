@@ -419,45 +419,50 @@ export class MaimaiHttpClient {
   async getFriendList(): Promise<FriendInfo[]> {
     console.log(`[MaimaiClient] Start get friend list`);
 
-    // 获取第一页
-    const firstResult = await this.fetchWithToken(MAIMAI_URLS.friendList);
-    const firstText = await firstResult.text();
-    const friends = parseFriendList(firstText);
-    const friendCount = parseFriendCount(firstText);
+    // 整个翻页过程作为一个 batch — 翻页是 idempotent read，紧邻发出对
+    // 服务端没害，但能省掉每页之间 2.5s 的 client spacing。大用户（>20
+    // 好友）能省 5–15s。
+    return MaimaiHttpClient.runInBatch(async () => {
+      // 获取第一页
+      const firstResult = await this.fetchWithToken(MAIMAI_URLS.friendList);
+      const firstText = await firstResult.text();
+      const friends = parseFriendList(firstText);
+      const friendCount = parseFriendCount(firstText);
 
-    if (friendCount === null || friendCount <= 10) {
+      if (friendCount === null || friendCount <= 10) {
+        console.log(
+          `[MaimaiClient] Done get friend list (single page), count=${friends.length}`,
+        );
+        return friends;
+      }
+
+      // 计算需要翻页的页数: 第 2 页到第 ceil(friendCount/10)+1 页
+      const totalPages = Math.ceil(friendCount / 10) + 1;
       console.log(
-        `[MaimaiClient] Done get friend list (single page), count=${friends.length}`,
+        `[MaimaiClient] Friend count: ${friendCount}, fetching pages 2..${totalPages}`,
       );
-      return friends;
-    }
 
-    // 计算需要翻页的页数: 第 2 页到第 ceil(friendCount/10)+1 页
-    const totalPages = Math.ceil(friendCount / 10) + 1;
-    console.log(
-      `[MaimaiClient] Friend count: ${friendCount}, fetching pages 2..${totalPages}`,
-    );
+      for (let page = 2; page <= totalPages; page++) {
+        const pageResult = await this.fetchWithToken(
+          MAIMAI_URLS.friendListPage(page),
+        );
+        const pageText = await pageResult.text();
+        const pageFriends = parseFriendList(pageText);
+        friends.push(...pageFriends);
+      }
 
-    for (let page = 2; page <= totalPages; page++) {
-      const pageResult = await this.fetchWithToken(
-        MAIMAI_URLS.friendListPage(page),
+      // 去重
+      const seen = new Set<string>();
+      const uniqueFriends = friends.filter((f) => {
+        if (seen.has(f.friendCode)) return false;
+        seen.add(f.friendCode);
+        return true;
+      });
+      console.log(
+        `[MaimaiClient] Done get friend list (${totalPages} pages), count=${uniqueFriends.length}`,
       );
-      const pageText = await pageResult.text();
-      const pageFriends = parseFriendList(pageText);
-      friends.push(...pageFriends);
-    }
-
-    // 去重
-    const seen = new Set<string>();
-    const uniqueFriends = friends.filter((f) => {
-      if (seen.has(f.friendCode)) return false;
-      seen.add(f.friendCode);
-      return true;
-    });
-    console.log(
-      `[MaimaiClient] Done get friend list (${totalPages} pages), count=${uniqueFriends.length}`,
-    );
-    return uniqueFriends;
+      return uniqueFriends;
+    }, "get-friend-list");
   }
 
   /**
