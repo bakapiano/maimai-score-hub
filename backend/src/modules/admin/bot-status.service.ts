@@ -277,7 +277,31 @@ export class BotStatusService implements OnModuleDestroy {
       (b) => b.available && b.cabinetUserId != null,
     );
     if (candidates.length === 0) return null;
-    candidates.sort((a, b) => (a.friendCount ?? 0) - (b.friendCount ?? 0));
+
+    // worker 每 60s 才上报一次 friendCount，AutoUpdate sweep 一次能在
+    // 几秒内连续触发 5-10 个 pick，那段时间所有 pick 看到的都是同一个
+    // friendCount snapshot，永远选最小的那个 → 全堆同一个 bot 上。
+    // 加上当前 queued/processing 的 in-flight job 数（这些 worker 还没
+    // 上报为 friendCount 增量），让连续 pick 也能体现"刚刚分了一个"。
+    const fcs = candidates.map((c) => c.friendCode);
+    const inflightAgg = await this.jobModel
+      .aggregate<{ _id: string; count: number }>([
+        {
+          $match: {
+            botUserFriendCode: { $in: fcs },
+            status: { $in: ['queued', 'processing'] },
+          },
+        },
+        { $group: { _id: '$botUserFriendCode', count: { $sum: 1 } } },
+      ])
+      .exec();
+    const inflight = new Map(inflightAgg.map((r) => [r._id, r.count]));
+
+    candidates.sort((a, b) => {
+      const aLoad = (a.friendCount ?? 0) + (inflight.get(a.friendCode) ?? 0);
+      const bLoad = (b.friendCount ?? 0) + (inflight.get(b.friendCode) ?? 0);
+      return aLoad - bLoad;
+    });
     const pick = candidates[0];
     return { friendCode: pick.friendCode, cabinetUserId: pick.cabinetUserId! };
   }
