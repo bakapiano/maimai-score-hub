@@ -142,6 +142,16 @@ export interface FriendInfo {
   userName?: string | null;
   /** maimai DX rating displayed on the friend list page. */
   rating?: number | null;
+  // Profile fields scraped from the same friend list block — same shape
+  // as parseUserProfile output. Lets backend auto-populate user.profile
+  // for QR-login users without an extra getUserProfile RPC.
+  avatarUrl?: string | null;
+  title?: string | null;
+  titleColor?: string | null;
+  ratingBgUrl?: string | null;
+  courseRankUrl?: string | null;
+  classRankUrl?: string | null;
+  awakeningCount?: number | null;
 }
 
 // ============================================================================

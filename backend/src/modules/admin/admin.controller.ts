@@ -30,6 +30,7 @@ import { JobService } from '../job/job.service';
 import { IdleUpdateSchedulerService } from '../job/idle-update/idle-update-scheduler.service';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
 import { SdgbJobService } from '../sdgb-worker/sdgb-job.service';
+import { UsersService } from '../users/users.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 @Controller('admin')
@@ -43,6 +44,7 @@ export class AdminController {
     private readonly jobService: JobService,
     private readonly sdgbJobService: SdgbJobService,
     private readonly sdgbDispatcher: SdgbJobDispatcher,
+    private readonly usersService: UsersService,
   ) {}
 
   /**
@@ -59,6 +61,9 @@ export class AdminController {
     // Side-channel: any bot row that included a `friends` array also
     // gets full-overwritten into bot_friend_snapshots for the QR-login
     // reverse-map flow. Workers send this opportunistically on every tick.
+    // Same friends array also drives user.profile auto-population so QR-
+    // login users get an avatar/title/etc without an extra RPC.
+    const allFriends: NonNullable<(typeof body.bots)[0]['friends']> = [];
     for (const b of body.bots) {
       if (Array.isArray(b.friends)) {
         await this.botFriendSnapshotService.report(
@@ -69,7 +74,14 @@ export class AdminController {
             rating: f.rating ?? null,
           })),
         );
+        allFriends.push(...b.friends);
       }
+    }
+    if (allFriends.length > 0) {
+      // Best-effort: profile patching shouldn't fail the heartbeat.
+      void this.usersService
+        .patchProfilesFromFriendList(allFriends)
+        .catch(() => {});
     }
     return { ok: true };
   }

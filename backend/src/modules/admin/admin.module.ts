@@ -26,6 +26,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MusicModule } from '../music/music.module';
 import { JobModule } from '../job/job.module';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
     MusicModule,
     JobModule,
     SdgbWorkerModule,
+    UsersModule,
   ],
   controllers: [AdminController],
   providers: [

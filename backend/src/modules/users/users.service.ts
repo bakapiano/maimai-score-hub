@@ -138,6 +138,82 @@ export class UsersService {
   }
 
   /**
+   * Bulk-patch user.profile from worker-scraped friend list rows.
+   *
+   * Workers report bot friend snapshots on every status tick; each
+   * row already carries the rich profile fields (avatar, title,
+   * rating, awakening, etc) which we'd otherwise have to fetch via
+   * a separate getUserProfile RPC. This is especially useful for
+   * users who registered via QR login and never went through the
+   * friend-search profile fetch — they'd otherwise show no profile
+   * info on the website until their first manual sync.
+   *
+   * Behavior:
+   *   - Only updates users that actually exist in our DB (other
+   *     bot friends are ignored).
+   *   - Only writes profile fields that are non-null in the input
+   *     (preserves existing data when scrape returns null for a
+   *     particular field).
+   *   - Skips rows where userName is null AND rating is null AND
+   *     all profile fields are null (nothing to write).
+   *   - Uses bulkWrite to keep this O(1) round-trips even with 100+
+   *     friends per bot.
+   */
+  async patchProfilesFromFriendList(
+    rows: ReadonlyArray<{
+      friendCode: string;
+      userName?: string | null;
+      rating?: number | null;
+      avatarUrl?: string | null;
+      title?: string | null;
+      titleColor?: string | null;
+      ratingBgUrl?: string | null;
+      courseRankUrl?: string | null;
+      classRankUrl?: string | null;
+      awakeningCount?: number | null;
+    }>,
+  ): Promise<{ matched: number; modified: number }> {
+    if (!rows.length) return { matched: 0, modified: 0 };
+
+    // Use $set on individual nested keys (e.g. profile.avatarUrl) so we
+    // don't clobber existing fields that aren't in the friend list scrape.
+    type SetDoc = Record<string, string | number | null>;
+    const ops: Array<{
+      updateOne: {
+        filter: { friendCode: string };
+        update: { $set: SetDoc };
+      };
+    }> = [];
+    for (const r of rows) {
+      const set: SetDoc = {};
+      if (r.avatarUrl != null) set['profile.avatarUrl'] = r.avatarUrl;
+      if (r.title != null) set['profile.title'] = r.title;
+      if (r.titleColor != null) set['profile.titleColor'] = r.titleColor;
+      if (r.userName != null) set['profile.username'] = r.userName;
+      if (r.rating != null) set['profile.rating'] = r.rating;
+      if (r.ratingBgUrl != null) set['profile.ratingBgUrl'] = r.ratingBgUrl;
+      if (r.courseRankUrl != null) set['profile.courseRankUrl'] = r.courseRankUrl;
+      if (r.classRankUrl != null) set['profile.classRankUrl'] = r.classRankUrl;
+      if (r.awakeningCount != null)
+        set['profile.awakeningCount'] = r.awakeningCount;
+      if (Object.keys(set).length === 0) continue;
+      ops.push({
+        updateOne: {
+          filter: { friendCode: r.friendCode },
+          update: { $set: set },
+          // upsert: false — only patch users that already exist
+        },
+      });
+    }
+    if (!ops.length) return { matched: 0, modified: 0 };
+    const result = await this.userModel.bulkWrite(ops, { ordered: false });
+    return {
+      matched: result.matchedCount ?? 0,
+      modified: result.modifiedCount ?? 0,
+    };
+  }
+
+  /**
    * 获取所有开启了闲时更新的用户
    */
   async getIdleUpdateUsers() {

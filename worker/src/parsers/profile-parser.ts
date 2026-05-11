@@ -140,7 +140,58 @@ export function parseFriendList(html: string): FriendInfo[] {
     );
     const rating = ratingMatch ? parseInt(ratingMatch[1], 10) : null;
 
-    results.push({ friendCode, isFavorite, userName, rating });
+    // Profile fields — same shape as parseUserProfile() output. Used by
+    // backend to auto-populate user.profile (esp. for QR-login users
+    // who never went through the friend-search profile fetch).
+    // Avatar is the first w_112 img in the block (above the trophy).
+    const avatarMatch = block.match(
+      /<img(?=[^>]*class="w_112[^"]*")[^>]*src="([^"]+)"/i,
+    );
+    const avatarUrl = avatarMatch ? avatarMatch[1] : null;
+
+    // Title block: trophy_block trophy_<Color> ... <span>title text</span>
+    const titleBlockMatch = block.match(
+      /<div class="trophy_block\s+([^"]*?)"[\s\S]*?<div class="trophy_inner_block[^"]*">\s*<span>([\s\S]*?)<\/span>/i,
+    );
+    const titleColor = titleBlockMatch
+      ? (titleBlockMatch[1].match(/trophy_([A-Za-z0-9_-]+)/)?.[1] ?? null)
+      : null;
+    const title = titleBlockMatch ? titleBlockMatch[2].trim() : null;
+
+    const ratingBgMatch = block.match(
+      /<img[^>]+src="([^"]+rating_base[^"]*)"[^>]*class="h_30 f_r"/i,
+    );
+    const ratingBgUrl = ratingBgMatch ? ratingBgMatch[1] : null;
+
+    const courseRankMatch = block.match(
+      /<img[^>]+src="([^"]+course\/course_rank[^"]*)"/i,
+    );
+    const courseRankUrl = courseRankMatch ? courseRankMatch[1] : null;
+
+    const classRankMatch = block.match(
+      /<img[^>]+src="([^"]+class\/class_rank[^"]*)"/i,
+    );
+    const classRankUrl = classRankMatch ? classRankMatch[1] : null;
+
+    // ×<count> next to icon_star.png (awakening counter)
+    const awakeningMatch = block.match(/icon_star\.png[\s\S]*?>×(\d+)/i);
+    const awakeningCount = awakeningMatch
+      ? parseInt(awakeningMatch[1], 10)
+      : null;
+
+    results.push({
+      friendCode,
+      isFavorite,
+      userName,
+      rating,
+      avatarUrl,
+      title,
+      titleColor,
+      ratingBgUrl,
+      courseRankUrl,
+      classRankUrl,
+      awakeningCount,
+    });
   }
   return results;
 }

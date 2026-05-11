@@ -33,6 +33,16 @@ export const ReportBotStatusBodySchema = z.object({
             friendCode: z.string(),
             userName: z.string().nullable().optional(),
             rating: z.number().int().nullable().optional(),
+            // Profile fields scraped from the friend list block. Backend
+            // uses these to populate user.profile for users who joined
+            // via QR login and never went through getUserProfile RPC.
+            avatarUrl: z.string().nullable().optional(),
+            title: z.string().nullable().optional(),
+            titleColor: z.string().nullable().optional(),
+            ratingBgUrl: z.string().nullable().optional(),
+            courseRankUrl: z.string().nullable().optional(),
+            classRankUrl: z.string().nullable().optional(),
+            awakeningCount: z.number().int().nullable().optional(),
           }),
         )
         .optional(),
