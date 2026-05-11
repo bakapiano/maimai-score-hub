@@ -39,6 +39,10 @@ jobs:
               sudo docker compose -f frontend/docker-compose.yml up -d --build || exit 1
             fi
             sudo docker image prune -f
+            # Cap docker build cache so the disk doesn't fill up.
+            # FE/BE share the host; without this the buildkit cache
+            # grew to 5GB+ and we hit ENOSPC on 2026-05-11.
+            sudo docker builder prune --force --keep-storage=2GB || true
             for i in 1 2 3 4 5; do
               if curl -fsS http://localhost:8848 >/dev/null; then
                 echo "Health check passed"

@@ -55,6 +55,8 @@ jobs:
               sudo env $EXTRA_ENV docker compose -f worker/docker-compose.yml up -d --build || exit 1
             fi
             sudo docker image prune -f
+            # Cap docker build cache so disks don't fill up
+            sudo docker builder prune --force --keep-storage=2GB || true
             for i in 1 2 3 4 5; do
               if curl -fsS http://localhost:3999/api/health; then
                 echo "Health check passed on instance ${{ matrix.instance }}"

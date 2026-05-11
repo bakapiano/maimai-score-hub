@@ -87,6 +87,10 @@ jobs:
 
             # Clean up dangling images
             sudo docker image prune -f
+            # Cap docker build cache so the disk doesn't fill up.
+            # FE/BE share the host; without this the buildkit cache
+            # grew to 5GB+ and we hit ENOSPC on 2026-05-11.
+            sudo docker builder prune --force --keep-storage=2GB || true
 
             # Final health check via Nginx
             echo "Running final health check via Nginx..."
