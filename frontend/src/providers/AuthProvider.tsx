@@ -79,6 +79,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (res.status === 401 || res.status === 403) {
           setToken(null);
+          return;
+        }
+
+        // Persist the active friendCode so the login page can pre-fill
+        // it if the user logs out (covers QR-login users too — they
+        // never typed their fc but we know it now). Only writes when
+        // profile actually returned one.
+        const fc = (res.body as { friendCode?: string } | null)?.friendCode;
+        if (fc) {
+          try {
+            localStorage.setItem("lastFriendCode", fc);
+          } catch {
+            // ignore
+          }
         }
       } catch (err) {
         if (!cancelled) {

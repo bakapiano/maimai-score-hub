@@ -41,6 +41,11 @@ async function bootstrap() {
   app.use(urlencoded({ extended: true, limit: '100mb' }));
   app.enableCors({ origin: true });
   app.setGlobalPrefix('api');
+  // Graceful shutdown on SIGTERM (docker stop sends this).
+  // Without this, in-flight requests get killed at the 10s SIGKILL
+  // grace window, which shows up as RST/ECONNRESET on the client
+  // during deploys.
+  app.enableShutdownHooks();
 
   const openApiCandidates = [
     resolve(process.cwd(), '../shared/openapi/openapi.yaml'),

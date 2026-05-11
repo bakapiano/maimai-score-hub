@@ -378,6 +378,13 @@ export async function reportBotStatus(
           friendCode: string;
           userName: string | null;
           rating: number | null;
+          avatarUrl: string | null;
+          title: string | null;
+          titleColor: string | null;
+          ratingBgUrl: string | null;
+          courseRankUrl: string | null;
+          classRankUrl: string | null;
+          awakeningCount: number | null;
         }>
       | undefined;
     if (fetchingFriendList.has(friendCode)) {
@@ -398,6 +405,13 @@ export async function reportBotStatus(
           friendCode: f.friendCode,
           userName: f.userName ?? null,
           rating: f.rating ?? null,
+          avatarUrl: f.avatarUrl ?? null,
+          title: f.title ?? null,
+          titleColor: f.titleColor ?? null,
+          ratingBgUrl: f.ratingBgUrl ?? null,
+          courseRankUrl: f.courseRankUrl ?? null,
+          classRankUrl: f.classRankUrl ?? null,
+          awakeningCount: f.awakeningCount ?? null,
         }));
       }
     } catch {

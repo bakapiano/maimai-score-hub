@@ -19,6 +19,10 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    # Wait up to 60s for in-flight requests to drain on SIGTERM
+    # (NestJS enableShutdownHooks closes the http server but lets
+    # active connections finish).
+    stop_grace_period: 60s
     deploy:
       replicas: 2
       update_config:
