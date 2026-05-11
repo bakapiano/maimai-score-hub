@@ -25,6 +25,15 @@
 - [] 登陆后保持一段时间好友
 - [] 可选更新难度
 - [] 支持不登陆状态下，直接公众号发送好友请求给 bot 来更新
+- [] 容量瓶颈再来一次：把 idle_update_score 完全切成 sdgb get_rival_music
+  路径（成绩从 cabinet 拿，零 friend-VS 请求）；fc/fs 信息单独跑
+  低频 background 任务（每天 1 次 / 用户）通过 friend-VS 补一次。
+  适用条件：当前优化（cabinet 砍一半 + diff skip）已经把单 job 砍到
+  3 req 平均，理论容量 ~2700 user。如果未来 user 涨到 ~2000+ 开始撞
+  天花板（567 频繁 / sweep 撑不完），再做这个。预期收益：score
+  scrape 几乎 0 friend-VS → 容量再上一个数量级。
+  风险：fc/fs 滞后一天；要新加 cron 调度逻辑 + bot 仍然要被加好友
+  才能跑 friend-VS。
 
   [364] "D✪N’T ST✪P R✪CKIN’" (standard) charts: 0,1,2,3,4
   [383] "Link" (standard) charts: 0,1,2,3

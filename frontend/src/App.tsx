@@ -20,6 +20,9 @@ const AdminActiveJobsPage = lazy(
 const AdminAutoUpdatePage = lazy(
   () => import("./pages/admin/AdminAutoUpdatePage"),
 );
+const AdminProberExportsPage = lazy(
+  () => import("./pages/admin/AdminProberExportsPage"),
+);
 const AdminJobDebugPage = lazy(() => import("./pages/admin/AdminJobDebugPage"));
 const AdminSdgbWorkerPage = lazy(
   () => import("./pages/admin/AdminSdgbWorkerPage"),
@@ -68,6 +71,10 @@ function App() {
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<AdminActiveJobsPage />} />
                 <Route path="auto-update" element={<AdminAutoUpdatePage />} />
+                <Route
+                  path="prober-exports"
+                  element={<AdminProberExportsPage />}
+                />
                 <Route path="sync" element={<AdminSyncPage />} />
                 <Route path="job-debug" element={<AdminJobDebugPage />} />
                 <Route path="users" element={<AdminUsersPage />} />

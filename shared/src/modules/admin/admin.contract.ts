@@ -11,6 +11,7 @@ import {
   JobErrorStatsSchema,
   JobStatsSchema,
   JobTrendSchema,
+  ProberExportMetricsSchema,
   ReportBotStatusBodySchema,
   SearchJobsQuerySchema,
   SearchJobsResponseSchema,
@@ -39,6 +40,13 @@ export const adminContract = c.router({
     headers: c.type<{ 'x-admin-password': string }>(),
     query: z.object({ window: z.enum(['24h', '7d']).optional() }),
     responses: { 200: AutoUpdateMetricsSchema },
+  },
+  getProberExportMetrics: {
+    method: 'GET',
+    path: '/admin/prober-export-metrics',
+    headers: c.type<{ 'x-admin-password': string }>(),
+    query: z.object({ window: z.enum(['24h', '7d']).optional() }),
+    responses: { 200: ProberExportMetricsSchema },
   },
   getJobTrend: {
     method: 'GET',

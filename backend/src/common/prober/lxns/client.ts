@@ -10,37 +10,61 @@ type UploadResponse = {
   exported: number;
 };
 
+/**
+ * 上传成绩到 LXNS。和 diving-fish 一样加指数退避 retry：
+ * 网络错误 / 5xx 退避序列 3s → 12s → 48s（共 ~63s 跨度），4xx 立即抛。
+ */
 export async function uploadLxnsScores(
   scores: LxnsScore[],
   token: string,
 ): Promise<UploadResponse> {
-  const res = await fetch(LXNS_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-User-Token': token,
-    },
-    body: JSON.stringify({ scores }),
-  });
+  const backoffMs = [0, 3_000, 12_000, 48_000];
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < backoffMs.length; attempt++) {
+    if (backoffMs[attempt] > 0) {
+      await new Promise((r) => setTimeout(r, backoffMs[attempt]));
+    }
+    let result: { ok: boolean; status: number; data: unknown };
+    try {
+      const res = await fetch(LXNS_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Token': token,
+        },
+        body: JSON.stringify({ scores }),
+      });
+      const text = await res.text();
+      let data: unknown = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = text;
+      }
+      result = { ok: res.ok, status: res.status, data };
+    } catch (err) {
+      lastErr = err;
+      continue;
+    }
 
-  const text = await res.text();
-  let data: unknown = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
-  }
-
-  if (!res.ok) {
-    const detail = typeof data === 'string' ? data : JSON.stringify(data);
-    throw new BadRequestException(
-      `LXNS responded ${res.status}${detail ? `: ${detail}` : ''}`,
+    if (result.ok) {
+      return {
+        status: result.status,
+        response: result.data,
+        exported: scores.length,
+      };
+    }
+    const detail =
+      typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+    const err = new BadRequestException(
+      `LXNS responded ${result.status}${detail ? `: ${detail}` : ''}`,
     );
+    if (result.status >= 400 && result.status < 500) {
+      throw err;
+    }
+    lastErr = err;
   }
-
-  return {
-    status: res.status,
-    response: data,
-    exported: scores.length,
-  };
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error('LXNS upload failed after retries');
 }

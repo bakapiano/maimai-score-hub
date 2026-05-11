@@ -872,4 +872,225 @@ export class AdminService {
       },
     };
   }
+
+  /**
+   * Aggregated stats for prober auto-export (diving-fish + lxns) across
+   * ALL job types (immediate / idle / manual) — not just auto-update.
+   * Source of truth: jobs.autoExportResult populated by JobService.runAutoExport
+   * after the score sync completes.
+   */
+  async getProberExportMetrics(window: '24h' | '7d') {
+    const now = Date.now();
+    const windowMs =
+      window === '24h' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+    const bucketMinutes = window === '24h' ? 60 : 60 * 6;
+    const since = new Date(now - windowMs);
+    const bucketFmt = bucketMinutes >= 60 ? '%Y-%m-%d %H:00' : '%Y-%m-%d %H:%M';
+
+    type ExportBucketRow = {
+      _id: { hr: string; provider: string; status: string };
+      count: number;
+    };
+    const exportRows = await this.jobModel
+      .aggregate<ExportBucketRow>([
+        {
+          $match: {
+            createdAt: { $gte: since },
+            autoExportResult: { $ne: null },
+          },
+        },
+        {
+          $project: {
+            createdAt: 1,
+            entries: {
+              $filter: {
+                input: [
+                  {
+                    provider: 'divingFish',
+                    status: '$autoExportResult.divingFish.status',
+                  },
+                  {
+                    provider: 'lxns',
+                    status: '$autoExportResult.lxns.status',
+                  },
+                ],
+                as: 'e',
+                cond: { $ne: ['$$e.status', null] },
+              },
+            },
+          },
+        },
+        { $unwind: '$entries' },
+        {
+          $group: {
+            _id: {
+              hr: {
+                $dateToString: {
+                  format: bucketFmt,
+                  date: '$createdAt',
+                  timezone: 'Asia/Shanghai',
+                },
+              },
+              provider: '$entries.provider',
+              status: '$entries.status',
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ])
+      .exec();
+    type ExportBucket = {
+      label: string;
+      divingFish: { success: number; failed: number };
+      lxns: { success: number; failed: number };
+    };
+    const exportBucketMap = new Map<string, ExportBucket>();
+    for (const r of exportRows) {
+      let b = exportBucketMap.get(r._id.hr);
+      if (!b) {
+        b = {
+          label: r._id.hr,
+          divingFish: { success: 0, failed: 0 },
+          lxns: { success: 0, failed: 0 },
+        };
+        exportBucketMap.set(r._id.hr, b);
+      }
+      const provider = r._id.provider as 'divingFish' | 'lxns';
+      const status = r._id.status as 'success' | 'failed';
+      if (status === 'success' || status === 'failed') {
+        b[provider][status] += r.count;
+      }
+    }
+    const timeline = [...exportBucketMap.values()].sort((a, b) =>
+      a.label.localeCompare(b.label),
+    );
+
+    // Top failure messages
+    const topFailures = await this.jobModel
+      .aggregate<{
+        _id: { provider: string; message: string };
+        count: number;
+        lastSeen: Date;
+      }>([
+        {
+          $match: { createdAt: { $gte: since }, autoExportResult: { $ne: null } },
+        },
+        {
+          $project: {
+            createdAt: 1,
+            df: '$autoExportResult.divingFish',
+            lxns: '$autoExportResult.lxns',
+          },
+        },
+        {
+          $project: {
+            createdAt: 1,
+            entries: {
+              $concatArrays: [
+                {
+                  $cond: [
+                    { $eq: ['$df.status', 'failed'] },
+                    [
+                      {
+                        provider: 'divingFish',
+                        message: { $ifNull: ['$df.message', 'unknown'] },
+                      },
+                    ],
+                    [],
+                  ],
+                },
+                {
+                  $cond: [
+                    { $eq: ['$lxns.status', 'failed'] },
+                    [
+                      {
+                        provider: 'lxns',
+                        message: { $ifNull: ['$lxns.message', 'unknown'] },
+                      },
+                    ],
+                    [],
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        { $unwind: '$entries' },
+        {
+          $group: {
+            _id: {
+              provider: '$entries.provider',
+              message: { $substrCP: ['$entries.message', 0, 200] },
+            },
+            count: { $sum: 1 },
+            lastSeen: { $max: '$createdAt' },
+          },
+        },
+        { $sort: { count: -1 } },
+        { $limit: 30 },
+      ])
+      .exec();
+    const failures = topFailures.map((r) => ({
+      provider: r._id.provider,
+      message: r._id.message,
+      count: r.count,
+      lastSeenAt: r.lastSeen.toISOString(),
+    }));
+
+    type ExportTotals = { success: number; failed: number; rate: number };
+    const totals: { divingFish: ExportTotals; lxns: ExportTotals } = {
+      divingFish: { success: 0, failed: 0, rate: 0 },
+      lxns: { success: 0, failed: 0, rate: 0 },
+    };
+    for (const b of timeline) {
+      totals.divingFish.success += b.divingFish.success;
+      totals.divingFish.failed += b.divingFish.failed;
+      totals.lxns.success += b.lxns.success;
+      totals.lxns.failed += b.lxns.failed;
+    }
+    for (const k of ['divingFish', 'lxns'] as const) {
+      const t = totals[k];
+      const total = t.success + t.failed;
+      t.rate = total > 0 ? Math.round((t.success / total) * 1000) / 10 : 0;
+    }
+
+    // Recent failures table (last 50, with friendCode + jobType for triage)
+    const recent = await this.jobModel
+      .find({
+        createdAt: { $gte: since },
+        $or: [
+          { 'autoExportResult.divingFish.status': 'failed' },
+          { 'autoExportResult.lxns.status': 'failed' },
+        ],
+      })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .select({
+        id: 1,
+        friendCode: 1,
+        jobType: 1,
+        createdAt: 1,
+        autoExportResult: 1,
+        _id: 0,
+      })
+      .lean()
+      .exec();
+
+    return {
+      window,
+      bucketMinutes,
+      generatedAt: new Date(now).toISOString(),
+      totals,
+      timeline,
+      topFailures: failures,
+      recentFailures: recent.map((r) => ({
+        jobId: r.id,
+        friendCode: r.friendCode,
+        jobType: r.jobType,
+        createdAt: r.createdAt.toISOString(),
+        divingFish: r.autoExportResult?.divingFish ?? null,
+        lxns: r.autoExportResult?.lxns ?? null,
+      })),
+    };
+  }
 }

@@ -17,6 +17,7 @@ import {
   IconBug,
   IconClock,
   IconClockBolt,
+  IconCloudUpload,
   IconDatabase,
   IconLogs,
   IconRobot,
@@ -48,6 +49,12 @@ const adminPages: AdminPageMeta[] = [
     to: "/admin/auto-update",
     icon: <IconClockBolt size={18} />,
     color: "indigo",
+  },
+  {
+    label: "查分器导出",
+    to: "/admin/prober-exports",
+    icon: <IconCloudUpload size={18} />,
+    color: "teal",
   },
   {
     label: "数据同步",

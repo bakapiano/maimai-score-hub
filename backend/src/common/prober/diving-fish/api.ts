@@ -140,38 +140,65 @@ export type UploadRecordsResponse = {
 };
 
 /**
- * 上传成绩记录到水鱼查分器
+ * 上传成绩记录到水鱼查分器。
+ *
+ * 国服晚上 21-22 点水鱼经常 5xx（实测失败率 45%-65%）。加指数退避 retry：
+ *   - 仅在网络错误 / 5xx 时 retry
+ *   - 4xx (token 失效 / 数据错) 立即抛出
+ *   - 退避序列：3s → 12s → 48s（共 ~63s 跨度），3 次尝试
+ * 这样大多数瞬时 5xx 能被吸收，永久错误不会浪费时间。
  */
 export async function uploadRecords(
   records: DivingFishRecord[],
   importToken: string,
 ): Promise<UploadRecordsResponse> {
-  const res = await fetch(`${BASE_URL}/player/update_records`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Import-Token': importToken,
-    },
-    body: JSON.stringify(records),
-  });
+  const backoffMs = [0, 3_000, 12_000, 48_000];
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < backoffMs.length; attempt++) {
+    if (backoffMs[attempt] > 0) {
+      await new Promise((r) => setTimeout(r, backoffMs[attempt]));
+    }
+    let result: { ok: boolean; status: number; data: unknown };
+    try {
+      const res = await fetch(`${BASE_URL}/player/update_records`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Import-Token': importToken,
+        },
+        body: JSON.stringify(records),
+      });
 
-  const text = await res.text();
-  let data: unknown = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
-  }
+      const text = await res.text();
+      let data: unknown = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = text;
+      }
+      result = { ok: res.ok, status: res.status, data };
+    } catch (err) {
+      // 网络错误 / fetch reject — 当 5xx 处理，走 retry
+      lastErr = err;
+      continue;
+    }
 
-  if (!res.ok) {
-    const detail = typeof data === 'string' ? data : JSON.stringify(data);
-    throw new Error(
-      `Diving-fish responded ${res.status}${detail ? `: ${detail}` : ''}`,
+    if (result.ok) {
+      return { status: result.status, data: result.data };
+    }
+    const detail =
+      typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+    const err = new Error(
+      `Diving-fish responded ${result.status}${detail ? `: ${detail}` : ''}`,
     );
+    // 4xx 立即抛出（token 失效 / 数据错，retry 没用）
+    if (result.status >= 400 && result.status < 500) {
+      throw err;
+    }
+    // 5xx 走 retry
+    lastErr = err;
   }
-
-  return {
-    status: res.status,
-    data,
-  };
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error('Diving-fish upload failed after retries');
 }

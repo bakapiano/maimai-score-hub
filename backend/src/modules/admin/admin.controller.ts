@@ -158,6 +158,17 @@ export class AdminController {
     return this.adminService.getAutoUpdateMetrics(w);
   }
 
+  /**
+   * Aggregated stats for prober auto-export across ALL job types
+   * (not limited to auto-update). Source: jobs.autoExportResult.
+   */
+  @Get('prober-export-metrics')
+  @UseGuards(AdminGuard)
+  async getProberExportMetrics(@Query('window') window?: string) {
+    const w: '24h' | '7d' = window === '7d' ? '7d' : '24h';
+    return this.adminService.getProberExportMetrics(w);
+  }
+
   @Get('job-trend')
   @UseGuards(AdminGuard)
   async getJobTrend(@Query('hours') hoursStr?: string) {
