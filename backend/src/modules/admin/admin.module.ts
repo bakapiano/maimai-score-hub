@@ -7,6 +7,10 @@ import {
   WorkerLogEntity,
   WorkerLogSchema,
 } from '../worker-logs/worker-log.schema';
+import {
+  AutoUpdateRunEntity,
+  AutoUpdateRunSchema,
+} from '../auto-update/auto-update-run.schema';
 
 import { AdminController } from './admin.controller';
 import { AdminGuard } from './admin.guard';
@@ -43,6 +47,7 @@ import { UsersModule } from '../users/users.module';
       },
       { name: NotifyStateEntity.name, schema: NotifyStateSchema },
       { name: WorkerLogEntity.name, schema: WorkerLogSchema },
+      { name: AutoUpdateRunEntity.name, schema: AutoUpdateRunSchema },
     ]),
     CoverModule,
     MusicModule,

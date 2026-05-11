@@ -7,6 +7,7 @@ import { SyncEntity } from '../sync/sync.schema';
 import { JobEntity } from '../job/job.schema';
 import { BotStatusEntity } from './bot-status.schema';
 import { WorkerLogEntity } from '../worker-logs/worker-log.schema';
+import { AutoUpdateRunEntity } from '../auto-update/auto-update-run.schema';
 import { CoverService } from '../cover/cover.service';
 import { MusicService } from '../music/music.service';
 
@@ -110,6 +111,8 @@ export class AdminService {
     private readonly botStatusModel: Model<BotStatusEntity>,
     @InjectModel(WorkerLogEntity.name)
     private readonly workerLogModel: Model<WorkerLogEntity>,
+    @InjectModel(AutoUpdateRunEntity.name)
+    private readonly autoUpdateRunModel: Model<AutoUpdateRunEntity>,
     private readonly coverService: CoverService,
     private readonly musicService: MusicService,
   ) {}
@@ -580,19 +583,20 @@ export class AdminService {
     const bucketMs = bucketMinutes * 60 * 1000;
     const since = new Date(now - windowMs);
 
-    // ---- (1) timeline: jobs created in window ----
-    // We only have the user's own actions from the auto sweep when
-    // jobType === 'idle_update_score' (sweep-created). The "skipped"
-    // axis isn't directly stored — but worker_logs captures the
-    // sweep summary line `auto-update sweep done: X triggered, Y
-    // skipped, Z failed (of N users)` once per tick. Easier path:
-    // parse those summary lines for triggered/skipped/failed.
-    const sweepLogs = await this.workerLogModel
+    // ---- (1) timeline: aggregate per-bucket sweep stats from
+    // auto_update_runs (one doc per cron tick, source of truth for
+    // triggered/skippedNoChange/failed) instead of grepping logs.
+    const runDocs = await this.autoUpdateRunModel
       .find({
-        ts: { $gte: since },
-        message: /auto-update sweep done:/,
+        triggeredAt: { $gte: since },
       })
-      .select({ ts: 1, message: 1 })
+      .select({
+        triggeredAt: 1,
+        triggered: 1,
+        skippedNoChange: 1,
+        failed: 1,
+        totalUsers: 1,
+      })
       .lean()
       .exec();
     type Bucket = {
@@ -619,14 +623,12 @@ export class AdminService {
       }
       return b;
     };
-    const sweepRe = /(\d+)\s+triggered,\s+(\d+)\s+skipped,\s+(\d+)\s+failed/;
-    for (const log of sweepLogs) {
-      const m = sweepRe.exec(log.message ?? '');
-      if (!m) continue;
-      const b = ensureBucket(bucketKey(log.ts));
-      b.triggered += Number(m[1]);
-      b.skipped += Number(m[2]);
-      b.failed += Number(m[3]);
+    for (const r of runDocs) {
+      if (!r.triggeredAt) continue;
+      const b = ensureBucket(bucketKey(r.triggeredAt));
+      b.triggered += r.triggered ?? 0;
+      b.skipped += r.skippedNoChange ?? 0;
+      b.failed += r.failed ?? 0;
       b.sweepCount += 1;
     }
 
