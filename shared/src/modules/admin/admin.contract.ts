@@ -106,6 +106,20 @@ export const adminContract = c.router({
     body: UpdateBotCabinetUserIdBodySchema,
     responses: { 200: c.type<{ ok: true }>() },
   },
+  removeBot: {
+    method: 'DELETE',
+    path: '/admin/bot-status/:friendCode',
+    headers: c.type<{ 'x-admin-password': string }>(),
+    body: c.noBody(),
+    responses: {
+      200: c.type<{
+        ok: true;
+        botStatusDeleted: number;
+        snapshotDeleted: number;
+        usersUnpinned: number;
+      }>(),
+    },
+  },
   getJobApiLogs: {
     method: 'GET',
     path: '/admin/jobs/:jobId/api-logs',

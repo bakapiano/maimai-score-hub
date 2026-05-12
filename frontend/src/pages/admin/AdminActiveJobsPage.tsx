@@ -167,6 +167,48 @@ export default function AdminActiveJobsPage() {
     [password, editCabinetValue],
   );
 
+  const removeBot = useCallback(
+    async (friendCode: string) => {
+      if (!password) return;
+      if (
+        !window.confirm(
+          `确定删除 bot ${friendCode}？\n如该 bot worker 仍在运行，下次心跳（60s）会自动重新出现；只清理 admin UI 上的死残留。`,
+        )
+      )
+        return;
+      const res = await fetch(
+        `/api/admin/bot-status/${encodeURIComponent(friendCode)}`,
+        {
+          method: "DELETE",
+          headers: { "x-admin-password": password },
+        },
+      );
+      if (!res.ok) {
+        notifications.show({
+          color: "red",
+          title: "删除失败",
+          message: `HTTP ${res.status}`,
+        });
+        return;
+      }
+      const body = (await res.json().catch(() => ({}))) as {
+        usersUnpinned?: number;
+      };
+      setBotStatuses(
+        (prev) => prev?.filter((b) => b.friendCode !== friendCode) ?? null,
+      );
+      notifications.show({
+        color: "green",
+        message: `已删除 bot${
+          body.usersUnpinned
+            ? ` (顺带清除 ${body.usersUnpinned} 个用户的 idle 绑定)`
+            : ""
+        }`,
+      });
+    },
+    [password],
+  );
+
   const bindCabinetByQr = useCallback(
     async (friendCode: string) => {
       if (!password) return;
@@ -428,6 +470,7 @@ export default function AdminActiveJobsPage() {
                   <Table.Th>备注</Table.Th>
                   <Table.Th>Cabinet UserId</Table.Th>
                   <Table.Th>最近上报时间</Table.Th>
+                  <Table.Th>操作</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -589,6 +632,17 @@ export default function AdminActiveJobsPage() {
                           second: "2-digit",
                         })}
                       </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="red"
+                        title="删除 bot（worker 还活就会自己回来）"
+                        onClick={() => void removeBot(bot.friendCode)}
+                      >
+                        <IconTrash size={14} />
+                      </ActionIcon>
                     </Table.Td>
                   </Table.Tr>
                 ))}

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Patch,
   Post,
@@ -133,6 +134,24 @@ export class AdminController {
   ) {
     await this.botStatusService.setCabinetUserId(friendCode, body.cabinetUserId);
     return { ok: true };
+  }
+
+  /**
+   * Remove a bot row from the bot_statuses collection.
+   * Use case: bot's worker is permanently dead and the row clutters
+   * admin UI. If the worker is actually still alive its next 60s
+   * heartbeat will recreate the row, so this is safe — there's no
+   * "blacklist" semantic. Also nulls out user.idleUpdateBotFriendCode
+   * pointers to avoid dangling references.
+   */
+  @Delete('bot-status/:friendCode')
+  @UseGuards(AdminGuard)
+  async removeBot(@Param('friendCode') friendCode: string) {
+    if (!friendCode || !/^\d+$/.test(friendCode)) {
+      throw new BadRequestException('friendCode must be a numeric string');
+    }
+    const result = await this.botStatusService.remove(friendCode);
+    return { ok: true, ...result };
   }
 
   @Get('stats')

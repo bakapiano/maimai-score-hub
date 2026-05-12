@@ -877,12 +877,26 @@ export class JobService {
     ) {
       await this.syncService.createFromJob(updated.toObject() as JobEntity);
 
-      // Fire-and-forget auto-export
-      this.runAutoExport(jobId, updated.friendCode).catch((err: Error) => {
-        this.logger.error(
-          `Auto-export failed for job ${jobId}: ${err?.message}`,
-        );
-      });
+      // Auto-export is fire-and-forget. Worker may PATCH a completed job
+      // multiple times (e.g. retried bookkeeping update), and each PATCH
+      // hits this branch — without the autoExportResult guard we'd
+      // re-run the export every time, hammering diving-fish/lxns.
+      // Use atomic findOneAndUpdate so concurrent patches in the same
+      // backend replica race only one winner.
+      const claimed = await this.jobModel
+        .findOneAndUpdate(
+          { id: jobId, autoExportResult: null },
+          { $set: { autoExportResult: { divingFish: null, lxns: null } } },
+          { new: true },
+        )
+        .exec();
+      if (claimed) {
+        this.runAutoExport(jobId, updated.friendCode).catch((err: Error) => {
+          this.logger.error(
+            `Auto-export failed for job ${jobId}: ${err?.message}`,
+          );
+        });
+      }
     }
 
     // Auto-update bookkeeping: when an idle_update_score job that was

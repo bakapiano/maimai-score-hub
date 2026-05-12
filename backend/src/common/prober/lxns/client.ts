@@ -12,13 +12,13 @@ type UploadResponse = {
 
 /**
  * 上传成绩到 LXNS。和 diving-fish 一样加指数退避 retry：
- * 网络错误 / 5xx 退避序列 3s → 12s → 48s（共 ~63s 跨度），4xx 立即抛。
+ * 网络错误 / 5xx 退避序列 0 → 15s → 60s → 240s（共 ~315s 跨度），4xx 立即抛。
  */
 export async function uploadLxnsScores(
   scores: LxnsScore[],
   token: string,
 ): Promise<UploadResponse> {
-  const backoffMs = [0, 3_000, 12_000, 48_000];
+  const backoffMs = [0, 15_000, 60_000, 240_000];
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < backoffMs.length; attempt++) {
     if (backoffMs[attempt] > 0) {

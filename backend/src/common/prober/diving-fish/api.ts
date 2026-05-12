@@ -142,17 +142,18 @@ export type UploadRecordsResponse = {
 /**
  * 上传成绩记录到水鱼查分器。
  *
- * 国服晚上 21-22 点水鱼经常 5xx（实测失败率 45%-65%）。加指数退避 retry：
+ * 国服晚上 21-22 点水鱼经常 5xx（实测高峰 65% 失败），且这种"挂"
+ * 通常持续 1-3 分钟。所以 retry 跨度需要够长才能跨过单次宕机：
  *   - 仅在网络错误 / 5xx 时 retry
  *   - 4xx (token 失效 / 数据错) 立即抛出
- *   - 退避序列：3s → 12s → 48s（共 ~63s 跨度），3 次尝试
- * 这样大多数瞬时 5xx 能被吸收，永久错误不会浪费时间。
+ *   - 退避序列 0 → 15s → 60s → 240s（共 ~315s 跨度，4 次尝试）
+ * 越早的 retry 越激进（短宕机），越后越保守（深度宕机给水鱼缓口气）。
  */
 export async function uploadRecords(
   records: DivingFishRecord[],
   importToken: string,
 ): Promise<UploadRecordsResponse> {
-  const backoffMs = [0, 3_000, 12_000, 48_000];
+  const backoffMs = [0, 15_000, 60_000, 240_000];
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < backoffMs.length; attempt++) {
     if (backoffMs[attempt] > 0) {
