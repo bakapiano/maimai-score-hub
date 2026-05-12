@@ -1,5 +1,13 @@
 /**
  * Diving-Fish (水鱼查分器) API 客户端
+ *
+ * 国服晚上 16:00-22:00 BJT 经常 5xx，单次宕机 1-3 分钟。所有调用都包
+ * 同款指数退避 retry，但分两套：
+ *   - 用户交互路径 (login / getProfile / refreshImportToken)：跨度
+ *     ~10s（用户在前端等着，太长会卡 UI），救得了瞬时抖动
+ *   - 后台导出 (uploadRecords)：跨度 ~315s（异步跑，能跨过整个宕机窗口）
+ * 5xx + 网络错误 retry，4xx 立即抛（4xx 通常是 token 失效 / 输入错，
+ * retry 救不了）。
  */
 
 const BASE_URL = 'https://www.diving-fish.com/api/maimaidxprober';
@@ -9,6 +17,54 @@ const DEFAULT_HEADERS = {
   Origin: 'https://www.diving-fish.com',
   Referer: 'https://www.diving-fish.com/maimaidx/prober/',
 };
+
+/** Short backoff for user-facing requests (~10s total). */
+const SHORT_BACKOFF_MS = [0, 1_000, 3_000, 6_000];
+/** Long backoff for background exports (~315s total). */
+const LONG_BACKOFF_MS = [0, 15_000, 60_000, 240_000];
+
+/**
+ * Fetch with exponential backoff for 5xx + network errors.
+ * Returns the Response object as-is on success (caller handles the body);
+ * throws on 4xx immediately (no retry); throws after exhausting retries
+ * for 5xx / network errors.
+ */
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  errorContext: string,
+  backoff: readonly number[] = SHORT_BACKOFF_MS,
+): Promise<Response> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < backoff.length; attempt++) {
+    if (backoff[attempt] > 0) {
+      await new Promise((r) => setTimeout(r, backoff[attempt]));
+    }
+    let res: Response;
+    try {
+      res = await fetch(url, init);
+    } catch (err) {
+      lastErr = err;
+      continue;
+    }
+    if (res.ok) return res;
+    if (res.status >= 400 && res.status < 500) {
+      // 4xx: don't retry, but include body in error
+      const text = await res.text().catch(() => '');
+      throw new Error(
+        `${errorContext} (HTTP ${res.status})${text ? `: ${text.slice(0, 200)}` : ''}`,
+      );
+    }
+    // 5xx: stash and retry
+    const text = await res.text().catch(() => '');
+    lastErr = new Error(
+      `${errorContext} (HTTP ${res.status})${text ? `: ${text.slice(0, 200)}` : ''}`,
+    );
+  }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error(`${errorContext} failed after retries`);
+}
 
 export type DivingFishProfile = {
   import_token?: string;
@@ -27,21 +83,18 @@ export async function login(
   username: string,
   password: string,
 ): Promise<DivingFishLoginResult> {
-  const res = await fetch(`${BASE_URL}/login`, {
-    method: 'POST',
-    headers: {
-      ...DEFAULT_HEADERS,
-      'Content-Type': 'application/json',
+  const res = await fetchWithRetry(
+    `${BASE_URL}/login`,
+    {
+      method: 'POST',
+      headers: {
+        ...DEFAULT_HEADERS,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username, password }),
     },
-    body: JSON.stringify({ username, password }),
-  });
-
-  if (!res.ok) {
-    const errorData = (await res.json().catch(() => null)) as {
-      message?: string;
-    } | null;
-    throw new Error(errorData?.message || `登录失败 (HTTP ${res.status})`);
-  }
+    '水鱼登录失败',
+  );
 
   // Extract jwt_token from Set-Cookie header
   const setCookieHeader = res.headers.get('set-cookie');
@@ -57,18 +110,17 @@ export async function login(
  * 获取用户 profile（需要 JWT token）
  */
 export async function getProfile(jwtToken: string): Promise<DivingFishProfile> {
-  const res = await fetch(`${BASE_URL}/player/profile`, {
-    method: 'GET',
-    headers: {
-      ...DEFAULT_HEADERS,
-      Cookie: `jwt_token=${jwtToken}`,
+  const res = await fetchWithRetry(
+    `${BASE_URL}/player/profile`,
+    {
+      method: 'GET',
+      headers: {
+        ...DEFAULT_HEADERS,
+        Cookie: `jwt_token=${jwtToken}`,
+      },
     },
-  });
-
-  if (!res.ok) {
-    throw new Error(`获取用户信息失败 (HTTP ${res.status})`);
-  }
-
+    '获取用户信息失败',
+  );
   return res.json() as Promise<DivingFishProfile>;
 }
 
@@ -77,17 +129,17 @@ export async function getProfile(jwtToken: string): Promise<DivingFishProfile> {
  * 注意：这会覆盖原有的 import token
  */
 export async function refreshImportToken(jwtToken: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/player/import_token`, {
-    method: 'PUT',
-    headers: {
-      ...DEFAULT_HEADERS,
-      Cookie: `jwt_token=${jwtToken}`,
+  await fetchWithRetry(
+    `${BASE_URL}/player/import_token`,
+    {
+      method: 'PUT',
+      headers: {
+        ...DEFAULT_HEADERS,
+        Cookie: `jwt_token=${jwtToken}`,
+      },
     },
-  });
-
-  if (!res.ok) {
-    throw new Error(`刷新 import token 失败 (HTTP ${res.status})`);
-  }
+    '刷新 import token 失败',
+  );
 }
 
 /**
@@ -140,66 +192,32 @@ export type UploadRecordsResponse = {
 };
 
 /**
- * 上传成绩记录到水鱼查分器。
- *
- * 国服晚上 21-22 点水鱼经常 5xx（实测高峰 65% 失败），且这种"挂"
- * 通常持续 1-3 分钟。所以 retry 跨度需要够长才能跨过单次宕机：
- *   - 仅在网络错误 / 5xx 时 retry
- *   - 4xx (token 失效 / 数据错) 立即抛出
- *   - 退避序列 0 → 15s → 60s → 240s（共 ~315s 跨度，4 次尝试）
- * 越早的 retry 越激进（短宕机），越后越保守（深度宕机给水鱼缓口气）。
+ * 上传成绩记录到水鱼查分器（异步后台路径，使用 LONG_BACKOFF 跨度
+ * ~315s，能跨过水鱼整个宕机窗口）。
  */
 export async function uploadRecords(
   records: DivingFishRecord[],
   importToken: string,
 ): Promise<UploadRecordsResponse> {
-  const backoffMs = [0, 15_000, 60_000, 240_000];
-  let lastErr: unknown = null;
-  for (let attempt = 0; attempt < backoffMs.length; attempt++) {
-    if (backoffMs[attempt] > 0) {
-      await new Promise((r) => setTimeout(r, backoffMs[attempt]));
-    }
-    let result: { ok: boolean; status: number; data: unknown };
-    try {
-      const res = await fetch(`${BASE_URL}/player/update_records`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Import-Token': importToken,
-        },
-        body: JSON.stringify(records),
-      });
-
-      const text = await res.text();
-      let data: unknown = null;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        data = text;
-      }
-      result = { ok: res.ok, status: res.status, data };
-    } catch (err) {
-      // 网络错误 / fetch reject — 当 5xx 处理，走 retry
-      lastErr = err;
-      continue;
-    }
-
-    if (result.ok) {
-      return { status: result.status, data: result.data };
-    }
-    const detail =
-      typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
-    const err = new Error(
-      `Diving-fish responded ${result.status}${detail ? `: ${detail}` : ''}`,
-    );
-    // 4xx 立即抛出（token 失效 / 数据错，retry 没用）
-    if (result.status >= 400 && result.status < 500) {
-      throw err;
-    }
-    // 5xx 走 retry
-    lastErr = err;
+  const res = await fetchWithRetry(
+    `${BASE_URL}/player/update_records`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Import-Token': importToken,
+      },
+      body: JSON.stringify(records),
+    },
+    'Diving-fish responded',
+    LONG_BACKOFF_MS,
+  );
+  const text = await res.text();
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
   }
-  throw lastErr instanceof Error
-    ? lastErr
-    : new Error('Diving-fish upload failed after retries');
+  return { status: res.status, data };
 }
