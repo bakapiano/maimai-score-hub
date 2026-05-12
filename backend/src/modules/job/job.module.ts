@@ -1,5 +1,6 @@
 import { JobApiLogEntity, JobApiLogSchema } from './api-log/api-log.schema';
 import { JobEntity, JobSchema } from './job.schema';
+import { MusicEntity, MusicSchema } from '../music/music.schema';
 import {
   JobTempCacheEntity,
   JobTempCacheSchema,
@@ -33,6 +34,7 @@ import { UsersModule } from '../users/users.module';
       { name: JobTempCacheEntity.name, schema: JobTempCacheSchema },
       { name: JobApiLogEntity.name, schema: JobApiLogSchema },
       { name: IdleUpdateLogEntity.name, schema: IdleUpdateLogSchema },
+      { name: MusicEntity.name, schema: MusicSchema },
     ]),
     SdgbWorkerModule,
     forwardRef(() => SyncModule),

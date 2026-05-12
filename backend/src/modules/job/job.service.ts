@@ -13,6 +13,7 @@ import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
 
 import { SyncService } from '../sync/sync.service';
 import { UsersService } from '../users/users.service';
+import { MusicEntity } from '../music/music.schema';
 import { JobTempCacheService } from './cache/temp-cache.service';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
 import { BotStatusService } from '../admin/bot-status.service';
@@ -95,6 +96,8 @@ export class JobService {
   constructor(
     @InjectModel(JobEntity.name)
     private readonly jobModel: Model<JobEntity>,
+    @InjectModel(MusicEntity.name)
+    private readonly musicModel: Model<MusicEntity>,
     private readonly syncService: SyncService,
     private readonly tempCacheService: JobTempCacheService,
     @Inject(forwardRef(() => UsersService))
@@ -103,6 +106,38 @@ export class JobService {
     @Inject(forwardRef(() => BotStatusService))
     private readonly botStatus: BotStatusService,
   ) {}
+
+  /**
+   * Cached set of musicIds we know about (from mongo `musics` collection).
+   * Used by the cabinet diff algorithm to ignore "unknown" musicIds —
+   * cabinet returns ~86 entries for fc=634142510810999 whose musicId
+   * doesn't exist in our music data (probably old/delisted standard
+   * charts not in the diving-fish source). Without this filter, those
+   * unknown IDs are counted as "new charts" → wrongly inflate
+   * diffsToScrape and force the worker to scrape useless friend-VS
+   * pages.
+   *
+   * 5-minute TTL is plenty: musics table only updates from a 6h cron.
+   */
+  private validMusicIdsCache: { ids: Set<string>; at: number } | null = null;
+  private async getValidMusicIds(): Promise<Set<string>> {
+    const now = Date.now();
+    if (
+      this.validMusicIdsCache &&
+      now - this.validMusicIdsCache.at < 5 * 60 * 1000
+    ) {
+      return this.validMusicIdsCache.ids;
+    }
+    const docs = await this.musicModel
+      .find({}, { id: 1, _id: 0 })
+      .lean()
+      .exec();
+    const ids = new Set<string>(
+      docs.map((d) => String((d as { id: string }).id)),
+    );
+    this.validMusicIdsCache = { ids, at: now };
+    return ids;
+  }
 
   async create(input: {
     friendCode: string;
@@ -319,6 +354,15 @@ export class JobService {
                   // Compute diffsToScrape if caller didn't already.
                   if (input.diffsToScrape == null) {
                     try {
+                      // Filter out cabinet entries whose musicId we
+                      // don't have in our music data (e.g. delisted
+                      // standard charts cabinet still returns). Without
+                      // this, every such entry counts as a "new chart"
+                      // and inflates diffsToScrape to cover all diffs,
+                      // which makes the worker scrape useless friend-VS
+                      // pages — exactly the symptom we saw on
+                      // fc=634142510810999 (86 unknown ids → diffs=[0,1,2,3,4]).
+                      const validIds = await this.getValidMusicIds();
                       const prev = await this.syncService
                         .getLatestWithScores(input.friendCode)
                         .catch(() => null);
@@ -340,9 +384,16 @@ export class JobService {
                           });
                         }
                         const changedDiffs = new Set<number>();
+                        let skippedUnknown = 0;
                         for (const [key, cur] of Object.entries(
                           cabinetScoreMap,
                         )) {
+                          const lastUnderscore = key.lastIndexOf('_');
+                          const musicId = key.slice(0, lastUnderscore);
+                          if (!validIds.has(musicId)) {
+                            skippedUnknown++;
+                            continue;
+                          }
                           const before = prevMap.get(key);
                           if (
                             !before ||
@@ -350,11 +401,16 @@ export class JobService {
                             before.dxScore !== cur.dxScore
                           ) {
                             const lvl = parseInt(
-                              key.split('_')[1] ?? '',
+                              key.slice(lastUnderscore + 1),
                               10,
                             );
                             if (Number.isFinite(lvl)) changedDiffs.add(lvl);
                           }
+                        }
+                        if (skippedUnknown > 0) {
+                          this.logger.log(
+                            `Cabinet diff fc=${input.friendCode}: skipped ${skippedUnknown} unknown musicIds (not in db)`,
+                          );
                         }
                         if (changedDiffs.size > 0) {
                           input.diffsToScrape = [...changedDiffs].sort(
