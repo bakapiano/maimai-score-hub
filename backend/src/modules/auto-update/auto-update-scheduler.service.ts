@@ -367,80 +367,12 @@ export class AutoUpdateSchedulerService
       );
     }
 
-    // Flatten cabinet music to "<musicId>_<chartIndex>" → {achievement,dxScore}.
-    // sdgb returns achievement * 10000 (so 100.3107% = 1003107) and
-    // deluxscoreMax as the dxScore int. We keep these in their native
-    // ints; worker's score-aggregator converts to display strings.
-    const cabinetScoreMap: Record<string, { achievement: number; dxScore: number }> = {};
-    for (const m of cabinetMusic) {
-      for (const d of m.userRivalMusicDetailList ?? []) {
-        cabinetScoreMap[`${m.musicId}_${d.level}`] = {
-          achievement: d.achievement,
-          dxScore: d.deluxscoreMax,
-        };
-      }
-    }
-
-    // Diff vs last sync to decide which difficulties actually need
-    // friend-VS scraping. Worker still needs to scrape at least one
-    // friend-VS page per (diff) to pick up fc/fs (cabinet doesn't
-    // expose those), but only for diffs with changed (achievement OR
-    // dxScore) on at least one chart.
-    let diffsToScrape: number[] | null = null;
-    try {
-      const prev = await this.syncService
-        .getLatestWithScores(friendCode)
-        .catch(() => null);
-      if (prev && Array.isArray(prev.scores)) {
-        const prevMap = new Map<
-          string,
-          { achievement: number; dxScore: number }
-        >();
-        for (const s of prev.scores) {
-          // sync stores achievement as "100.3107%" string; normalize back to int.
-          const ach = s.score
-            ? Math.round(parseFloat(String(s.score)) * 10000)
-            : 0;
-          const dx = s.dxScore ? parseInt(String(s.dxScore), 10) || 0 : 0;
-          prevMap.set(`${s.musicId}_${s.chartIndex}`, {
-            achievement: ach,
-            dxScore: dx,
-          });
-        }
-        const changedDiffs = new Set<number>();
-        for (const [key, cur] of Object.entries(cabinetScoreMap)) {
-          const before = prevMap.get(key);
-          if (
-            !before ||
-            before.achievement !== cur.achievement ||
-            before.dxScore !== cur.dxScore
-          ) {
-            const lvl = parseInt(key.split('_')[1] ?? '', 10);
-            if (Number.isFinite(lvl)) changedDiffs.add(lvl);
-          }
-        }
-        if (changedDiffs.size > 0) {
-          diffsToScrape = [...changedDiffs].sort((a, b) => a - b);
-          this.logger.log(
-            `auto-update fc=${friendCode}: cabinet diff → scraping diffs [${diffsToScrape.join(',')}] only`,
-          );
-        } else {
-          // Hash changed but no per-chart diff matched — possibly score
-          // formatting drift. Fall back to default diff list (let worker
-          // scrape its normal set) to avoid silently scraping nothing.
-          this.logger.warn(
-            `auto-update fc=${friendCode}: hash changed but no chart-level diff; using default diffs`,
-          );
-        }
-      }
-      // No prev sync (first ever sync for this user) → leave
-      // diffsToScrape=null so worker scrapes its full default set.
-    } catch (err) {
-      this.logger.warn(
-        `auto-update fc=${friendCode}: diff calc failed, falling back to default diffs: ${err instanceof Error ? err.message : err}`,
-      );
-    }
-
+    // We just made a getRivalHash call (the hash check) and got the
+    // music back. Pass it straight through to JobService.create —
+    // JobService is the central place that derives cabinetScoreMap +
+    // diffsToScrape (and admin trigger / immediate path use the same
+    // logic). Without this transit JobService would make a redundant
+    // sdgb call.
     await Promise.all([
       this.sdgb
         .addRival(
@@ -470,8 +402,7 @@ export class AutoUpdateSchedulerService
           botUserFriendCode: bot.friendCode,
           isAuthenticated: true,
           sourceScoreHash,
-          cabinetScoreMap,
-          diffsToScrape,
+          cabinetMusic,
         })
         .then(({ jobId }) =>
           this.logger.log(

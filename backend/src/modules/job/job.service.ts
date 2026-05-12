@@ -9,6 +9,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { randomUUID } from 'crypto';
+import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
 
 import { SyncService } from '../sync/sync.service';
 import { UsersService } from '../users/users.service';
@@ -131,6 +132,15 @@ export class JobService {
      * absent, worker uses its default diff list.
      */
     diffsToScrape?: number[] | null;
+    /**
+     * Pre-fetched cabinet music from a recent sdgb getRivalHash. When
+     * the caller (e.g. AutoUpdateScheduler.runSweep) just made the
+     * call, it can hand the result here so JobService doesn't make a
+     * redundant sdgb call. Used to derive cabinetScoreMap +
+     * diffsToScrape in one place instead of duplicating logic at every
+     * job-create caller.
+     */
+    cabinetMusic?: SdgbWorkerMusicEntry[] | null;
   }) {
     const id = randomUUID();
     const now = new Date();
@@ -201,7 +211,7 @@ export class JobService {
         const userCabinetUid = (user as { cabinetUserId?: number | null } | null)
           ?.cabinetUserId;
         if (userCabinetUid != null) {
-          // 找当前要用的 bot — 调用方指定就用指定的；否则自动选一个有 cabinetUserId 的
+          // Pick the bot — caller-specified or auto-pick.
           let botCabinetUid: number | null = null;
           let botFc: string | null = input.botUserFriendCode ?? null;
           if (botFc) {
@@ -213,14 +223,39 @@ export class JobService {
             if (picked) {
               botFc = picked.friendCode;
               botCabinetUid = picked.cabinetUserId ?? null;
-              // Tell the rest of create() about the chosen bot so the
-              // job row is pre-assigned and worker.claimNext sees it.
               input.botUserFriendCode = botFc;
             }
           }
+
           if (botCabinetUid != null && botFc) {
-            if (resolvedJobType === 'idle_update_score') {
-              // Scheduler already addRival'd; this is best-effort backup.
+            // ── addRival ────────────────────────────────────────
+            // immediate: synchronous, fall back to send_request on
+            // failure so the user can complete via the friend-request
+            // flow instead of staring at a stuck stage=update_score.
+            // idle_update_score: scheduler already addRival'd before
+            // enqueue, this is best-effort backup.
+            let addRivalOk = true;
+            if (resolvedJobType === 'immediate') {
+              try {
+                const r = await this.sdgb.addRival(
+                  {
+                    botCabinetUserId: botCabinetUid,
+                    targetCabinetUserId: userCabinetUid,
+                  },
+                  { tag: `score-update-add:${input.friendCode}`, timeoutMs: 60_000 },
+                );
+                resolvedStage = 'update_score';
+                this.logger.log(
+                  `Cabinet fast-path fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
+                );
+              } catch (err) {
+                addRivalOk = false;
+                this.logger.warn(
+                  `Cabinet fast-path addRival failed for fc=${input.friendCode}; falling back to send_request: ${err instanceof Error ? err.message : err}`,
+                );
+              }
+            } else {
+              // idle: stage already update_score from scheduler intent.
               resolvedStage = 'update_score';
               this.sdgb
                 .addRival(
@@ -232,7 +267,7 @@ export class JobService {
                 )
                 .then((r) =>
                   this.logger.log(
-                    `Cabinet-bound score-update (idle, redundant) fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
+                    `Cabinet score-update (idle, redundant) fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
                   ),
                 )
                 .catch((err) =>
@@ -240,62 +275,115 @@ export class JobService {
                     `addRival (idle redundant) failed: ${err instanceof Error ? err.message : err}`,
                   ),
                 );
-            } else {
-              // immediate: await; on failure roll back to send_request so
-              // the user can still complete via the friend-request flow.
-              try {
-                const r = await this.sdgb.addRival(
-                  {
-                    botCabinetUserId: botCabinetUid,
-                    targetCabinetUserId: userCabinetUid,
-                  },
-                  { tag: `score-update-add:${input.friendCode}`, timeoutMs: 60_000 },
-                );
-                resolvedStage = 'update_score';
-                this.logger.log(
-                  `Cabinet-bound score-update fast-path fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
-                );
+            }
 
-                // Best-effort: while we're already talking to sdgb, grab
-                // the current cabinet music so the worker can skip the
-                // friend-VS scoreType=1 (dxScore) pass — cabinet is
-                // authoritative for dxScore + achievement, worker only
-                // needs scoreType=2 to pick up fc/fs. If this fails the
-                // worker just falls back to scraping both passes.
-                try {
-                  const { music } = await this.sdgb.getRivalHash(
+            // ── cabinet music + diff calc (all score-update jobs) ──
+            // Capture cabinet's per-chart achievement/dxScore + diff
+            // against last sync to derive cabinetScoreMap +
+            // diffsToScrape. These let the worker skip half the
+            // friend-VS requests and skip unchanged diffs entirely.
+            //
+            // Only attempt if addRival worked (immediate path) — if
+            // sdgb is broken there's no point trying again.
+            if (addRivalOk && input.cabinetScoreMap == null) {
+              try {
+                let music = input.cabinetMusic ?? null;
+                if (!music) {
+                  // Caller didn't pre-fetch (e.g. immediate path,
+                  // admin trigger, idle scheduler that didn't pass
+                  // music) — make our own sdgb call.
+                  const r = await this.sdgb.getRivalHash(
                     { cabinetUserId: userCabinetUid },
-                    { tag: `score-update-music:${input.friendCode}`, timeoutMs: 60_000 },
+                    {
+                      tag: `score-update-music:${input.friendCode}`,
+                      timeoutMs: 60_000,
+                    },
                   );
-                  const cabinetScoreMap: Record<
-                    string,
-                    { achievement: number; dxScore: number }
-                  > = {};
-                  for (const m of music) {
-                    for (const d of m.userRivalMusicDetailList ?? []) {
-                      cabinetScoreMap[`${m.musicId}_${d.level}`] = {
-                        achievement: d.achievement,
-                        dxScore: d.deluxscoreMax,
-                      };
+                  music = r.music;
+                }
+                const cabinetScoreMap: Record<
+                  string,
+                  { achievement: number; dxScore: number }
+                > = {};
+                for (const m of music ?? []) {
+                  for (const d of m.userRivalMusicDetailList ?? []) {
+                    cabinetScoreMap[`${m.musicId}_${d.level}`] = {
+                      achievement: d.achievement,
+                      dxScore: d.deluxscoreMax,
+                    };
+                  }
+                }
+                if (Object.keys(cabinetScoreMap).length > 0) {
+                  input.cabinetScoreMap = cabinetScoreMap;
+
+                  // Compute diffsToScrape if caller didn't already.
+                  if (input.diffsToScrape == null) {
+                    try {
+                      const prev = await this.syncService
+                        .getLatestWithScores(input.friendCode)
+                        .catch(() => null);
+                      if (prev && Array.isArray(prev.scores)) {
+                        const prevMap = new Map<
+                          string,
+                          { achievement: number; dxScore: number }
+                        >();
+                        for (const s of prev.scores) {
+                          const ach = s.score
+                            ? Math.round(parseFloat(String(s.score)) * 10000)
+                            : 0;
+                          const dx = s.dxScore
+                            ? parseInt(String(s.dxScore), 10) || 0
+                            : 0;
+                          prevMap.set(`${s.musicId}_${s.chartIndex}`, {
+                            achievement: ach,
+                            dxScore: dx,
+                          });
+                        }
+                        const changedDiffs = new Set<number>();
+                        for (const [key, cur] of Object.entries(
+                          cabinetScoreMap,
+                        )) {
+                          const before = prevMap.get(key);
+                          if (
+                            !before ||
+                            before.achievement !== cur.achievement ||
+                            before.dxScore !== cur.dxScore
+                          ) {
+                            const lvl = parseInt(
+                              key.split('_')[1] ?? '',
+                              10,
+                            );
+                            if (Number.isFinite(lvl)) changedDiffs.add(lvl);
+                          }
+                        }
+                        if (changedDiffs.size > 0) {
+                          input.diffsToScrape = [...changedDiffs].sort(
+                            (a, b) => a - b,
+                          );
+                          this.logger.log(
+                            `Cabinet diff fc=${input.friendCode}: scraping diffs [${input.diffsToScrape.join(',')}] only (cabinet=${Object.keys(cabinetScoreMap).length} entries)`,
+                          );
+                        }
+                      }
+                    } catch (err) {
+                      this.logger.warn(
+                        `diff calc failed for fc=${input.friendCode}, worker will scrape default diffs: ${err instanceof Error ? err.message : err}`,
+                      );
                     }
                   }
-                  if (Object.keys(cabinetScoreMap).length > 0) {
-                    input.cabinetScoreMap = cabinetScoreMap;
-                    this.logger.log(
-                      `immediate fast-path: captured cabinet music for fc=${input.friendCode}, ${Object.keys(cabinetScoreMap).length} entries`,
-                    );
-                  }
-                } catch (err) {
-                  this.logger.warn(
-                    `immediate fast-path: getRivalHash failed for fc=${input.friendCode}, worker will scrape both VS passes: ${err instanceof Error ? err.message : err}`,
+
+                  this.logger.log(
+                    `Cabinet music captured for fc=${input.friendCode}: ${Object.keys(cabinetScoreMap).length} entries${
+                      input.diffsToScrape
+                        ? `, diffs=[${input.diffsToScrape.join(',')}]`
+                        : ''
+                    }`,
                   );
                 }
               } catch (err) {
                 this.logger.warn(
-                  `Cabinet fast-path addRival failed for fc=${input.friendCode}; falling back to send_request flow: ${err instanceof Error ? err.message : err}`,
+                  `cabinet music fetch failed for fc=${input.friendCode}, worker will scrape both VS passes: ${err instanceof Error ? err.message : err}`,
                 );
-                // resolvedStage stays at default (send_request), user
-                // gets the original friend-add flow.
               }
             }
           }
