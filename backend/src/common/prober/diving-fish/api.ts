@@ -194,30 +194,78 @@ export type UploadRecordsResponse = {
 /**
  * 上传成绩记录到水鱼查分器（异步后台路径，使用 LONG_BACKOFF 跨度
  * ~315s，能跨过水鱼整个宕机窗口）。
+ *
+ * 特判：500 + html body（默认 nginx 错误页）实际上 upsert 是成功的
+ * — 水鱼后端写入 DB 后渲染响应时挂掉 → 返回 500 但成绩已经入库。
+ * 重试反而会污染（虽然 upsert 幂等，但浪费 1 次请求）。所以把
+ * "500 + html" 当 success 返回。
  */
 export async function uploadRecords(
   records: DivingFishRecord[],
   importToken: string,
 ): Promise<UploadRecordsResponse> {
-  const res = await fetchWithRetry(
-    `${BASE_URL}/player/update_records`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Import-Token': importToken,
-      },
-      body: JSON.stringify(records),
-    },
-    'Diving-fish responded',
-    LONG_BACKOFF_MS,
-  );
-  const text = await res.text();
-  let data: unknown = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
+  const treatAsSuccess = (status: number, body: string): boolean => {
+    // diving-fish 500 with default flask html error page actually means
+    // "DB write succeeded, response render failed". Trigger off the
+    // "500 Internal Server Error" html signature.
+    return (
+      status === 500 &&
+      /500 Internal Server Error/i.test(body) &&
+      /<!doctype html/i.test(body)
+    );
+  };
+
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < LONG_BACKOFF_MS.length; attempt++) {
+    if (LONG_BACKOFF_MS[attempt] > 0) {
+      await new Promise((r) => setTimeout(r, LONG_BACKOFF_MS[attempt]));
+    }
+    let res: Response;
+    try {
+      res = await fetch(`${BASE_URL}/player/update_records`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Import-Token': importToken,
+        },
+        body: JSON.stringify(records),
+      });
+    } catch (err) {
+      lastErr = err;
+      continue;
+    }
+    const text = await res.text();
+    let data: unknown = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = text;
+    }
+    if (res.ok) {
+      return { status: res.status, data };
+    }
+    // Diving-fish quirk: write succeeds but response rendering 500s.
+    // Treat as success — upsert is idempotent so even if we're wrong,
+    // a follow-up retry next sweep would heal.
+    if (treatAsSuccess(res.status, text)) {
+      return {
+        status: 200,
+        data: { degraded: true, originalStatus: 500, data },
+      };
+    }
+    if (res.status >= 400 && res.status < 500) {
+      const detail = typeof data === 'string' ? data : JSON.stringify(data);
+      throw new Error(
+        `Diving-fish responded ${res.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`,
+      );
+    }
+    // 5xx without the success-signature → retry
+    const detail = typeof data === 'string' ? data : JSON.stringify(data);
+    lastErr = new Error(
+      `Diving-fish responded ${res.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`,
+    );
   }
-  return { status: res.status, data };
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error('Diving-fish upload failed after retries');
 }
