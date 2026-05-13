@@ -54,7 +54,6 @@ function toJobResponse(job: JobEntity): JobResponse {
     friendCode: job.friendCode,
     jobType: job.jobType ?? 'immediate',
     skipUpdateScore: job.skipUpdateScore,
-    fullSync: job.fullSync ?? false,
     botUserFriendCode: job.botUserFriendCode ?? null,
     friendRequestSentAt: job.friendRequestSentAt ?? null,
     status: job.status,
@@ -142,7 +141,6 @@ export class JobService {
   async create(input: {
     friendCode: string;
     skipUpdateScore: boolean;
-    fullSync?: boolean;
     jobType?: JobType;
     botUserFriendCode?: string | null;
     isAuthenticated?: boolean;
@@ -457,7 +455,6 @@ export class JobService {
       friendCode: input.friendCode,
       jobType: resolvedJobType,
       skipUpdateScore: input.skipUpdateScore,
-      fullSync: input.fullSync ?? false,
       botUserFriendCode: input.botUserFriendCode ?? null,
       friendRequestSentAt: null,
       status: 'queued',

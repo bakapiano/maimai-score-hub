@@ -70,7 +70,6 @@ export interface Job {
   friendCode: string;
   jobType?: JobType;
   skipUpdateScore?: boolean;
-  fullSync?: boolean;
   botUserFriendCode?: string | null;
   friendRequestSentAt?: string | null;
   status: JobStatus;
@@ -93,8 +92,7 @@ export interface Job {
   cabinetScoreMap?: Record<string, { achievement: number; dxScore: number }> | null;
   /**
    * If set, worker only scrapes friend-VS for these difficulties. When
-   * absent / null, worker uses its default diff list (BASIC/ADVANCED/
-   * 宴会 skipped unless fullSync is true).
+   * absent / null, worker scrapes all DIFFICULTIES.
    */
   diffsToScrape?: number[] | null;
   createdAt: Date;

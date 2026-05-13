@@ -19,9 +19,6 @@ export class JobEntity {
   @Prop({ required: true, default: false })
   skipUpdateScore!: boolean;
 
-  @Prop({ required: true, default: false })
-  fullSync!: boolean;
-
   @Prop({ type: String, default: null })
   botUserFriendCode!: string | null;
 

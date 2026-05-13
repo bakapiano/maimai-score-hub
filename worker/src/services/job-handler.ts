@@ -417,14 +417,14 @@ export class JobHandler {
     console.log(`[JobHandler] Job ${this.job.id}: Updating scores...`);
     const updateScoreStartTime = Date.now();
 
-    // 默认跳过 BASIC(0) / ADVANCED(1) / 宴会场(10)，只有显式 fullSync 才爬全部
-    const SKIP_DEFAULT = new Set([0, 1, 10]);
-    let effectiveDiffs = this.job.fullSync
-      ? [...DIFFICULTIES]
-      : DIFFICULTIES.filter((d) => !SKIP_DEFAULT.has(d));
+    // 默认爬全部难度。backend 端 cabinet diff 算法（diffsToScrape）
+    // 已经把"实际有变化"的 diff 算出来了，绝大多数情况只爬 1-2 个 diff
+    // 就够了；之前 worker 端再叠一层 SKIP_DEFAULT={0,1,10} 反而会跟
+    // diffsToScrape 取交集后变成空（用户在 BAS/ADV/宴会有变化时漏掉
+    // 更新），还把空 progress patch 发回 backend 导致 schema 校验 400。
+    let effectiveDiffs: number[] = [...DIFFICULTIES];
 
     // backend 已经基于 cabinet diff 算好"哪些 diff 真有变化"，只爬这些。
-    // 跟 fullSync / 默认 skip 取交集，确保不会反向扩大爬取范围。
     if (Array.isArray(this.job.diffsToScrape) && this.job.diffsToScrape.length > 0) {
       const requested = new Set(this.job.diffsToScrape);
       effectiveDiffs = effectiveDiffs.filter((d) => requested.has(d));
@@ -449,6 +449,27 @@ export class JobHandler {
     // 初始化进度跟踪
     const totalDiffs = effectiveDiffs.length;
     let completedCount = 0;
+
+    // Skip the entire scrape phase if backend told us nothing changed
+    // (diffsToScrape ∩ default skip = []). cabinet data still flows
+    // into sync via the result we'll post below; no need for friend-VS.
+    if (totalDiffs === 0) {
+      console.log(
+        `[JobHandler] Job ${this.job.id}: nothing to scrape (effectiveDiffs empty); cabinet-only update.`,
+      );
+      const updateScoreDuration = Date.now() - updateScoreStartTime;
+      await this.applyPatch({
+        result: {} as AggregatedScoreResult,
+        status: "completed",
+        error: null,
+        updateScoreDuration,
+        updatedAt: new Date(),
+      });
+      this.friendManager
+        .favoriteOffFriend(this.job.friendCode)
+        .catch(() => {});
+      return;
+    }
 
     // 初始化进度状态
     await this.applyPatch({

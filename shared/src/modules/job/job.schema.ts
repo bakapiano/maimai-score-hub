@@ -28,7 +28,7 @@ export const JobTypeSchema = z.enum([
 
 export const ScoreProgressSchema = z.object({
   completedDiffs: z.array(z.number().int().min(0).max(14)),
-  totalDiffs: z.number().int().min(1),
+  totalDiffs: z.number().int().min(0),
 });
 
 export const AutoExportResultSchema = z
@@ -50,7 +50,6 @@ export const JobResponseSchema = z.object({
   friendCode: z.string(),
   jobType: JobTypeSchema,
   skipUpdateScore: z.boolean(),
-  fullSync: z.boolean().optional(),
   botUserFriendCode: z.string().nullable().optional(),
   friendRequestSentAt: z.string().nullable().optional(),
   status: JobStatusSchema,
@@ -74,7 +73,6 @@ export const JobResponseSchema = z.object({
 export const JobCreateBodySchema = z.object({
   friendCode: z.string().min(1),
   skipUpdateScore: z.boolean().optional().default(false),
-  fullSync: z.boolean().optional(),
 });
 
 export const JobCreateResponseSchema = z.object({
