@@ -2,6 +2,27 @@ services:
   mongo:
     image: mongo:7
     restart: unless-stopped
+    # Cap WiredTiger cache so mongo stays well under 2GB RSS even at
+    # peak. Default formula gives ~(RAM-1)/2 = 3.3GB on Server 3 which
+    # has only 7.7GB total — kernel OOM-killed mongod on 2026-05-14
+    # because backend×2 + nginx + frontend + mongo crowded each other
+    # out. Cache is the dominant heap chunk; 1.5GB still fast for our
+    # 9.5GB working set since most reads are recent jobs (well-cached).
+    command:
+      - mongod
+      - --wiredTigerCacheSizeGB=1.5
+    deploy:
+      resources:
+        limits:
+          # Hard ceiling so the kernel never has to make the choice for us.
+          # 2GB cache + 0.5GB connection/index/etc overhead.
+          memory: 2.5G
+        reservations:
+          memory: 1G
+    # Same limit for legacy compose (no swarm) — `deploy` is ignored
+    # outside swarm mode but mem_limit takes effect for plain compose.
+    mem_limit: 2.5g
+    mem_reservation: 1g
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-root}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-example}

@@ -683,8 +683,39 @@ export class JobHandler {
    * 更新任务状态
    */
   private async applyPatch(patch: JobPatch): Promise<Job> {
-    this.job = await updateJob(this.job.id, patch);
-    return this.job;
+    // Backend's mongo OOM-killed itself once on 2026-05-14; backend
+    // came back up in ~30s but worker fetches that hit during the
+    // window died with TypeError("fetch failed") (headersTimeout).
+    // Single transient blip shouldn't fail the whole job; retry with
+    // short backoff before giving up. Stays under wait_acceptance's
+    // 5min budget so it doesn't accidentally extend other timeouts.
+    const backoffMs = [0, 1_000, 3_000];
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < backoffMs.length; attempt++) {
+      if (backoffMs[attempt] > 0) {
+        await this.sleep(backoffMs[attempt]);
+      }
+      try {
+        this.job = await updateJob(this.job.id, patch);
+        return this.job;
+      } catch (err) {
+        lastErr = err;
+        // Only retry on what looks like a transient network/timeout
+        // problem. 4xx (validation, not-found) is permanent — fail fast.
+        const msg = err instanceof Error ? err.message : String(err);
+        const transient =
+          /fetch failed|ECONNRESET|ETIMEDOUT|ECONNREFUSED|timed out|HTTP 5\d\d|Status: 5\d\d/.test(
+            msg,
+          );
+        if (!transient) throw err;
+        console.warn(
+          `[JobHandler] Job ${this.job.id} applyPatch attempt ${attempt + 1}/${backoffMs.length} failed: ${msg}; will retry`,
+        );
+      }
+    }
+    throw lastErr instanceof Error
+      ? lastErr
+      : new Error(`applyPatch failed after ${backoffMs.length} attempts`);
   }
 
   /**
