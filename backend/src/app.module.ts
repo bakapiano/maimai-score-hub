@@ -47,6 +47,14 @@ import { WorkerLogsModule } from './modules/worker-logs/worker-logs.module';
           serverSelectionTimeoutMS: 30000,
           retryWrites: true,
           retryReads: true,
+          // Cap connection pool. Default mongoose maxPoolSize is 100 per
+          // replica = 200 across our backend×2 setup; each mongo
+          // connection is ~5MB on the server side, so 200 conns alone
+          // burn ~1GB before any actual work. We never see >20
+          // concurrent queries even at peak (sweep + bot status report
+          // are well-batched). 30 leaves head room.
+          maxPoolSize: 30,
+          minPoolSize: 2,
         };
       },
     }),
