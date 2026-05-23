@@ -17,6 +17,7 @@ import { MusicEntity } from '../music/music.schema';
 import { JobTempCacheService } from './cache/temp-cache.service';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
 import { BotStatusService } from '../admin/bot-status.service';
+import { AUTO_UPDATE_BACKOFF_POLICY } from '../auto-update/auto-update-backoff';
 import type {
   JobPatchBody,
   JobResponse,
@@ -897,29 +898,79 @@ export class JobService {
     }
 
     // Auto-update bookkeeping: when an idle_update_score job that was
-    // launched by AutoUpdateScheduler completes successfully, promote
-    // its sourceScoreHash onto the user's lastScoreHash. We deliberately
-    // wait for completion so a failed/canceled job does not "burn" the
-    // hash transition — the next sweep should see the same diff and try
-    // again.
+    // launched by AutoUpdateScheduler (identified by sourceScoreHash
+    // being set) finishes, we update the user's backoff/hash state.
+    //
+    // - completed: promote sourceScoreHash to user.lastScoreHash AND
+    //   clear backoff (failureCount=0, backoffUntil=null). We
+    //   deliberately wait for completion so a failed/canceled job
+    //   does not "burn" the hash transition — the next sweep should
+    //   see the same diff and try again.
+    // - failed: bump autoUpdateFailureCount and set
+    //   autoUpdateBackoffUntil = now + base * factor^(count-1) capped.
+    //   This pushes persistently-failing users out of the bot queue
+    //   so healthy users aren't drowned out.
+    // - canceled: clear backoff too. A scheduler-created job almost
+    //   always gets canceled because the user triggered a manual sync
+    //   (JobService.create's "cancel older for same friendCode" rule),
+    //   which means the user's cookies are healthy and we should NOT
+    //   leave them stuck in exponential backoff. Hash promotion
+    //   intentionally stays gated on `completed` — a canceled job
+    //   didn't necessarily scrape anything, so lastScoreHash must
+    //   stay as-is for the next sweep to retry.
     if (
-      updated.status === 'completed' &&
       updated.jobType === 'idle_update_score' &&
       updated.sourceScoreHash
     ) {
-      this.usersService
-        .findByFriendCode(updated.friendCode)
-        .then((user) => {
-          if (!user) return;
-          return this.usersService.update(String(user._id), {
-            lastScoreHash: updated.sourceScoreHash,
+      if (updated.status === 'completed') {
+        this.usersService
+          .findByFriendCode(updated.friendCode)
+          .then(async (user) => {
+            if (!user) return;
+            await this.usersService.update(String(user._id), {
+              lastScoreHash: updated.sourceScoreHash,
+            });
+            await this.usersService.resetAutoUpdateBackoff(String(user._id));
+          })
+          .catch((err: Error) => {
+            this.logger.warn(
+              `Failed to promote sourceScoreHash for job ${jobId}: ${err?.message}`,
+            );
           });
-        })
-        .catch((err: Error) => {
-          this.logger.warn(
-            `Failed to promote sourceScoreHash for job ${jobId}: ${err?.message}`,
-          );
-        });
+      } else if (updated.status === 'failed') {
+        this.usersService
+          .findByFriendCode(updated.friendCode)
+          .then(async (user) => {
+            if (!user) return;
+            const result = await this.usersService.recordAutoUpdateFailure(
+              String(user._id),
+              AUTO_UPDATE_BACKOFF_POLICY,
+            );
+            if (result) {
+              this.logger.warn(
+                `auto-update fc=${updated.friendCode} job ${jobId} failed; ` +
+                  `failureCount=${result.failureCount} backoffUntil=${result.backoffUntil.toISOString()}`,
+              );
+            }
+          })
+          .catch((err: Error) => {
+            this.logger.warn(
+              `Failed to record auto-update failure for job ${jobId}: ${err?.message}`,
+            );
+          });
+      } else if (updated.status === 'canceled') {
+        this.usersService
+          .findByFriendCode(updated.friendCode)
+          .then(async (user) => {
+            if (!user) return;
+            await this.usersService.resetAutoUpdateBackoff(String(user._id));
+          })
+          .catch((err: Error) => {
+            this.logger.warn(
+              `Failed to reset auto-update backoff for canceled job ${jobId}: ${err?.message}`,
+            );
+          });
+      }
     }
 
     return toJobResponse(updated.toObject() as JobEntity);

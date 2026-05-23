@@ -76,6 +76,10 @@ interface AutoUpdateUserRow {
   cabinetUserId: number | null;
   lastScoreHash: string | null;
   preferredBotFriendCode: string | null;
+  /** Consecutive failed idle_update_score jobs created by the scheduler. */
+  autoUpdateFailureCount: number;
+  /** ISO timestamp; if in the future, scheduler skips this user until then. */
+  autoUpdateBackoffUntil: string | null;
   lastIdleJob: {
     id: string;
     botUserFriendCode: string | null;
@@ -726,6 +730,7 @@ export default function AdminSdgbWorkerPage() {
                   <Table.Th>friendCode</Table.Th>
                   <Table.Th>cabinetUserId</Table.Th>
                   <Table.Th>lastScoreHash</Table.Th>
+                  <Table.Th>退避状态</Table.Th>
                   <Table.Th>最近一次 hash 检查</Table.Th>
                   <Table.Th>最近一次更新 job</Table.Th>
                   <Table.Th>操作</Table.Th>
@@ -750,6 +755,51 @@ export default function AdminSdgbWorkerPage() {
                           ? u.lastScoreHash.slice(0, 8) + "…"
                           : "—"}
                       </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      {(() => {
+                        // 退避状态列：失败次数 + 剩余冷却时间。Active backoff
+                        // (失败 ≥1 且 backoffUntil 还在未来) → 红色 Badge；
+                        // 失败计数非零但 backoffUntil 已过期（或为空，e.g.
+                        // admin 手动 reset 过）→ 灰色显示历史；都 0 → "—"。
+                        const fails = u.autoUpdateFailureCount ?? 0;
+                        const until = u.autoUpdateBackoffUntil
+                          ? new Date(u.autoUpdateBackoffUntil)
+                          : null;
+                        const active =
+                          until != null && until.getTime() > Date.now();
+                        if (fails === 0 && !active) {
+                          return (
+                            <Text size="xs" c="dimmed">
+                              —
+                            </Text>
+                          );
+                        }
+                        if (active && until) {
+                          const remainMs = until.getTime() - Date.now();
+                          const remainMin = Math.ceil(remainMs / 60_000);
+                          return (
+                            <Stack gap={0}>
+                              <Badge color="red" variant="light" size="xs">
+                                退避中
+                              </Badge>
+                              <Text size="xs" c="dimmed">
+                                连续失败 {fails} 次 · 剩 {remainMin}m
+                              </Text>
+                            </Stack>
+                          );
+                        }
+                        return (
+                          <Stack gap={0}>
+                            <Badge color="orange" variant="light" size="xs">
+                              失败 {fails}
+                            </Badge>
+                            <Text size="xs" c="dimmed">
+                              冷却已过期
+                            </Text>
+                          </Stack>
+                        );
+                      })()}
                     </Table.Td>
                     <Table.Td>
                       {u.lastHashJob ? (
@@ -862,7 +912,7 @@ export default function AdminSdgbWorkerPage() {
                 ))}
                 {autoUsers && autoUsers.length === 0 && (
                   <Table.Tr>
-                    <Table.Td colSpan={6}>
+                    <Table.Td colSpan={7}>
                       <Text size="sm" c="dimmed" ta="center">
                         暂无开启自动更新的用户
                       </Text>

@@ -386,4 +386,78 @@ export class UsersService {
     );
     return res.modifiedCount === 1;
   }
+
+  /**
+   * Record a failed auto-update job and schedule the next attempt via
+   * exponential backoff. Returns the new (failureCount, backoffUntil)
+   * so callers can log them.
+   *
+   * Atomicity: uses findOneAndUpdate with $inc so the read-modify-write
+   * of failureCount can't race against a concurrent
+   * resetAutoUpdateBackoff (admin manual trigger, successful job
+   * completion). We then compute backoffUntil from the post-increment
+   * count returned by findOneAndUpdate and write it in a second op.
+   *
+   * Why two ops? Mongo aggregation-pipeline updates could do this in
+   * one round-trip, but they make the math (Math.pow + Math.min) noisy
+   * and harder to read. The window between the two ops is at most a
+   * few ms; the worst-case interleaving is:
+   *   - Op1 (this fn): $inc count 2→3 returns 3
+   *   - resetAutoUpdateBackoff: count 3→0, backoff→null
+   *   - Op2 (this fn): set backoffUntil = now+2h    ← stale
+   * The cron sweep then reads count=0, backoffUntil=future and skips
+   * the user once — next tick (5min later) it'll see backoffUntil
+   * still future and skip again, until the window expires. Total
+   * impact: at most one extra skipped sweep after a manual reset, no
+   * correctness loss. Acceptable.
+   */
+  async recordAutoUpdateFailure(
+    id: string,
+    opts: { baseMs: number; factor: number; capMs: number },
+    now: Date = new Date(),
+  ): Promise<{ failureCount: number; backoffUntil: Date } | null> {
+    if (!isValidObjectId(id)) return null;
+    const updated = await this.userModel.findOneAndUpdate(
+      { _id: id },
+      { $inc: { autoUpdateFailureCount: 1 } },
+      { new: true, projection: { autoUpdateFailureCount: 1 } },
+    );
+    if (!updated) return null;
+    const nextCount = updated.autoUpdateFailureCount ?? 1;
+    const delay = Math.min(
+      opts.capMs,
+      Math.floor(opts.baseMs * Math.pow(opts.factor, nextCount - 1)),
+    );
+    const backoffUntil = new Date(now.getTime() + delay);
+    // Conditional write: only set backoffUntil if the failure count
+    // we see is still ours. If a reset already zeroed it out (count
+    // dropped below nextCount), we MUST NOT clobber the reset's
+    // backoffUntil=null. The filter on autoUpdateFailureCount >= our
+    // value is the guard.
+    await this.userModel.updateOne(
+      { _id: id, autoUpdateFailureCount: { $gte: nextCount } },
+      { $set: { autoUpdateBackoffUntil: backoffUntil } },
+    );
+    return { failureCount: nextCount, backoffUntil };
+  }
+
+  /**
+   * Clear backoff state. Called by JobService.patch on successful
+   * idle_update_score completion (alongside the lastScoreHash promote)
+   * and by AutoUpdateScheduler.triggerByFriendCode (admin manual
+   * trigger should put the user back on a fresh cadence regardless of
+   * past failures).
+   */
+  async resetAutoUpdateBackoff(id: string): Promise<void> {
+    if (!isValidObjectId(id)) return;
+    await this.userModel.updateOne(
+      { _id: id },
+      {
+        $set: {
+          autoUpdateFailureCount: 0,
+          autoUpdateBackoffUntil: null,
+        },
+      },
+    );
+  }
 }

@@ -25,6 +25,20 @@ const HASH_CHECK_THROTTLE_MS = 15 * 60 * 1000;
 const AUTO_UPDATE_JOB_THROTTLE_MS = 30 * 60 * 1000;
 
 /**
+ * Exponential backoff for users whose idle_update_score jobs keep
+ * failing. Reset to 0 on a successful job OR on an admin manual
+ * trigger.
+ *
+ * Why bother? Without backoff a persistently failing user (cookie
+ * died, bot got banned, cabinet refused) keeps consuming a bot slot
+ * every AUTO_UPDATE_JOB_THROTTLE_MS forever, drowning out healthy
+ * users in the same bot's queue.
+ *
+ * Concrete numbers live in ./auto-update-backoff.ts so JobService
+ * can share them without importing the scheduler module.
+ */
+
+/**
  * Polls every AUTO_UPDATE_CRON tick (default: every 5 minutes) and, for
  * each user that has cabinetUserId bound + autoUpdate=true:
  *
@@ -238,7 +252,30 @@ export class AutoUpdateSchedulerService
         const cabinetUserId = u.cabinetUserId;
         if (cabinetUserId == null) continue;
 
-        // (0) skip users whose previous job hasn't finished — checking the
+        // (0a) Backoff: if a previous idle_update_score job failed,
+        // user.autoUpdateBackoffUntil is set to a future time. Skip
+        // until the window expires. The window grows exponentially
+        // with consecutive failures (see AUTO_UPDATE_BACKOFF_POLICY).
+        // Reset happens in JobService.patch on successful completion
+        // and in triggerByFriendCode on admin manual trigger.
+        const backoffUntil = (
+          u as { autoUpdateBackoffUntil?: Date | null }
+        ).autoUpdateBackoffUntil;
+        if (backoffUntil && backoffUntil.getTime() > Date.now()) {
+          skippedNoChange++;
+          const remainMin = Math.ceil(
+            (backoffUntil.getTime() - Date.now()) / 60_000,
+          );
+          entries.push({
+            friendCode: u.friendCode,
+            cabinetUserId,
+            action: 'skipped',
+            message: `backoff (${(u as { autoUpdateFailureCount?: number }).autoUpdateFailureCount ?? '?'} fails, ${remainMin}m remaining)`,
+          });
+          continue;
+        }
+
+        // (0b) skip users whose previous job hasn't finished — checking the
         // hash again here would just produce noise.
         if (inflightFc.has(u.friendCode)) {
           skippedNoChange++;
@@ -446,6 +483,13 @@ export class AutoUpdateSchedulerService
       throw new Error('没有可用的、配置了 cabinetUserId 的 bot');
     }
 
+    // Admin manual trigger clears any active backoff: the human just
+    // told us this user matters now. If the forced refresh ALSO fails,
+    // JobService.patch will re-record a failure and the backoff
+    // sequence restarts from failureCount=1 (= 30m), not where it
+    // left off — that's intentional, see decision in design doc.
+    await this.users.resetAutoUpdateBackoff(String(user._id));
+
     const [addRivalResult, jobResult] = await Promise.all([
       this.sdgb
         .addRival(
@@ -504,6 +548,8 @@ export class AutoUpdateSchedulerService
       cabinetUserId: number | null;
       lastScoreHash: string | null;
       preferredBotFriendCode: string | null;
+      autoUpdateFailureCount: number;
+      autoUpdateBackoffUntil: string | null;
       lastIdleJob: {
         id: string;
         botUserFriendCode: string | null;
@@ -612,6 +658,12 @@ export class AutoUpdateSchedulerService
         preferredBotFriendCode:
           (u as { preferredBotFriendCode?: string | null })
             .preferredBotFriendCode ?? null,
+        autoUpdateFailureCount:
+          (u as { autoUpdateFailureCount?: number }).autoUpdateFailureCount ??
+          0,
+        autoUpdateBackoffUntil:
+          (u as { autoUpdateBackoffUntil?: Date | null })
+            .autoUpdateBackoffUntil?.toISOString() ?? null,
         lastIdleJob: idle
           ? {
               id: idle.id,

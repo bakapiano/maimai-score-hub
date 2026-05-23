@@ -73,6 +73,30 @@ export class UserEntity {
    */
   @Prop({ type: Date, default: null })
   lastAutoUpdateJobAt!: Date | null;
+
+  /**
+   * Number of consecutive failed `idle_update_score` jobs created by
+   * AutoUpdateScheduler for this user. Reset to 0 whenever a job
+   * completes successfully or when an admin manually triggers a
+   * refresh. Drives the exponential backoff window below.
+   *
+   * Only counts dxnet job failures (status=failed). Transient
+   * sdgb getRivalHash / addRival errors do NOT increment this — they
+   * have their own per-call retry/swallow logic and would otherwise
+   * cause cabinet network blips to push a user into long backoff.
+   */
+  @Prop({ type: Number, default: 0 })
+  autoUpdateFailureCount!: number;
+
+  /**
+   * Earliest wall-clock time at which AutoUpdateScheduler is allowed
+   * to run the hash-check + job-creation flow again for this user.
+   * Computed as `now + base * 2^(failureCount-1)` capped at
+   * AUTO_UPDATE_BACKOFF_CAP_MS each time we record a failure.
+   * null = no active backoff.
+   */
+  @Prop({ type: Date, default: null })
+  autoUpdateBackoffUntil!: Date | null;
 }
 
 export type UserDocument = HydratedDocument<UserEntity>;
