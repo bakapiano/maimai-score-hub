@@ -18,7 +18,7 @@ import {
   Text,
   TextInput,
   Tooltip,
-  useMantineColorScheme,
+  useComputedColorScheme,
 } from "@mantine/core";
 import {
   IconInfoCircle,
@@ -389,7 +389,10 @@ export default function LoginPage() {
     setLoading(false);
   };
 
-  const { colorScheme } = useMantineColorScheme();
+  // Resolve "auto" against system preference so dark-mode-via-system
+  // actually picks dark header colors. useMantineColorScheme returns
+  // the literal "auto" which would fall through to the light branch.
+  const colorScheme = useComputedColorScheme("light");
 
   const headerBg =
     colorScheme === "dark"

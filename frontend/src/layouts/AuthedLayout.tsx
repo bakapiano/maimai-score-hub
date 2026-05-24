@@ -8,7 +8,7 @@ import {
   NavLink,
   Stack,
   ThemeIcon,
-  useMantineColorScheme,
+  useComputedColorScheme,
 } from "@mantine/core";
 import {
   IconBug,
@@ -84,7 +84,11 @@ export default function AuthedLayout() {
   const [opened, { toggle, close }] = useDisclosure(false);
   const [settingsOpened, { open: openSettings, close: closeSettings }] =
     useDisclosure(false);
-  const { colorScheme } = useMantineColorScheme();
+  // useMantineColorScheme returns the raw setting ("light" | "dark" |
+  // "auto"). For visual conditionals like the header background we need
+  // the RESOLVED scheme — useComputedColorScheme resolves "auto" against
+  // prefers-color-scheme so dark-mode-via-system works correctly.
+  const colorScheme = useComputedColorScheme("light");
   const [profile, setProfile] = useState<MiniProfile | null>(null);
   const touchStartX = useRef<number | null>(null);
 

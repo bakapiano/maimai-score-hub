@@ -11,7 +11,7 @@ import {
   Text,
   ThemeIcon,
   Title,
-  useMantineColorScheme,
+  useComputedColorScheme,
 } from "@mantine/core";
 import {
   IconBug,
@@ -97,7 +97,10 @@ export default function AdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [opened, { toggle, close }] = useDisclosure(false);
-  const { colorScheme } = useMantineColorScheme();
+  // Resolve "auto" to actual "light"/"dark" via prefers-color-scheme;
+  // useMantineColorScheme would return the literal "auto" and break
+  // the `colorScheme === "dark"` style checks below.
+  const colorScheme = useComputedColorScheme("light");
   const touchStartX = useRef<number | null>(null);
 
   const verifyPassword = useCallback(async () => {
