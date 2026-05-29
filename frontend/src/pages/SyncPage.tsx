@@ -399,30 +399,45 @@ export default function SyncPage() {
       setLoading(true);
       setProfileError(null);
 
-      const res = await fetchJson<UserProfileResponse>("/api/users/profile", {
+      // Kick off all independent requests in parallel.
+      // Profile is needed for friendCode → active job lookup, but
+      // /api/sync/latest, /api/users/idle-update/status, and
+      // getRecentJobStats() have no data dependency on profile and
+      // were previously waiting in series — total wall time was the
+      // sum of all four. Now profile + the other three race;
+      // active-job lookup chains off profile (still serial there,
+      // but unavoidable since it needs friendCode).
+      const profilePromise = fetchJson<UserProfileResponse>(
+        "/api/users/profile",
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const syncPromise = fetchJson<LastSyncInfo>("/api/sync/latest", {
         headers: { Authorization: `Bearer ${token}` },
       });
+      const idlePromise = fetchJson<IdleUpdateStatusResponse>(
+        "/api/users/idle-update/status",
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const statsPromise = getRecentJobStats().catch(() => null);
 
+      const res = await profilePromise;
       if (cancelled) return;
 
       if (res.ok && res.data) {
         setProfile(res.data);
 
-        // Check for active job after getting friendCode
+        // Active-job lookup needs friendCode, so it chains off profile.
         if (res.data.friendCode) {
           const activeJobRes = await getActiveJobByFriendCode(
             res.data.friendCode,
             token,
           );
-
           if (cancelled) return;
 
           if (activeJobRes.job) {
-            // Found an active job, restore the state
             const activeJob = activeJobRes.job;
             setSyncJobId(activeJob.id);
             setSyncStatus(activeJob);
-            // Only set syncing to true if it's still in progress
             if (
               activeJob.status === "queued" ||
               activeJob.status === "processing"
@@ -435,37 +450,26 @@ export default function SyncPage() {
         setProfileError(`加载失败 (HTTP ${res.status})`);
       }
 
-      // Also load last sync info
-      const syncRes = await fetchJson<LastSyncInfo>("/api/sync/latest", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
+      const syncRes = await syncPromise;
       if (cancelled) return;
-
       if (syncRes.ok && syncRes.data) {
         setLastSync(syncRes.data);
       }
 
-      // Load idle update status
-      const idleRes = await fetchJson<IdleUpdateStatusResponse>(
-        "/api/users/idle-update/status",
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-
+      const idleRes = await idlePromise;
       if (cancelled) return;
-
       if (idleRes.ok && idleRes.data) {
         setIdleUpdateStatus(idleRes.data);
       }
 
-      // Check success rate for recommendation
-      try {
-        const statsRes = await getRecentJobStats();
+      const statsRes = await statsPromise;
+      if (cancelled) return;
+      if (statsRes) {
         setRecentStats(statsRes);
         if (statsRes.totalCount >= 5 && statsRes.successRate <= 50) {
           setLowSuccessRate(true);
         }
-      } catch {}
+      }
 
       setLoading(false);
     };
