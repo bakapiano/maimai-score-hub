@@ -17,6 +17,7 @@ import { MusicEntity } from '../music/music.schema';
 import { JobTempCacheService } from './cache/temp-cache.service';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
 import { BotStatusService } from '../admin/bot-status.service';
+import { SystemSettingsService } from '../admin/system-settings.service';
 import { AUTO_UPDATE_BACKOFF_POLICY } from '../auto-update/auto-update-backoff';
 import type {
   JobPatchBody,
@@ -105,6 +106,7 @@ export class JobService {
     private readonly sdgb: SdgbJobDispatcher,
     @Inject(forwardRef(() => BotStatusService))
     private readonly botStatus: BotStatusService,
+    private readonly systemSettings: SystemSettingsService,
   ) {}
 
   /**
@@ -239,6 +241,14 @@ export class JobService {
       (resolvedJobType === 'immediate' ||
         resolvedJobType === 'idle_update_score') &&
       !input.skipUpdateScore;
+    // When cabinet-only mode is on AND the cabinet fast-path successfully
+    // attaches cabinetScoreMap for a user with cabinetUserId, we skip
+    // worker dispatch entirely: the job is created and then immediately
+    // patched to `completed` with result={}. SyncService.createFromJob's
+    // synthetic-entry branch (sync.service.ts:311-351) writes the cabinet
+    // achievement/dxScore, mergeScoreKeepBest preserves the previous
+    // sync's fc/fs (since synthetic entries set those to null).
+    let cabinetOnlyShortCircuit = false;
     if (isScoreUpdateJob) {
       try {
         const user = await this.usersService.findByFriendCode(input.friendCode);
@@ -349,6 +359,21 @@ export class JobService {
                 }
                 if (Object.keys(cabinetScoreMap).length > 0) {
                   input.cabinetScoreMap = cabinetScoreMap;
+
+                  // Cabinet-only mode check: if the admin toggle is on
+                  // and we successfully captured cabinet scores, we'll
+                  // short-circuit the job to completed after persistence
+                  // (no worker dispatch needed).
+                  try {
+                    const settings = await this.systemSettings.get();
+                    if (settings.cabinetOnlyMode) {
+                      cabinetOnlyShortCircuit = true;
+                    }
+                  } catch (err) {
+                    this.logger.warn(
+                      `system-settings lookup failed; proceeding with worker dispatch: ${err instanceof Error ? err.message : err}`,
+                    );
+                  }
 
                   // Compute diffsToScrape if caller didn't already.
                   if (input.diffsToScrape == null) {
@@ -470,6 +495,24 @@ export class JobService {
       createdAt: now,
       updatedAt: now,
     });
+
+    if (cabinetOnlyShortCircuit) {
+      this.logger.log(
+        `Cabinet-only mode: completing job ${id} fc=${input.friendCode} without worker dispatch`,
+      );
+      try {
+        const completed = await this.patch(id, {
+          status: 'completed',
+          stage: 'update_score',
+          result: {},
+        });
+        return { jobId: id, job: completed };
+      } catch (err) {
+        this.logger.error(
+          `Cabinet-only short-circuit patch failed for job ${id}: ${err instanceof Error ? err.message : err}; leaving job for worker fallback`,
+        );
+      }
+    }
 
     return { jobId: id, job: toJobResponse(created.toObject() as JobEntity) };
   }

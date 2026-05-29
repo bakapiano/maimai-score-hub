@@ -31,6 +31,7 @@ import { MusicModule } from '../music/music.module';
 import { JobModule } from '../job/job.module';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { UsersModule } from '../users/users.module';
+import { SystemSettingsModule } from './system-settings.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { UsersModule } from '../users/users.module';
     JobModule,
     SdgbWorkerModule,
     UsersModule,
+    SystemSettingsModule,
   ],
   controllers: [AdminController],
   providers: [
@@ -63,6 +65,11 @@ import { UsersModule } from '../users/users.module';
     BotFriendSnapshotService,
     FeishuNotifyService,
   ],
-  exports: [BotStatusService, BotFriendSnapshotService, AdminGuard],
+  exports: [
+    BotStatusService,
+    BotFriendSnapshotService,
+    AdminGuard,
+    SystemSettingsModule,
+  ],
 })
 export class AdminModule {}

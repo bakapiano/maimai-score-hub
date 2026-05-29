@@ -91,3 +91,20 @@ export type UpdateBotCabinetUserIdBody = z.infer<
   typeof UpdateBotCabinetUserIdBodySchema
 >;
 export type SearchJobsQuery = z.infer<typeof SearchJobsQuerySchema>;
+
+export const SystemSettingsSchema = z.object({
+  cabinetOnlyMode: z.boolean(),
+});
+
+export const UpdateSystemSettingsBodySchema = z
+  .object({
+    cabinetOnlyMode: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, {
+    message: 'at least one field must be provided',
+  });
+
+export type SystemSettings = z.infer<typeof SystemSettingsSchema>;
+export type UpdateSystemSettingsBody = z.infer<
+  typeof UpdateSystemSettingsBodySchema
+>;

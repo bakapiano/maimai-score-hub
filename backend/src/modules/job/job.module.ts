@@ -25,6 +25,7 @@ import { TempCacheController } from './cache/temp-cache.controller';
 import { MongooseModule } from '@nestjs/mongoose';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { SyncModule } from '../sync/sync.module';
+import { SystemSettingsModule } from '../admin/system-settings.module';
 import { UsersModule } from '../users/users.module';
 
 @Module({
@@ -37,6 +38,7 @@ import { UsersModule } from '../users/users.module';
       { name: MusicEntity.name, schema: MusicSchema },
     ]),
     SdgbWorkerModule,
+    SystemSettingsModule,
     forwardRef(() => SyncModule),
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),

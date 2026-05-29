@@ -116,7 +116,7 @@ paths:
                               maximum: 14
                           totalDiffs:
                             type: integer
-                            minimum: 1
+                            minimum: 0
                         required:
                           - completedDiffs
                           - totalDiffs
@@ -150,6 +150,24 @@ paths:
                         nullable: true
                       isAuthenticated:
                         type: boolean
+                      cabinetScoreMap:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            achievement:
+                              type: number
+                            dxScore:
+                              type: number
+                          required:
+                            - achievement
+                            - dxScore
+                        nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
                       createdAt:
                         type: string
                       updatedAt:
@@ -443,7 +461,7 @@ paths:
                               maximum: 14
                           totalDiffs:
                             type: integer
-                            minimum: 1
+                            minimum: 0
                         required:
                           - completedDiffs
                           - totalDiffs
@@ -477,6 +495,24 @@ paths:
                         nullable: true
                       isAuthenticated:
                         type: boolean
+                      cabinetScoreMap:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            achievement:
+                              type: number
+                            dxScore:
+                              type: number
+                          required:
+                            - achievement
+                            - dxScore
+                        nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
                       createdAt:
                         type: string
                       updatedAt:
@@ -590,7 +626,7 @@ paths:
                               maximum: 14
                           totalDiffs:
                             type: integer
-                            minimum: 1
+                            minimum: 0
                         required:
                           - completedDiffs
                           - totalDiffs
@@ -624,6 +660,24 @@ paths:
                         nullable: true
                       isAuthenticated:
                         type: boolean
+                      cabinetScoreMap:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            achievement:
+                              type: number
+                            dxScore:
+                              type: number
+                          required:
+                            - achievement
+                            - dxScore
+                        nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
                       createdAt:
                         type: string
                       updatedAt:
@@ -903,7 +957,7 @@ paths:
                               maximum: 14
                           totalDiffs:
                             type: integer
-                            minimum: 1
+                            minimum: 0
                         required:
                           - completedDiffs
                           - totalDiffs
@@ -937,6 +991,24 @@ paths:
                         nullable: true
                       isAuthenticated:
                         type: boolean
+                      cabinetScoreMap:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            achievement:
+                              type: number
+                            dxScore:
+                              type: number
+                          required:
+                            - achievement
+                            - dxScore
+                        nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
                       createdAt:
                         type: string
                       updatedAt:
@@ -1023,7 +1095,7 @@ paths:
                           maximum: 14
                       totalDiffs:
                         type: integer
-                        minimum: 1
+                        minimum: 0
                     required:
                       - completedDiffs
                       - totalDiffs
@@ -1057,6 +1129,24 @@ paths:
                     nullable: true
                   isAuthenticated:
                     type: boolean
+                  cabinetScoreMap:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        achievement:
+                          type: number
+                        dxScore:
+                          type: number
+                      required:
+                        - achievement
+                        - dxScore
+                    nullable: true
+                  diffsToScrape:
+                    type: array
+                    items:
+                      type: integer
+                    nullable: true
                   createdAt:
                     type: string
                   updatedAt:
@@ -1129,7 +1219,7 @@ paths:
                         maximum: 14
                     totalDiffs:
                       type: integer
-                      minimum: 1
+                      minimum: 0
                   required:
                     - completedDiffs
                     - totalDiffs
@@ -1200,7 +1290,7 @@ paths:
                           maximum: 14
                       totalDiffs:
                         type: integer
-                        minimum: 1
+                        minimum: 0
                     required:
                       - completedDiffs
                       - totalDiffs
@@ -1234,6 +1324,24 @@ paths:
                     nullable: true
                   isAuthenticated:
                     type: boolean
+                  cabinetScoreMap:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        achievement:
+                          type: number
+                        dxScore:
+                          type: number
+                      required:
+                        - achievement
+                        - dxScore
+                    nullable: true
+                  diffsToScrape:
+                    type: array
+                    items:
+                      type: integer
+                    nullable: true
                   createdAt:
                     type: string
                   updatedAt:
@@ -1325,7 +1433,7 @@ paths:
                               maximum: 14
                           totalDiffs:
                             type: integer
-                            minimum: 1
+                            minimum: 0
                         required:
                           - completedDiffs
                           - totalDiffs
@@ -1359,6 +1467,24 @@ paths:
                         nullable: true
                       isAuthenticated:
                         type: boolean
+                      cabinetScoreMap:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            achievement:
+                              type: number
+                            dxScore:
+                              type: number
+                          required:
+                            - achievement
+                            - dxScore
+                        nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
                       createdAt:
                         type: string
                       updatedAt:
@@ -1485,7 +1611,7 @@ paths:
                           maximum: 14
                       totalDiffs:
                         type: integer
-                        minimum: 1
+                        minimum: 0
                     required:
                       - completedDiffs
                       - totalDiffs
@@ -1519,6 +1645,24 @@ paths:
                     nullable: true
                   isAuthenticated:
                     type: boolean
+                  cabinetScoreMap:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        achievement:
+                          type: number
+                        dxScore:
+                          type: number
+                      required:
+                        - achievement
+                        - dxScore
+                    nullable: true
+                  diffsToScrape:
+                    type: array
+                    items:
+                      type: integer
+                    nullable: true
                   createdAt:
                     type: string
                   updatedAt:
@@ -1926,6 +2070,44 @@ paths:
             application/json:
               schema:
                 nullable: true
+  /admin/auto-update-metrics:
+    get:
+      tags: *a7
+      parameters:
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum:
+              - 24h
+              - 7d
+      operationId: admin.getAutoUpdateMetrics
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                nullable: true
+  /admin/prober-export-metrics:
+    get:
+      tags: *a7
+      parameters:
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum:
+              - 24h
+              - 7d
+      operationId: admin.getProberExportMetrics
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                nullable: true
   /admin/job-trend:
     get:
       tags: *a7
@@ -2049,6 +2231,27 @@ paths:
                             rating:
                               type: integer
                               nullable: true
+                            avatarUrl:
+                              type: string
+                              nullable: true
+                            title:
+                              type: string
+                              nullable: true
+                            titleColor:
+                              type: string
+                              nullable: true
+                            ratingBgUrl:
+                              type: string
+                              nullable: true
+                            courseRankUrl:
+                              type: string
+                              nullable: true
+                            classRankUrl:
+                              type: string
+                              nullable: true
+                            awakeningCount:
+                              type: integer
+                              nullable: true
                           required:
                             - friendCode
                     required:
@@ -2144,6 +2347,19 @@ paths:
       responses:
         "200":
           description: "200"
+  /admin/bot-status/{friendCode}:
+    delete:
+      tags: *a7
+      parameters:
+        - name: friendCode
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: admin.removeBot
+      responses:
+        "200":
+          description: "200"
   /admin/jobs/{jobId}/api-logs:
     get:
       tags: *a7
@@ -2203,6 +2419,48 @@ paths:
       responses:
         "201":
           description: "201"
+  /admin/system-settings:
+    get:
+      tags: *a7
+      parameters: []
+      operationId: admin.getSystemSettings
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cabinetOnlyMode:
+                    type: boolean
+                required:
+                  - cabinetOnlyMode
+    patch:
+      tags: *a7
+      parameters: []
+      operationId: admin.updateSystemSettings
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cabinetOnlyMode:
+                  type: boolean
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cabinetOnlyMode:
+                    type: boolean
+                required:
+                  - cabinetOnlyMode
   /cover/{songId}:
     get:
       tags: &a8

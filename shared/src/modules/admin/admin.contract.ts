@@ -15,8 +15,10 @@ import {
   ReportBotStatusBodySchema,
   SearchJobsQuerySchema,
   SearchJobsResponseSchema,
+  SystemSettingsSchema,
   UpdateBotCabinetUserIdBodySchema,
   UpdateBotRemarkBodySchema,
+  UpdateSystemSettingsBodySchema,
 } from './admin.schema';
 
 const c = initContract();
@@ -163,5 +165,18 @@ export const adminContract = c.router({
     responses: {
       201: c.type<{ ok: true; deletedCount: number }>(),
     },
+  },
+  getSystemSettings: {
+    method: 'GET',
+    path: '/admin/system-settings',
+    headers: c.type<{ 'x-admin-password': string }>(),
+    responses: { 200: SystemSettingsSchema },
+  },
+  updateSystemSettings: {
+    method: 'PATCH',
+    path: '/admin/system-settings',
+    headers: c.type<{ 'x-admin-password': string }>(),
+    body: UpdateSystemSettingsBodySchema,
+    responses: { 200: SystemSettingsSchema },
   },
 });

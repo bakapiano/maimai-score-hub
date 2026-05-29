@@ -15,10 +15,12 @@ import {
   SearchJobsQuerySchema,
   UpdateBotCabinetUserIdBodySchema,
   UpdateBotRemarkBodySchema,
+  UpdateSystemSettingsBodySchema,
   type ReportBotStatusBody,
   type SearchJobsQuery,
   type UpdateBotCabinetUserIdBody,
   type UpdateBotRemarkBody,
+  type UpdateSystemSettingsBody,
 } from '@maimai-score-hub/shared';
 
 import { AdminGuard } from './admin.guard';
@@ -31,6 +33,7 @@ import { JobService } from '../job/job.service';
 import { IdleUpdateSchedulerService } from '../job/idle-update/idle-update-scheduler.service';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
 import { SdgbJobService } from '../sdgb-worker/sdgb-job.service';
+import { SystemSettingsService } from './system-settings.service';
 import { UsersService } from '../users/users.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
@@ -45,6 +48,7 @@ export class AdminController {
     private readonly jobService: JobService,
     private readonly sdgbJobService: SdgbJobService,
     private readonly sdgbDispatcher: SdgbJobDispatcher,
+    private readonly systemSettingsService: SystemSettingsService,
     private readonly usersService: UsersService,
   ) {}
 
@@ -359,5 +363,23 @@ export class AdminController {
       const message = err instanceof Error ? err.message : String(err);
       throw new BadRequestException(`扫码绑定失败: ${message}`);
     }
+  }
+
+  @Get('system-settings')
+  @UseGuards(AdminGuard)
+  async getSystemSettings() {
+    return this.systemSettingsService.get();
+  }
+
+  @Patch('system-settings')
+  @UseGuards(AdminGuard)
+  async updateSystemSettings(
+    @Body(new ZodValidationPipe(UpdateSystemSettingsBodySchema))
+    body: UpdateSystemSettingsBody,
+  ) {
+    if (typeof body.cabinetOnlyMode === 'boolean') {
+      return this.systemSettingsService.setCabinetOnlyMode(body.cabinetOnlyMode);
+    }
+    return this.systemSettingsService.get();
   }
 }
