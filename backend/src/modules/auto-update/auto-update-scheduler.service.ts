@@ -646,6 +646,15 @@ export class AutoUpdateSchedulerService
       }
     }
 
+    // aggregate $$ROOT can return createdAt/updatedAt as either Date or
+    // string depending on mongoose path resolution — normalize before
+    // calling .toISOString(). Same defensive coerce for user fields.
+    const toIso = (v: Date | string | null | undefined): string | null => {
+      if (v == null) return null;
+      if (v instanceof Date) return v.toISOString();
+      return new Date(v).toISOString();
+    };
+
     return users.map((u) => {
       const idle = idleByFc.get(u.friendCode);
       const hash = hashByFc.get(u.friendCode);
@@ -662,16 +671,18 @@ export class AutoUpdateSchedulerService
           (u as { autoUpdateFailureCount?: number }).autoUpdateFailureCount ??
           0,
         autoUpdateBackoffUntil:
-          (u as { autoUpdateBackoffUntil?: Date | null })
-            .autoUpdateBackoffUntil?.toISOString() ?? null,
+          toIso(
+            (u as { autoUpdateBackoffUntil?: Date | string | null })
+              .autoUpdateBackoffUntil,
+          ),
         lastIdleJob: idle
           ? {
               id: idle.id,
               botUserFriendCode: idle.botUserFriendCode ?? null,
               status: idle.status,
               stage: idle.stage,
-              createdAt: idle.createdAt.toISOString(),
-              updatedAt: idle.updatedAt.toISOString(),
+              createdAt: toIso(idle.createdAt)!,
+              updatedAt: toIso(idle.updatedAt)!,
               error: idle.error ?? null,
             }
           : null,
@@ -681,8 +692,8 @@ export class AutoUpdateSchedulerService
               status: hash.status,
               result: hash.result ?? null,
               error: hash.error ?? null,
-              createdAt: hash.createdAt.toISOString(),
-              updatedAt: hash.updatedAt.toISOString(),
+              createdAt: toIso(hash.createdAt)!,
+              updatedAt: toIso(hash.updatedAt)!,
             }
           : null,
       };
