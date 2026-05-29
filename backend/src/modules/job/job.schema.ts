@@ -98,3 +98,18 @@ export const JobSchema = SchemaFactory.createForClass(JobEntity);
 
 // 7 天 TTL 索引，自动清理过期 job
 JobSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7 * 24 * 60 * 60 });
+
+// Hot-path indexes. Before these, the `jobs` collection only had
+// _id / id / createdAt (TTL), and every claimNext + stale-lock release
+// + pickAvailableCabinetBot bot-load aggregation did a full COLLSCAN.
+// With cabinet-only mode driving request volume up, this overloaded
+// mongo (169% CPU) on 2026-05-29.
+JobSchema.index(
+  { status: 1, botUserFriendCode: 1, executing: 1 },
+  { name: 'hot_claim' },
+);
+JobSchema.index({ executing: 1, updatedAt: 1 }, { name: 'stale_lock' });
+JobSchema.index(
+  { botUserFriendCode: 1, status: 1 },
+  { name: 'bot_status' },
+);

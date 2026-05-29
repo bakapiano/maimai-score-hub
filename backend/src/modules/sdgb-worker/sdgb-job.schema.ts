@@ -64,3 +64,12 @@ export const SdgbJobSchema = SchemaFactory.createForClass(SdgbJobEntity);
 // 1-day TTL — these jobs are short-lived; we only need them around long
 // enough for the producer to read the result.
 SdgbJobSchema.index({ createdAt: 1 }, { expireAfterSeconds: 24 * 60 * 60 });
+
+// Hot-path compound indexes. The individual status_1 / jobType_1 /
+// requesterTag_1 single-field indexes above can't serve the dispatcher
+// queries that combine them, leading to COLLSCAN on 49k+ rows.
+SdgbJobSchema.index({ status: 1, jobType: 1 }, { name: 'status_type' });
+SdgbJobSchema.index(
+  { jobType: 1, requesterTag: 1, createdAt: -1 },
+  { name: 'by_requester' },
+);
