@@ -32,4 +32,6 @@ COPY backend/assets ./assets
 
 EXPOSE 9050
 
+ENV NODE_OPTIONS="--max-old-space-size=3072"
+
 CMD ["node", "dist/main"]

@@ -109,17 +109,16 @@ export class MusicService implements OnModuleInit {
   }
 
   async findAll() {
-    // const cacheKey = 'music:all';
-    // const cached = await this.cache.get(cacheKey);
-    // if (cached) {
-    //   this.logger.log('Music list served from cache');
-    //   return cached;
-    // }
+    const cacheKey = 'music:all';
+    const cached = await this.cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
 
     this.logger.log('Fetching all music data from database...');
     const result = await this.musicModel.find().sort({ id: 1 }).lean();
     this.logger.log(`Fetched ${result.length} music records.`);
-    // await this.cache.set(cacheKey, result, 1000 * 60 * 60); // 1 hour
+    await this.cache.set(cacheKey, result, 1000 * 60 * 60);
     return result;
   }
 
@@ -264,6 +263,7 @@ export class MusicService implements OnModuleInit {
       this.logger.log(
         `Music data sync finished: inserted ${summary.upsertedCount} items (full overwrite).`,
       );
+      await this.cache.del('music:all');
       return summary;
     } catch (error) {
       this.logger.error(
