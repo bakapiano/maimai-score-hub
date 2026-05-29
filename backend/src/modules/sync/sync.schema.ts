@@ -41,3 +41,7 @@ export class SyncEntity {
 
 export type SyncDocument = HydratedDocument<SyncEntity>;
 export const SyncSchema = SchemaFactory.createForClass(SyncEntity);
+
+// Hot query: /api/sync/latest → findOne({friendCode}).sort({createdAt:-1}).
+// Without this index it was a COLLSCAN of all syncs every request.
+SyncSchema.index({ friendCode: 1, createdAt: -1 }, { name: 'by_fc_recent' });

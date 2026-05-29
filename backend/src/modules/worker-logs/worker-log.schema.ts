@@ -34,11 +34,18 @@ export class WorkerLogEntity {
 export type WorkerLogDocument = HydratedDocument<WorkerLogEntity>;
 export const WorkerLogSchema = SchemaFactory.createForClass(WorkerLogEntity);
 
-// 24h TTL — these are firehose-style logs, not audit. Tune via env if
-// you ever want to keep more, but anything past a day is faster to grep
-// from the worker container itself.
+// 2h TTL — these are firehose-style logs (~50/s with 3 workers = 360k
+// rows/2h). 24h was producing 4.3M rows which made any unindexed scan
+// painful. Tune via env if you ever want longer retention, but anything
+// past a couple hours is faster to grep from the worker container itself.
 const TTL_SECONDS = parseInt(
-  process.env.WORKER_LOGS_TTL_SECONDS || String(24 * 60 * 60),
+  process.env.WORKER_LOGS_TTL_SECONDS || String(2 * 60 * 60),
   10,
 );
 WorkerLogSchema.index({ ts: 1 }, { expireAfterSeconds: TTL_SECONDS });
+
+// Hot query: admin UI fetches "tail of this worker" → find({workerId, ts:$gte}).sort({ts:-1}).
+// Compound (workerId, ts desc) covers it; single-field ts_1 from TTL
+// above is not enough on a 4M-row table.
+WorkerLogSchema.index({ workerId: 1, ts: -1 }, { name: 'by_worker_recent' });
+WorkerLogSchema.index({ workerKind: 1, ts: -1 }, { name: 'by_kind_recent' });
