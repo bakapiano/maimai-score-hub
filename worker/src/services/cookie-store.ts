@@ -32,6 +32,7 @@ export class CookieStore {
   private expiredBots = new Set<string>();
   private persistPath: string | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private periodicSaveTimer: ReturnType<typeof setInterval> | null = null;
 
   /**
    * 启用磁盘持久化
@@ -141,6 +142,28 @@ export class CookieStore {
       this.saveToDisk();
       this.saveTimer = null;
     }, 1000);
+  }
+
+  /**
+   * 周期性强制刷盘。wahlap 响应里的 Set-Cookie 由 tough-cookie 直接
+   * 写入 CookieJar 内存对象，不会触发 set()/scheduleSave()，所以平时
+   * 内存里 cookie 一直在变但 disk 一直停在 OAuth 那一刻的快照。
+   * 副作用：cleanup 这种从 disk 重读 cookie 的脚本永远拿到陈旧数据。
+   *
+   * 这个 interval 把内存里的最新状态定期落盘，保证 disk 不超过
+   * `intervalMs` 落后于内存。30s 默认值在写盘量（~3KB）和新鲜度之间
+   * 是合理的折衷。
+   */
+  startPeriodicSave(intervalMs: number = 30_000): void {
+    if (!this.persistPath || this.periodicSaveTimer) return;
+    this.periodicSaveTimer = setInterval(() => {
+      this.saveToDisk();
+    }, intervalMs);
+    // Don't block process exit on this timer
+    this.periodicSaveTimer.unref?.();
+    console.log(
+      `[CookieStore] Periodic save enabled (every ${intervalMs}ms)`,
+    );
   }
 
   /**
@@ -275,3 +298,6 @@ export const cookieStore = new CookieStore();
 const persistPath = process.env.COOKIE_PERSIST_PATH || "./data/cookies.json";
 cookieStore.enablePersistence(persistPath);
 cookieStore.loadFromDisk();
+cookieStore.startPeriodicSave(
+  Number(process.env.COOKIE_PERIODIC_SAVE_MS ?? 30_000),
+);
