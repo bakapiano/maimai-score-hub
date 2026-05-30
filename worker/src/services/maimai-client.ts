@@ -106,7 +106,7 @@ export class MaimaiHttpClient {
   //   速率上限。
   // =========================================================================
   /** 请求发起间最小间隔（毫秒） */
-  private static readonly REQUEST_INTERVAL_MS = 1_000;
+  private static readonly REQUEST_INTERVAL_MS = 2_500;
   /** 上一次请求发起的时间戳（也是 batch 计费的基准） */
   private static lastRequestStartTime = 0;
   /** 限流锁：保证等待+更新时间戳的原子性 */
