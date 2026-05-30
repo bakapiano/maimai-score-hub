@@ -255,6 +255,67 @@ export class JobService {
         const userCabinetUid = (user as { cabinetUserId?: number | null } | null)
           ?.cabinetUserId;
         if (userCabinetUid != null) {
+          // Cabinet-only mode: skip bot pick + addRival entirely.
+          // getRivalHash only needs the target's cabinetUserId, no bot
+          // friendship required — so we go straight to capturing scores
+          // and short-circuiting.
+          let cabinetOnlyMode = false;
+          try {
+            cabinetOnlyMode = (await this.systemSettings.get()).cabinetOnlyMode;
+          } catch (err) {
+            this.logger.warn(
+              `system-settings lookup failed; falling back to bot-based flow: ${err instanceof Error ? err.message : err}`,
+            );
+          }
+
+          if (cabinetOnlyMode) {
+            try {
+              let music = input.cabinetMusic ?? null;
+              if (!music) {
+                const r = await this.sdgb.getRivalHash(
+                  { cabinetUserId: userCabinetUid },
+                  {
+                    tag: `score-update-music:${input.friendCode}`,
+                    timeoutMs: 60_000,
+                  },
+                );
+                music = r.music;
+              }
+              const cabinetScoreMap: Record<
+                string,
+                { achievement: number; dxScore: number }
+              > = {};
+              for (const m of music ?? []) {
+                for (const d of m.userRivalMusicDetailList ?? []) {
+                  cabinetScoreMap[`${m.musicId}_${d.level}`] = {
+                    achievement: d.achievement,
+                    dxScore: d.deluxscoreMax,
+                  };
+                }
+              }
+              if (Object.keys(cabinetScoreMap).length > 0) {
+                input.cabinetScoreMap = cabinetScoreMap;
+                resolvedStage = 'update_score';
+                cabinetOnlyShortCircuit = true;
+                this.logger.log(
+                  `Cabinet-only mode: captured ${Object.keys(cabinetScoreMap).length} entries for fc=${input.friendCode}, no bot needed`,
+                );
+              } else {
+                this.logger.warn(
+                  `Cabinet-only mode: cabinetScoreMap empty for fc=${input.friendCode}, will fall back to worker flow`,
+                );
+              }
+            } catch (err) {
+              this.logger.warn(
+                `Cabinet-only mode getRivalHash failed for fc=${input.friendCode}; falling back to bot-based flow: ${err instanceof Error ? err.message : err}`,
+              );
+            }
+          }
+
+          // If cabinet-only mode short-circuited, skip the bot-based
+          // addRival + diff calc path below. Otherwise fall through to
+          // the original flow that picks a bot and does addRival.
+          if (!cabinetOnlyShortCircuit) {
           // Pick the bot — caller-specified or auto-pick.
           let botCabinetUid: number | null = null;
           let botFc: string | null = input.botUserFriendCode ?? null;
@@ -360,20 +421,9 @@ export class JobService {
                 if (Object.keys(cabinetScoreMap).length > 0) {
                   input.cabinetScoreMap = cabinetScoreMap;
 
-                  // Cabinet-only mode check: if the admin toggle is on
-                  // and we successfully captured cabinet scores, we'll
-                  // short-circuit the job to completed after persistence
-                  // (no worker dispatch needed).
-                  try {
-                    const settings = await this.systemSettings.get();
-                    if (settings.cabinetOnlyMode) {
-                      cabinetOnlyShortCircuit = true;
-                    }
-                  } catch (err) {
-                    this.logger.warn(
-                      `system-settings lookup failed; proceeding with worker dispatch: ${err instanceof Error ? err.message : err}`,
-                    );
-                  }
+                  // (cabinet-only-mode short-circuit was already evaluated
+                  // earlier in the bot-less path; reaching here means
+                  // cabinet-only mode is OFF — continue with worker dispatch.)
 
                   // Compute diffsToScrape if caller didn't already.
                   if (input.diffsToScrape == null) {
@@ -467,6 +517,7 @@ export class JobService {
               }
             }
           }
+          } // end if (!cabinetOnlyShortCircuit)
         }
       } catch (err) {
         // Lookup failure is non-fatal — fall back to original send_request flow.
