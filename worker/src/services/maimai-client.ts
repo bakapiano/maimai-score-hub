@@ -432,7 +432,7 @@ export class MaimaiHttpClient {
    * 获取完整好友列表（自动翻页）
    * 第一页返回最多 10 个好友，通过好友数计算总页数后逐页获取
    */
-  async getFriendList(): Promise<FriendInfo[]> {
+  async getFriendList(opts?: { maxPages?: number }): Promise<FriendInfo[]> {
     console.log(`[MaimaiClient] Start get friend list`);
 
     // 第一页串行：要解出 friendCount 才知道总页数。
@@ -449,9 +449,18 @@ export class MaimaiHttpClient {
     }
 
     // 计算需要翻页的页数: 第 2 页到第 ceil(friendCount/10)+1 页
-    const totalPages = Math.ceil(friendCount / 10) + 1;
+    const naturalTotalPages = Math.ceil(friendCount / 10) + 1;
+    // 调用方可指定 maxPages（首页算第 1 页），用于 cleanup 这种不需要
+    // 看到全量好友就能干活的场景，避免拖几十次请求拉满 spacing。
+    const totalPages = opts?.maxPages
+      ? Math.min(naturalTotalPages, Math.max(1, opts.maxPages))
+      : naturalTotalPages;
     console.log(
-      `[MaimaiClient] Friend count: ${friendCount}, fetching pages 2..${totalPages}`,
+      `[MaimaiClient] Friend count: ${friendCount}, fetching pages 2..${totalPages}${
+        opts?.maxPages && totalPages < naturalTotalPages
+          ? ` (capped at maxPages=${opts.maxPages}, would be ${naturalTotalPages})`
+          : ''
+      }`,
     );
 
     // 第 2-N 页串行抓，每页之间走默认 spacing。之前用 runInBatch 包

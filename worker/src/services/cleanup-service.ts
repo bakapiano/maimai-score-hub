@@ -119,9 +119,17 @@ export class CleanupService {
 
     try {
       // 1. 获取当前已发送的好友请求和好友列表
+      //    getFriendList maxPages=3：拉全量好友（可能 1000+ 页）在 5s
+      //    spacing 下要花数分钟，期间这个 bot 的其他请求全部被卡。
+      //    Cleanup 改成「每轮只看前 30 个」: 步骤 4 的「驱逐 30min
+      //    inactive」和「砍到 19 个」只会基于前 30 个生效。
+      //    依赖前提：maimai friend list 排序近似按最近活跃倒序 — 那么
+      //    前 30 个恰好是「最需要看的」，靠后的本来就 inactive，下一轮
+      //    cleanup 会接着清。如果排序假设错了，cleanup 会显著欠驱逐。
+      //    getSentRequests 本来就只 1 页，不需要分页。
       const [sentRequests, friendInfos] = await Promise.all([
         client.getSentRequests(),
-        client.getFriendList(),
+        client.getFriendList({ maxPages: 3 }),
       ]);
       const friends = friendInfos.map((f) => f.friendCode);
 
