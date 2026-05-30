@@ -106,7 +106,7 @@ export class MaimaiHttpClient {
   //   速率上限。
   // =========================================================================
   /** 请求发起间最小间隔（毫秒） */
-  private static readonly REQUEST_INTERVAL_MS = 2_000;
+  private static readonly REQUEST_INTERVAL_MS = 2_500;
   /** 上一次请求发起的时间戳（也是 batch 计费的基准） */
   private static lastRequestStartTime = 0;
   /** 限流锁：保证等待+更新时间戳的原子性 */
@@ -394,16 +394,6 @@ export class MaimaiHttpClient {
           continue;
         }
 
-        // 522 cloudflare "origin timed out": wahlap 已经收到 request，
-        // 副作用大概率已经生效，cloudflare 只是没等到 response。对于
-        // 不读 body 的写操作（friend request 系列），可以视为成功，
-        // 避免在 wahlap 已经处理过的情况下又重试一次（会重复加好友 / 重复申请）。
-        if (result.status === 522 && options.treat522AsSuccess) {
-          console.log(
-            `[MaimaiClient] 522 origin timeout treated as success url=${url}`,
-          );
-          return result;
-        }
 
         // 其他非成功状态码直接抛出错误，附带响应体
         if (!result.ok) {
@@ -626,7 +616,6 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}&invite=`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
     });
 
     await this.fetchWithToken(MAIMAI_URLS.friendInvite);
@@ -647,7 +636,6 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}&allow=`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
     });
 
     await this.fetchWithToken(MAIMAI_URLS.friendAcceptAllow);
@@ -668,7 +656,6 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}&block=`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
     });
 
     await this.fetchWithToken(MAIMAI_URLS.friendAccept);
@@ -689,7 +676,6 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}&invite=`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
     });
     console.log(
       `[MaimaiClient] Done cancel friend request, friend code ${friendCode}`,
@@ -708,7 +694,6 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
     });
     console.log(`[MaimaiClient] Done remove friend, friend code ${friendCode}`);
   }
@@ -725,7 +710,6 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
     });
     console.log(
       `[MaimaiClient] Done favorite on friend, friend code ${friendCode}`,
@@ -744,7 +728,6 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
     });
     console.log(
       `[MaimaiClient] Done favorite off friend, friend code ${friendCode}`,
