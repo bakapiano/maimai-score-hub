@@ -1,4 +1,4 @@
-FROM node:22.6.0-slim
+FROM node:22.16.0-slim
 
 # Build shared package first
 WORKDIR /app/shared
