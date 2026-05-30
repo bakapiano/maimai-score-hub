@@ -280,11 +280,27 @@ export class MaimaiHttpClient {
           COOKIE_EXPIRE_LOCATIONS.has(location as any) &&
           isCookieExpireBody
         ) {
+          // Detail log so we can tell real cookie expiry from spurious
+          // "expired" markers (mid-page wahlap glitches, 567 wrapped as
+          // an HTML error, etc). Bot id (from URL friendCode if present)
+          // is in the URL we already logged.
+          const markers = [
+            body.includes(COOKIE_EXPIRE_MARKERS.line1) ? 'line1' : '',
+            body.includes(COOKIE_EXPIRE_MARKERS.line2) ? 'line2' : '',
+            body.includes(COOKIE_EXPIRE_MARKERS.errorCode100001) ? '100001' : '',
+            body.includes(COOKIE_EXPIRE_MARKERS.errorCode200002) ? '200002' : '',
+          ].filter(Boolean).join(',');
+          console.log(
+            `[MaimaiClient] CookieExpired detail url=${url} status=${result.status} location=${location} markers=[${markers}] bodyLen=${body.length} bodyHead=${JSON.stringify(body.slice(0, 400))}`,
+          );
           throw new CookieExpiredError();
         }
 
         // 401/403 认证错误视为 Cookie 过期
         if (result.status === 401 || result.status === 403) {
+          console.log(
+            `[MaimaiClient] CookieExpired (HTTP ${result.status}) url=${url} location=${location} bodyHead=${JSON.stringify(body.slice(0, 400))}`,
+          );
           throw new CookieExpiredError(`Cookie 已失效 (HTTP ${result.status})`);
         }
 
