@@ -255,14 +255,6 @@ export class MaimaiHttpClient {
     // reflects the response carrying that Set-Cookie.
     let lastResponseStatus = 0;
     const realJar = this.cookieJar;
-    // Session-critical wahlap cookies — once set (during auth), wahlap
-    // sometimes rotates these on regular page responses (e.g.
-    // /index.php/friend/ returns Set-Cookie: userId=<some other id>),
-    // which corrupts our jar and causes the very next request to land
-    // on /error/ with markers=line1+200002. Treat these as sticky: once
-    // present, never overwrite. fetch-cookie writes are silently dropped
-    // for these keys (with a log).
-    const STICKY_WAHLAP_KEYS = new Set(["_t", "userId", "friendCodeList"]);
     const wrappedJar = {
       getCookieString: (currentUrl: string) =>
         realJar.getCookieString(currentUrl),
@@ -290,17 +282,6 @@ export class MaimaiHttpClient {
           oldValue = existing.find((c) => c.key === name)?.value;
         } catch {
           // Best-effort log only
-        }
-        if (
-          STICKY_WAHLAP_KEYS.has(name) &&
-          oldValue !== undefined &&
-          oldValue !== newValue &&
-          currentUrl.includes("maimai.wahlap.com")
-        ) {
-          console.warn(
-            `[MaimaiClient] Reject Set-Cookie (sticky) url=${currentUrl} status=${lastResponseStatus} ${name}: keeping ${JSON.stringify(oldValue)} (server tried ${JSON.stringify(newValue)})`,
-          );
-          return;
         }
         if (oldValue !== newValue) {
           console.log(
