@@ -23,6 +23,7 @@ import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAdminContext } from "./adminUtils";
+import { ScrollableTable } from "../../components/ScrollableTable";
 
 interface SdgbRecentJob {
   id: string;
@@ -532,7 +533,7 @@ export default function AdminSdgbWorkerPage() {
           <Text fw={600} size="sm">
             按 jobType 统计 (近 1 小时)
           </Text>
-          <Table withTableBorder withColumnBorders highlightOnHover>
+          <ScrollableTable withTableBorder withColumnBorders highlightOnHover>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>类型</Table.Th>
@@ -561,7 +562,7 @@ export default function AdminSdgbWorkerPage() {
                 </Table.Tr>
               ))}
             </Table.Tbody>
-          </Table>
+          </ScrollableTable>
         </Stack>
       </Card>
 
@@ -626,7 +627,7 @@ export default function AdminSdgbWorkerPage() {
             </Group>
           </Group>
           <ScrollArea>
-            <Table withTableBorder withColumnBorders striped fz="xs">
+            <ScrollableTable withTableBorder withColumnBorders striped fz="xs">
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>状态</Table.Th>
@@ -687,7 +688,7 @@ export default function AdminSdgbWorkerPage() {
                   </Table.Tr>
                 )}
               </Table.Tbody>
-            </Table>
+            </ScrollableTable>
           </ScrollArea>
           {totalJobsPages > 1 && (
             <Group justify="center" mt="xs">
@@ -724,7 +725,7 @@ export default function AdminSdgbWorkerPage() {
             </Button>
           </Group>
           <ScrollArea>
-            <Table withTableBorder withColumnBorders striped fz="xs">
+            <ScrollableTable withTableBorder withColumnBorders striped fz="xs">
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>friendCode</Table.Th>
@@ -920,7 +921,7 @@ export default function AdminSdgbWorkerPage() {
                   </Table.Tr>
                 )}
               </Table.Tbody>
-            </Table>
+            </ScrollableTable>
           </ScrollArea>
         </Stack>
       </Card>
@@ -954,7 +955,7 @@ export default function AdminSdgbWorkerPage() {
               hash 比对生效。
             </Text>
             <ScrollArea.Autosize mah={500}>
-              <Table withTableBorder withColumnBorders striped fz="xs">
+              <ScrollableTable withTableBorder withColumnBorders striped fz="xs">
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>时间</Table.Th>
@@ -1073,7 +1074,7 @@ export default function AdminSdgbWorkerPage() {
                     );
                   })}
                 </Table.Tbody>
-              </Table>
+              </ScrollableTable>
             </ScrollArea.Autosize>
           </Stack>
         )}

@@ -10,6 +10,7 @@ import {
   ScrollArea,
   Select,
   Stack,
+  Switch,
   Tooltip as MantineTooltip,
   Table,
   Text,
@@ -26,15 +27,21 @@ import { useCallback, useEffect, useState } from "react";
 import {
   type ApiLogEntry,
   type SearchJobResult,
+  ERROR_CATEGORY_META,
+  categorizeJobError,
   useAdminContext,
 } from "./adminUtils";
 import { adminApi } from "../../api/appClient";
+import { ScrollableTable } from "../../components/ScrollableTable";
 
 export default function AdminJobDebugPage() {
   const { password } = useAdminContext();
 
   const [friendCode, setFriendCode] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  // 默认隐藏"用户原因"分类失败（等好友超时 / 没绑 cabinet 等），让 admin
+  // 一眼只看"系统/远端"问题。可勾选打开。
+  const [hideUserErrors, setHideUserErrors] = useState(true);
   const [jobs, setJobs] = useState<SearchJobResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -138,6 +145,12 @@ export default function AdminJobDebugPage() {
             ]}
             style={{ width: 140 }}
           />
+          <Switch
+            label="隐藏用户原因失败"
+            size="sm"
+            checked={hideUserErrors}
+            onChange={(e) => setHideUserErrors(e.currentTarget.checked)}
+          />
           <Button
             variant="light"
             size="sm"
@@ -150,7 +163,7 @@ export default function AdminJobDebugPage() {
 
         {jobs.length > 0 && (
           <>
-            <Table striped highlightOnHover withTableBorder>
+            <ScrollableTable striped highlightOnHover withTableBorder>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>好友码</Table.Th>
@@ -163,7 +176,13 @@ export default function AdminJobDebugPage() {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {jobs.map((job) => (
+                {jobs
+                  .filter(
+                    (job) =>
+                      !hideUserErrors ||
+                      categorizeJobError(job.error) !== "user_error",
+                  )
+                  .map((job) => (
                   <Table.Tr
                     key={job.id}
                     bg={
@@ -205,14 +224,36 @@ export default function AdminJobDebugPage() {
                       </Text>
                     </Table.Td>
                     <Table.Td>
-                      <Text
-                        size="sm"
-                        c={job.error ? "red" : "dimmed"}
-                        lineClamp={1}
-                        style={{ maxWidth: 200 }}
-                      >
-                        {job.error ?? "-"}
-                      </Text>
+                      {job.error ? (
+                        <Group gap={6} wrap="nowrap" align="flex-start">
+                          {(() => {
+                            const cat = categorizeJobError(job.error);
+                            const meta = ERROR_CATEGORY_META[cat];
+                            return (
+                              <Badge
+                                size="xs"
+                                variant="light"
+                                color={meta.color}
+                                style={{ flexShrink: 0 }}
+                              >
+                                {meta.label}
+                              </Badge>
+                            );
+                          })()}
+                          <Text
+                            size="sm"
+                            c="red"
+                            lineClamp={1}
+                            style={{ maxWidth: 200 }}
+                          >
+                            {job.error}
+                          </Text>
+                        </Group>
+                      ) : (
+                        <Text size="sm" c="dimmed">
+                          -
+                        </Text>
+                      )}
                     </Table.Td>
                     <Table.Td>
                       <Text size="sm" c="dimmed">
@@ -238,7 +279,7 @@ export default function AdminJobDebugPage() {
                   </Table.Tr>
                 ))}
               </Table.Tbody>
-            </Table>
+            </ScrollableTable>
             <Group justify="space-between" align="center">
               <Text size="sm" c="dimmed">
                 共 {total} 条记录
@@ -290,7 +331,7 @@ export default function AdminJobDebugPage() {
                 </Text>
               ) : apiLogs.length > 0 ? (
                 <ScrollArea h={400}>
-                  <Table striped highlightOnHover withTableBorder>
+                  <ScrollableTable striped highlightOnHover withTableBorder>
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th>时间</Table.Th>
@@ -410,7 +451,7 @@ export default function AdminJobDebugPage() {
                         </Table.Tr>
                       ))}
                     </Table.Tbody>
-                  </Table>
+                  </ScrollableTable>
                 </ScrollArea>
               ) : (
                 <Text size="sm" c="dimmed" ta="center">

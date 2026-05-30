@@ -11,6 +11,7 @@ import { IconRefresh, IconUsers } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { adminApi } from "../../api/appClient";
+import { ScrollableTable } from "../../components/ScrollableTable";
 import { useAdminContext, type AdminUser } from "./adminUtils";
 
 export default function AdminUsersPage() {
@@ -71,7 +72,7 @@ export default function AdminUsersPage() {
 
         {users.length > 0 ? (
           <>
-            <Table striped highlightOnHover withTableBorder>
+            <ScrollableTable striped highlightOnHover withTableBorder>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>好友码</Table.Th>
@@ -108,7 +109,7 @@ export default function AdminUsersPage() {
                   </Table.Tr>
                 ))}
               </Table.Tbody>
-            </Table>
+            </ScrollableTable>
 
             {totalPages > 1 && (
               <Group justify="center">

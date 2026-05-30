@@ -46,6 +46,7 @@ import {
   useAdminContext,
 } from "./adminUtils";
 import { adminApi } from "../../api/appClient";
+import { ScrollableTable } from "../../components/ScrollableTable";
 
 export default function AdminActiveJobsPage() {
   const { password } = useAdminContext();
@@ -461,7 +462,7 @@ export default function AdminActiveJobsPage() {
           </Group>
 
           {botStatuses && botStatuses.length > 0 ? (
-            <Table striped highlightOnHover withTableBorder>
+            <ScrollableTable striped highlightOnHover withTableBorder>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Bot 好友码</Table.Th>
@@ -647,7 +648,7 @@ export default function AdminActiveJobsPage() {
                   </Table.Tr>
                 ))}
               </Table.Tbody>
-            </Table>
+            </ScrollableTable>
           ) : (
             <Text size="sm" c="dimmed" ta="center">
               {botStatusesLoading ? "加载中..." : "暂无 Bot 状态数据"}
@@ -694,7 +695,7 @@ export default function AdminActiveJobsPage() {
           </Group>
 
           {activeJobs && activeJobs.jobs.length > 0 ? (
-            <Table striped highlightOnHover withTableBorder>
+            <ScrollableTable striped highlightOnHover withTableBorder>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>好友码</Table.Th>
@@ -772,7 +773,7 @@ export default function AdminActiveJobsPage() {
                   </Table.Tr>
                 ))}
               </Table.Tbody>
-            </Table>
+            </ScrollableTable>
           ) : (
             <Text size="sm" c="dimmed" ta="center">
               {activeJobsLoading ? "加载中..." : "当前没有进行中的任务"}
@@ -810,7 +811,7 @@ export default function AdminActiveJobsPage() {
               </Tabs.List>
 
               <Tabs.Panel value="withUpdate" pt="md">
-                <Table striped highlightOnHover withTableBorder>
+                <ScrollableTable striped highlightOnHover withTableBorder>
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>时间范围</Table.Th>
@@ -849,11 +850,11 @@ export default function AdminActiveJobsPage() {
                       </Table.Tr>
                     ))}
                   </Table.Tbody>
-                </Table>
+                </ScrollableTable>
               </Tabs.Panel>
 
               <Tabs.Panel value="skipUpdate" pt="md">
-                <Table striped highlightOnHover withTableBorder>
+                <ScrollableTable striped highlightOnHover withTableBorder>
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>时间范围</Table.Th>
@@ -874,7 +875,7 @@ export default function AdminActiveJobsPage() {
                       </Table.Tr>
                     ))}
                   </Table.Tbody>
-                </Table>
+                </ScrollableTable>
               </Tabs.Panel>
 
               <Tabs.Panel value="errors" pt="md">
@@ -896,7 +897,7 @@ export default function AdminActiveJobsPage() {
                     </Group>
                     {(jobErrorStats[selectedErrorTimeRange]?.items?.length ??
                       0) > 0 ? (
-                      <Table striped highlightOnHover withTableBorder>
+                      <ScrollableTable striped highlightOnHover withTableBorder>
                         <Table.Thead>
                           <Table.Tr>
                             <Table.Th>错误信息</Table.Th>
@@ -922,7 +923,7 @@ export default function AdminActiveJobsPage() {
                             ),
                           )}
                         </Table.Tbody>
-                      </Table>
+                      </ScrollableTable>
                     ) : (
                       <Text size="sm" c="dimmed" ta="center">
                         该时间段内暂无失败记录

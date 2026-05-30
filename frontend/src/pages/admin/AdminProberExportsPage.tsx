@@ -26,6 +26,7 @@ import { IconCloudUpload } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { adminApi } from "../../api/appClient";
+import { ScrollableTable } from "../../components/ScrollableTable";
 import { useAdminContext } from "./adminUtils";
 
 type Totals = { success: number; failed: number; rate: number };
@@ -282,7 +283,7 @@ export default function AdminProberExportsPage() {
             最近失败明细（最多 {data.recentFailures.length} 条）
           </Text>
           <Box style={{ overflowX: "auto" }}>
-            <Table striped highlightOnHover withTableBorder fz="xs">
+            <ScrollableTable striped highlightOnHover withTableBorder fz="xs">
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>时间</Table.Th>
@@ -354,7 +355,7 @@ export default function AdminProberExportsPage() {
                   </Table.Tr>
                 ))}
               </Table.Tbody>
-            </Table>
+            </ScrollableTable>
           </Box>
         </Card>
       )}

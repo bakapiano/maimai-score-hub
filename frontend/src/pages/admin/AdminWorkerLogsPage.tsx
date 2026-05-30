@@ -15,6 +15,7 @@ import { IconLogs, IconRefresh } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAdminContext } from "./adminUtils";
+import { ScrollableTable } from "../../components/ScrollableTable";
 
 interface WorkerLogRow {
   workerKind: string;
@@ -220,7 +221,7 @@ export default function AdminWorkerLogsPage() {
 
       <Card withBorder padding="md" radius="md">
         <ScrollArea>
-          <Table withTableBorder withColumnBorders striped fz="xs">
+          <ScrollableTable withTableBorder withColumnBorders striped fz="xs">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th w={170}>时间</Table.Th>
@@ -292,7 +293,7 @@ export default function AdminWorkerLogsPage() {
                 </Table.Tr>
               )}
             </Table.Tbody>
-          </Table>
+          </ScrollableTable>
         </ScrollArea>
       </Card>
     </Stack>
