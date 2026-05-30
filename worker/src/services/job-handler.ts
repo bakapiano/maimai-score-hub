@@ -631,23 +631,23 @@ export class JobHandler {
       return;
     }
 
-    // if (!this.config.skipCleanUpFriend) {
-    //   // 对于 immediate job，如果当前 bot 是用户的闲时更新 bot，跳过删除好友
-    //   let shouldSkip = false;
-    //   if (jobType === "immediate" && this.job.botUserFriendCode) {
-    //     try {
-    //       shouldSkip = await checkIsIdleUpdateBot(
-    //         this.job.friendCode,
-    //         this.job.botUserFriendCode,
-    //       );
-    //     } catch {
-    //       // Best effort
-    //     }
-    //   }
-    //   if (!shouldSkip) {
-    //     this.friendManager.cleanUpFriend(this.job.friendCode).catch(() => {});
-    //   }
-    // }
+    if (!this.config.skipCleanUpFriend) {
+      // 对于 immediate job，如果当前 bot 是用户的闲时更新 bot，跳过删除好友
+      let shouldSkip = false;
+      if (jobType === "immediate" && this.job.botUserFriendCode) {
+        try {
+          shouldSkip = await checkIsIdleUpdateBot(
+            this.job.friendCode,
+            this.job.botUserFriendCode,
+          );
+        } catch {
+          // Best effort
+        }
+      }
+      if (!shouldSkip) {
+        this.friendManager.cleanUpFriend(this.job.friendCode).catch(() => {});
+      }
+    }
   }
 
   /**
