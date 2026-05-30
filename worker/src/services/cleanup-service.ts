@@ -172,8 +172,7 @@ export class CleanupService {
         }
       }
 
-      // 4. 当非闲时更新好友 > 19 时，按活跃度排序，保留最活跃的 19 个，淘汰其余
-      //    同时清除超过 30 分钟未活跃的用户
+      // 4. 清除超过 30 分钟未活跃的非闲时更新好友
       let friendsToRemove: string[] = [];
       {
         const nonIdleFriends = friends.filter((fc) => !idleUpdateSet.has(fc));
@@ -185,15 +184,17 @@ export class CleanupService {
         const THIRTY_MIN_MS = 30 * 60 * 1000;
         const nowMs = Date.now();
 
-        // 先淘汰超过 30 分钟未活跃且不在活跃任务中的好友
+        // 淘汰超过 30 分钟未活跃且不在活跃任务中的好友。
+        // 之前还有一条「砍到 19 个」的硬上限，但 cleanup 现在只看前 3 页
+        // (maxPages=3)，硬上限在小样本里会乱踢；30min inactive 规则本身
+        // 已经够把好友数压低，去掉硬上限更直观。
         const inactiveFriends = nonIdleFriends.filter((fc) => {
           if (activeSet.has(fc)) return false;
           const lastActive = activityMap.get(fc);
           // Conservative: if backend has no activity record for this
           // friendCode (e.g. brand-new account just created via QR
           // login, or user that's never logged in), don't evict —
-          // we have no evidence they're stale. The bot's hard cap
-          // (top-19 by recency below) will still bound friend count.
+          // we have no evidence they're stale.
           if (!lastActive) return false;
           return nowMs - new Date(lastActive).getTime() > THIRTY_MIN_MS;
         });
@@ -203,25 +204,6 @@ export class CleanupService {
             `[CleanupService] Bot ${botFriendCode} evicting ${inactiveFriends.length} friends inactive for > 30 min`,
           );
           friendsToRemove.push(...inactiveFriends);
-        }
-
-        // 剔除已标记移除的后，如果剩余非闲时好友仍 > 19，按活跃度排序保留前 19
-        const removeSet = new Set(friendsToRemove);
-        const remaining = nonIdleFriends.filter((fc) => !removeSet.has(fc));
-        if (remaining.length > 19) {
-          remaining.sort((a, b) => {
-            const ta = activityMap.get(a);
-            const tb = activityMap.get(b);
-            if (!ta && !tb) return 0;
-            if (!ta) return 1;
-            if (!tb) return -1;
-            return new Date(tb).getTime() - new Date(ta).getTime();
-          });
-          const excess = remaining.slice(19);
-          friendsToRemove.push(...excess);
-          console.log(
-            `[CleanupService] Bot ${botFriendCode} has ${remaining.length} remaining non-idle friends (> 19), evicting ${excess.length} least-active friends`,
-          );
         }
       }
 
