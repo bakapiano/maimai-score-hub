@@ -109,12 +109,27 @@ async function onAuthHook(href: string): Promise<string> {
 
   // 后台异步执行 cookie 交换，不阻塞代理响应
   (async () => {
+    // 硬超时 90s — getCookieByAuthUrl 内部 fetch-cookie 不保证响应
+    // AbortSignal，加一个最外层的 Promise.race 兜底，防止 IIFE 永挂
+    // 而 startAuth/finishAuth 状态错乱。
+    const timeoutSentinel: unique symbol = Symbol("auth-iife-timeout") as never;
+    let timeoutHandle: NodeJS.Timeout | undefined;
+    const hardTimeout = new Promise<typeof timeoutSentinel>((resolve) => {
+      timeoutHandle = setTimeout(() => resolve(timeoutSentinel), 90_000);
+    });
     try {
       const cj = await getCookieByAuthUrl(target);
       const client = new MaimaiHttpClient(cj);
-      const friendCode = await client.getUserFriendCode();
-
-      if (friendCode) {
+      const friendCodeResult = await Promise.race([
+        client.getUserFriendCode(),
+        hardTimeout,
+      ]);
+      if (friendCodeResult === timeoutSentinel) {
+        console.error(
+          "[Proxy] Cookie exchange aborted: getUserFriendCode exceeded 90s",
+        );
+      } else if (friendCodeResult) {
+        const friendCode = friendCodeResult;
         console.log(JSON.stringify(cj.toJSON(), null, 2));
         cookieStore.set(friendCode, cj);
         cookieStore.markValid(friendCode);
@@ -129,6 +144,7 @@ async function onAuthHook(href: string): Promise<string> {
     } catch (e) {
       console.error("[Proxy] Failed to exchange cookie", e);
     } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       runtimeState.finishAuth();
     }
   })();

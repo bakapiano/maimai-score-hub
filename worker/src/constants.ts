@@ -89,8 +89,12 @@ export const COOKIE_EXPIRE_MARKERS = {
 // ============================================================================
 
 export const TIMEOUTS = {
-  /** 默认请求超时 (ms) */
-  default: 30_000,
+  /** 默认请求超时 (ms). 60s — wahlap is slow during peak, and with
+   * the 5s per-request spacing, a brief upstream slowdown could push
+   * a single fetch over 30s before the response lands. Phone-driven
+   * cookie auth in particular hit "signal timed out" on the
+   * getUserFriendCode validation step. */
+  default: 60_000,
   /** Friend VS 页面请求超时 (ms) */
   friendVS: 5 * 60 * 1000,
   /** 好友请求接受等待超时 (ms) */

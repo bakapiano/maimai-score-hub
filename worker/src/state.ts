@@ -8,8 +8,12 @@ import { cookieStore } from "./services/cookie-store.ts";
 
 /**
  * 认证超时时间（毫秒）
+ *
+ * 30s — auth IIFE in proxy.ts has its own 90s hard cap; this is the
+ * "if nobody calls finishAuth" backstop and just gates /api/status.
+ * Keep it short so a stuck/abandoned auth doesn't lock new attempts.
  */
-const AUTH_TIMEOUT_MS = 60_000; // 1 分钟
+const AUTH_TIMEOUT_MS = 30_000;
 
 /**
  * 运行时状态
