@@ -209,4 +209,14 @@ export interface FetchOptions {
   body?: string;
   signal?: AbortSignal;
   addToken?: boolean;
+  /**
+   * Treat HTTP 522 as success and return a synthetic empty response
+   * instead of throwing. Use only for write-style POSTs whose callers
+   * don't read the response body — 522 is cloudflare "origin timed
+   * out": the request reached wahlap (side effect almost certainly
+   * landed) but cloudflare gave up waiting for the response.
+   * Without this flag, the caller would retry an already-applied
+   * mutation, e.g. send the same friend request twice.
+   */
+  treat522AsSuccess?: boolean;
 }
