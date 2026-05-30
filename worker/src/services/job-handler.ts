@@ -561,34 +561,39 @@ export class JobHandler {
       });
     }
 
-    // 清理好友关系（不等待完成）
-    // idle_update_score job 完成后也清理好友（因为调度器已清除 user 标记）
-    // 对于 immediate job，如果当前 bot 是用户的闲时更新 bot，跳过删除好友
-    // let shouldSkipCleanup =
-    //   this.config.skipCleanUpFriend || jobType === "idle_add_friend";
-    // if (
-    //   !shouldSkipCleanup &&
-    //   jobType === "immediate" &&
-    //   this.job.botUserFriendCode
-    // ) {
-    //   try {
-    //     const isIdleBot = await checkIsIdleUpdateBot(
-    //       this.job.friendCode,
-    //       this.job.botUserFriendCode,
-    //     );
-    //     if (isIdleBot) {
-    //       shouldSkipCleanup = true;
-    //       console.log(
-    //         `[JobHandler] Job ${this.job.id}: Skipping friend cleanup (bot is idle update bot for this user)`,
-    //       );
-    //     }
-    //   } catch {
-    //     // Best effort check
-    //   }
-    // }
-    // if (!shouldSkipCleanup) {
-    //   this.friendManager.cleanUpFriend(this.job.friendCode).catch(() => {});
-    // }
+    // immediate job（用户手动触发）跑完也主动删好友。
+    // 例外：bot 当前正好是这个用户的闲时更新 bot —— 那条关系是常驻的，
+    // 不能因为一次 immediate 同步就把它砍掉。检查失败 fall through 到
+    // 删，宁可误删一次（下一轮 idle scheduler 会重新加）也不要留好友
+    // 把 bot 的好友槽位占住。
+    const jobType = this.job.jobType ?? "immediate";
+    if (
+      !this.config.skipCleanUpFriend &&
+      jobType === "immediate" &&
+      this.job.botUserFriendCode
+    ) {
+      try {
+        const isIdleBot = await checkIsIdleUpdateBot(
+          this.job.friendCode,
+          this.job.botUserFriendCode,
+        );
+        if (isIdleBot) {
+          console.log(
+            `[JobHandler] Job ${this.job.id}: skip post-job removeFriend (bot ${this.job.botUserFriendCode} is user's idle-update bot)`,
+          );
+        } else {
+          this.client.removeFriend(this.job.friendCode).catch((err) => {
+            console.warn(
+              `[JobHandler] Job ${this.job.id}: post-job removeFriend failed (ignored):`,
+              err instanceof Error ? err.message : err,
+            );
+          });
+        }
+      } catch {
+        // checkIsIdleUpdateBot best-effort; on failure default to removing
+        this.client.removeFriend(this.job.friendCode).catch(() => {});
+      }
+    }
 
     const cost = this.job.updatedAt.getTime() - this.job.createdAt.getTime();
     console.log(`[JobHandler] Job ${this.job.id}: Completed! Cost: ${cost}ms`);
