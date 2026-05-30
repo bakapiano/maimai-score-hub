@@ -108,11 +108,8 @@ export class WorkerScheduler {
     };
     scheduleTick();
 
-    // Cookie 健康检查暂停 — 详细诊断期间不主动发探测请求，避免:
-    // (a) 自己污染 cookie expired 统计
-    // (b) 探测请求本身也走 5s spacing 占 throttleLock
-    // 真正过期会在下一个 job 发起请求时被 maimai-client 捕获。
-    // this.startCookieHealthCheck();
+    // 启动 Cookie 健康检查
+    this.startCookieHealthCheck();
 
     // 启动 Bot 状态上报
     this.startBotStatusReporting();
