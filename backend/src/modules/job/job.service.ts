@@ -45,6 +45,15 @@ const QUEUED_JOB_TIMEOUT_MS = Number(
   process.env.QUEUED_JOB_TIMEOUT_MS ?? 5 * 60 * 1000,
 );
 
+/**
+ * Hard ceiling on any non-terminal job (default: 30 min). Worker has its
+ * own 30-min watchdog that PATCHes failed; this is the backstop for when
+ * the worker dies or its PATCH never lands.
+ */
+const PROCESSING_HARD_TIMEOUT_MS = Number(
+  process.env.PROCESSING_HARD_TIMEOUT_MS ?? 30 * 60 * 1000,
+);
+
 // [TODO] Change this to 1min
 // const MIN_CREATE_INTERVAL_MS = Number(
 //   process.env.MIN_CREATE_INTERVAL_MS ?? 1000 * 60,
@@ -671,6 +680,26 @@ export class JobService {
         $set: {
           status: 'failed',
           error: '排队超时，可能是 Bot 繁忙或异常，请稍后再试',
+          updatedAt: now,
+        },
+      },
+    );
+
+    // Hard ceiling: any non-terminal job alive longer than this is
+    // force-failed. Worker's per-job watchdog should normally fire
+    // first and PATCH failed itself; this catches the worker-died
+    // / PATCH-lost case so wedged jobs don't pile up.
+    const hardDeadline = new Date(now.getTime() - PROCESSING_HARD_TIMEOUT_MS);
+    await this.jobModel.updateMany(
+      {
+        status: { $in: ['queued', 'processing'] },
+        createdAt: { $lte: hardDeadline },
+      },
+      {
+        $set: {
+          status: 'failed',
+          executing: false,
+          error: '硬超时：任务存活时间超过 30 分钟',
           updatedAt: now,
         },
       },

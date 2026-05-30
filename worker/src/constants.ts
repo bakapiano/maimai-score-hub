@@ -99,6 +99,9 @@ export const TIMEOUTS = {
   friendVS: 5 * 60 * 1000,
   /** 好友请求接受等待超时 (ms) */
   friendAcceptWait: 5 * 60_000,
+  /** 单个 job 的硬性超时 (ms). 超过此时间，worker 直接 patch failed +
+   * 放弃在飞 HTTP 请求；backend 侧也有同样的 30min 兜底扫描。 */
+  jobHardTimeout: 30 * 60_000,
 } as const;
 
 export const RETRY = {

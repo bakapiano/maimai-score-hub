@@ -68,6 +68,9 @@ export class JobHandler {
   private scoreAggregator: ScoreAggregator;
   private config: JobHandlerConfig;
   private heartbeat: NodeJS.Timeout | null = null;
+  private hardTimer: NodeJS.Timeout | null = null;
+  private aborted = false;
+  private startedAt = 0;
   private friendVsDumpReady: Promise<void> | null = null;
 
   constructor(job: Job, client: MaimaiHttpClient, config: JobHandlerConfig) {
@@ -83,7 +86,12 @@ export class JobHandler {
    */
   async execute(): Promise<void> {
     try {
+      this.startedAt = Date.now();
       this.startHeartbeat();
+      this.hardTimer = setTimeout(
+        () => void this.onHardTimeout(),
+        TIMEOUTS.jobHardTimeout,
+      );
       this.client.jobId = this.job.id;
 
       // fetch_friend_list jobs aren't tied to a target user — friendCode
@@ -137,6 +145,10 @@ export class JobHandler {
       });
     } finally {
       this.stopHeartbeat();
+      if (this.hardTimer) {
+        clearTimeout(this.hardTimer);
+        this.hardTimer = null;
+      }
 
       // 上报并清理 API 日志
       await flushApiLogs(this.job.id).catch((err) => {
@@ -148,7 +160,8 @@ export class JobHandler {
       clearApiLogBuffer(this.job.id);
       this.client.jobId = null;
 
-      if (this.job.executing) {
+      // 硬超时分支已经 patch 过 executing:false，这里跳过避免覆盖 failed 状态
+      if (!this.aborted && this.job.executing) {
         try {
           await this.applyPatch({ executing: false });
         } catch (releaseErr) {
@@ -683,6 +696,12 @@ export class JobHandler {
    * 更新任务状态
    */
   private async applyPatch(patch: JobPatch): Promise<Job> {
+    // 硬超时已经把 job patch 成 failed。之后在飞的 HTTP 请求要是
+    // 还想 applyPatch（比如把 status 写回 processing，或者更新 result），
+    // 直接拒绝，避免把刚刚标记为 failed 的 job 又改回去。
+    if (this.aborted) {
+      throw new Error("job aborted by hard timeout");
+    }
     // Backend's mongo OOM-killed itself once on 2026-05-14; backend
     // came back up in ~30s but worker fetches that hit during the
     // window died with TypeError("fetch failed") (headersTimeout).
@@ -734,6 +753,39 @@ export class JobHandler {
         console.warn(`[JobHandler] Job ${this.job.id}: heartbeat failed`, err);
       }
     }, interval);
+  }
+
+  /**
+   * 硬超时：单个 job 跑超过 TIMEOUTS.jobHardTimeout 就放弃。
+   * - 标记 aborted（后续 applyPatch 会拒绝写回，避免 in-flight HTTP
+   *   的迟到结果把 failed 状态又改回去）
+   * - 停心跳（让 backend 的 DEAD_JOB_TIMEOUT_MS 兜底也能正常工作）
+   * - 直接调一次 updateJob，绕开 applyPatch 的重试循环 —— 失败也不管
+   * - 不取消在飞的 fetch（没有 AbortController 改造，后台 socket
+   *   自然 timeout 或跑完即可）
+   */
+  private async onHardTimeout(): Promise<void> {
+    if (this.aborted) return;
+    this.aborted = true;
+    const elapsedMs = this.startedAt ? Date.now() - this.startedAt : -1;
+    console.error(
+      `[JobHandler] Job ${this.job.id} HARD TIMEOUT after ${elapsedMs}ms ` +
+        `(limit ${TIMEOUTS.jobHardTimeout}ms), force-failing`,
+    );
+    this.stopHeartbeat();
+    try {
+      this.job = await updateJob(this.job.id, {
+        status: "failed",
+        error: "硬超时：处理时间超过 30 分钟",
+        executing: false,
+        updatedAt: new Date(),
+      });
+    } catch (err) {
+      console.warn(
+        `[JobHandler] Job ${this.job.id}: hard-timeout PATCH failed (ignored):`,
+        err,
+      );
+    }
   }
 
   /**
