@@ -546,52 +546,22 @@ export class JobHandler {
     // 取消收藏好友（不等待完成，默认都进行）
     this.friendManager.favoriteOffFriend(this.job.friendCode).catch(() => {});
 
-    // 自动触发的 update（idle_update_score）跑完后主动删好友：
-    // - 这条路径里 bot 一定已经是用户的好友（刚拿完 friend-VS 数据），
-    //   单发一个 removeFriend POST 就够，不用走 cleanUpFriend 的
-    //   "先 list 再判断" 流程。
-    // - fire-and-forget，失败也不管 —— backend 那边的 CleanupService
-    //   每 5min 再扫一次兜底；自动更新流量大、删干净更重要。
-    if ((this.job.jobType ?? "immediate") === "idle_update_score") {
-      this.client.removeFriend(this.job.friendCode).catch((err) => {
-        console.warn(
-          `[JobHandler] Job ${this.job.id}: post-update removeFriend failed (ignored):`,
-          err instanceof Error ? err.message : err,
-        );
-      });
-    }
-
-    // immediate job（用户手动触发）跑完也主动删好友。
-    // 例外：bot 当前正好是这个用户的闲时更新 bot —— 那条关系是常驻的，
-    // 不能因为一次 immediate 同步就把它砍掉。检查失败 fall through 到
-    // 删，宁可误删一次（下一轮 idle scheduler 会重新加）也不要留好友
-    // 把 bot 的好友槽位占住。
-    const jobType = this.job.jobType ?? "immediate";
-    if (
-      !this.config.skipCleanUpFriend &&
-      jobType === "immediate" &&
-      this.job.botUserFriendCode
-    ) {
-      try {
-        const isIdleBot = await checkIsIdleUpdateBot(
-          this.job.friendCode,
-          this.job.botUserFriendCode,
-        );
-        if (isIdleBot) {
-          console.log(
-            `[JobHandler] Job ${this.job.id}: skip post-job removeFriend (bot ${this.job.botUserFriendCode} is user's idle-update bot)`,
+    if (!this.config.skipCleanUpFriend) {
+      // 对于 immediate job，如果当前 bot 是用户的闲时更新 bot，跳过删除好友
+      const jobType = this.job.jobType ?? "immediate";
+      let shouldSkip = false;
+      if (jobType === "immediate" && this.job.botUserFriendCode) {
+        try {
+          shouldSkip = await checkIsIdleUpdateBot(
+            this.job.friendCode,
+            this.job.botUserFriendCode,
           );
-        } else {
-          this.client.removeFriend(this.job.friendCode).catch((err) => {
-            console.warn(
-              `[JobHandler] Job ${this.job.id}: post-job removeFriend failed (ignored):`,
-              err instanceof Error ? err.message : err,
-            );
-          });
+        } catch {
+          // Best effort
         }
-      } catch {
-        // checkIsIdleUpdateBot best-effort; on failure default to removing
-        this.client.removeFriend(this.job.friendCode).catch(() => {});
+      }
+      if (!shouldSkip) {
+        this.friendManager.cleanUpFriend(this.job.friendCode).catch(() => {});
       }
     }
 
