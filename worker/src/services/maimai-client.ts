@@ -419,50 +419,49 @@ export class MaimaiHttpClient {
   async getFriendList(): Promise<FriendInfo[]> {
     console.log(`[MaimaiClient] Start get friend list`);
 
-    // 整个翻页过程作为一个 batch — 翻页是 idempotent read，紧邻发出对
-    // 服务端没害，但能省掉每页之间 2.5s 的 client spacing。大用户（>20
-    // 好友）能省 5–15s。
-    return MaimaiHttpClient.runInBatch(async () => {
-      // 获取第一页
-      const firstResult = await this.fetchWithToken(MAIMAI_URLS.friendList);
-      const firstText = await firstResult.text();
-      const friends = parseFriendList(firstText);
-      const friendCount = parseFriendCount(firstText);
+    // 第一页串行：要解出 friendCount 才知道总页数。
+    const firstResult = await this.fetchWithToken(MAIMAI_URLS.friendList);
+    const firstText = await firstResult.text();
+    const friends = parseFriendList(firstText);
+    const friendCount = parseFriendCount(firstText);
 
-      if (friendCount === null || friendCount <= 10) {
-        console.log(
-          `[MaimaiClient] Done get friend list (single page), count=${friends.length}`,
-        );
-        return friends;
-      }
-
-      // 计算需要翻页的页数: 第 2 页到第 ceil(friendCount/10)+1 页
-      const totalPages = Math.ceil(friendCount / 10) + 1;
+    if (friendCount === null || friendCount <= 10) {
       console.log(
-        `[MaimaiClient] Friend count: ${friendCount}, fetching pages 2..${totalPages}`,
+        `[MaimaiClient] Done get friend list (single page), count=${friends.length}`,
       );
+      return friends;
+    }
 
-      for (let page = 2; page <= totalPages; page++) {
-        const pageResult = await this.fetchWithToken(
-          MAIMAI_URLS.friendListPage(page),
-        );
-        const pageText = await pageResult.text();
-        const pageFriends = parseFriendList(pageText);
-        friends.push(...pageFriends);
-      }
+    // 计算需要翻页的页数: 第 2 页到第 ceil(friendCount/10)+1 页
+    const totalPages = Math.ceil(friendCount / 10) + 1;
+    console.log(
+      `[MaimaiClient] Friend count: ${friendCount}, fetching pages 2..${totalPages}`,
+    );
 
-      // 去重
-      const seen = new Set<string>();
-      const uniqueFriends = friends.filter((f) => {
-        if (seen.has(f.friendCode)) return false;
-        seen.add(f.friendCode);
-        return true;
-      });
-      console.log(
-        `[MaimaiClient] Done get friend list (${totalPages} pages), count=${uniqueFriends.length}`,
+    // 第 2-N 页串行抓，每页之间走默认 2.5s spacing。之前用 runInBatch 包
+    // 起来跳过 spacing，但 batch 跨越数十秒，期间这个 bot 的其他请求
+    // (e.g. send_friend_request) 会被它顶在前面无限等待。还原成默认
+    // throttle 后翻页慢一点，但 bot 的其他工作不会被卡。
+    for (let page = 2; page <= totalPages; page++) {
+      const pageResult = await this.fetchWithToken(
+        MAIMAI_URLS.friendListPage(page),
       );
-      return uniqueFriends;
-    }, "get-friend-list");
+      const pageText = await pageResult.text();
+      const pageFriends = parseFriendList(pageText);
+      friends.push(...pageFriends);
+    }
+
+    // 去重
+    const seen = new Set<string>();
+    const uniqueFriends = friends.filter((f) => {
+      if (seen.has(f.friendCode)) return false;
+      seen.add(f.friendCode);
+      return true;
+    });
+    console.log(
+      `[MaimaiClient] Done get friend list (${totalPages} pages), count=${uniqueFriends.length}`,
+    );
+    return uniqueFriends;
   }
 
   /**
