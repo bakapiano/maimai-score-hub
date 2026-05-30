@@ -243,7 +243,66 @@ export class MaimaiHttpClient {
     rateLimitMaxCount: number = RETRY.rateLimitMaxCount,
     responseAssertion?: (body: string) => void,
   ): Promise<Response> {
-    const fetchWithCookie = makeFetchCookie(global.fetch, this.cookieJar);
+    // Wrap the jar so we can (a) ignore Set-Cookie on 5xx responses
+    // (wahlap's error-page set-cookie can clobber a valid session), and
+    // (b) log every cookie write with old vs new value + originating
+    // URL. fetch-cookie only touches getCookieString / setCookie on the
+    // jar, so this wrapper is enough.
+    //
+    // Status flow: we intercept global.fetch so lastResponseStatus is
+    // updated the moment a response (or redirect hop) lands. fetch-cookie
+    // calls our setCookie right after, when lastResponseStatus already
+    // reflects the response carrying that Set-Cookie.
+    let lastResponseStatus = 0;
+    const realJar = this.cookieJar;
+    const wrappedJar = {
+      getCookieString: (currentUrl: string) =>
+        realJar.getCookieString(currentUrl),
+      setCookie: async (
+        cookieString: string,
+        currentUrl: string,
+        opts: { ignoreError: boolean },
+      ) => {
+        if (lastResponseStatus >= 500) {
+          console.warn(
+            `[MaimaiClient] Skip Set-Cookie (5xx) status=${lastResponseStatus} url=${currentUrl} setCookie=${JSON.stringify(cookieString.slice(0, 200))}`,
+          );
+          return;
+        }
+        const eq = cookieString.indexOf("=");
+        const semi = cookieString.indexOf(";");
+        const name = eq > 0 ? cookieString.slice(0, eq) : "<?>";
+        const newValue =
+          eq > 0
+            ? cookieString.slice(eq + 1, semi > eq ? semi : undefined)
+            : "<?>";
+        let oldValue: string | undefined;
+        try {
+          const existing = await realJar.getCookies(currentUrl);
+          oldValue = existing.find((c) => c.key === name)?.value;
+        } catch {
+          // Best-effort log only
+        }
+        if (oldValue !== newValue) {
+          console.log(
+            `[MaimaiClient] Set-Cookie url=${currentUrl} status=${lastResponseStatus} ${name}: ${JSON.stringify(oldValue ?? null)} → ${JSON.stringify(newValue)}`,
+          );
+        }
+        return realJar.setCookie(cookieString, currentUrl, opts);
+      },
+    };
+    const fetchInterceptor = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const res = await global.fetch(input, init);
+      lastResponseStatus = res.status;
+      return res;
+    }) as typeof global.fetch;
+    const fetchWithCookie = makeFetchCookie(
+      fetchInterceptor,
+      wrappedJar as unknown as CookieJar,
+    );
     const fetchTimeout = timeout ?? config.fetchTimeOut ?? TIMEOUTS.default;
     let rateLimitCount = 0;
 
@@ -290,16 +349,30 @@ export class MaimaiHttpClient {
             body.includes(COOKIE_EXPIRE_MARKERS.errorCode100001) ? '100001' : '',
             body.includes(COOKIE_EXPIRE_MARKERS.errorCode200002) ? '200002' : '',
           ].filter(Boolean).join(',');
+          // Dump the cookie values we sent — helps see whether a stale
+          // _t is what wahlap rejected (vs e.g. _t got cleared somehow).
+          let cookieDump = '<unavailable>';
+          try {
+            cookieDump = await realJar.getCookieString(url);
+          } catch {
+            // ignore
+          }
           console.log(
-            `[MaimaiClient] CookieExpired detail url=${url} status=${result.status} location=${location} markers=[${markers}] bodyLen=${body.length} bodyHead=${JSON.stringify(body.slice(0, 400))}`,
+            `[MaimaiClient] CookieExpired detail url=${url} status=${result.status} location=${location} markers=[${markers}] bodyLen=${body.length} bodyHead=${JSON.stringify(body.slice(0, 400))} sentCookies=${JSON.stringify(cookieDump)}`,
           );
           throw new CookieExpiredError();
         }
 
         // 401/403 认证错误视为 Cookie 过期
         if (result.status === 401 || result.status === 403) {
+          let cookieDump = '<unavailable>';
+          try {
+            cookieDump = await realJar.getCookieString(url);
+          } catch {
+            // ignore
+          }
           console.log(
-            `[MaimaiClient] CookieExpired (HTTP ${result.status}) url=${url} location=${location} bodyHead=${JSON.stringify(body.slice(0, 400))}`,
+            `[MaimaiClient] CookieExpired (HTTP ${result.status}) url=${url} location=${location} bodyHead=${JSON.stringify(body.slice(0, 400))} sentCookies=${JSON.stringify(cookieDump)}`,
           );
           throw new CookieExpiredError(`Cookie 已失效 (HTTP ${result.status})`);
         }
