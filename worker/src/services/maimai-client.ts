@@ -106,7 +106,7 @@ export class MaimaiHttpClient {
   //   速率上限。
   // =========================================================================
   /** 请求发起间最小间隔（毫秒） */
-  private static readonly REQUEST_INTERVAL_MS = 2_500;
+  private static readonly REQUEST_INTERVAL_MS = 5_000;
   /** 上一次请求发起的时间戳（也是 batch 计费的基准） */
   private static lastRequestStartTime = 0;
   /** 限流锁：保证等待+更新时间戳的原子性 */
@@ -127,9 +127,9 @@ export class MaimaiHttpClient {
 
   /**
    * 在一个 "batch" 范围内运行 fn。fn 内部所有 client 请求都被算作一个
-   * 整体，batch 内不强制 2.5s 间隔；batch 结束后 lastRequestStartTime
-   * 会被推到 `batchStartTime + (count-1) * 2.5s`，下一个非 batch 请求
-   * 自然要等到 `batchStartTime + count * 2.5s`。
+   * 整体，batch 内不强制 REQUEST_INTERVAL_MS 间隔；batch 结束后 lastRequestStartTime
+   * 会被推到 `batchStartTime + (count-1) * REQUEST_INTERVAL_MS`，下一个非 batch 请求
+   * 自然要等到 `batchStartTime + count * REQUEST_INTERVAL_MS`。
    *
    * batch 不可嵌套（嵌套时内层共享外层 counter，效果等同单一 batch）。
    */
@@ -438,7 +438,7 @@ export class MaimaiHttpClient {
       `[MaimaiClient] Friend count: ${friendCount}, fetching pages 2..${totalPages}`,
     );
 
-    // 第 2-N 页串行抓，每页之间走默认 2.5s spacing。之前用 runInBatch 包
+    // 第 2-N 页串行抓，每页之间走默认 spacing。之前用 runInBatch 包
     // 起来跳过 spacing，但 batch 跨越数十秒，期间这个 bot 的其他请求
     // (e.g. send_friend_request) 会被它顶在前面无限等待。还原成默认
     // throttle 后翻页慢一点，但 bot 的其他工作不会被卡。
