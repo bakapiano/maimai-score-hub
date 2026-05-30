@@ -73,3 +73,14 @@ SdgbJobSchema.index(
   { jobType: 1, requesterTag: 1, createdAt: -1 },
   { name: 'by_requester' },
 );
+
+// Admin-dashboard hot paths (added 2026-05-30 after a 339s /status call):
+//   - status_createdAt: serves `findOne({status:'queued'}).sort({createdAt:1})`
+//   - status_claimedAt: serves `findOne({status:'processing'}).sort({claimedAt:1})`
+//   - updatedAt: serves `.find().sort({updatedAt:-1}).limit(20)` for recentJobs
+SdgbJobSchema.index({ status: 1, createdAt: 1 }, { name: 'status_createdAt' });
+SdgbJobSchema.index(
+  { status: 1, claimedAt: 1 },
+  { name: 'status_claimedAt' },
+);
+SdgbJobSchema.index({ updatedAt: -1 }, { name: 'updatedAt_desc' });

@@ -50,6 +50,28 @@ function toView(doc: SdgbJobEntity): SdgbJobView {
   };
 }
 
+/**
+ * Drop large array/object fields from sdgb job `result` for admin-list
+ * views. Frontend only reads scalar summary keys (`cabinetUserId`, `hash`,
+ * `returnCode1/2`); `music: MusicEntry[]` can be 40KB per row and was
+ * the dominant cost of GET /admin/sdgb-worker/status (785KB / 339s).
+ */
+function stripBigFields(
+  result: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!result) return result;
+  const slim: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(result)) {
+    if (Array.isArray(v)) {
+      slim[`${k}_count`] = v.length;
+      continue;
+    }
+    if (v && typeof v === 'object') continue; // drop nested blobs
+    slim[k] = v;
+  }
+  return slim;
+}
+
 @Injectable()
 export class SdgbJobService {
   private readonly logger = new Logger(SdgbJobService.name);
@@ -357,8 +379,13 @@ export class SdgbJobService {
       const updated = new Date(view.updatedAt).getTime();
       const isTerminal =
         view.status === 'completed' || view.status === 'failed';
+      // 减肥：admin 列表只在 result 里读 cabinetUserId / hash / returnCode1 /
+      // returnCode2 这些标量；result.music (MusicEntry[]) 单条几十 KB，
+      // 20 条就 ~785KB，是这个接口慢的主要原因。
+      const slimResult = stripBigFields(view.result);
       return {
         ...view,
+        result: slimResult,
         ageSeconds: Math.round((now - created) / 1000),
         durationMs: isTerminal ? updated - created : null,
       };
@@ -445,6 +472,7 @@ export class SdgbJobService {
         view.status === 'completed' || view.status === 'failed';
       return {
         ...view,
+        result: stripBigFields(view.result),
         ageSeconds: Math.round((now - created) / 1000),
         durationMs: isTerminal ? updated - created : null,
       };
