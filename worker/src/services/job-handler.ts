@@ -546,6 +546,21 @@ export class JobHandler {
     // 取消收藏好友（不等待完成，默认都进行）
     this.friendManager.favoriteOffFriend(this.job.friendCode).catch(() => {});
 
+    // 自动触发的 update（idle_update_score）跑完后主动删好友：
+    // - 这条路径里 bot 一定已经是用户的好友（刚拿完 friend-VS 数据），
+    //   单发一个 removeFriend POST 就够，不用走 cleanUpFriend 的
+    //   "先 list 再判断" 流程。
+    // - fire-and-forget，失败也不管 —— backend 那边的 CleanupService
+    //   每 5min 再扫一次兜底；自动更新流量大、删干净更重要。
+    if ((this.job.jobType ?? "immediate") === "idle_update_score") {
+      this.client.removeFriend(this.job.friendCode).catch((err) => {
+        console.warn(
+          `[JobHandler] Job ${this.job.id}: post-update removeFriend failed (ignored):`,
+          err instanceof Error ? err.message : err,
+        );
+      });
+    }
+
     // 清理好友关系（不等待完成）
     // idle_update_score job 完成后也清理好友（因为调度器已清除 user 标记）
     // 对于 immediate job，如果当前 bot 是用户的闲时更新 bot，跳过删除好友
