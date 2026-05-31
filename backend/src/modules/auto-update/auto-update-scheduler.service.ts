@@ -14,6 +14,7 @@ import { JobService } from '../job/job.service';
 import { JobEntity } from '../job/job.schema';
 import { BotStatusService } from '../admin/bot-status.service';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
+import { SystemSettingsService } from '../admin/system-settings.service';
 import { SdgbJobEntity } from '../sdgb-worker/sdgb-job.schema';
 import { SyncService } from '../sync/sync.service';
 import { AutoUpdateRunEntity } from './auto-update-run.schema';
@@ -77,6 +78,7 @@ export class AutoUpdateSchedulerService
     private readonly jobs: JobService,
     private readonly botStatus: BotStatusService,
     private readonly sdgb: SdgbJobDispatcher,
+    private readonly systemSettings: SystemSettingsService,
     private readonly syncService: SyncService,
     @InjectModel(JobEntity.name)
     private readonly jobsModel: Model<JobEntity>,
@@ -404,12 +406,45 @@ export class AutoUpdateSchedulerService
       );
     }
 
+    // In cabinet-only mode, JobService short-circuits via getRivalHash
+    // + cabinetScoreMap and never touches the bot's rival list, so an
+    // addRival here is pure waste (and noise on the sdgb queue).
+    let cabinetOnlyMode = false;
+    try {
+      cabinetOnlyMode = (await this.systemSettings.get()).cabinetOnlyMode;
+    } catch (err) {
+      this.logger.warn(
+        `system-settings lookup failed; assuming bot-based flow: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
     // We just made a getRivalHash call (the hash check) and got the
     // music back. Pass it straight through to JobService.create —
     // JobService is the central place that derives cabinetScoreMap +
     // diffsToScrape (and admin trigger / immediate path use the same
     // logic). Without this transit JobService would make a redundant
     // sdgb call.
+    const createJob = this.jobs
+      .create({
+        friendCode,
+        skipUpdateScore: false,
+        jobType: 'idle_update_score',
+        botUserFriendCode: bot.friendCode,
+        isAuthenticated: true,
+        sourceScoreHash,
+        cabinetMusic,
+      })
+      .then(({ jobId }) =>
+        this.logger.log(
+          `auto-update job created fc=${friendCode} bot=${bot.friendCode} jobId=${jobId} sourceHash=${sourceScoreHash?.slice(0, 8) ?? '-'}`,
+        ),
+      );
+
+    if (cabinetOnlyMode) {
+      await createJob;
+      return;
+    }
+
     await Promise.all([
       this.sdgb
         .addRival(
@@ -431,21 +466,7 @@ export class AutoUpdateSchedulerService
             `addRival fc=${friendCode} failed (continuing): ${err instanceof Error ? err.message : err}`,
           );
         }),
-      this.jobs
-        .create({
-          friendCode,
-          skipUpdateScore: false,
-          jobType: 'idle_update_score',
-          botUserFriendCode: bot.friendCode,
-          isAuthenticated: true,
-          sourceScoreHash,
-          cabinetMusic,
-        })
-        .then(({ jobId }) =>
-          this.logger.log(
-            `auto-update job created fc=${friendCode} bot=${bot.friendCode} jobId=${jobId} sourceHash=${sourceScoreHash?.slice(0, 8) ?? '-'}`,
-          ),
-        ),
+      createJob,
     ]);
   }
 
