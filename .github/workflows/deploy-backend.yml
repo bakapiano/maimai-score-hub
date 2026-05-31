@@ -25,14 +25,21 @@ jobs:
         with:
           host: ${{ secrets.BACKEND_HOST }}
           username: ${{ secrets.BACKEND_USER }}
+          # BACKEND_PORT is optional; appleboy/ssh-action falls back to 22.
+          # Currently set to 2201 because the backend now runs on Server 4
+          # (101, home LAN, no public IP) and we tunnel SSH through
+          # Server 2's reverse-tunnel relay (sshtunnel@106.14.237.126:2201).
+          port: ${{ secrets.BACKEND_PORT }}
           key: ${{ secrets.SSH_KEY }}
+          command_timeout: 30m
           script: |
             cd ${{ secrets.BACKEND_PATH }}
             sudo chown -R "$USER:$USER" "$(pwd)" || true
             git config --global --add safe.directory "$(pwd)"
-            git fetch --all
+            # 101's outbound git/npm is unreliable without the clash proxy.
+            HTTPS_PROXY=http://127.0.0.1:7890 git fetch --all
             git checkout main
-            git pull
+            HTTPS_PROXY=http://127.0.0.1:7890 git pull
 
             # Build new image
             if command -v docker-compose >/dev/null 2>&1; then
@@ -41,13 +48,18 @@ jobs:
               COMPOSE_CMD="docker compose"
             fi
 
+            # 101 needs the clash proxy for build-time network (npm/apt).
+            # Docker daemon-level proxy already covers image pulls via
+            # /etc/systemd/system/docker.service.d/*.conf.
+            EXTRA_ENV="HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 NO_PROXY=localhost,127.0.0.1"
+
             cd backend
             # Cap docker build cache BEFORE build (FE+BE share the
             # host; without this we hit ENOSPC mid-build, which then
             # silently rebuilds from a stale layer or restarts the old
             # image — masking failures as "success").
             sudo docker builder prune --force --keep-storage=2GB || true
-            sudo $COMPOSE_CMD build || { echo "❌ Build failed"; exit 1; }
+            sudo env $EXTRA_ENV $COMPOSE_CMD build || { echo "❌ Build failed"; exit 1; }
 
             # ── Zero-downtime rolling update ────────────────────────
             # We keep 2 replicas behind nginx. To avoid the brief
@@ -142,7 +154,7 @@ jobs:
 
             # Final state check via nginx (the public path users hit)
             for i in 1 2 3 4 5; do
-              if curl -fsS http://localhost:8080/api/health; then
+              if curl -fsS http://localhost:8090/api/health; then
                 echo "✅ Deployment successful — rolling complete"
                 sudo $COMPOSE_CMD ps backend
                 # Clean up dangling images
