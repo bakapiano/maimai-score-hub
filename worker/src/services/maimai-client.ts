@@ -626,7 +626,7 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}&invite=`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
+      treat522AsSuccess: false,
     });
 
     await this.fetchWithToken(MAIMAI_URLS.friendInvite);
@@ -647,7 +647,7 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}&allow=`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
+      treat522AsSuccess: false,
     });
 
     await this.fetchWithToken(MAIMAI_URLS.friendAcceptAllow);
@@ -668,7 +668,7 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}&block=`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
+      treat522AsSuccess: false,
     });
 
     await this.fetchWithToken(MAIMAI_URLS.friendAccept);
@@ -689,7 +689,7 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}&invite=`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
+      treat522AsSuccess: false,
     });
     console.log(
       `[MaimaiClient] Done cancel friend request, friend code ${friendCode}`,
@@ -708,7 +708,7 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
+      treat522AsSuccess: false,
     });
     console.log(`[MaimaiClient] Done remove friend, friend code ${friendCode}`);
   }
@@ -725,7 +725,7 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
+      treat522AsSuccess: false,
     });
     console.log(
       `[MaimaiClient] Done favorite on friend, friend code ${friendCode}`,
@@ -744,7 +744,7 @@ export class MaimaiHttpClient {
       body: `idx=${friendCode}`,
       method: "POST",
       addToken: true,
-      treat522AsSuccess: true,
+      treat522AsSuccess: false,
     });
     console.log(
       `[MaimaiClient] Done favorite off friend, friend code ${friendCode}`,

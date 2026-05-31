@@ -248,7 +248,7 @@ export class JobHandler {
         await this.friendManager.cleanUpFriend(this.job.friendCode);
       }
 
-      const maxRetries = 3;
+      const maxRetries = 5;
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         // batch：send + isFriend + getSent 视为一次操作，跳过 spacing

@@ -15,6 +15,7 @@ services:
       - FETCH_RETRY_COUNT=${FETCH_RETRY_COUNT:-3}
       - JOB_SERVICE_BASE_URL=${JOB_SERVICE_BASE_URL:-https://api.maiscorehub.bakapiano.com/}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - WORKER_ID=${WORKER_ID:-}
     volumes:
       - ./debug-html:/app/worker/debug-html
       - worker-data:/app/worker/data
