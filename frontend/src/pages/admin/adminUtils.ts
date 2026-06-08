@@ -119,6 +119,48 @@ export interface ApiLogEntry {
 
 export const ADMIN_PASSWORD_KEY = "admin_password";
 
+export type JobErrorCategory = "user_error" | "remote_error" | "system_error";
+
+export const ERROR_CATEGORY_META: Record<
+  JobErrorCategory,
+  { label: string; color: string }
+> = {
+  user_error: { label: "用户原因", color: "gray" },
+  remote_error: { label: "远端问题", color: "orange" },
+  system_error: { label: "系统问题", color: "red" },
+};
+
+export function categorizeJobError(
+  error: string | null | undefined,
+): JobErrorCategory {
+  const message = (error ?? "").toLowerCase();
+  if (
+    message.includes("等待用户发送好友请求超时") ||
+    message.includes("等待好友接受请求超时") ||
+    message.includes("未找到该好友代码") ||
+    message.includes("好友代码") ||
+    message.includes("friendcode") ||
+    message.includes("请先绑定二维码") ||
+    message.includes("no-sync")
+  ) {
+    return "user_error";
+  }
+
+  if (
+    message.includes("http 5") ||
+    message.includes("请求超时") ||
+    message.includes("限流") ||
+    message.includes("567") ||
+    message.includes("522") ||
+    message.includes("wahlap") ||
+    message.includes("fetch failed")
+  ) {
+    return "remote_error";
+  }
+
+  return "system_error";
+}
+
 // ── Hooks ──
 
 export function useAdminPassword() {
