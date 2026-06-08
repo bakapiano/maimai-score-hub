@@ -12,8 +12,10 @@ import type { PlatePlan } from "../constants/platePlan";
 import type { SyncScore } from "../types/syncScore";
 import {
   CombinedBadges,
+  matchesBadgeFilter,
   summarizeRanks,
   summarizeStatuses,
+  type BadgeFilter,
 } from "./ScoreSummaryBadges";
 
 type ChartEntry = {
@@ -168,25 +170,42 @@ type PlateGridViewProps = {
   levels: LevelGroup[];
   plan: PlatePlan;
   onCardClick?: (entry: ChartEntry) => void;
+  pageFilter?: BadgeFilter;
+  sectionFilters?: Record<string, BadgeFilter>;
+  onSectionFilterChange?: (key: string, next: BadgeFilter) => void;
 };
 
 export function PlateGridView({
   levels,
   plan,
   onCardClick,
+  pageFilter = null,
+  sectionFilters,
+  onSectionFilterChange,
 }: PlateGridViewProps) {
   return (
     <Stack gap="lg">
       {levels.map((level) => {
+        const sectionFilter = sectionFilters?.[level.levelKey] ?? null;
+        const effectiveFilter = pageFilter ?? sectionFilter;
+        const visibleItems = level.items.filter((entry) =>
+          matchesBadgeFilter(entry, effectiveFilter),
+        );
         return (
           <Stack key={level.levelKey} gap="xs">
             <Text fw={700}>{level.levelKey}</Text>
             <CombinedBadges
               rankSummary={summarizeRanks(level.items)}
               statusSummary={summarizeStatuses(level.items)}
+              filter={sectionFilter}
+              onFilterChange={
+                onSectionFilterChange
+                  ? (next) => onSectionFilterChange(level.levelKey, next)
+                  : undefined
+              }
             />
             <Group gap={6} wrap="wrap">
-              {level.items.map((entry) => (
+              {visibleItems.map((entry) => (
                 <PlateCard
                   key={`${entry.music.id}-${entry.chartIndex}`}
                   entry={entry}

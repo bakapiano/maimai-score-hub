@@ -1,5 +1,5 @@
 import { ActionIcon, Box, Card, Group, Stack, Text } from "@mantine/core";
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 
 import type { SyncScore } from "../types/syncScore";
 import { renderRank } from "./MusicScoreCard";
@@ -12,6 +12,39 @@ const fcOrder = ["ap+", "ap", "fc+", "fc"] as const;
 const fsOrder = ["fsd+", "fsd", "fs+", "fs"] as const;
 export type FcBucket = (typeof fcOrder)[number];
 export type FsBucket = (typeof fsOrder)[number];
+
+// --- Badge-driven filtering ---------------------------------------------
+// A badge can act as a 3-state filter on its scope:
+//   none → include (only matching) → exclude (only non-matching) → none
+export type BadgeFilterKind = "rank" | "fc" | "fs";
+export type BadgeFilterMode = "include" | "exclude";
+export type BadgeFilter = {
+  kind: BadgeFilterKind;
+  bucket: string;
+  mode: BadgeFilterMode;
+} | null;
+
+// Cumulative thresholds for rank badges (badge counts are "this rank or above").
+const RANK_THRESHOLD: Record<RankBucket, number> = {
+  "SSS+": 100.5,
+  SSS: 100,
+  "SS+": 99.5,
+  SS: 99,
+  "S+": 98,
+  S: 97,
+};
+
+export const cycleBadgeFilter = (
+  current: BadgeFilter,
+  kind: BadgeFilterKind,
+  bucket: string,
+): BadgeFilter => {
+  if (!current || current.kind !== kind || current.bucket !== bucket) {
+    return { kind, bucket, mode: "include" };
+  }
+  if (current.mode === "include") return { kind, bucket, mode: "exclude" };
+  return null;
+};
 
 export type RankSummary = {
   counts: Record<RankBucket, number>;
@@ -72,6 +105,68 @@ type ScoreEntry = {
   score?: Pick<SyncScore, "score" | "dxScore" | "fc" | "fs">;
 };
 
+const entryMatchesBadge = (
+  entry: ScoreEntry,
+  kind: BadgeFilterKind,
+  bucket: string,
+): boolean => {
+  if (kind === "rank") {
+    const threshold = RANK_THRESHOLD[bucket as RankBucket];
+    if (threshold === undefined) return false;
+    const text = entry.score?.score ?? entry.score?.dxScore ?? null;
+    if (!text) return false;
+    const val = parseFloat(text.replace("%", ""));
+    return Number.isFinite(val) && val >= threshold;
+  }
+  // fc / fs match the displayed badge counts (exact bucket, see summarizeStatuses)
+  if (kind === "fc") return entry.score?.fc?.toLowerCase?.() === bucket;
+  return entry.score?.fs?.toLowerCase?.() === bucket;
+};
+
+export const matchesBadgeFilter = <T extends ScoreEntry>(
+  entry: T,
+  filter: BadgeFilter,
+): boolean => {
+  if (!filter) return true;
+  const matched = entryMatchesBadge(entry, filter.kind, filter.bucket);
+  return filter.mode === "include" ? matched : !matched;
+};
+
+/**
+ * Two-scope badge filtering: a page-level filter (from the top summary card)
+ * and per-section filters (from each section's badges). The two scopes are
+ * mutually exclusive — setting one clears the other.
+ */
+export function useBadgeScopeFilter() {
+  const [pageFilter, setPageFilterState] = useState<BadgeFilter>(null);
+  const [sectionFilters, setSectionFilters] = useState<
+    Record<string, BadgeFilter>
+  >({});
+
+  const setPageFilter = useCallback((next: BadgeFilter) => {
+    setPageFilterState(next);
+    if (next) setSectionFilters({});
+  }, []);
+
+  const setSectionFilter = useCallback((key: string, next: BadgeFilter) => {
+    setSectionFilters((prev) => ({ ...prev, [key]: next }));
+    if (next) setPageFilterState(null);
+  }, []);
+
+  const effectiveFor = useCallback(
+    (key: string): BadgeFilter => pageFilter ?? sectionFilters[key] ?? null,
+    [pageFilter, sectionFilters],
+  );
+
+  return {
+    pageFilter,
+    sectionFilters,
+    setPageFilter,
+    setSectionFilter,
+    effectiveFor,
+  };
+}
+
 // Summarize functions
 export const summarizeRanks = <T extends ScoreEntry>(
   entries: T[],
@@ -128,35 +223,66 @@ const StatItem = ({
   total,
   labelNode,
   compact = false,
+  active = null,
+  onClick,
 }: {
   count: number;
   total: number;
   labelNode: React.ReactNode;
   compact?: boolean;
-}) => (
-  <Box
-    style={{
-      width: compact ? 80 : 106,
-      padding: compact ? "2px 6px" : "4px 8px",
-      borderRadius: 6,
-      backgroundColor: "var(--mantine-color-gray-light)",
-    }}
-  >
-    <Group gap={4} justify="space-between" wrap="nowrap">
-      <Box style={{ width: compact ? 28 : 36 }}>{labelNode}</Box>
-      <Text
-        size={compact ? "xs" : "sm"}
-        fw={600}
-        style={{ whiteSpace: "nowrap" }}
-      >
-        {count}
-        <Text span size="xs" fw={400}>
-          /{total}
+  active?: BadgeFilterMode | null;
+  onClick?: () => void;
+}) => {
+  const backgroundColor =
+    active === "include"
+      ? "var(--mantine-color-blue-light)"
+      : active === "exclude"
+        ? "var(--mantine-color-red-light)"
+        : "var(--mantine-color-gray-light)";
+  const borderColor =
+    active === "include"
+      ? "var(--mantine-color-blue-filled)"
+      : active === "exclude"
+        ? "var(--mantine-color-red-filled)"
+        : "transparent";
+  return (
+    <Box
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      title={
+        active === "include"
+          ? "仅显示符合项（再点反选 / 第三次还原）"
+          : active === "exclude"
+            ? "仅显示不符合项（再点还原）"
+            : undefined
+      }
+      style={{
+        width: compact ? 80 : 106,
+        padding: compact ? "2px 6px" : "4px 8px",
+        borderRadius: 6,
+        boxSizing: "border-box",
+        backgroundColor,
+        border: `1px solid ${borderColor}`,
+        cursor: onClick ? "pointer" : undefined,
+        userSelect: "none",
+      }}
+    >
+      <Group gap={4} justify="space-between" wrap="nowrap">
+        <Box style={{ width: compact ? 28 : 36 }}>{labelNode}</Box>
+        <Text
+          size={compact ? "xs" : "sm"}
+          fw={600}
+          style={{ whiteSpace: "nowrap" }}
+        >
+          {count}
+          <Text span size="xs" fw={400}>
+            /{total}
+          </Text>
         </Text>
-      </Text>
-    </Group>
-  </Box>
-);
+      </Group>
+    </Box>
+  );
+};
 
 // Shared ExpandButton component
 const ExpandButton = ({
@@ -192,12 +318,16 @@ export type CombinedBadgesProps = {
   rankSummary: RankSummary;
   statusSummary: StatusSummary;
   defaultExpanded?: boolean;
+  filter?: BadgeFilter;
+  onFilterChange?: (next: BadgeFilter) => void;
 };
 
 export function CombinedBadges({
   rankSummary,
   statusSummary,
   defaultExpanded = false,
+  filter = null,
+  onFilterChange,
 }: CombinedBadgesProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
@@ -207,6 +337,15 @@ export function CombinedBadges({
     : (["ap+", "ap", "fc+", "fc"] as FcBucket[]);
   const fsList = expanded ? fsOrder : ([] as FsBucket[]);
 
+  const activeOf = (kind: BadgeFilterKind, bucket: string) =>
+    filter && filter.kind === kind && filter.bucket === bucket
+      ? filter.mode
+      : null;
+  const clickOf = (kind: BadgeFilterKind, bucket: string) =>
+    onFilterChange
+      ? () => onFilterChange(cycleBadgeFilter(filter, kind, bucket))
+      : undefined;
+
   return (
     <Group gap={6} wrap="wrap" align="center">
       {rankList.map((r) => (
@@ -215,6 +354,8 @@ export function CombinedBadges({
           count={rankSummary.counts[r]}
           total={rankSummary.total}
           compact
+          active={activeOf("rank", r)}
+          onClick={clickOf("rank", r)}
           labelNode={
             <Text size="xs" fw={600}>
               {renderRank(r, { compact: true })}
@@ -228,6 +369,8 @@ export function CombinedBadges({
           count={statusSummary.fc[key]}
           total={statusSummary.total}
           compact
+          active={activeOf("fc", key)}
+          onClick={clickOf("fc", key)}
           labelNode={
             <Text size="xs" fw={600} c={fcColor(key)}>
               {statusLabel(key)}
@@ -241,6 +384,8 @@ export function CombinedBadges({
           count={statusSummary.fs[key]}
           total={statusSummary.total}
           compact
+          active={activeOf("fs", key)}
+          onClick={clickOf("fs", key)}
           labelNode={
             <Text size="xs" fw={600} c={fsColor(key)}>
               {statusLabel(key)}
@@ -263,6 +408,8 @@ export type ScoreSummaryCardProps = {
   averageScore?: number | null;
   size?: "xs" | "sm";
   defaultExpanded?: boolean;
+  filter?: BadgeFilter;
+  onFilterChange?: (next: BadgeFilter) => void;
 };
 
 export function ScoreSummaryCard({
@@ -270,6 +417,8 @@ export function ScoreSummaryCard({
   statusSummary,
   averageScore,
   defaultExpanded = false,
+  filter = null,
+  onFilterChange,
 }: ScoreSummaryCardProps) {
   const [rankExpanded, setRankExpanded] = useState(defaultExpanded);
   const [statusExpanded, setStatusExpanded] = useState(defaultExpanded);
@@ -282,6 +431,15 @@ export function ScoreSummaryCard({
     : (["ap+", "ap", "fc+", "fc"] as FcBucket[]);
   const fsList = statusExpanded ? fsOrder : ([] as FsBucket[]);
 
+  const activeOf = (kind: BadgeFilterKind, bucket: string) =>
+    filter && filter.kind === kind && filter.bucket === bucket
+      ? filter.mode
+      : null;
+  const clickOf = (kind: BadgeFilterKind, bucket: string) =>
+    onFilterChange
+      ? () => onFilterChange(cycleBadgeFilter(filter, kind, bucket))
+      : undefined;
+
   return (
     <Card shadow="none" radius="md" p="sm" withBorder>
       <Stack gap="sm">
@@ -293,6 +451,8 @@ export function ScoreSummaryCard({
                 key={r}
                 count={rankSummary.counts[r]}
                 total={rankSummary.total}
+                active={activeOf("rank", r)}
+                onClick={clickOf("rank", r)}
                 labelNode={
                   <Text size="sm" fw={600}>
                     {renderRank(r, { compact: true })}
@@ -316,6 +476,8 @@ export function ScoreSummaryCard({
                 key={`fc-${key}`}
                 count={statusSummary.fc[key]}
                 total={statusSummary.total}
+                active={activeOf("fc", key)}
+                onClick={clickOf("fc", key)}
                 labelNode={
                   <Text size="sm" fw={600} c={fcColor(key)}>
                     {statusLabel(key)}
@@ -329,6 +491,8 @@ export function ScoreSummaryCard({
                 key={`fs-${key}`}
                 count={statusSummary.fs[key]}
                 total={statusSummary.total}
+                active={activeOf("fs", key)}
+                onClick={clickOf("fs", key)}
                 labelNode={
                   <Text size="sm" fw={600} c={fsColor(key)}>
                     {statusLabel(key)}

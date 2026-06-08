@@ -14,8 +14,10 @@ import {
   CombinedBadges,
   ScoreSummaryCard,
   calculateAverageScore,
+  matchesBadgeFilter,
   summarizeRanks,
   summarizeStatuses,
+  useBadgeScopeFilter,
 } from "../../components/ScoreSummaryBadges";
 import {
   IconChevronLeft,
@@ -161,6 +163,8 @@ export function LevelScoresTab({
   const [displayFilter, setDisplayFilter] = useState<DisplayFilterSettings>(
     DEFAULT_DISPLAY_FILTER,
   );
+  const { pageFilter, sectionFilters, setPageFilter, setSectionFilter } =
+    useBadgeScopeFilter();
 
   // Modal state
   const [modalOpened, setModalOpened] = useState(false);
@@ -411,6 +415,8 @@ export function LevelScoresTab({
           rankSummary={summarizeRanks(currentFilteredItems)}
           statusSummary={summarizeStatuses(currentFilteredItems)}
           averageScore={calculateAverageScore(currentFilteredItems)}
+          filter={pageFilter}
+          onFilterChange={setPageFilter}
         />
       )}
 
@@ -437,21 +443,31 @@ export function LevelScoresTab({
         ) : (
           <Stack gap="lg">
             {current.details.map((detail, idx) => {
-              const filteredItems = detail.items.filter((entry) =>
+              const baseItems = detail.items.filter((entry) =>
                 matchesScoreFilter(
                   entry.score?.score || entry.score?.dxScore || null,
                   displayFilter,
                 ),
               );
-              if (filteredItems.length === 0) return null;
+              if (baseItems.length === 0) return null;
+              const sectionKey = `${current.levelKey}-${detail.detailKey}`;
+              const sectionFilter = sectionFilters[sectionKey] ?? null;
+              const effectiveFilter = pageFilter ?? sectionFilter;
+              const visibleItems = baseItems.filter((entry) =>
+                matchesBadgeFilter(entry, effectiveFilter),
+              );
               return (
-                <Stack key={`${current.levelKey}-${detail.detailKey}`} gap="xs">
+                <Stack key={sectionKey} gap="xs">
                   <Group align="center">
                     <Text fw={700}>{detail.detailKey}</Text>
                   </Group>
                   <CombinedBadges
-                    rankSummary={summarizeRanks(filteredItems)}
-                    statusSummary={summarizeStatuses(filteredItems)}
+                    rankSummary={summarizeRanks(baseItems)}
+                    statusSummary={summarizeStatuses(baseItems)}
+                    filter={sectionFilter}
+                    onFilterChange={(next) =>
+                      setSectionFilter(sectionKey, next)
+                    }
                   />
                   <Group
                     gap="sm"
@@ -459,7 +475,7 @@ export function LevelScoresTab({
                     wrap="wrap"
                     style={{ width: "100%" }}
                   >
-                    {filteredItems.map((entry) => (
+                    {visibleItems.map((entry) => (
                       <div
                         key={`${entry.music.id}-${entry.chartIndex}`}
                         style={{ cursor: "pointer" }}

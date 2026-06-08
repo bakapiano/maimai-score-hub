@@ -21,6 +21,7 @@ import {
   calculateAverageScore,
   summarizeRanks,
   summarizeStatuses,
+  useBadgeScopeFilter,
 } from "../../components/ScoreSummaryBadges";
 import { PLAN_OPTIONS, type PlatePlan } from "../../constants/platePlan";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
@@ -162,6 +163,8 @@ export function VersionScoresTab({
   const [exporting, setExporting] = useState(false);
   const [platePlan, setPlatePlan] = useState<PlatePlan>("jiang");
   const [showAllLevels, setShowAllLevels] = useState(false);
+  const { pageFilter, sectionFilters, setPageFilter, setSectionFilter } =
+    useBadgeScopeFilter();
 
   // Modal state for score detail
   const [modalOpened, setModalOpened] = useState(false);
@@ -447,6 +450,8 @@ export function VersionScoresTab({
                     : lvl.items.filter((e) => e.chartIndex !== 4),
                 ),
               )}
+              filter={pageFilter}
+              onFilterChange={setPageFilter}
             />
             <PlateGridView
               levels={(showAllLevels
@@ -464,6 +469,9 @@ export function VersionScoresTab({
                 .filter((lvl) => lvl.items.length > 0)}
               plan={platePlan}
               onCardClick={handleScoreClick}
+              pageFilter={pageFilter}
+              sectionFilters={sectionFilters}
+              onSectionFilterChange={setSectionFilter}
             />
           </Stack>
         </Box>
