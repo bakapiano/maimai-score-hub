@@ -119,9 +119,9 @@ export class AdminService {
 
   async getStats(): Promise<AdminStats> {
     const [userCount, musicCount, syncCount, coverCount] = await Promise.all([
-      this.userModel.countDocuments(),
-      this.musicModel.countDocuments(),
-      this.syncModel.countDocuments(),
+      this.userModel.estimatedDocumentCount(),
+      this.musicModel.estimatedDocumentCount(),
+      this.syncModel.estimatedDocumentCount(),
       this.coverService.getCoverCount(),
     ]);
 
