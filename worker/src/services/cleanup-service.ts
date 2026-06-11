@@ -119,17 +119,16 @@ export class CleanupService {
 
     try {
       // 1. 获取当前已发送的好友请求和好友列表
-      //    getFriendList maxPages=3：拉全量好友（可能 1000+ 页）在 5s
-      //    spacing 下要花数分钟，期间这个 bot 的其他请求全部被卡。
-      //    Cleanup 改成「每轮只看前 30 个」: 步骤 4 的「驱逐 30min
-      //    inactive」和「砍到 19 个」只会基于前 30 个生效。
-      //    依赖前提：maimai friend list 排序近似按最近活跃倒序 — 那么
-      //    前 30 个恰好是「最需要看的」，靠后的本来就 inactive，下一轮
-      //    cleanup 会接着清。如果排序假设错了，cleanup 会显著欠驱逐。
+      //    拉全量好友：好友上限 100，全量翻页最多约 11 页，5s spacing 下
+      //    ~1 分钟。cleanup 期间 job claiming 已暂停（见 runCleanup），所以
+      //    这段翻页时间不会和新 job 抢这个 bot。
+      //    步骤 4 的「驱逐 30min inactive」必须看到全量好友才有意义 —— 之前
+      //    maxPages=3 只看前 30 个，而 inactive 好友按活跃倒序沉在列表末尾，
+      //    永远进不了前 30，导致好友数一路涨到上限也清不掉。
       //    getSentRequests 本来就只 1 页，不需要分页。
       const [sentRequests, friendInfos] = await Promise.all([
         client.getSentRequests(),
-        client.getFriendList({ maxPages: 3 }),
+        client.getFriendList(),
       ]);
       const friends = friendInfos.map((f) => f.friendCode);
 
@@ -185,9 +184,8 @@ export class CleanupService {
         const nowMs = Date.now();
 
         // 淘汰超过 30 分钟未活跃且不在活跃任务中的好友。
-        // 之前还有一条「砍到 19 个」的硬上限，但 cleanup 现在只看前 3 页
-        // (maxPages=3)，硬上限在小样本里会乱踢；30min inactive 规则本身
-        // 已经够把好友数压低，去掉硬上限更直观。
+        // 之前还有一条「砍到 19 个」的硬上限，但在小样本里会乱踢；
+        // 30min inactive 规则本身已经够把好友数压低，去掉硬上限更直观。
         const inactiveFriends = nonIdleFriends.filter((fc) => {
           if (activeSet.has(fc)) return false;
           const lastActive = activityMap.get(fc);

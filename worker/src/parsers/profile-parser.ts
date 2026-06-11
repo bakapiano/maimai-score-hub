@@ -76,12 +76,17 @@ export function parseUserProfile(html: string): UserProfile | null {
 
 /**
  * 从好友列表页面解析好友总数
- * 匹配: <div class="basic_block m_3 p_3 f_11 l_h_10">好友数<br>1/100</div>
- * 返回好友数（斜杠前的数字），解析失败返回 null
+ * 实际结构:
+ *   <div class="basic_block ...">
+ *     <span class="f_13">好友数</span><br><span class="f_14 f_b">95</span>/100
+ *   </div>
+ * 注意同页还有「喜爱的好友数」「对手」共用 basic_block，靠 `>好友数</span>`
+ * 的 `>` 前缀区分（喜爱的那个前面是「的」而非「>」）。
+ * 返回好友数（斜杠前的数字），解析失败返回 null。
  */
 export function parseFriendCount(html: string): number | null {
   const match = html.match(
-    /<div[^>]*class="basic_block[^"]*">好友数<br>(\d+)\/\d+<\/div>/i,
+    />好友数<\/span><br><span[^>]*>(\d+)<\/span>\/\d+/i,
   );
   return match ? parseInt(match[1], 10) : null;
 }
