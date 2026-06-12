@@ -213,6 +213,40 @@ export class MaimaiHttpClient {
     });
   }
 
+  /**
+   * Per-bot 串行锁：每个 CookieJar（= 每个 bot）一条 promise 链，保证同一
+   * 个 bot 的 HTTP 往返串行完成 —— 下一个请求必须等上一个响应的
+   * Set-Cookie 落地后才发。
+   *
+   * 背景：wahlap 每个响应都会轮转 `userId` cookie（旧值随即失效）。之前
+   * 全局 throttle 只控制请求"发起间隔"≥2.5s、不等上一个完成，所以同一
+   * bot 的并发请求（多 job 并发、或 Promise.all 的 getSent+getFriendList）
+   * 会带着已被轮转掉的旧 userId 被打到 /error/，误判成 cookie 失效。
+   * 串行后每个请求都能读到最新 userId，消除该竞态。
+   *
+   * 跨 bot 不受影响（不同 jar 不同链）；典型响应 ~0.5s 远小于 2.5s
+   * 全局间隔，常态下几乎不增加等待，只有响应 >2.5s 的长尾才会多等。
+   * WeakMap 随 jar 回收，不泄漏。
+   */
+  private static jarChain = new WeakMap<CookieJar, Promise<unknown>>();
+
+  private static withJarLock<T>(
+    jar: CookieJar,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const prev = MaimaiHttpClient.jarChain.get(jar) ?? Promise.resolve();
+    // prev 无论成功失败都接着跑 fn，保证一次失败不会卡死后续请求
+    const run = prev.then(fn, fn);
+    MaimaiHttpClient.jarChain.set(
+      jar,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
+  }
+
   constructor(cookieJar: CookieJar) {
     this.cookieJar = cookieJar;
   }
@@ -314,12 +348,20 @@ export class MaimaiHttpClient {
       let shouldLog = true;
 
       try {
-        // 等待限流间隔后再发起请求（不串行，仅控制发起时间间隔）
+        // 等待全局限流间隔后再发起请求（控制跨 bot 的发起时间间隔）
         await MaimaiHttpClient.waitForSlot();
-        const result = await (fetchWithCookie(url, {
-          signal: AbortSignal.timeout(fetchTimeout),
-          ...options,
-        }) as Promise<Response>);
+        // Per-bot 串行：同一个 jar 的往返必须串行完成，确保本次请求读到的
+        // 是上一个响应 Set-Cookie 写回的最新 userId（见 withJarLock 说明）。
+        // makeFetchCookie 在 await 内部完成 getCookieString→发送→setCookie，
+        // 所以锁住这一段即可覆盖"读 cookie→写 cookie"的临界区。
+        const result = await MaimaiHttpClient.withJarLock(
+          realJar,
+          () =>
+            fetchWithCookie(url, {
+              signal: AbortSignal.timeout(fetchTimeout),
+              ...options,
+            }) as Promise<Response>,
+        );
 
         const location = result.url;
         const clone = result.clone();
