@@ -121,6 +121,14 @@ export const jobContract = c.router({
       ),
     },
   },
+  getExistingUsers: {
+    method: "POST",
+    path: "/job/users-exist",
+    body: z.object({ friendCodes: z.array(z.string()) }),
+    responses: {
+      200: z.object({ existingFriendCodes: z.array(z.string()) }),
+    },
+  },
   getTempCache: {
     method: "GET",
     path: "/job/:jobId/cache/:diff/:type",

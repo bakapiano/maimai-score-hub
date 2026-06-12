@@ -276,6 +276,20 @@ export class UsersService {
   }
 
   /**
+   * 批量返回这些 friendCode 中、确实存在对应 user 文档的子集。
+   * cleanup 用它区分「null 活跃度但是注册用户」（可驱逐）和
+   * 「后端查无此人」（保守保留）。
+   */
+  async getExistingFriendCodes(friendCodes: string[]): Promise<string[]> {
+    if (!friendCodes.length) return [];
+    const users = await this.userModel
+      .find({ friendCode: { $in: friendCodes } })
+      .select('friendCode')
+      .lean();
+    return users.map((u) => u.friendCode);
+  }
+
+  /**
    * 统计某个 bot 有多少用户正在使用它做闲时更新
    */
   async countIdleUpdateByBot(botFriendCode: string): Promise<number> {

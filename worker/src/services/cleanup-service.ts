@@ -5,6 +5,7 @@
 
 import {
   getActiveFriendCodes,
+  getExistingUsers,
   getIdleUpdateFriendCodes,
   getUsersActivity,
 } from "../clients/job-service-client.ts";
@@ -175,31 +176,35 @@ export class CleanupService {
       let friendsToRemove: string[] = [];
       {
         const nonIdleFriends = friends.filter((fc) => !idleUpdateSet.has(fc));
-        const activityData = await getUsersActivity(nonIdleFriends);
+        const [activityData, existingFriendCodes] = await Promise.all([
+          getUsersActivity(nonIdleFriends),
+          getExistingUsers(nonIdleFriends),
+        ]);
         const activityMap = new Map(
           activityData.map((u) => [u.friendCode, u.lastActiveAt]),
         );
+        const existingSet = new Set(existingFriendCodes);
 
         const THIRTY_MIN_MS = 30 * 60 * 1000;
         const nowMs = Date.now();
 
-        // 淘汰超过 30 分钟未活跃且不在活跃任务中的好友。
-        // 之前还有一条「砍到 19 个」的硬上限，但在小样本里会乱踢；
-        // 30min inactive 规则本身已经够把好友数压低，去掉硬上限更直观。
+        // 淘汰不在活跃任务中的好友：
+        //  - 有 lastActiveAt 且距今 > 30min → 驱逐
+        //  - lastActiveAt 为 null / 无活跃记录：
+        //      后端能查到该 user（注册用户但久未活跃）→ 驱逐
+        //      后端查不到（bot / 刚建的号 / 非本服务用户）→ 保守保留
         const inactiveFriends = nonIdleFriends.filter((fc) => {
           if (activeSet.has(fc)) return false;
           const lastActive = activityMap.get(fc);
-          // Conservative: if backend has no activity record for this
-          // friendCode (e.g. brand-new account just created via QR
-          // login, or user that's never logged in), don't evict —
-          // we have no evidence they're stale.
-          if (!lastActive) return false;
+          if (!lastActive) {
+            return existingSet.has(fc);
+          }
           return nowMs - new Date(lastActive).getTime() > THIRTY_MIN_MS;
         });
 
         if (inactiveFriends.length > 0) {
           console.log(
-            `[CleanupService] Bot ${botFriendCode} evicting ${inactiveFriends.length} friends inactive for > 30 min`,
+            `[CleanupService] Bot ${botFriendCode} evicting ${inactiveFriends.length} inactive/abandoned friends`,
           );
           friendsToRemove.push(...inactiveFriends);
         }

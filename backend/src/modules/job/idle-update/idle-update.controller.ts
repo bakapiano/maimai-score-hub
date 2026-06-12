@@ -72,6 +72,19 @@ export class IdleUpdateController {
   }
 
   /**
+   * 批量查询哪些 friendCode 存在对应 user 文档。
+   * cleanup 用它判断 lastActiveAt=null 的好友是否为注册用户。
+   */
+  @Post('users-exist')
+  @HttpCode(200)
+  async getExistingUsers(@Body() body: { friendCodes: string[] }) {
+    const existingFriendCodes = await this.users.getExistingFriendCodes(
+      body.friendCodes ?? [],
+    );
+    return { existingFriendCodes };
+  }
+
+  /**
    * 获取指定 bot 的闲时更新 friendCode 列表（含活跃度信息）
    */
   @Get('idle-update/friends/:botFriendCode/detailed')
