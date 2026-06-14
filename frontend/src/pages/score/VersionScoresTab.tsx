@@ -31,6 +31,7 @@ import {
   getVersionDisplayName,
   MAI_LEGACY_VERSIONS,
 } from "../../constants/versions";
+import { downloadBlob } from "../../utils/downloadBlob";
 import { useAuth } from "../../providers/AuthProvider";
 
 type ChartEntry = {
@@ -330,12 +331,7 @@ export function VersionScoresTab({
         throw new Error(`导出失败 (HTTP ${res.status})`);
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `version-${current.versionKey}-${platePlan}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `version-${current.versionKey}-${platePlan}.png`);
     } catch (err) {
       console.error(err);
       alert((err as Error).message || "导出失败");
@@ -381,6 +377,7 @@ export function VersionScoresTab({
             leftSection={<IconDownload size={14} />}
             onClick={handleExport}
             loading={exporting}
+            disabled={!token || !current}
           >
             导出图片
           </Button>

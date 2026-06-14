@@ -16,6 +16,7 @@ import {
 import { IconTrophy, IconDownload } from "@tabler/icons-react";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
 import type { SyncScore } from "../../types/syncScore";
+import { downloadBlob } from "../../utils/downloadBlob";
 import { useMemo, useState } from "react";
 import { useMusic } from "../../providers/MusicProvider";
 import { useAuth } from "../../providers/AuthProvider";
@@ -137,12 +138,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
         throw new Error(`导出失败 (HTTP ${res.status})`);
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "best50.png";
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, "best50.png");
     } catch (err) {
       console.error(err);
       alert((err as Error).message || "导出失败");
@@ -168,6 +164,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
           leftSection={<IconDownload size={14} />}
           onClick={handleExport}
           loading={exporting}
+          disabled={!token}
         >
           导出图片
         </Button>

@@ -40,6 +40,7 @@ import {
 } from "../../components/ScoreDisplayFilter";
 import type { SyncScore } from "../../types/syncScore";
 import classes from "./LevelScoresTab.module.css";
+import { downloadBlob } from "../../utils/downloadBlob";
 import { useAuth } from "../../providers/AuthProvider";
 
 type ChartEntry = {
@@ -290,12 +291,7 @@ export function LevelScoresTab({
         throw new Error(`导出失败 (HTTP ${res.status})`);
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `level-${current.levelKey}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `level-${current.levelKey}.png`);
     } catch (err) {
       console.error(err);
       alert((err as Error).message || "导出失败");
@@ -327,6 +323,7 @@ export function LevelScoresTab({
               leftSection={<IconDownload size={14} />}
               onClick={handleExport}
               loading={exporting}
+              disabled={!token || !current}
             >
               导出图片
             </Button>
