@@ -17,13 +17,17 @@ import { convertSyncScoresToDivingFishRecords } from '../../common/prober/diving
 import { uploadRecords as uploadDivingFishRecords } from '../../common/prober/diving-fish/api';
 import { convertSyncScoresToLxnsPayload } from '../../common/prober/lxns/converter';
 import { uploadLxnsScores } from '../../common/prober/lxns/client';
+import { ProberExportMapService } from './prober-export-map.service';
 
 type JobLike = {
   id: string;
   friendCode: string;
   skipUpdateScore: boolean;
   result?: any;
-  cabinetScoreMap?: Record<string, { achievement: number; dxScore: number }> | null;
+  cabinetScoreMap?: Record<
+    string,
+    { achievement: number; dxScore: number }
+  > | null;
 };
 
 type MusicRow = MusicEntity & {
@@ -42,7 +46,11 @@ function rankIdx(table: readonly string[], v: string | null): number {
   const i = table.indexOf(v);
   return i < 0 ? -1 : i;
 }
-function pickHigher(table: readonly string[], a: string | null, b: string | null): string | null {
+function pickHigher(
+  table: readonly string[],
+  a: string | null,
+  b: string | null,
+): string | null {
   return rankIdx(table, b) > rankIdx(table, a) ? b : a;
 }
 /** Parse a numeric score string. dxScore is plain int, score is "100.3107%". */
@@ -83,6 +91,7 @@ export class SyncService {
     private readonly syncModel: Model<SyncDocument>,
     @InjectModel(MusicEntity.name)
     private readonly musicModel: Model<MusicDocument>,
+    private readonly proberExportMap: ProberExportMapService,
   ) {}
 
   async createFromJob(job: JobLike) {
@@ -180,7 +189,10 @@ export class SyncService {
 
   private async mapResultToScores(
     result: any,
-    cabinetScoreMap?: Record<string, { achievement: number; dxScore: number }> | null,
+    cabinetScoreMap?: Record<
+      string,
+      { achievement: number; dxScore: number }
+    > | null,
   ): Promise<ScoreSnapshot[]> {
     if (!result || typeof result !== 'object') return [];
 
@@ -233,7 +245,11 @@ export class SyncService {
             // mode is on, payload.dxScore is null but the chart is still
             // worth keeping because cabinet has the dxScore + we just
             // need the fc/fs from VS.)
-            if (dxScoreFromVS === null && scoreFromVS === null && !cabinetScoreMap) {
+            if (
+              dxScoreFromVS === null &&
+              scoreFromVS === null &&
+              !cabinetScoreMap
+            ) {
               continue;
             }
 
@@ -309,9 +325,7 @@ export class SyncService {
     // stay null; the upstream merge step (mergeScoreKeepBest) keeps any
     // previous fc/fs from the prior sync.
     if (cabinetScoreMap) {
-      const seen = new Set(
-        scores.map((s) => `${s.musicId}_${s.chartIndex}`),
-      );
+      const seen = new Set(scores.map((s) => `${s.musicId}_${s.chartIndex}`));
       for (const [key, entry] of Object.entries(cabinetScoreMap)) {
         if (seen.has(key)) continue;
         const lastUnderscore = key.lastIndexOf('_');
@@ -367,18 +381,24 @@ export class SyncService {
       return { status: 'skipped', reason: 'no scores to export' };
     }
 
-    const musics = (await this.musicModel
-      .find()
-      .select({ id: 1, title: 1 })
-      .lean()) as Array<{ id: string; title: string }>;
-    const titleMap = new Map<string, string>();
-    for (const music of musics) {
-      if (music?.id && music?.title) {
-        titleMap.set(music.id, music.title);
-      }
+    const exportMap = await this.proberExportMap.getMap();
+    const exportableScores = scores.filter((s) =>
+      exportMap.toDivingFishId.has(s.musicId),
+    );
+    if (!exportableScores.length) {
+      return {
+        status: 'skipped',
+        reason: 'no scores supported by diving-fish',
+        scores: scores.length,
+        exported: 0,
+        skipped: scores.length,
+      };
     }
 
-    const records = convertSyncScoresToDivingFishRecords(scores, titleMap);
+    const records = convertSyncScoresToDivingFishRecords(
+      exportableScores,
+      exportMap.divingFishTitleByDbId,
+    );
 
     try {
       const res = await uploadDivingFishRecords(records, importToken);
@@ -386,6 +406,7 @@ export class SyncService {
         status: res.status,
         scores: scores.length,
         exported: records.length,
+        skipped: scores.length - exportableScores.length,
         response: res.data,
       };
     } catch (error) {
@@ -408,13 +429,31 @@ export class SyncService {
       return { status: 'skipped', reason: 'no scores to export' };
     }
 
-    const { scores: payload } = convertSyncScoresToLxnsPayload(scores);
+    const exportMap = await this.proberExportMap.getMap();
+    const exportableScores = scores.filter((s) =>
+      exportMap.toLxnsId.has(s.musicId),
+    );
+    if (!exportableScores.length) {
+      return {
+        status: 'skipped',
+        reason: 'no scores supported by lxns',
+        scores: scores.length,
+        exported: 0,
+        skipped: scores.length,
+      };
+    }
+
+    const { scores: payload } = convertSyncScoresToLxnsPayload(
+      exportableScores,
+      exportMap.toLxnsId,
+    );
     const res = await uploadLxnsScores(payload, importToken);
 
     return {
       status: res.status,
       scores: scores.length,
       exported: res.exported,
+      skipped: scores.length - exportableScores.length,
       response: res.response,
     };
   }

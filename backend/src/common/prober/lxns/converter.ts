@@ -48,21 +48,30 @@ function toNumber(value: string | number | null | undefined): number | null {
   return null;
 }
 
-function mapMusicId(type: string, id: string): number {
-  const parsed = Number(id);
+function mapMusicId(
+  type: string,
+  id: string,
+  idMap?: ReadonlyMap<string, string>,
+): number {
+  const mapped = idMap?.get(id);
+  const parsed = Number(mapped ?? id);
   if (!Number.isFinite(parsed)) {
-    throw new Error(`Invalid musicId for LXNS payload: ${id}`);
+    throw new Error(`Invalid musicId for LXNS payload: ${mapped ?? id}`);
   }
+  if (mapped !== undefined) return parsed;
   return type === 'dx' ? parsed - 10000 : parsed;
 }
 
-export function convertSyncScoresToLxnsPayload(scores: SyncScore[]): {
+export function convertSyncScoresToLxnsPayload(
+  scores: SyncScore[],
+  idMap?: ReadonlyMap<string, string>,
+): {
   scores: LxnsScore[];
 } {
   const payload: LxnsScore[] = [];
 
   for (const score of scores) {
-    const id = mapMusicId(score.type, score.musicId);
+    const id = mapMusicId(score.type, score.musicId, idMap);
     const levelIndex = score.type === 'utage' ? 0 : score.chartIndex;
     payload.push({
       id,

@@ -62,6 +62,26 @@ export function makeKey(
   return `${title}||${type}||${category ?? ''}`;
 }
 
+type SourceName = 'diving-fish' | 'lxns';
+
+const KEY_OVERRIDES: Record<
+  string,
+  Partial<Pick<MusicDoc, 'title' | 'type' | 'category'>>
+> = {
+  'diving-fish:200': { title: 'Bad Apple!! feat.nomico' },
+  'diving-fish:203': { title: 'Help me, ERINNNNNN!!（Band ver.）' },
+  'diving-fish:111772': { title: '[宴]人マニア' },
+};
+
+function makeKeyForDoc(source: SourceName, doc: MusicDoc): string {
+  const override = KEY_OVERRIDES[`${source}:${doc.id}`];
+  return makeKey(
+    override?.title ?? doc.title,
+    override?.type ?? doc.type,
+    override?.category ?? doc.category,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Convert raw API data → MusicDoc[]
 // ---------------------------------------------------------------------------
@@ -142,7 +162,7 @@ export function buildIdMap(
 
   // 1) Index diving-fish docs
   for (const doc of divingFishDocs) {
-    const key = makeKey(doc.title, doc.type, doc.category);
+    const key = makeKeyForDoc('diving-fish', doc);
     if (dfKeyConflicts.has(key)) {
       dfKeyConflicts.get(key)!.push(doc);
     } else if (map.has(key)) {
@@ -161,7 +181,7 @@ export function buildIdMap(
 
   // 2) Match lxns docs
   for (const doc of lxnsDocs) {
-    const key = makeKey(doc.title, doc.type, doc.category);
+    const key = makeKeyForDoc('lxns', doc);
     if (lxnsKeyConflicts.has(key)) {
       lxnsKeyConflicts.get(key)!.push(doc);
       continue;
