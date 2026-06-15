@@ -20,16 +20,6 @@ import { cookieStore } from "./cookie-store.ts";
 export class CleanupService {
   private intervalId: NodeJS.Timeout | null = null;
   private isRunning = false;
-  private onPauseRequest: (() => void) | null = null;
-  private onResumeRequest: (() => void) | null = null;
-
-  /**
-   * 设置暂停/恢复回调
-   */
-  setCallbacks(onPause: () => void, onResume: () => void): void {
-    this.onPauseRequest = onPause;
-    this.onResumeRequest = onResume;
-  }
 
   /**
    * 启动清理服务
@@ -77,11 +67,7 @@ export class CleanupService {
 
     this.isRunning = true;
 
-    // 请求暂停 job claiming
-    if (this.onPauseRequest) {
-      this.onPauseRequest();
-    }
-    console.log("[CleanupService] Starting cleanup, pausing job claiming...");
+    console.log("[CleanupService] Starting cleanup...");
 
     try {
       // 对每个 bot 执行清理
@@ -94,11 +80,6 @@ export class CleanupService {
       console.error("[CleanupService] Cleanup failed:", err);
     } finally {
       this.isRunning = false;
-      // 请求恢复 job claiming
-      if (this.onResumeRequest) {
-        this.onResumeRequest();
-      }
-      console.log("[CleanupService] Resuming job claiming...");
     }
   }
 
@@ -121,8 +102,7 @@ export class CleanupService {
     try {
       // 1. 获取当前已发送的好友请求和好友列表
       //    拉全量好友：好友上限 100，全量翻页最多约 11 页，5s spacing 下
-      //    ~1 分钟。cleanup 期间 job claiming 已暂停（见 runCleanup），所以
-      //    这段翻页时间不会和新 job 抢这个 bot。
+      //    ~1 分钟。
       //    步骤 4 的「驱逐 30min inactive」必须看到全量好友才有意义 —— 之前
       //    maxPages=3 只看前 30 个，而 inactive 好友按活跃倒序沉在列表末尾，
       //    永远进不了前 30，导致好友数一路涨到上限也清不掉。

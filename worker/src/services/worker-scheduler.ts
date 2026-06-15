@@ -74,20 +74,9 @@ export class WorkerScheduler {
   private intervalId: NodeJS.Timeout | null = null;
   private healthCheckIntervalId: NodeJS.Timeout | null = null;
   private reportIntervalId: NodeJS.Timeout | null = null;
-  private paused = false;
 
   constructor() {
     this.config = loadConfigFromEnv();
-
-    // 设置清理服务的回调
-    cleanupService.setCallbacks(
-      () => {
-        this.paused = true;
-      },
-      () => {
-        this.paused = false;
-      },
-    );
   }
 
   /**
@@ -245,7 +234,7 @@ export class WorkerScheduler {
    * 每次 tick 只领取一个任务，避免单个 worker 在一次 tick 中贪心抢占所有任务导致负载倾斜
    */
   private async tick(): Promise<void> {
-    if (this.paused || this.processingCount >= this.config.maxProcessJobs) {
+    if (this.processingCount >= this.config.maxProcessJobs) {
       return;
     }
 
@@ -353,9 +342,7 @@ export async function reportBotStatus(
   const allBots = cookieStore.getAllBotFriendCodes();
   if (!allBots.length) return;
 
-  const targets = onlyBots
-    ? allBots.filter((fc) => onlyBots.has(fc))
-    : allBots;
+  const targets = onlyBots ? allBots.filter((fc) => onlyBots.has(fc)) : allBots;
   if (!targets.length) return;
 
   const botsData: {
