@@ -260,9 +260,8 @@ export class AutoUpdateSchedulerService
         // with consecutive failures (see AUTO_UPDATE_BACKOFF_POLICY).
         // Reset happens in JobService.patch on successful completion
         // and in triggerByFriendCode on admin manual trigger.
-        const backoffUntil = (
-          u as { autoUpdateBackoffUntil?: Date | null }
-        ).autoUpdateBackoffUntil;
+        const backoffUntil = (u as { autoUpdateBackoffUntil?: Date | null })
+          .autoUpdateBackoffUntil;
         if (backoffUntil && backoffUntil.getTime() > Date.now()) {
           skippedNoChange++;
           const remainMin = Math.ceil(
@@ -348,7 +347,12 @@ export class AutoUpdateSchedulerService
           // (5) create job + addRival; sourceScoreHash piggybacks on the
           // job and is promoted to user.lastScoreHash by JobService.patch
           // ONLY after the job completes successfully.
-          await this.triggerUpdateForUser(u.friendCode, cabinetUserId, hash, music);
+          await this.triggerUpdateForUser(
+            u.friendCode,
+            cabinetUserId,
+            hash,
+            music,
+          );
           triggered++;
           entries.push({
             friendCode: u.friendCode,
@@ -433,6 +437,7 @@ export class AutoUpdateSchedulerService
         isAuthenticated: true,
         sourceScoreHash,
         cabinetMusic,
+        allowCabinetOnlyShortCircuit: true,
       })
       .then(({ jobId }) =>
         this.logger.log(
@@ -484,9 +489,7 @@ export class AutoUpdateSchedulerService
     cabinetUserId: number;
     bot: { friendCode: string; cabinetUserId: number };
     jobId: string;
-    addRival:
-      | { returnCode1: number; returnCode2: number }
-      | { error: string };
+    addRival: { returnCode1: number; returnCode2: number } | { error: string };
   }> {
     const user = await this.users.findByFriendCode(friendCode);
     if (!user) {
@@ -691,11 +694,10 @@ export class AutoUpdateSchedulerService
         autoUpdateFailureCount:
           (u as { autoUpdateFailureCount?: number }).autoUpdateFailureCount ??
           0,
-        autoUpdateBackoffUntil:
-          toIso(
-            (u as { autoUpdateBackoffUntil?: Date | string | null })
-              .autoUpdateBackoffUntil,
-          ),
+        autoUpdateBackoffUntil: toIso(
+          (u as { autoUpdateBackoffUntil?: Date | string | null })
+            .autoUpdateBackoffUntil,
+        ),
         lastIdleJob: idle
           ? {
               id: idle.id,

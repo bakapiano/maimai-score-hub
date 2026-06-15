@@ -169,7 +169,10 @@ export class JobService {
      * authoritative from cabinet; only fc/fs still need scraping).
      * Shape: { "<musicId>_<chartIndex>": { achievement, dxScore } }.
      */
-    cabinetScoreMap?: Record<string, { achievement: number; dxScore: number }> | null;
+    cabinetScoreMap?: Record<
+      string,
+      { achievement: number; dxScore: number }
+    > | null;
     /**
      * Optional list of difficulties the worker should scrape. When set,
      * worker only fetches friend-VS for these diffs (typical: only the
@@ -186,10 +189,18 @@ export class JobService {
      * job-create caller.
      */
     cabinetMusic?: SdgbWorkerMusicEntry[] | null;
+    /**
+     * Cabinet-only mode is an auto-update optimization only. Manual
+     * user/admin jobs must still go through addRival + dxnet score update.
+     */
+    allowCabinetOnlyShortCircuit?: boolean;
   }) {
     const id = randomUUID();
     const now = new Date();
     const resolvedJobType: JobType = input.jobType ?? 'immediate';
+    const allowCabinetOnlyShortCircuit =
+      resolvedJobType === 'idle_update_score' &&
+      input.allowCabinetOnlyShortCircuit === true;
 
     // [TODO] 将这个限流改为 ip 黑名单机制，同一时间对于一个 friend code 的请求如果过于频繁就拒绝
     // const recent = await this.jobModel
@@ -250,34 +261,37 @@ export class JobService {
       (resolvedJobType === 'immediate' ||
         resolvedJobType === 'idle_update_score') &&
       !input.skipUpdateScore;
-    // When cabinet-only mode is on AND the cabinet fast-path successfully
-    // attaches cabinetScoreMap for a user with cabinetUserId, we skip
-    // worker dispatch entirely: the job is created and then immediately
-    // patched to `completed` with result={}. SyncService.createFromJob's
-    // synthetic-entry branch (sync.service.ts:311-351) writes the cabinet
-    // achievement/dxScore, mergeScoreKeepBest preserves the previous
-    // sync's fc/fs (since synthetic entries set those to null).
+    // When an automatic update explicitly enables cabinet-only mode AND the
+    // cabinet fast-path successfully attaches cabinetScoreMap for a user with
+    // cabinetUserId, we skip worker dispatch entirely: the job is created and
+    // then immediately patched to `completed` with result={}.
+    // SyncService.createFromJob's synthetic-entry branch
+    // (sync.service.ts:311-351) writes the cabinet achievement/dxScore,
+    // mergeScoreKeepBest preserves the previous sync's fc/fs (since synthetic
+    // entries set those to null).
     let cabinetOnlyShortCircuit = false;
     if (isScoreUpdateJob) {
       try {
         const user = await this.usersService.findByFriendCode(input.friendCode);
-        const userCabinetUid = (user as { cabinetUserId?: number | null } | null)
-          ?.cabinetUserId;
+        const userCabinetUid = (
+          user as { cabinetUserId?: number | null } | null
+        )?.cabinetUserId;
         if (userCabinetUid != null) {
-          // Cabinet-only mode: skip bot pick + addRival entirely.
-          // getRivalHash only needs the target's cabinetUserId, no bot
-          // friendship required — so we go straight to capturing scores
-          // and short-circuiting.
+          // Cabinet-only mode is only allowed for automatic updates. Manual
+          // user/admin jobs still pick a bot, addRival, and dispatch to dxnet.
           let cabinetOnlyMode = false;
-          try {
-            cabinetOnlyMode = (await this.systemSettings.get()).cabinetOnlyMode;
-          } catch (err) {
-            this.logger.warn(
-              `system-settings lookup failed; falling back to bot-based flow: ${err instanceof Error ? err.message : err}`,
-            );
+          if (allowCabinetOnlyShortCircuit) {
+            try {
+              cabinetOnlyMode = (await this.systemSettings.get())
+                .cabinetOnlyMode;
+            } catch (err) {
+              this.logger.warn(
+                `system-settings lookup failed; falling back to bot-based flow: ${err instanceof Error ? err.message : err}`,
+              );
+            }
           }
 
-          if (cabinetOnlyMode) {
+          if (allowCabinetOnlyShortCircuit && cabinetOnlyMode) {
             try {
               let music = input.cabinetMusic ?? null;
               if (!music) {
@@ -307,16 +321,16 @@ export class JobService {
                 resolvedStage = 'update_score';
                 cabinetOnlyShortCircuit = true;
                 this.logger.log(
-                  `Cabinet-only mode: captured ${Object.keys(cabinetScoreMap).length} entries for fc=${input.friendCode}, no bot needed`,
+                  `Cabinet-only auto-update: captured ${Object.keys(cabinetScoreMap).length} entries for fc=${input.friendCode}, no bot needed`,
                 );
               } else {
                 this.logger.warn(
-                  `Cabinet-only mode: cabinetScoreMap empty for fc=${input.friendCode}, will fall back to worker flow`,
+                  `Cabinet-only auto-update: cabinetScoreMap empty for fc=${input.friendCode}, will fall back to worker flow`,
                 );
               }
             } catch (err) {
               this.logger.warn(
-                `Cabinet-only mode getRivalHash failed for fc=${input.friendCode}; falling back to bot-based flow: ${err instanceof Error ? err.message : err}`,
+                `Cabinet-only auto-update getRivalHash failed for fc=${input.friendCode}; falling back to bot-based flow: ${err instanceof Error ? err.message : err}`,
               );
             }
           }
@@ -325,207 +339,213 @@ export class JobService {
           // addRival + diff calc path below. Otherwise fall through to
           // the original flow that picks a bot and does addRival.
           if (!cabinetOnlyShortCircuit) {
-          // Pick the bot — caller-specified or auto-pick.
-          let botCabinetUid: number | null = null;
-          let botFc: string | null = input.botUserFriendCode ?? null;
-          if (botFc) {
-            const allBots = await this.botStatus.getAll();
-            const bot = allBots.find((b) => b.friendCode === botFc);
-            botCabinetUid = bot?.cabinetUserId ?? null;
-          } else {
-            const picked = await this.botStatus.pickAvailableCabinetBot();
-            if (picked) {
-              botFc = picked.friendCode;
-              botCabinetUid = picked.cabinetUserId ?? null;
-              input.botUserFriendCode = botFc;
-            }
-          }
-
-          if (botCabinetUid != null && botFc) {
-            // ── addRival ────────────────────────────────────────
-            // immediate: synchronous, fall back to send_request on
-            // failure so the user can complete via the friend-request
-            // flow instead of staring at a stuck stage=update_score.
-            // idle_update_score: scheduler already addRival'd before
-            // enqueue, this is best-effort backup.
-            let addRivalOk = true;
-            if (resolvedJobType === 'immediate') {
-              try {
-                const r = await this.sdgb.addRival(
-                  {
-                    botCabinetUserId: botCabinetUid,
-                    targetCabinetUserId: userCabinetUid,
-                  },
-                  { tag: `score-update-add:${input.friendCode}`, timeoutMs: 60_000 },
-                );
-                resolvedStage = 'update_score';
-                this.logger.log(
-                  `Cabinet fast-path fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
-                );
-              } catch (err) {
-                addRivalOk = false;
-                this.logger.warn(
-                  `Cabinet fast-path addRival failed for fc=${input.friendCode}; falling back to send_request: ${err instanceof Error ? err.message : err}`,
-                );
-              }
+            // Pick the bot — caller-specified or auto-pick.
+            let botCabinetUid: number | null = null;
+            let botFc: string | null = input.botUserFriendCode ?? null;
+            if (botFc) {
+              const allBots = await this.botStatus.getAll();
+              const bot = allBots.find((b) => b.friendCode === botFc);
+              botCabinetUid = bot?.cabinetUserId ?? null;
             } else {
-              // idle: stage already update_score from scheduler intent.
-              resolvedStage = 'update_score';
-              this.sdgb
-                .addRival(
-                  {
-                    botCabinetUserId: botCabinetUid,
-                    targetCabinetUserId: userCabinetUid,
-                  },
-                  { tag: `score-update-add:${input.friendCode}`, timeoutMs: 60_000 },
-                )
-                .then((r) =>
-                  this.logger.log(
-                    `Cabinet score-update (idle, redundant) fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
-                  ),
-                )
-                .catch((err) =>
-                  this.logger.warn(
-                    `addRival (idle redundant) failed: ${err instanceof Error ? err.message : err}`,
-                  ),
-                );
+              const picked = await this.botStatus.pickAvailableCabinetBot();
+              if (picked) {
+                botFc = picked.friendCode;
+                botCabinetUid = picked.cabinetUserId ?? null;
+                input.botUserFriendCode = botFc;
+              }
             }
 
-            // ── cabinet music + diff calc (all score-update jobs) ──
-            // Capture cabinet's per-chart achievement/dxScore + diff
-            // against last sync to derive cabinetScoreMap +
-            // diffsToScrape. These let the worker skip half the
-            // friend-VS requests and skip unchanged diffs entirely.
-            //
-            // Only attempt if addRival worked (immediate path) — if
-            // sdgb is broken there's no point trying again.
-            if (addRivalOk && input.cabinetScoreMap == null) {
-              try {
-                let music = input.cabinetMusic ?? null;
-                if (!music) {
-                  // Caller didn't pre-fetch (e.g. immediate path,
-                  // admin trigger, idle scheduler that didn't pass
-                  // music) — make our own sdgb call.
-                  const r = await this.sdgb.getRivalHash(
-                    { cabinetUserId: userCabinetUid },
+            if (botCabinetUid != null && botFc) {
+              // ── addRival ────────────────────────────────────────
+              // immediate: synchronous, fall back to send_request on
+              // failure so the user can complete via the friend-request
+              // flow instead of staring at a stuck stage=update_score.
+              // idle_update_score: scheduler already addRival'd before
+              // enqueue, this is best-effort backup.
+              let addRivalOk = true;
+              if (resolvedJobType === 'immediate') {
+                try {
+                  const r = await this.sdgb.addRival(
                     {
-                      tag: `score-update-music:${input.friendCode}`,
+                      botCabinetUserId: botCabinetUid,
+                      targetCabinetUserId: userCabinetUid,
+                    },
+                    {
+                      tag: `score-update-add:${input.friendCode}`,
                       timeoutMs: 60_000,
                     },
                   );
-                  music = r.music;
-                }
-                const cabinetScoreMap: Record<
-                  string,
-                  { achievement: number; dxScore: number }
-                > = {};
-                for (const m of music ?? []) {
-                  for (const d of m.userRivalMusicDetailList ?? []) {
-                    cabinetScoreMap[`${m.musicId}_${d.level}`] = {
-                      achievement: d.achievement,
-                      dxScore: d.deluxscoreMax,
-                    };
-                  }
-                }
-                if (Object.keys(cabinetScoreMap).length > 0) {
-                  input.cabinetScoreMap = cabinetScoreMap;
-
-                  // (cabinet-only-mode short-circuit was already evaluated
-                  // earlier in the bot-less path; reaching here means
-                  // cabinet-only mode is OFF — continue with worker dispatch.)
-
-                  // Compute diffsToScrape if caller didn't already.
-                  if (input.diffsToScrape == null) {
-                    try {
-                      // Filter out cabinet entries whose musicId we
-                      // don't have in our music data (e.g. delisted
-                      // standard charts cabinet still returns). Without
-                      // this, every such entry counts as a "new chart"
-                      // and inflates diffsToScrape to cover all diffs,
-                      // which makes the worker scrape useless friend-VS
-                      // pages — exactly the symptom we saw on
-                      // fc=634142510810999 (86 unknown ids → diffs=[0,1,2,3,4]).
-                      const validIds = await this.getValidMusicIds();
-                      const prev = await this.syncService
-                        .getLatestWithScores(input.friendCode)
-                        .catch(() => null);
-                      if (prev && Array.isArray(prev.scores)) {
-                        const prevMap = new Map<
-                          string,
-                          { achievement: number; dxScore: number }
-                        >();
-                        for (const s of prev.scores) {
-                          const ach = s.score
-                            ? Math.round(parseFloat(String(s.score)) * 10000)
-                            : 0;
-                          const dx = s.dxScore
-                            ? parseInt(String(s.dxScore), 10) || 0
-                            : 0;
-                          prevMap.set(`${s.musicId}_${s.chartIndex}`, {
-                            achievement: ach,
-                            dxScore: dx,
-                          });
-                        }
-                        const changedDiffs = new Set<number>();
-                        let skippedUnknown = 0;
-                        for (const [key, cur] of Object.entries(
-                          cabinetScoreMap,
-                        )) {
-                          const lastUnderscore = key.lastIndexOf('_');
-                          const musicId = key.slice(0, lastUnderscore);
-                          if (!validIds.has(musicId)) {
-                            skippedUnknown++;
-                            continue;
-                          }
-                          const before = prevMap.get(key);
-                          if (
-                            !before ||
-                            before.achievement !== cur.achievement ||
-                            before.dxScore !== cur.dxScore
-                          ) {
-                            const lvl = parseInt(
-                              key.slice(lastUnderscore + 1),
-                              10,
-                            );
-                            if (Number.isFinite(lvl)) changedDiffs.add(lvl);
-                          }
-                        }
-                        if (skippedUnknown > 0) {
-                          this.logger.log(
-                            `Cabinet diff fc=${input.friendCode}: skipped ${skippedUnknown} unknown musicIds (not in db)`,
-                          );
-                        }
-                        if (changedDiffs.size > 0) {
-                          input.diffsToScrape = [...changedDiffs].sort(
-                            (a, b) => a - b,
-                          );
-                          this.logger.log(
-                            `Cabinet diff fc=${input.friendCode}: scraping diffs [${input.diffsToScrape.join(',')}] only (cabinet=${Object.keys(cabinetScoreMap).length} entries)`,
-                          );
-                        }
-                      }
-                    } catch (err) {
-                      this.logger.warn(
-                        `diff calc failed for fc=${input.friendCode}, worker will scrape default diffs: ${err instanceof Error ? err.message : err}`,
-                      );
-                    }
-                  }
-
+                  resolvedStage = 'update_score';
                   this.logger.log(
-                    `Cabinet music captured for fc=${input.friendCode}: ${Object.keys(cabinetScoreMap).length} entries${
-                      input.diffsToScrape
-                        ? `, diffs=[${input.diffsToScrape.join(',')}]`
-                        : ''
-                    }`,
+                    `Cabinet fast-path fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
+                  );
+                } catch (err) {
+                  addRivalOk = false;
+                  this.logger.warn(
+                    `Cabinet fast-path addRival failed for fc=${input.friendCode}; falling back to send_request: ${err instanceof Error ? err.message : err}`,
                   );
                 }
-              } catch (err) {
-                this.logger.warn(
-                  `cabinet music fetch failed for fc=${input.friendCode}, worker will scrape both VS passes: ${err instanceof Error ? err.message : err}`,
-                );
+              } else {
+                // idle: stage already update_score from scheduler intent.
+                resolvedStage = 'update_score';
+                this.sdgb
+                  .addRival(
+                    {
+                      botCabinetUserId: botCabinetUid,
+                      targetCabinetUserId: userCabinetUid,
+                    },
+                    {
+                      tag: `score-update-add:${input.friendCode}`,
+                      timeoutMs: 60_000,
+                    },
+                  )
+                  .then((r) =>
+                    this.logger.log(
+                      `Cabinet score-update (idle, redundant) fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
+                    ),
+                  )
+                  .catch((err) =>
+                    this.logger.warn(
+                      `addRival (idle redundant) failed: ${err instanceof Error ? err.message : err}`,
+                    ),
+                  );
+              }
+
+              // ── cabinet music + diff calc (all score-update jobs) ──
+              // Capture cabinet's per-chart achievement/dxScore + diff
+              // against last sync to derive cabinetScoreMap +
+              // diffsToScrape. These let the worker skip half the
+              // friend-VS requests and skip unchanged diffs entirely.
+              //
+              // Only attempt if addRival worked (immediate path) — if
+              // sdgb is broken there's no point trying again.
+              if (addRivalOk && input.cabinetScoreMap == null) {
+                try {
+                  let music = input.cabinetMusic ?? null;
+                  if (!music) {
+                    // Caller didn't pre-fetch (e.g. immediate path,
+                    // admin trigger, idle scheduler that didn't pass
+                    // music) — make our own sdgb call.
+                    const r = await this.sdgb.getRivalHash(
+                      { cabinetUserId: userCabinetUid },
+                      {
+                        tag: `score-update-music:${input.friendCode}`,
+                        timeoutMs: 60_000,
+                      },
+                    );
+                    music = r.music;
+                  }
+                  const cabinetScoreMap: Record<
+                    string,
+                    { achievement: number; dxScore: number }
+                  > = {};
+                  for (const m of music ?? []) {
+                    for (const d of m.userRivalMusicDetailList ?? []) {
+                      cabinetScoreMap[`${m.musicId}_${d.level}`] = {
+                        achievement: d.achievement,
+                        dxScore: d.deluxscoreMax,
+                      };
+                    }
+                  }
+                  if (Object.keys(cabinetScoreMap).length > 0) {
+                    input.cabinetScoreMap = cabinetScoreMap;
+
+                    // Cabinet-only short-circuit was already evaluated earlier;
+                    // reaching here means this job must continue with worker
+                    // dispatch.
+
+                    // Compute diffsToScrape if caller didn't already.
+                    if (input.diffsToScrape == null) {
+                      try {
+                        // Filter out cabinet entries whose musicId we
+                        // don't have in our music data (e.g. delisted
+                        // standard charts cabinet still returns). Without
+                        // this, every such entry counts as a "new chart"
+                        // and inflates diffsToScrape to cover all diffs,
+                        // which makes the worker scrape useless friend-VS
+                        // pages — exactly the symptom we saw on
+                        // fc=634142510810999 (86 unknown ids → diffs=[0,1,2,3,4]).
+                        const validIds = await this.getValidMusicIds();
+                        const prev = await this.syncService
+                          .getLatestWithScores(input.friendCode)
+                          .catch(() => null);
+                        if (prev && Array.isArray(prev.scores)) {
+                          const prevMap = new Map<
+                            string,
+                            { achievement: number; dxScore: number }
+                          >();
+                          for (const s of prev.scores) {
+                            const ach = s.score
+                              ? Math.round(parseFloat(String(s.score)) * 10000)
+                              : 0;
+                            const dx = s.dxScore
+                              ? parseInt(String(s.dxScore), 10) || 0
+                              : 0;
+                            prevMap.set(`${s.musicId}_${s.chartIndex}`, {
+                              achievement: ach,
+                              dxScore: dx,
+                            });
+                          }
+                          const changedDiffs = new Set<number>();
+                          let skippedUnknown = 0;
+                          for (const [key, cur] of Object.entries(
+                            cabinetScoreMap,
+                          )) {
+                            const lastUnderscore = key.lastIndexOf('_');
+                            const musicId = key.slice(0, lastUnderscore);
+                            if (!validIds.has(musicId)) {
+                              skippedUnknown++;
+                              continue;
+                            }
+                            const before = prevMap.get(key);
+                            if (
+                              !before ||
+                              before.achievement !== cur.achievement ||
+                              before.dxScore !== cur.dxScore
+                            ) {
+                              const lvl = parseInt(
+                                key.slice(lastUnderscore + 1),
+                                10,
+                              );
+                              if (Number.isFinite(lvl)) changedDiffs.add(lvl);
+                            }
+                          }
+                          if (skippedUnknown > 0) {
+                            this.logger.log(
+                              `Cabinet diff fc=${input.friendCode}: skipped ${skippedUnknown} unknown musicIds (not in db)`,
+                            );
+                          }
+                          if (changedDiffs.size > 0) {
+                            input.diffsToScrape = [...changedDiffs].sort(
+                              (a, b) => a - b,
+                            );
+                            this.logger.log(
+                              `Cabinet diff fc=${input.friendCode}: scraping diffs [${input.diffsToScrape.join(',')}] only (cabinet=${Object.keys(cabinetScoreMap).length} entries)`,
+                            );
+                          }
+                        }
+                      } catch (err) {
+                        this.logger.warn(
+                          `diff calc failed for fc=${input.friendCode}, worker will scrape default diffs: ${err instanceof Error ? err.message : err}`,
+                        );
+                      }
+                    }
+
+                    this.logger.log(
+                      `Cabinet music captured for fc=${input.friendCode}: ${Object.keys(cabinetScoreMap).length} entries${
+                        input.diffsToScrape
+                          ? `, diffs=[${input.diffsToScrape.join(',')}]`
+                          : ''
+                      }`,
+                    );
+                  }
+                } catch (err) {
+                  this.logger.warn(
+                    `cabinet music fetch failed for fc=${input.friendCode}, worker will scrape both VS passes: ${err instanceof Error ? err.message : err}`,
+                  );
+                }
               }
             }
-          }
           } // end if (!cabinetOnlyShortCircuit)
         }
       } catch (err) {
@@ -558,7 +578,7 @@ export class JobService {
 
     if (cabinetOnlyShortCircuit) {
       this.logger.log(
-        `Cabinet-only mode: completing job ${id} fc=${input.friendCode} without worker dispatch`,
+        `Cabinet-only auto-update: completing job ${id} fc=${input.friendCode} without worker dispatch`,
       );
       try {
         const completed = await this.patch(id, {
@@ -626,8 +646,8 @@ export class JobService {
       const doc = await this.jobModel.findOne({ id }).lean();
       if (!doc) throw new Error(`fetch_friend_list job ${id} disappeared`);
       if (doc.status === 'completed') {
-        const friends =
-          (doc.result as { friends?: unknown } | undefined)?.friends;
+        const friends = (doc.result as { friends?: unknown } | undefined)
+          ?.friends;
         if (!Array.isArray(friends)) {
           throw new Error(`fetch_friend_list job ${id} result missing friends`);
         }
@@ -647,7 +667,9 @@ export class JobService {
       }
       await new Promise((r) => setTimeout(r, 1_500));
     }
-    throw new Error(`fetch_friend_list job ${id} timed out after ${timeoutMs}ms`);
+    throw new Error(
+      `fetch_friend_list job ${id} timed out after ${timeoutMs}ms`,
+    );
   }
 
   async get(jobId: string): Promise<JobResponse> {
@@ -1041,10 +1063,7 @@ export class JobService {
     //   intentionally stays gated on `completed` — a canceled job
     //   didn't necessarily scrape anything, so lastScoreHash must
     //   stay as-is for the next sweep to retry.
-    if (
-      updated.jobType === 'idle_update_score' &&
-      updated.sourceScoreHash
-    ) {
+    if (updated.jobType === 'idle_update_score' && updated.sourceScoreHash) {
       if (updated.status === 'completed') {
         this.usersService
           .findByFriendCode(updated.friendCode)
