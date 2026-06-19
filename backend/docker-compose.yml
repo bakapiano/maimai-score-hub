@@ -2,8 +2,8 @@ services:
   mongo:
     image: mongo:7
     restart: unless-stopped
-    # Cap mongo memory. Server 3 has 7.7GB total; backend×2 + nginx +
-    # frontend take ~2GB, leaving ~5GB for mongo+OS+buffer cache.
+    # Cap mongo memory. Server 5 has 8GB total; backend×2 + nginx are
+    # modest, leaving headroom for mongo+OS+buffer cache.
     # Mongo 7 uses ~cache + ~1-1.5GB for connections/indexes — at our
     # connection volume (backend×2 mongoose pool default 100 each + 3
     # workers' admin RPCs) the non-cache overhead is closer to 2GB,
@@ -80,7 +80,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "8080:80"
+      - "8090:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./covers:/covers:ro
