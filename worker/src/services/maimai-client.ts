@@ -18,6 +18,7 @@ import type {
   FetchOptions,
   FriendInfo,
   GameType,
+  JobStage,
   SentFriendRequest,
   UserProfile,
 } from "../types/index.ts";
@@ -70,6 +71,18 @@ export class NonRetryableError extends Error {
   }
 }
 
+interface BatchContext {
+  count: number;
+  label?: string;
+}
+
+interface ThrottleQueueEntry {
+  priority: number;
+  sequence: number;
+  batch?: BatchContext;
+  resolve: () => void;
+}
+
 /**
  * 从 HTML 中提取 container_red 错误信息
  */
@@ -94,6 +107,8 @@ export class MaimaiHttpClient {
   private cookieJar: CookieJar;
   /** 当前关联的 jobId，用于记录 API 调用日志 */
   jobId: string | null = null;
+  /** 当前关联的 job stage，用于决定全局请求队列优先级 */
+  jobStage: JobStage | null = null;
 
   // =========================================================================
   // 全局限流 —— 所有实例共享，保证相邻请求发起时间间隔 ≥ 2.5 秒以防限流
@@ -107,10 +122,24 @@ export class MaimaiHttpClient {
   // =========================================================================
   /** 请求发起间最小间隔（毫秒） */
   private static readonly REQUEST_INTERVAL_MS = 2_500;
+  /** 没有关联 job stage 的后台请求优先级（cleanup / health check / bot status 等） */
+  private static readonly REQUEST_PRIORITY_BACKGROUND = 0;
+  /** 有 job stage 的普通请求优先级 */
+  private static readonly REQUEST_PRIORITY_NORMAL = 1;
+  /** send_request / wait_acceptance 阶段请求优先级 */
+  private static readonly REQUEST_PRIORITY_INTERACTIVE = 2;
+  private static readonly HIGH_PRIORITY_JOB_STAGES: ReadonlySet<JobStage> =
+    new Set<JobStage>(["send_request", "wait_acceptance"]);
   /** 上一次请求发起的时间戳（也是 batch 计费的基准） */
   private static lastRequestStartTime = 0;
-  /** 限流锁：保证等待+更新时间戳的原子性 */
-  private static throttleLock: Promise<void> = Promise.resolve();
+  /**
+   * 全局发送槽队列：高优先级请求先拿 slot，同优先级按入队顺序。
+   * 选择请求发生在 slot 真正可用时，而不是入队时，这样低优先级请求
+   * 已经在等待 spacing 时，后来的高优先级请求仍然可以插队。
+   */
+  private static throttleQueue: ThrottleQueueEntry[] = [];
+  private static throttlePumpRunning = false;
+  private static throttleSequence = 0;
   /** 全局冻结截止时间：收到 567 后冻结所有请求 300 秒 */
   private static frozenUntil = 0;
   /** 冻结时长（毫秒） */
@@ -120,10 +149,7 @@ export class MaimaiHttpClient {
    * batch 上下文：所有在 `runInBatch` 异步范围内发出的请求会共享同一个
    * counter，互相之间不等 spacing；batch 结束后再把 spacing 一次性补回。
    */
-  private static readonly batchStorage = new AsyncLocalStorage<{
-    count: number;
-    label?: string;
-  }>();
+  private static readonly batchStorage = new AsyncLocalStorage<BatchContext>();
 
   /**
    * 在一个 "batch" 范围内运行 fn。fn 内部所有 client 请求都被算作一个
@@ -179,11 +205,28 @@ export class MaimaiHttpClient {
    *
    * batch 模式下：跳过 spacing wait，仅检查冻结，并把 batch counter +1。
    */
-  private static async waitForSlot(): Promise<void> {
+  private static async waitForSlot(priority: number): Promise<void> {
     const batch = MaimaiHttpClient.batchStorage.getStore();
     return new Promise<void>((resolve) => {
-      MaimaiHttpClient.throttleLock = MaimaiHttpClient.throttleLock.then(
-        async () => {
+      MaimaiHttpClient.throttleQueue.push({
+        priority,
+        sequence: MaimaiHttpClient.throttleSequence++,
+        batch,
+        resolve,
+      });
+      MaimaiHttpClient.pumpThrottleQueue();
+    });
+  }
+
+  private static pumpThrottleQueue(): void {
+    if (MaimaiHttpClient.throttlePumpRunning) {
+      return;
+    }
+
+    MaimaiHttpClient.throttlePumpRunning = true;
+    void (async () => {
+      try {
+        while (MaimaiHttpClient.throttleQueue.length > 0) {
           // 检查全局冻结（batch 也要遵守，这是被服务端打回的硬指标）
           const freezeRemaining = MaimaiHttpClient.frozenUntil - Date.now();
           if (freezeRemaining > 0) {
@@ -191,26 +234,62 @@ export class MaimaiHttpClient {
               `[MaimaiClient] 请求等待全局冻结解除，剩余 ${Math.ceil(freezeRemaining / 1000)} 秒`,
             );
             await sleep(freezeRemaining);
+            continue;
           }
 
-          if (batch) {
-            // batch 内：不等 spacing，只记账
-            batch.count++;
-            resolve();
+          const nextIndex = MaimaiHttpClient.findNextThrottleQueueIndex();
+          if (nextIndex < 0) {
             return;
           }
 
+          const next = MaimaiHttpClient.throttleQueue[nextIndex];
           const now = Date.now();
           const elapsed = now - MaimaiHttpClient.lastRequestStartTime;
           const waitTime = MaimaiHttpClient.REQUEST_INTERVAL_MS - elapsed;
-          if (waitTime > 0) {
+          if (!next.batch && waitTime > 0) {
             await sleep(waitTime);
+            continue;
           }
+
+          const [entry] = MaimaiHttpClient.throttleQueue.splice(nextIndex, 1);
+          if (entry.batch) {
+            // batch 内：不等 spacing，只记账
+            entry.batch.count++;
+            entry.resolve();
+            continue;
+          }
+
           MaimaiHttpClient.lastRequestStartTime = Date.now();
-          resolve();
-        },
-      );
-    });
+          entry.resolve();
+        }
+      } finally {
+        MaimaiHttpClient.throttlePumpRunning = false;
+        if (MaimaiHttpClient.throttleQueue.length > 0) {
+          MaimaiHttpClient.pumpThrottleQueue();
+        }
+      }
+    })();
+  }
+
+  private static findNextThrottleQueueIndex(): number {
+    let bestIndex = -1;
+    for (let i = 0; i < MaimaiHttpClient.throttleQueue.length; i++) {
+      const current = MaimaiHttpClient.throttleQueue[i];
+      if (bestIndex < 0) {
+        bestIndex = i;
+        continue;
+      }
+
+      const best = MaimaiHttpClient.throttleQueue[bestIndex];
+      if (
+        current.priority > best.priority ||
+        (current.priority === best.priority &&
+          current.sequence < best.sequence)
+      ) {
+        bestIndex = i;
+      }
+    }
+    return bestIndex;
   }
 
   /**
@@ -249,6 +328,15 @@ export class MaimaiHttpClient {
 
   constructor(cookieJar: CookieJar) {
     this.cookieJar = cookieJar;
+  }
+
+  private getRequestPriority(): number {
+    if (!this.jobStage) {
+      return MaimaiHttpClient.REQUEST_PRIORITY_BACKGROUND;
+    }
+    return MaimaiHttpClient.HIGH_PRIORITY_JOB_STAGES.has(this.jobStage)
+      ? MaimaiHttpClient.REQUEST_PRIORITY_INTERACTIVE
+      : MaimaiHttpClient.REQUEST_PRIORITY_NORMAL;
   }
 
   /**
@@ -349,7 +437,7 @@ export class MaimaiHttpClient {
 
       try {
         // 等待全局限流间隔后再发起请求（控制跨 bot 的发起时间间隔）
-        await MaimaiHttpClient.waitForSlot();
+        await MaimaiHttpClient.waitForSlot(this.getRequestPriority());
         // Per-bot 串行：同一个 jar 的往返必须串行完成，确保本次请求读到的
         // 是上一个响应 Set-Cookie 写回的最新 userId（见 withJarLock 说明）。
         // makeFetchCookie 在 await 内部完成 getCookieString→发送→setCookie，

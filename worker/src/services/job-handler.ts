@@ -93,6 +93,7 @@ export class JobHandler {
         TIMEOUTS.jobHardTimeout,
       );
       this.client.jobId = this.job.id;
+      this.client.jobStage = this.job.stage;
 
       // fetch_friend_list jobs aren't tied to a target user — friendCode
       // on the job is just the bot's own friendCode for routing. Skip
@@ -159,6 +160,7 @@ export class JobHandler {
       });
       clearApiLogBuffer(this.job.id);
       this.client.jobId = null;
+      this.client.jobStage = null;
 
       // 硬超时分支已经 patch 过 executing:false，这里跳过避免覆盖 failed 状态
       if (!this.aborted && this.job.executing) {
@@ -706,6 +708,7 @@ export class JobHandler {
       }
       try {
         this.job = await updateJob(this.job.id, patch);
+        this.client.jobStage = this.job.stage;
         return this.job;
       } catch (err) {
         lastErr = err;
