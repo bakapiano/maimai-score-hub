@@ -723,6 +723,12 @@ export class AutoUpdateSchedulerService
     });
   }
 
+  async getAutoUpdateUserCount(): Promise<{ enabledUserCount: number }> {
+    return {
+      enabledUserCount: await this.users.countAutoUpdateUsers(),
+    };
+  }
+
   /**
    * Per-user activity timeline used by the admin "查看历史" modal. Pulls
    * the last N sdgb hash-check jobs (matched by requesterTag) and the

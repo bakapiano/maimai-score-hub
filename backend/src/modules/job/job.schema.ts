@@ -113,3 +113,19 @@ JobSchema.index(
   { botUserFriendCode: 1, status: 1 },
   { name: 'bot_status' },
 );
+JobSchema.index(
+  { skipUpdateScore: 1, status: 1, createdAt: 1 },
+  { name: 'admin_stats_status_createdAt' },
+);
+JobSchema.index(
+  { skipUpdateScore: 1, status: 1, updateScoreDuration: 1, createdAt: 1 },
+  { name: 'admin_stats_duration' },
+);
+JobSchema.index(
+  { jobType: 1, friendCode: 1, createdAt: -1 },
+  { name: 'latest_by_type_friend' },
+);
+JobSchema.index(
+  { status: 1, createdAt: -1 },
+  { name: 'status_createdAt_desc' },
+);

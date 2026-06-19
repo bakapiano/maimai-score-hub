@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import type { Model } from 'mongoose';
+import type { Model, PipelineStage } from 'mongoose';
 import { UserEntity } from '../users/user.schema';
 import { MusicEntity } from '../music/music.schema';
 import { SyncEntity } from '../sync/sync.schema';
@@ -36,6 +36,22 @@ export interface JobStats {
   skipUpdateScore: JobStatsTimeRange[];
   withUpdateScore: JobStatsWithDuration[];
 }
+
+type JobStatsRangeKey = 'oneHour' | 'oneDay' | 'sevenDays';
+
+const JOB_STATS_CACHE_TTL_MS = 60 * 1000;
+const JOB_STATS_MAX_TIME_MS = 3000;
+const JOB_STATS_RANGES: Array<{
+  key: JobStatsRangeKey;
+  label: string;
+  ms: number;
+}> = [
+  { key: 'oneHour', label: '1小时', ms: 60 * 60 * 1000 },
+  { key: 'oneDay', label: '24小时', ms: 24 * 60 * 60 * 1000 },
+  { key: 'sevenDays', label: '7天', ms: 7 * 24 * 60 * 60 * 1000 },
+];
+
+type JobStatsAggregateRow = Record<string, number | null>;
 
 export interface JobTrendPoint {
   hour: string; // ISO string for the hour start
@@ -98,6 +114,9 @@ export interface SearchJobResult {
 
 @Injectable()
 export class AdminService {
+  private jobStatsCache: { value: JobStats; expiresAt: number } | null = null;
+  private jobStatsInFlight: Promise<JobStats> | null = null;
+
   constructor(
     @InjectModel(UserEntity.name)
     private readonly userModel: Model<UserEntity>,
@@ -201,104 +220,153 @@ export class AdminService {
   }
 
   async getJobStats(): Promise<JobStats> {
-    const now = new Date();
-    const timeRanges = [
-      { label: '1小时', ms: 60 * 60 * 1000 },
-      { label: '24小时', ms: 24 * 60 * 60 * 1000 },
-      { label: '7天', ms: 7 * 24 * 60 * 60 * 1000 },
-      { label: '30天', ms: 30 * 24 * 60 * 60 * 1000 },
-      { label: '全部', ms: Infinity },
-    ];
-
-    const buildStatsForRange = async (
-      startTime: Date | null,
-      skipUpdateScore: boolean,
-    ) => {
-      const filter: Record<string, unknown> = {
-        skipUpdateScore,
-        status: { $in: ['completed', 'failed'] },
-      };
-      if (startTime) {
-        filter.createdAt = { $gte: startTime };
-      }
-
-      const [total, completed, failed] = await Promise.all([
-        this.jobModel.countDocuments(filter),
-        this.jobModel.countDocuments({ ...filter, status: 'completed' }),
-        this.jobModel.countDocuments({ ...filter, status: 'failed' }),
-      ]);
-
-      return {
-        totalCount: total,
-        completedCount: completed,
-        failedCount: failed,
-        successRate:
-          total > 0 ? Math.round((completed / total) * 10000) / 100 : 0,
-      };
-    };
-
-    const buildStatsWithDurationForRange = async (
-      startTime: Date | null,
-      skipUpdateScore: boolean,
-    ) => {
-      const baseStats = await buildStatsForRange(startTime, skipUpdateScore);
-
-      // 获取有 updateScoreDuration 的已完成任务的统计
-      const durationFilter: Record<string, unknown> = {
-        skipUpdateScore,
-        status: 'completed',
-        updateScoreDuration: { $ne: null, $gt: 0 },
-      };
-      if (startTime) {
-        durationFilter.createdAt = { $gte: startTime };
-      }
-
-      const durationStats = await this.jobModel.aggregate<{
-        avgDuration: number;
-        minDuration: number;
-        maxDuration: number;
-      }>([
-        { $match: durationFilter },
-        {
-          $group: {
-            _id: null,
-            avgDuration: { $avg: '$updateScoreDuration' },
-            minDuration: { $min: '$updateScoreDuration' },
-            maxDuration: { $max: '$updateScoreDuration' },
-          },
-        },
-      ]);
-
-      const duration = durationStats[0] ?? null;
-
-      return {
-        ...baseStats,
-        avgDuration: duration ? Math.round(duration.avgDuration) : null,
-        minDuration: duration ? Math.round(duration.minDuration) : null,
-        maxDuration: duration ? Math.round(duration.maxDuration) : null,
-      };
-    };
-
-    const skipUpdateScoreStats: JobStatsTimeRange[] = [];
-    const withUpdateScoreStats: JobStatsWithDuration[] = [];
-
-    for (const range of timeRanges) {
-      const startTime =
-        range.ms === Infinity ? null : new Date(now.getTime() - range.ms);
-
-      const [skipStats, withStats] = await Promise.all([
-        buildStatsForRange(startTime, true),
-        buildStatsWithDurationForRange(startTime, false),
-      ]);
-
-      skipUpdateScoreStats.push({ label: range.label, ...skipStats });
-      withUpdateScoreStats.push({ label: range.label, ...withStats });
+    const now = Date.now();
+    if (this.jobStatsCache && this.jobStatsCache.expiresAt > now) {
+      return this.jobStatsCache.value;
     }
+    if (this.jobStatsInFlight) return this.jobStatsInFlight;
+
+    this.jobStatsInFlight = this.computeJobStats(now)
+      .then((value) => {
+        this.jobStatsCache = {
+          value,
+          expiresAt: Date.now() + JOB_STATS_CACHE_TTL_MS,
+        };
+        return value;
+      })
+      .finally(() => {
+        this.jobStatsInFlight = null;
+      });
+
+    return this.jobStatsInFlight;
+  }
+
+  private async computeJobStats(now: number): Promise<JobStats> {
+    const [skipRow, withRow] = await Promise.all([
+      this.aggregateJobStats(true, false, now),
+      this.aggregateJobStats(false, true, now),
+    ]);
 
     return {
-      skipUpdateScore: skipUpdateScoreStats,
-      withUpdateScore: withUpdateScoreStats,
+      skipUpdateScore: JOB_STATS_RANGES.map((range) =>
+        this.toJobStatsTimeRange(skipRow, range.key, range.label),
+      ),
+      withUpdateScore: JOB_STATS_RANGES.map((range) => ({
+        ...this.toJobStatsTimeRange(withRow, range.key, range.label),
+        avgDuration: this.roundNullable(withRow[`${range.key}AvgDuration`]),
+        minDuration:
+          this.numberValue(withRow[`${range.key}DurationCount`]) > 0
+            ? this.roundNullable(withRow[`${range.key}MinDuration`])
+            : null,
+        maxDuration:
+          this.numberValue(withRow[`${range.key}DurationCount`]) > 0
+            ? this.roundNullable(withRow[`${range.key}MaxDuration`])
+            : null,
+      })),
     };
+  }
+
+  private async aggregateJobStats(
+    skipUpdateScore: boolean,
+    includeDuration: boolean,
+    now: number,
+  ): Promise<JobStatsAggregateRow> {
+    const sevenDaysAgo = new Date(now - JOB_STATS_RANGES[2].ms);
+    const group: Record<string, unknown> = { _id: null };
+
+    for (const range of JOB_STATS_RANGES) {
+      const start = new Date(now - range.ms);
+      const inRange = { $gte: ['$createdAt', start] };
+      const completedInRange = {
+        $and: [inRange, { $eq: ['$status', 'completed'] }],
+      };
+      const failedInRange = {
+        $and: [inRange, { $eq: ['$status', 'failed'] }],
+      };
+
+      group[`${range.key}Total`] = {
+        $sum: { $cond: [inRange, 1, 0] },
+      };
+      group[`${range.key}Completed`] = {
+        $sum: { $cond: [completedInRange, 1, 0] },
+      };
+      group[`${range.key}Failed`] = {
+        $sum: { $cond: [failedInRange, 1, 0] },
+      };
+
+      if (includeDuration) {
+        const durationInRange = {
+          $and: [
+            completedInRange,
+            { $ne: ['$updateScoreDuration', null] },
+            { $gt: ['$updateScoreDuration', 0] },
+          ],
+        };
+        group[`${range.key}DurationCount`] = {
+          $sum: { $cond: [durationInRange, 1, 0] },
+        };
+        group[`${range.key}AvgDuration`] = {
+          $avg: { $cond: [durationInRange, '$updateScoreDuration', null] },
+        };
+        group[`${range.key}MinDuration`] = {
+          $min: {
+            $cond: [
+              durationInRange,
+              '$updateScoreDuration',
+              Number.MAX_SAFE_INTEGER,
+            ],
+          },
+        };
+        group[`${range.key}MaxDuration`] = {
+          $max: { $cond: [durationInRange, '$updateScoreDuration', -1] },
+        };
+      }
+    }
+
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          skipUpdateScore,
+          status: { $in: ['completed', 'failed'] },
+          createdAt: { $gte: sevenDaysAgo },
+        },
+      },
+      { $group: group },
+    ];
+    const [row] = await this.jobModel
+      .aggregate<JobStatsAggregateRow>(pipeline)
+      .option({ maxTimeMS: JOB_STATS_MAX_TIME_MS })
+      .exec();
+    return row ?? {};
+  }
+
+  private toJobStatsTimeRange(
+    row: JobStatsAggregateRow,
+    key: JobStatsRangeKey,
+    label: string,
+  ): JobStatsTimeRange {
+    const totalCount = this.numberValue(row[`${key}Total`]);
+    const completedCount = this.numberValue(row[`${key}Completed`]);
+    return {
+      label,
+      totalCount,
+      completedCount,
+      failedCount: this.numberValue(row[`${key}Failed`]),
+      successRate:
+        totalCount > 0
+          ? Math.round((completedCount / totalCount) * 10000) / 100
+          : 0,
+    };
+  }
+
+  private numberValue(value: number | null | undefined): number {
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  }
+
+  private roundNullable(value: number | null | undefined): number | null {
+    return typeof value === 'number' && Number.isFinite(value)
+      ? Math.round(value)
+      : null;
   }
 
   async getJobTrend(hours = 24): Promise<JobTrend> {

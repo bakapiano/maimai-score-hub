@@ -46,14 +46,14 @@ export class AutoUpdateController {
   }
 
   /**
-   * Admin overview: list every user that has autoUpdate=true plus their
-   * latest hash-check + idle_update_score job, so the admin portal can show
-   * "who is using auto-update and how recent was the last refresh".
+   * Lightweight admin overview: only expose the enabled auto-update user
+   * count. The detailed per-user job lookup is intentionally avoided because
+   * it fans out into expensive jobs/sdgb_jobs aggregations.
    */
   @Get('users')
   @UseGuards(AdminGuard)
   async listUsers() {
-    return this.scheduler.listAutoUpdateUsers();
+    return this.scheduler.getAutoUpdateUserCount();
   }
 
   /**

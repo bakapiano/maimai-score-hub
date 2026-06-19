@@ -308,6 +308,13 @@ export class UsersService {
       .lean();
   }
 
+  async countAutoUpdateUsers(): Promise<number> {
+    return this.userModel.countDocuments({
+      autoUpdate: true,
+      cabinetUserId: { $ne: null },
+    });
+  }
+
   /**
    * 写入最新观察到的成绩 hash。无论触发出来的 job 是否成功都会更新，
    * 因为我们要保证下一次扫到相同 hash 时不再重复触发。

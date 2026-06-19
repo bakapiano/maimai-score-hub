@@ -15,6 +15,18 @@ import { SdgbWorkerModule } from './modules/sdgb-worker/sdgb-worker.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkerLogsModule } from './modules/worker-logs/worker-logs.module';
+import { createMongooseQueryTimeoutPlugin } from './common/mongoose-query-timeout.plugin';
+
+function getPositiveInt(
+  config: ConfigService,
+  key: string,
+  fallback: number,
+): number {
+  const raw = config.get<string | number>(key);
+  if (raw == null || raw === '') return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
+}
 
 @Module({
   imports: [
@@ -29,6 +41,21 @@ import { WorkerLogsModule } from './modules/worker-logs/worker-logs.module';
         const user = config.get<string>('MONGO_USER');
         const password = config.get<string>('MONGO_PASSWORD');
         const authSource = config.get<string>('MONGO_AUTH_SOURCE', 'admin');
+        const queryMaxTimeMS = getPositiveInt(
+          config,
+          'MONGO_QUERY_MAX_TIME_MS',
+          5000,
+        );
+        const aggregateMaxTimeMS = getPositiveInt(
+          config,
+          'MONGO_AGGREGATE_MAX_TIME_MS',
+          queryMaxTimeMS,
+        );
+        const writeMaxTimeMS = getPositiveInt(
+          config,
+          'MONGO_WRITE_MAX_TIME_MS',
+          0,
+        );
 
         let uri: string;
         if (user && password) {
@@ -44,7 +71,21 @@ import { WorkerLogsModule } from './modules/worker-logs/worker-logs.module';
 
         return {
           uri,
-          serverSelectionTimeoutMS: 30000,
+          serverSelectionTimeoutMS: getPositiveInt(
+            config,
+            'MONGO_SERVER_SELECTION_TIMEOUT_MS',
+            30000,
+          ),
+          connectTimeoutMS: getPositiveInt(
+            config,
+            'MONGO_CONNECT_TIMEOUT_MS',
+            10000,
+          ),
+          socketTimeoutMS: getPositiveInt(
+            config,
+            'MONGO_SOCKET_TIMEOUT_MS',
+            15000,
+          ),
           retryWrites: true,
           retryReads: true,
           // Cap connection pool. Default mongoose maxPoolSize is 100 per
@@ -55,6 +96,16 @@ import { WorkerLogsModule } from './modules/worker-logs/worker-logs.module';
           // are well-batched). 30 leaves head room.
           maxPoolSize: 30,
           minPoolSize: 2,
+          connectionFactory: (connection) => {
+            connection.plugin(
+              createMongooseQueryTimeoutPlugin({
+                readMaxTimeMS: queryMaxTimeMS,
+                aggregateMaxTimeMS,
+                writeMaxTimeMS,
+              }),
+            );
+            return connection;
+          },
         };
       },
     }),

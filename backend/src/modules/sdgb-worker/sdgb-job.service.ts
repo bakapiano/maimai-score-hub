@@ -53,8 +53,8 @@ function toView(doc: SdgbJobEntity): SdgbJobView {
 /**
  * Drop large array/object fields from sdgb job `result` for admin-list
  * views. Frontend only reads scalar summary keys (`cabinetUserId`, `hash`,
- * `returnCode1/2`); `music: MusicEntry[]` can be 40KB per row and was
- * the dominant cost of GET /admin/sdgb-worker/status (785KB / 339s).
+ * `returnCode1/2`); `music: MusicEntry[]` can be 40KB per row and used
+ * to dominate the old sdgb-worker admin status payload.
  */
 function stripBigFields(
   result: Record<string, unknown> | null,

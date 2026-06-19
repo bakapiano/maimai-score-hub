@@ -24,9 +24,6 @@ const AdminProberExportsPage = lazy(
   () => import("./pages/admin/AdminProberExportsPage"),
 );
 const AdminJobDebugPage = lazy(() => import("./pages/admin/AdminJobDebugPage"));
-const AdminSdgbWorkerPage = lazy(
-  () => import("./pages/admin/AdminSdgbWorkerPage"),
-);
 const AdminSyncPage = lazy(() => import("./pages/admin/AdminSyncPage"));
 const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage"));
 const AdminWorkerLogsPage = lazy(
@@ -78,7 +75,6 @@ function App() {
                 <Route path="sync" element={<AdminSyncPage />} />
                 <Route path="job-debug" element={<AdminJobDebugPage />} />
                 <Route path="users" element={<AdminUsersPage />} />
-                <Route path="sdgb-worker" element={<AdminSdgbWorkerPage />} />
                 <Route path="worker-logs" element={<AdminWorkerLogsPage />} />
               </Route>
               <Route

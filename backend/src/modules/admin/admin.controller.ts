@@ -277,16 +277,6 @@ export class AdminController {
   }
 
   /**
-   * sdgb-worker dashboard data: heartbeats, queue depth, recent jobs.
-   * Frontend admin portal polls this every few seconds.
-   */
-  @Get('sdgb-worker/status')
-  @UseGuards(AdminGuard)
-  async getSdgbWorkerStatus() {
-    return this.sdgbJobService.getAdminStatus();
-  }
-
-  /**
    * Paginated, filterable sdgb job list. Query params: jobType, status,
    * tag (substring), page, pageSize.
    */

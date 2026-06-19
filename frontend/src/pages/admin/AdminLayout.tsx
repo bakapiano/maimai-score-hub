@@ -20,7 +20,6 @@ import {
   IconCloudUpload,
   IconDatabase,
   IconLogs,
-  IconRobot,
   IconUsers,
 } from "@tabler/icons-react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -73,12 +72,6 @@ const adminPages: AdminPageMeta[] = [
     to: "/admin/users",
     icon: <IconUsers size={18} />,
     color: "cyan",
-  },
-  {
-    label: "sdgb worker",
-    to: "/admin/sdgb-worker",
-    icon: <IconRobot size={18} />,
-    color: "grape",
   },
   {
     label: "Worker 日志",

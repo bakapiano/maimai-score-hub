@@ -101,3 +101,9 @@ export class UserEntity {
 
 export type UserDocument = HydratedDocument<UserEntity>;
 export const UserSchema = SchemaFactory.createForClass(UserEntity);
+
+UserSchema.index(
+  { autoUpdate: 1, cabinetUserId: 1 },
+  { name: 'auto_update_cabinet' },
+);
+UserSchema.index({ createdAt: -1 }, { name: 'createdAt_desc' });
