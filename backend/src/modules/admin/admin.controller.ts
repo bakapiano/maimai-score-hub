@@ -32,7 +32,6 @@ import { JobApiLogService } from '../job/api-log/api-log.service';
 import { JobService } from '../job/job.service';
 import { IdleUpdateSchedulerService } from '../job/idle-update/idle-update-scheduler.service';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
-import { SdgbJobService } from '../sdgb-worker/sdgb-job.service';
 import { SystemSettingsService } from './system-settings.service';
 import { UsersService } from '../users/users.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -46,7 +45,6 @@ export class AdminController {
     private readonly apiLogService: JobApiLogService,
     private readonly idleUpdateScheduler: IdleUpdateSchedulerService,
     private readonly jobService: JobService,
-    private readonly sdgbJobService: SdgbJobService,
     private readonly sdgbDispatcher: SdgbJobDispatcher,
     private readonly systemSettingsService: SystemSettingsService,
     private readonly usersService: UsersService,
@@ -274,46 +272,6 @@ export class AdminController {
   async cleanupJobs() {
     const deletedCount = await this.jobService.cleanupOldJobs();
     return { ok: true, deletedCount };
-  }
-
-  /**
-   * Paginated, filterable sdgb job list. Query params: jobType, status,
-   * tag (substring), page, pageSize.
-   */
-  @Get('sdgb-worker/jobs')
-  @UseGuards(AdminGuard)
-  async listSdgbJobs(
-    @Query('jobType') jobType?: string,
-    @Query('status') status?: string,
-    @Query('tag') tag?: string,
-    @Query('page') pageStr?: string,
-    @Query('pageSize') pageSizeStr?: string,
-  ) {
-    const allowedTypes = new Set(['scan_qr', 'get_rival_hash', 'add_rival']);
-    const allowedStatus = new Set([
-      'queued',
-      'processing',
-      'completed',
-      'failed',
-    ]);
-    const opts: Parameters<SdgbJobService['listJobs']>[0] = {
-      tag: tag?.trim() || undefined,
-      page: pageStr ? Math.max(1, parseInt(pageStr, 10) || 1) : 1,
-      pageSize: pageSizeStr
-        ? Math.min(200, Math.max(1, parseInt(pageSizeStr, 10) || 20))
-        : 20,
-    };
-    if (jobType && allowedTypes.has(jobType)) {
-      opts.jobType = jobType as 'scan_qr' | 'get_rival_hash' | 'add_rival';
-    }
-    if (status && allowedStatus.has(status)) {
-      opts.status = status as
-        | 'queued'
-        | 'processing'
-        | 'completed'
-        | 'failed';
-    }
-    return this.sdgbJobService.listJobs(opts);
   }
 
   /**
