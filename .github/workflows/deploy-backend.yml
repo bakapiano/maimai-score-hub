@@ -6,6 +6,7 @@ on:
     paths:
       - "backend/**"
       - "shared/**"
+      - ".github/workflows/deploy-backend.yml"
   workflow_dispatch:
 
 concurrency:
@@ -20,6 +21,34 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Package source
+        run: |
+          tar -czf /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz \
+            --exclude=.git \
+            --exclude='**/node_modules' \
+            --exclude='backend/.env' \
+            --exclude='backend/covers' \
+            .
+
+      - name: Upload source archive
+        env:
+          BACKEND_HOST: ${{ secrets.BACKEND_HOST }}
+          BACKEND_USER: ${{ secrets.BACKEND_USER }}
+          BACKEND_PORT: ${{ secrets.BACKEND_PORT }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          set -euo pipefail
+          BACKEND_PORT="${BACKEND_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/backend_deploy_key
+          chmod 600 ~/.ssh/backend_deploy_key
+          ssh-keyscan -p "$BACKEND_PORT" "$BACKEND_HOST" >> ~/.ssh/known_hosts
+          scp -P "$BACKEND_PORT" -i ~/.ssh/backend_deploy_key \
+            /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz \
+            "$BACKEND_USER@$BACKEND_HOST:/tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz"
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -30,23 +59,22 @@ jobs:
           command_timeout: 30m
           script: |
             DEPLOY_PATH="${{ secrets.BACKEND_PATH }}"
-            REPO_URL="${{ secrets.BACKEND_REPO_URL }}"
-            if [ -z "$DEPLOY_PATH" ] || [ -z "$REPO_URL" ]; then
-              echo "❌ BACKEND_PATH and BACKEND_REPO_URL secrets are required"
+            SOURCE_ARCHIVE="/tmp/maimai-score-hub-backend-${{ github.sha }}.tgz"
+            if [ -z "$DEPLOY_PATH" ]; then
+              echo "❌ BACKEND_PATH secret is required"
+              exit 1
+            fi
+            if [ ! -f "$SOURCE_ARCHIVE" ]; then
+              echo "❌ Source archive not found: $SOURCE_ARCHIVE"
               exit 1
             fi
 
-            if [ ! -d "$DEPLOY_PATH/.git" ]; then
-              git clone "$REPO_URL" "$DEPLOY_PATH"
-            fi
-
+            mkdir -p "$DEPLOY_PATH"
             cd "$DEPLOY_PATH"
             sudo chown -R "$USER:$USER" "$(pwd)" || true
-            git config --global --add safe.directory "$(pwd)"
-            git remote set-url origin "$REPO_URL"
-            git fetch --all
-            git checkout main
-            git pull
+            tar -xzf "$SOURCE_ARCHIVE" -C "$DEPLOY_PATH"
+            rm -f "$SOURCE_ARCHIVE"
+            printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
 
             # Build new image
             if command -v docker-compose >/dev/null 2>&1; then
