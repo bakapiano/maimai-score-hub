@@ -6,6 +6,7 @@ on:
     paths:
       - "worker/**"
       - "shared/**"
+      - ".github/workflows/deploy-worker.yml"
   workflow_dispatch:
 
 jobs:
@@ -24,6 +25,30 @@ jobs:
       group: deploy-worker-${{ matrix.instance }}
       cancel-in-progress: false
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Package source
+        run: |
+          tar -czf /tmp/maimai-score-hub-worker-${GITHUB_SHA}.tgz \
+            worker shared
+
+      - name: Upload source archive to Worker Instance ${{ matrix.instance }}
+        env:
+          WORKER_HOST: ${{ secrets[format('WORKER_{0}_HOST', matrix.instance)] }}
+          WORKER_USER: ${{ secrets[format('WORKER_{0}_USER', matrix.instance)] }}
+          WORKER_PORT: ${{ secrets[format('WORKER_{0}_PORT', matrix.instance)] }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          set -euo pipefail
+          WORKER_PORT="${WORKER_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/worker_deploy_key
+          chmod 600 ~/.ssh/worker_deploy_key
+          ssh-keyscan -p "$WORKER_PORT" "$WORKER_HOST" >> ~/.ssh/known_hosts
+          scp -P "$WORKER_PORT" -i ~/.ssh/worker_deploy_key \
+            /tmp/maimai-score-hub-worker-${GITHUB_SHA}.tgz \
+            "$WORKER_USER@$WORKER_HOST:/tmp/maimai-score-hub-worker-${GITHUB_SHA}.tgz"
+
       - name: Deploy to Worker Instance ${{ matrix.instance }}
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -34,12 +59,52 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           command_timeout: 30m
           script: |
-            cd ${{ secrets[format('WORKER_{0}_PATH', matrix.instance)] }}
+            DEPLOY_PATH="${{ secrets[format('WORKER_{0}_PATH', matrix.instance)] }}"
+            SOURCE_ARCHIVE="/tmp/maimai-score-hub-worker-${{ github.sha }}.tgz"
+            if [ -z "$DEPLOY_PATH" ]; then
+              echo "❌ WORKER_${{ matrix.instance }}_PATH secret is required"
+              exit 1
+            fi
+            if [ ! -f "$SOURCE_ARCHIVE" ]; then
+              echo "❌ Source archive not found: $SOURCE_ARCHIVE"
+              exit 1
+            fi
+
+            mkdir -p "$DEPLOY_PATH"
+            cd "$DEPLOY_PATH"
             sudo chown -R "$USER:$USER" "$(pwd)" || true
-            git config --global --add safe.directory "$(pwd)"
-            git fetch --all
-            git checkout main
-            git pull
+
+            RUNTIME_DIR="$(mktemp -d)"
+            if [ -f worker/.env ]; then
+              mkdir -p "$RUNTIME_DIR/worker"
+              cp -a worker/.env "$RUNTIME_DIR/worker/.env"
+            fi
+            if [ -d worker/debug-html ]; then
+              mkdir -p "$RUNTIME_DIR/worker"
+              cp -a worker/debug-html "$RUNTIME_DIR/worker/debug-html"
+            fi
+            if [ -d worker/data ]; then
+              mkdir -p "$RUNTIME_DIR/worker"
+              cp -a worker/data "$RUNTIME_DIR/worker/data"
+            fi
+
+            rm -rf worker shared
+            tar -xzf "$SOURCE_ARCHIVE" -C "$DEPLOY_PATH"
+            rm -f "$SOURCE_ARCHIVE"
+            if [ -f "$RUNTIME_DIR/worker/.env" ]; then
+              cp -a "$RUNTIME_DIR/worker/.env" worker/.env
+            fi
+            if [ -d "$RUNTIME_DIR/worker/debug-html" ]; then
+              rm -rf worker/debug-html
+              cp -a "$RUNTIME_DIR/worker/debug-html" worker/debug-html
+            fi
+            if [ -d "$RUNTIME_DIR/worker/data" ]; then
+              rm -rf worker/data
+              cp -a "$RUNTIME_DIR/worker/data" worker/data
+            fi
+            rm -rf "$RUNTIME_DIR"
+            printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
+
             # Worker 3 (101) has no public IP and goes through a great-firewall
             # constrained link; route docker pulls through the host's clash proxy.
             # The proxy lives on the host's loopback so daemon already has it

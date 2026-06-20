@@ -6,6 +6,7 @@ on:
     paths:
       - "frontend/**"
       - "shared/**"
+      - ".github/workflows/deploy-frontend.yml"
   workflow_dispatch:
 
 concurrency:
@@ -20,6 +21,30 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Package source
+        run: |
+          tar -czf /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz \
+            frontend shared
+
+      - name: Upload source archive
+        env:
+          FRONTEND_HOST: ${{ secrets.FRONTEND_HOST }}
+          FRONTEND_USER: ${{ secrets.FRONTEND_USER }}
+          FRONTEND_PORT: ${{ secrets.FRONTEND_PORT }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          set -euo pipefail
+          FRONTEND_PORT="${FRONTEND_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/frontend_deploy_key
+          chmod 600 ~/.ssh/frontend_deploy_key
+          ssh-keyscan -p "$FRONTEND_PORT" "$FRONTEND_HOST" >> ~/.ssh/known_hosts
+          scp -P "$FRONTEND_PORT" -i ~/.ssh/frontend_deploy_key \
+            /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz \
+            "$FRONTEND_USER@$FRONTEND_HOST:/tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz"
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -27,12 +52,25 @@ jobs:
           username: ${{ secrets.FRONTEND_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            cd ${{ secrets.FRONTEND_PATH }}
+            DEPLOY_PATH="${{ secrets.FRONTEND_PATH }}"
+            SOURCE_ARCHIVE="/tmp/maimai-score-hub-frontend-${{ github.sha }}.tgz"
+            if [ -z "$DEPLOY_PATH" ]; then
+              echo "❌ FRONTEND_PATH secret is required"
+              exit 1
+            fi
+            if [ ! -f "$SOURCE_ARCHIVE" ]; then
+              echo "❌ Source archive not found: $SOURCE_ARCHIVE"
+              exit 1
+            fi
+
+            mkdir -p "$DEPLOY_PATH"
+            cd "$DEPLOY_PATH"
             sudo chown -R "$USER:$USER" "$(pwd)" || true
-            git config --global --add safe.directory "$(pwd)"
-            git fetch --all
-            git checkout main
-            git pull
+            rm -rf frontend shared
+            tar -xzf "$SOURCE_ARCHIVE" -C "$DEPLOY_PATH"
+            rm -f "$SOURCE_ARCHIVE"
+            printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
+
             # Cap docker build cache BEFORE build to avoid ENOSPC
             # mid-build silently falling back to stale layers.
             sudo docker builder prune --force --keep-storage=2GB || true
@@ -43,8 +81,8 @@ jobs:
             fi
             sudo docker image prune -f
             # Cap docker build cache so the disk doesn't fill up.
-            # FE/BE share the host; without this the buildkit cache
-            # grew to 5GB+ and we hit ENOSPC on 2026-05-11.
+            # The frontend host has limited disk, and BuildKit cache can
+            # grow enough to break later deployments.
             sudo docker builder prune --force --keep-storage=2GB || true
             for i in 1 2 3 4 5; do
               if curl -fsS http://localhost:8848 >/dev/null; then
