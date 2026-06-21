@@ -15,9 +15,9 @@ import { JobApiLogService, type ApiLogEntry } from './api-log.service';
 import { WorkerAuthGuard } from '../../../common/guards/worker-auth.guard';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 
-@Controller('job')
+@Controller('workers/dxnet/jobs')
 @UseGuards(WorkerAuthGuard)
-export class ApiLogController {
+export class WorkerDxnetApiLogController {
   constructor(private readonly apiLog: JobApiLogService) {}
 
   /**

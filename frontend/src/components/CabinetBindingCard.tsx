@@ -56,7 +56,7 @@ export function CabinetBindingCard({
   useEffect(() => setAutoUpdate(initialAutoUpdate), [initialAutoUpdate]);
 
   const refreshFromServer = useCallback(async () => {
-    const res = await fetch("/api/users/profile", {
+    const res = await fetch("/api/v1/me", {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) {
@@ -71,7 +71,7 @@ export function CabinetBindingCard({
     async (formData: FormData | string) => {
       setBusy("bind");
       try {
-        const res = await fetch("/api/users/cabinet/bind-qr", {
+        const res = await fetch("/api/v1/me/cabinet/bind-qr", {
           method: "POST",
           headers:
             typeof formData === "string"
@@ -145,8 +145,8 @@ export function CabinetBindingCard({
   const toggleAutoUpdate = async (enabled: boolean) => {
     setBusy("toggle");
     try {
-      const res = await fetch("/api/users/cabinet/auto-update", {
-        method: "POST",
+      const res = await fetch("/api/v1/me/auto-update", {
+        method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -155,7 +155,7 @@ export function CabinetBindingCard({
       });
       const text = await res.text();
       const json = text ? JSON.parse(text) : null;
-      if (res.status === 201) {
+      if (res.status === 200) {
         setAutoUpdate(!!json?.autoUpdate);
         notifications.show({
           color: "green",
@@ -184,13 +184,13 @@ export function CabinetBindingCard({
     }
     setBusy("unbind");
     try {
-      const res = await fetch("/api/users/cabinet/unbind", {
-        method: "POST",
+      const res = await fetch("/api/v1/me/cabinet", {
+        method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
       const text = await res.text();
       const json = text ? JSON.parse(text) : null;
-      if (res.status === 201 && json?.ok) {
+      if (res.status === 200 && json?.ok) {
         setHasCabinetUserId(false);
         setAutoUpdate(false);
         notifications.show({ color: "green", message: "已解绑" });

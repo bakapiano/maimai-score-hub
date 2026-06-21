@@ -3,7 +3,10 @@ import { MongooseModule } from '@nestjs/mongoose';
 
 import { AdminModule } from '../admin/admin.module';
 import { WorkerLogEntity, WorkerLogSchema } from './worker-log.schema';
-import { WorkerLogsController } from './worker-logs.controller';
+import {
+  AdminWorkerLogsController,
+  WorkerLogIngestController,
+} from './worker-logs.controller';
 import { WorkerLogsService } from './worker-logs.service';
 
 @Module({
@@ -13,7 +16,7 @@ import { WorkerLogsService } from './worker-logs.service';
       { name: WorkerLogEntity.name, schema: WorkerLogSchema },
     ]),
   ],
-  controllers: [WorkerLogsController],
+  controllers: [WorkerLogIngestController, AdminWorkerLogsController],
   providers: [WorkerLogsService],
   exports: [WorkerLogsService],
 })

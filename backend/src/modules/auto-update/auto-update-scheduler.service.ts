@@ -22,11 +22,11 @@ import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
 
 /** Per-user throttle for the sdgb hash-check call. */
 const HASH_CHECK_THROTTLE_MS = 15 * 60 * 1000;
-/** Per-user throttle for the dxnet idle_update_score job creation. */
+/** Per-user throttle for the dxnet update_score job creation. */
 const AUTO_UPDATE_JOB_THROTTLE_MS = 30 * 60 * 1000;
 
 /**
- * Exponential backoff for users whose idle_update_score jobs keep
+ * Exponential backoff for users whose update_score jobs keep
  * failing. Reset to 0 on a successful job OR on an admin manual
  * trigger.
  *
@@ -43,7 +43,7 @@ const AUTO_UPDATE_JOB_THROTTLE_MS = 30 * 60 * 1000;
  * Polls every AUTO_UPDATE_CRON tick (default: every 5 minutes) and, for
  * each user that has cabinetUserId bound + autoUpdate=true:
  *
- *   0. If the user already has an in-flight idle_update_score job, skip
+ *   0. If the user already has an in-flight update_score job, skip
  *      (we never want two competing jobs for the same user — the second
  *      one would cancel the first via JobService.create's "cancel older"
  *      rule).
@@ -56,7 +56,7 @@ const AUTO_UPDATE_JOB_THROTTLE_MS = 30 * 60 * 1000;
  *   5. In parallel:
  *        - Tell sdgb-worker to add the bot as the user's cabinet rival
  *          (replaces the manual "accept friend on cabinet" step).
- *        - Create an `idle_update_score` job carrying the observed hash
+ *        - Create an `update_score` job carrying the observed hash
  *          as `sourceScoreHash`. JobService.patch promotes that hash to
  *          user.lastScoreHash ONLY after the job completes successfully.
  *
@@ -139,7 +139,7 @@ export class AutoUpdateSchedulerService
     let won = false;
     try {
       // Atomic upsert + returnDocument: 'before' — same trick
-      // IdleUpdateLogService.tryAcquire uses for the nightly sweep.
+      // the former nightly sweep used.
       const previous = await this.runsModel.findOneAndUpdate(
         { bucketKey },
         {
@@ -236,13 +236,13 @@ export class AutoUpdateSchedulerService
       }> = [];
 
       // One-shot lookup of every friendCode that already has a queued or
-      // processing idle_update_score job. We never want to fire a second
+      // processing update_score job. We never want to fire a second
       // one for the same user — JobService.create cancels older jobs of
       // the same friendCode, which would waste the work in flight.
       const inflightRows = await this.jobsModel.aggregate<{ _id: string }>([
         {
           $match: {
-            jobType: 'idle_update_score',
+            jobType: 'update_score',
             status: { $in: ['queued', 'processing'] },
           },
         },
@@ -254,7 +254,7 @@ export class AutoUpdateSchedulerService
         const cabinetUserId = u.cabinetUserId;
         if (cabinetUserId == null) continue;
 
-        // (0a) Backoff: if a previous idle_update_score job failed,
+        // (0a) Backoff: if a previous update_score job failed,
         // user.autoUpdateBackoffUntil is set to a future time. Skip
         // until the window expires. The window grows exponentially
         // with consecutive failures (see AUTO_UPDATE_BACKOFF_POLICY).
@@ -284,7 +284,7 @@ export class AutoUpdateSchedulerService
             friendCode: u.friendCode,
             cabinetUserId,
             action: 'skipped',
-            message: 'idle_update_score job still in flight',
+            message: 'update_score job still in flight',
           });
           continue;
         }
@@ -325,7 +325,7 @@ export class AutoUpdateSchedulerService
             continue;
           }
 
-          // (3) job-creation throttle: at most one idle_update_score job
+          // (3) job-creation throttle: at most one update_score job
           // per AUTO_UPDATE_JOB_THROTTLE_MS. Combined with the in-flight
           // check above, this stops a long-running job from ever being
           // shadowed by a fresh one once the throttle window expires.
@@ -392,7 +392,7 @@ export class AutoUpdateSchedulerService
   /**
    * Pick a bot that has a configured cabinetUserId and, in parallel,
    *   - schedule add-rival on the cabinet via sdgb-worker
-   *   - create an idle_update_score job assigned to that bot for worker/
+   *   - create an update_score job assigned to that bot for worker/
    * The two operations are independent: add-rival is idempotent on the
    * cabinet (returnCode 1 = already friends), and the worker/ side will
    * pick up the queued job whenever it next polls.
@@ -432,7 +432,7 @@ export class AutoUpdateSchedulerService
       .create({
         friendCode,
         skipUpdateScore: false,
-        jobType: 'idle_update_score',
+        jobType: 'update_score',
         botUserFriendCode: bot.friendCode,
         isAuthenticated: true,
         sourceScoreHash,
@@ -478,7 +478,7 @@ export class AutoUpdateSchedulerService
   /**
    * Admin manual trigger: skip the hash-diff check and just kick off the
    * full update flow for one user (add bot as cabinet rival + create
-   * idle_update_score job). Used by `POST /auto-update/trigger` for
+   * update_score job). Used by `POST /admin/auto-updates/users/:friendCode/trigger` for
    * support-style "force-refresh this user now" use cases.
    *
    * Does NOT touch lastScoreHash so the next cron tick will still run
@@ -541,7 +541,7 @@ export class AutoUpdateSchedulerService
       this.jobs.create({
         friendCode,
         skipUpdateScore: false,
-        jobType: 'idle_update_score',
+        jobType: 'update_score',
         botUserFriendCode: bot.friendCode,
         isAuthenticated: true,
       }),
@@ -562,7 +562,7 @@ export class AutoUpdateSchedulerService
 
   /**
    * Admin overview: every user that has autoUpdate=true, plus the most
-   * recent dxnet idle_update_score job per friendCode and the latest sdgb
+   * recent dxnet update_score job per friendCode and the latest sdgb
    * "auto-hash" job (so the admin can see whether the scheduler observed
    * a hash change recently).
    */
@@ -598,7 +598,7 @@ export class AutoUpdateSchedulerService
 
     const friendCodes = users.map((u) => u.friendCode);
 
-    // Get latest idle_update_score job per friendCode
+    // Get latest update_score job per friendCode
     const latestIdleJobs = await this.jobsModel.aggregate<{
       _id: string;
       doc: {
@@ -615,7 +615,7 @@ export class AutoUpdateSchedulerService
       {
         $match: {
           friendCode: { $in: friendCodes },
-          jobType: 'idle_update_score',
+          jobType: 'update_score',
         },
       },
       { $sort: { createdAt: -1 } },
@@ -732,7 +732,7 @@ export class AutoUpdateSchedulerService
   /**
    * Per-user activity timeline used by the admin "查看历史" modal. Pulls
    * the last N sdgb hash-check jobs (matched by requesterTag) and the
-   * last N dxnet idle_update_score jobs for that friendCode, then merges
+   * last N dxnet update_score jobs for that friendCode, then merges
    * them by createdAt desc so the admin can see whether the hash actually
    * changed at each tick — and whether the resulting refresh job ran.
    *
@@ -759,7 +759,7 @@ export class AutoUpdateSchedulerService
       this.jobsModel
         .find({
           friendCode,
-          jobType: 'idle_update_score',
+          jobType: 'update_score',
         })
         .sort({ createdAt: -1 })
         .limit(limit)

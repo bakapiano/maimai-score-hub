@@ -1,21 +1,30 @@
 import { z } from 'zod';
 
-export const IdleUpdateMarkReadyBodySchema = z.object({
-  friendCode: z.string().min(1),
-  botFriendCode: z.string().min(1),
-});
-
 export const TempCachePathSchema = z.object({
   jobId: z.string(),
   diff: z.coerce.number().int(),
   type: z.coerce.number().int(),
 });
 
-export const TempCacheBodySchema = z.object({
-  html: z.string(),
+export const ChartTypeSchema = z.enum(['standard', 'dx', 'utage']);
+
+export const FriendVsSongSchema = z.object({
+  level: z.string(),
+  name: z.string(),
+  score: z.string().nullable(),
+  category: z.string().nullable(),
+  type: ChartTypeSchema,
+  fs: z.string().nullable(),
+  fc: z.string().nullable(),
 });
 
-export const TempCacheResponseSchema = z.object({ html: z.string() });
+export const TempCacheBodySchema = z.object({
+  songs: z.array(FriendVsSongSchema),
+});
+
+export const TempCacheResponseSchema = z.object({
+  songs: z.array(FriendVsSongSchema),
+});
 
 export const ApiLogEntrySchema = z.object({
   url: z.string(),
@@ -28,9 +37,7 @@ export const AddApiLogsBodySchema = z.object({
   logs: z.array(ApiLogEntrySchema),
 });
 
-export type IdleUpdateMarkReadyBody = z.infer<
-  typeof IdleUpdateMarkReadyBodySchema
->;
 export type TempCachePath = z.infer<typeof TempCachePathSchema>;
+export type FriendVsSong = z.infer<typeof FriendVsSongSchema>;
 export type TempCacheBody = z.infer<typeof TempCacheBodySchema>;
 export type AddApiLogsBody = z.infer<typeof AddApiLogsBodySchema>;

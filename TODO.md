@@ -35,35 +35,10 @@
   风险：fc/fs 滞后一天；要新加 cron 调度逻辑 + bot 仍然要被加好友
   才能跑 friend-VS。
 
-  [364] "D✪N’T ST✪P R✪CKIN’" (standard) charts: 0,1,2,3,4
-  [383] "Link" (standard) charts: 0,1,2,3
-  [100018] "[協]Love You" (utage) charts: 10
-  [100022] "[蔵]In Chaos" (utage) charts: 10
-  [100199] "[蛸]チルノのパーフェクトさんすう教室" (utage) charts: 10
-  [100206] "[星]しゅわスパ大作戦☆" (utage) charts: 10
-  [100227] "[は]Garakuta Doll Play" (utage) charts: 10
-  [100327] "[狂]タカハせ！名人マン" (utage) charts: 10
-  [100363] "[宴]Oshama Scramble!" (utage) charts: 10
-  [100456] "[蔵]Glorious Crown" (utage) charts: 10
-  [100508] "[協]恋愛裁判" (utage) charts: 10
-  [100517] "[覚]東京リアルワールド" (utage) charts: 10
-  [100548] "[疑]DETARAME ROCK&ROLL THEORY" (utage) charts: 10
-  [100998] "[宴]Oshama Scramble! (Cranky Remix)" (utage) charts: 10
-  [110114] "[耐]Space Harrier Main Theme [Reborn]" (utage) charts: 10
-  [110417] "[習]ウミユリ海底譚" (utage) charts: 10
-  [110553] "[奏]チュルリラ・チュルリラ・ダッダッダ！" (utage) charts: 10
-  [110631] "[逆]KING is BACK!!" (utage) charts: 10
-  [110647] "[協]エイリアンエイリアン" (utage) charts: 10
-  [110793] "[疑]ロキ" (utage) charts: 10
-  [111222] "[光]BREaK! BREaK! BREaK!" (utage) charts: 10
-  [111325] "[奏]テレキャスタービーボーイ" (utage) charts: 10
-  [111355] "[協]ラグトレイン" (utage) charts: 10
-  [111359] "[奏]アカツキアライヴァル" (utage) charts: 10
-  [111488] "[覚]スカーレット警察のゲットーパトロール24時" (utage) charts: 10
-  [111513] "[回]回る空うさぎ" (utage) charts: 10
-  [111516] "[蔵]Aegleseeker" (utage) charts: 10
-  [111577] "[両]はんぶんこ" (utage) charts: 10
-  [111597] "[息]ノンブレス・オブリージュ" (utage) charts: 10
-  [111715] "[嘘]ライアーダンサー" (utage) charts: 10
-  [111772] "[X]人マニア" (utage) charts: 10
-  [130227] "[玉]Garakuta Doll Play" (utage) charts: 10
+06/21
+
+[] 完全删除 二维码登录？get user rival list 不需要 auth -> dx net add rival -> get user rival list 反查 user id
+[] GetUserMapApi 探测用户登录?
+[] 后端设置密码 + 密码登录
+[] dx net 添加好友时自动更新（有点鸡肋 都有自动更新了）
+[] oauth 三方站接入

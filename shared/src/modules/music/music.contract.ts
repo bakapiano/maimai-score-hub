@@ -1,39 +1,40 @@
-import { initContract } from '@ts-rest/core';
+import { initContract } from "@ts-rest/core";
 
 import {
   MusicListSchema,
   MusicSourceResponseSchema,
   MusicSyncResponseSchema,
   SetMusicSourceBodySchema,
-} from './music.schema';
+} from "./music.schema";
 
 const c = initContract();
 
 export const musicContract = c.router({
   listAll: {
-    method: 'GET',
-    path: '/music',
+    method: "GET",
+    path: "/catalog/music",
     responses: { 200: MusicListSchema },
   },
   forceSync: {
-    method: 'POST',
-    path: '/music/sync',
-    headers: c.type<{ 'x-admin-password': string }>(),
+    method: "POST",
+    path: "/admin/catalog/music/sync",
+    headers: c.type<{ "x-admin-password": string }>(),
     body: c.noBody(),
     responses: { 201: MusicSyncResponseSchema },
   },
   getDataSource: {
-    method: 'GET',
-    path: '/music/source',
+    method: "GET",
+    path: "/admin/catalog/music/source",
+    headers: c.type<{ "x-admin-password": string }>(),
     responses: { 200: MusicSourceResponseSchema },
   },
   setDataSource: {
-    method: 'POST',
-    path: '/music/source',
-    headers: c.type<{ 'x-admin-password': string }>(),
+    method: "PUT",
+    path: "/admin/catalog/music/source",
+    headers: c.type<{ "x-admin-password": string }>(),
     body: SetMusicSourceBodySchema,
     responses: {
-      201: MusicSourceResponseSchema.extend({
+      200: MusicSourceResponseSchema.extend({
         ok: MusicSyncResponseSchema.shape.ok,
       }),
     },

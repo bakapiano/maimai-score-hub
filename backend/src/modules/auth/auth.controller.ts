@@ -6,7 +6,6 @@ import {
   HttpCode,
   Param,
   Post,
-  Query,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -14,10 +13,8 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import {
   LoginByQrBodySchema,
   LoginRequestBodySchema,
-  LoginStatusQuerySchema,
   type LoginByQrBody,
   type LoginRequestBody,
-  type LoginStatusQuery,
 } from '@maimai-score-hub/shared';
 
 import { AuthService } from './auth.service';
@@ -32,22 +29,26 @@ export class AuthController {
     private readonly qrLogin: QrLoginService,
   ) {}
 
-  @Post('login-request')
+  @Post('login-requests')
   async loginRequest(
     @Body(new ZodValidationPipe(LoginRequestBodySchema)) body: LoginRequestBody,
   ) {
     return this.auth.requestLogin(
       body.friendCode,
       body.skipUpdateScore,
-      body.useIdleUpdate,
+      body.method,
     );
   }
 
-  @Get('login-status')
-  async loginStatus(
-    @Query(new ZodValidationPipe(LoginStatusQuerySchema)) query: LoginStatusQuery,
-  ) {
-    return this.auth.checkStatus(query.jobId);
+  @Post('login-requests/:jobId/verify')
+  @HttpCode(200)
+  async verifyLoginRequest(@Param('jobId') jobId: string) {
+    return this.auth.verifyLoginRequest(jobId);
+  }
+
+  @Get('login-requests/:jobId')
+  async loginStatus(@Param('jobId') jobId: string) {
+    return this.auth.checkStatus(jobId);
   }
 
   /**
@@ -58,7 +59,7 @@ export class AuthController {
    * Returns { token, user } on success. 4xx with { error } when the cabinet
    * lookup, b50 calc, or reverse-mapping fails (e.g. ambiguous name+rating).
    */
-  @Post('login-by-qr')
+  @Post('qr-login')
   @HttpCode(201)
   @UseInterceptors(FileInterceptor('image'))
   async loginByQr(
@@ -110,10 +111,8 @@ export class AuthController {
    * statuses: pending / fetching_before / adding_rival / fetching_after /
    * matched (token attached) / failed (error attached).
    */
-  @Get('login-by-qr/:attemptId')
-  async pollLoginByQr(
-    @Param('attemptId') attemptId: string,
-  ) {
+  @Get('qr-login/:attemptId')
+  async pollLoginByQr(@Param('attemptId') attemptId: string) {
     try {
       return await this.qrLogin.pollAttempt(attemptId);
     } catch (err) {

@@ -25,7 +25,7 @@ function requireFriendCode(req: AuthedRequest): string {
   return friendCode;
 }
 
-@Controller('score-export')
+@Controller('score-exports')
 @UseGuards(AuthGuard)
 export class ScoreExportController {
   constructor(private readonly exporter: ScoreExportService) {}

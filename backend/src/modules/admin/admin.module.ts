@@ -1,5 +1,8 @@
 import { JobEntity, JobSchema } from '../job/job.schema';
-import { JobApiLogEntity, JobApiLogSchema } from '../job/api-log/api-log.schema';
+import {
+  JobApiLogEntity,
+  JobApiLogSchema,
+} from '../job/api-log/api-log.schema';
 import { MusicEntity, MusicSchema } from '../music/music.schema';
 import { SyncEntity, SyncSchema } from '../sync/sync.schema';
 import { UserEntity, UserSchema } from '../users/user.schema';
@@ -12,9 +15,15 @@ import {
   AutoUpdateRunSchema,
 } from '../auto-update/auto-update-run.schema';
 
-import { AdminController } from './admin.controller';
+import { AdminBotsController } from './admin-bots.controller';
+import { AdminCatalogController } from './admin-catalog.controller';
+import { AdminDashboardController } from './admin-dashboard.controller';
+import { AdminDxnetJobsController } from './admin-dxnet-jobs.controller';
 import { AdminGuard } from './admin.guard';
+import { AdminSdgbController } from './admin-sdgb.controller';
 import { AdminService } from './admin.service';
+import { AdminSettingsController } from './admin-settings.controller';
+import { AdminUsersController } from './admin-users.controller';
 import {
   BotFriendSnapshotEntity,
   BotFriendSnapshotSchema,
@@ -32,6 +41,7 @@ import { JobModule } from '../job/job.module';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { UsersModule } from '../users/users.module';
 import { SystemSettingsModule } from './system-settings.module';
+import { WorkerBotStatusController } from './worker-bot-status.controller';
 
 @Module({
   imports: [
@@ -57,7 +67,16 @@ import { SystemSettingsModule } from './system-settings.module';
     UsersModule,
     SystemSettingsModule,
   ],
-  controllers: [AdminController],
+  controllers: [
+    AdminBotsController,
+    AdminCatalogController,
+    AdminDashboardController,
+    AdminDxnetJobsController,
+    AdminSdgbController,
+    AdminSettingsController,
+    AdminUsersController,
+    WorkerBotStatusController,
+  ],
   providers: [
     AdminService,
     AdminGuard,

@@ -63,7 +63,7 @@ export default function AdminWorkerLogsPage() {
 
   const loadWorkers = useCallback(async () => {
     if (!password) return;
-    const res = await fetch("/api/worker-logs/workers", {
+    const res = await fetch("/api/v1/admin/worker-logs/workers", {
       headers: { "x-admin-password": password },
     });
     if (!res.ok) return;
@@ -83,9 +83,12 @@ export default function AdminWorkerLogsPage() {
       if (filterQDebounced.trim()) params.set("q", filterQDebounced.trim());
       if (sinceMinutes) params.set("sinceMinutes", sinceMinutes);
       params.set("limit", "500");
-      const res = await fetch(`/api/worker-logs?${params.toString()}`, {
-        headers: { "x-admin-password": password },
-      });
+      const res = await fetch(
+        `/api/v1/admin/worker-logs?${params.toString()}`,
+        {
+          headers: { "x-admin-password": password },
+        },
+      );
       if (!res.ok) return;
       const body = (await res.json()) as {
         items: WorkerLogRow[];

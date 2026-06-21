@@ -2,7 +2,6 @@ import { Button, Card, Group, Stack, Text } from "@mantine/core";
 import { adminApi, coverApi, musicApi } from "../../api/appClient";
 import {
   IconArrowsExchange,
-  IconClock,
   IconDatabase,
   IconMusic,
   IconPhoto,
@@ -26,9 +25,6 @@ export default function AdminSyncPage() {
   const [musicSyncing, setMusicSyncing] = useState(false);
   const [musicSyncResult, setMusicSyncResult] = useState("");
 
-  const [idleUpdateTriggering, setIdleUpdateTriggering] = useState(false);
-  const [idleUpdateResult, setIdleUpdateResult] = useState("");
-
   const [dataSource, setDataSource] = useState<"diving-fish" | "lxns" | null>(
     null,
   );
@@ -36,9 +32,12 @@ export default function AdminSyncPage() {
   const [dataSourceSwitching, setDataSourceSwitching] = useState(false);
 
   const loadDataSource = useCallback(async () => {
+    if (!password) return;
     setDataSourceLoading(true);
     try {
-      const res = await musicApi.getDataSource({});
+      const res = await musicApi.getDataSource({
+        headers: { "x-admin-password": password },
+      });
       if (res.status === 200) {
         setDataSource(res.body.source);
       }
@@ -46,7 +45,7 @@ export default function AdminSyncPage() {
       // ignore
     }
     setDataSourceLoading(false);
-  }, []);
+  }, [password]);
 
   const switchDataSource = useCallback(
     async (newSource: "diving-fish" | "lxns") => {
@@ -57,7 +56,7 @@ export default function AdminSyncPage() {
         body: { source: newSource },
       });
       setDataSourceSwitching(false);
-      if (res.status === 201) {
+      if (res.status === 200) {
         setDataSource(res.body.source);
       }
     },
@@ -129,23 +128,6 @@ export default function AdminSyncPage() {
       );
     } else {
       setMusicSyncResult(`失败: HTTP ${res.status}`);
-    }
-  }, [password]);
-
-  const triggerIdleUpdate = useCallback(async () => {
-    if (!password) return;
-    setIdleUpdateTriggering(true);
-    setIdleUpdateResult("");
-    const res = await adminApi.triggerIdleUpdate({
-      headers: { "x-admin-password": password },
-    });
-    setIdleUpdateTriggering(false);
-    if (res.status === 201) {
-      setIdleUpdateResult(
-        `完成: 总用户 ${res.body.totalUsers}, 创建 ${res.body.created} 个任务, 失败 ${res.body.failed}`,
-      );
-    } else {
-      setIdleUpdateResult(`失败: HTTP ${res.status}`);
     }
   }, [password]);
 
@@ -223,24 +205,6 @@ export default function AdminSyncPage() {
             {musicSyncResult && (
               <Text size="sm" c="dimmed">
                 {musicSyncResult}
-              </Text>
-            )}
-          </div>
-
-          <div>
-            <Group gap="sm" mb={4}>
-              <Button
-                variant="light"
-                leftSection={<IconClock size={16} />}
-                onClick={triggerIdleUpdate}
-                loading={idleUpdateTriggering}
-              >
-                触发闲时更新
-              </Button>
-            </Group>
-            {idleUpdateResult && (
-              <Text size="sm" c="dimmed">
-                {idleUpdateResult}
               </Text>
             )}
           </div>

@@ -12,9 +12,9 @@ export type QrLoginStatus =
 /**
  * Tracks one QR-login attempt.
  *
- * The synchronous /auth/login-by-qr endpoint enqueues this row, kicks
+ * The synchronous /auth/qr-login endpoint enqueues this row, kicks
  * off the slow-path machinery in the background, and returns
- * { attemptId } to the FE. The FE then polls /auth/login-by-qr/:id
+ * { attemptId } to the FE. The FE then polls /auth/qr-login/:id
  * until status becomes `matched` (with token) or `failed` (with error).
  *
  * Fast path (cabinetUserId already bound to a user) skips this entirely

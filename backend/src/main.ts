@@ -40,7 +40,7 @@ async function bootstrap() {
   app.use(json({ limit: '100mb' }));
   app.use(urlencoded({ extended: true, limit: '100mb' }));
   app.enableCors({ origin: true });
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api/v1');
   // Graceful shutdown on SIGTERM (docker stop sends this).
   // Without this, in-flight requests get killed at the 10s SIGKILL
   // grace window, which shows up as RST/ECONNRESET on the client
@@ -58,8 +58,10 @@ async function bootstrap() {
   if (openApiPath) {
     const openApiYaml = readFileSync(openApiPath, 'utf8');
     const openApiDoc = parse(openApiYaml);
-    app.use('/swagger', swaggerUi.serve, swaggerUi.setup(openApiDoc));
-    console.log(`Swagger UI available at /swagger (source: ${openApiPath})`);
+    app.use('/api/v1/swagger', swaggerUi.serve, swaggerUi.setup(openApiDoc));
+    console.log(
+      `Swagger UI available at /api/v1/swagger (source: ${openApiPath})`,
+    );
   } else {
     console.warn(
       'OpenAPI YAML not found, skipping Swagger UI. Run: npm --prefix ../shared run openapi:generate',

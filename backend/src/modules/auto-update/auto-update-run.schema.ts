@@ -7,7 +7,7 @@ import type { HydratedDocument } from 'mongoose';
  * actually runs the sweep at each cron tick — losers see a duplicate-key
  * conflict on upsert and bail out.
  *
- * Modeled after IdleUpdateLogEntity (the nightly-update equivalent), so
+ * Modeled after the former nightly-update log, so
  * an admin reading the two collections side by side gets the same shape.
  */
 @Schema({ collection: 'auto_update_runs' })

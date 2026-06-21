@@ -16,6 +16,7 @@ import { UsersService } from '../users/users.service';
 import { MusicEntity } from '../music/music.schema';
 import { JobTempCacheService } from './cache/temp-cache.service';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
+import { BotFriendSnapshotService } from '../admin/bot-friend-snapshot.service';
 import { BotStatusService } from '../admin/bot-status.service';
 import { SystemSettingsService } from '../admin/system-settings.service';
 import { AUTO_UPDATE_BACKOFF_POLICY } from '../auto-update/auto-update-backoff';
@@ -26,6 +27,7 @@ import type {
   JobStatus,
   JobType,
 } from './job.types';
+import { getJobTypePriority } from '@maimai-score-hub/shared';
 import { JobEntity } from './job.schema';
 
 export interface RecentJobStats {
@@ -54,19 +56,33 @@ const PROCESSING_HARD_TIMEOUT_MS = Number(
   process.env.PROCESSING_HARD_TIMEOUT_MS ?? 30 * 60 * 1000,
 );
 
+const MAX_LONG_POLL_WAIT_MS = 25_000;
+
 // [TODO] Change this to 1min
 // const MIN_CREATE_INTERVAL_MS = Number(
 //   process.env.MIN_CREATE_INTERVAL_MS ?? 1000 * 60,
 // );
 
+function dueFilter(now: Date) {
+  return {
+    $or: [
+      { runAt: null },
+      { runAt: { $exists: false } },
+      { runAt: { $lte: now } },
+    ],
+  };
+}
+
 function toJobResponse(job: JobEntity): JobResponse {
   return {
     id: job.id,
     friendCode: job.friendCode,
-    jobType: job.jobType ?? 'immediate',
+    jobType: job.jobType ?? 'send_friend_request',
+    priority: job.priority ?? getJobTypePriority(job.jobType),
     skipUpdateScore: job.skipUpdateScore,
     botUserFriendCode: job.botUserFriendCode ?? null,
     friendRequestSentAt: job.friendRequestSentAt ?? null,
+    friendRequestWaitStartedAt: job.friendRequestWaitStartedAt ?? null,
     status: job.status,
     stage: job.stage,
     // result: job.result,
@@ -77,6 +93,7 @@ function toJobResponse(job: JobEntity): JobResponse {
     isAuthenticated: job.isAuthenticated ?? false,
     cabinetScoreMap: job.cabinetScoreMap ?? null,
     diffsToScrape: job.diffsToScrape ?? null,
+    runAt: job.runAt?.toISOString() ?? null,
     error: job.error ?? null,
     executing: job.executing,
     createdAt: job.createdAt.toISOString(),
@@ -95,13 +112,25 @@ const VALID_STATUS: readonly JobStatus[] = [
 const VALID_STAGE: readonly JobStage[] = [
   'send_request',
   'wait_acceptance',
+  'wait_user_request',
+  'accept_request',
   'update_score',
-  'fetch_friend_list',
+  'get_user_recent_event',
 ] as const;
+
+const JOB_STAGE_MAP: Record<JobType, readonly JobStage[]> = {
+  send_friend_request: ['send_request', 'wait_acceptance'],
+  accept_friend_request: ['wait_user_request', 'accept_request'],
+  update_score: ['update_score'],
+  get_user_recent_event: ['get_user_recent_event'],
+};
 
 @Injectable()
 export class JobService {
   private readonly logger = new Logger(JobService.name);
+  private readonly claimWaiters = new Set<() => void>();
+  private nextRunAtTimer: NodeJS.Timeout | null = null;
+  private nextRunAtTime = 0;
 
   constructor(
     @InjectModel(JobEntity.name)
@@ -113,10 +142,68 @@ export class JobService {
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
     private readonly sdgb: SdgbJobDispatcher,
+    private readonly botFriendSnapshot: BotFriendSnapshotService,
     @Inject(forwardRef(() => BotStatusService))
     private readonly botStatus: BotStatusService,
     private readonly systemSettings: SystemSettingsService,
   ) {}
+
+  private notifyJobAvailability(): void {
+    if (this.claimWaiters.size === 0) return;
+    const waiters = [...this.claimWaiters];
+    this.claimWaiters.clear();
+    for (const wake of waiters) wake();
+  }
+
+  private waitForJobSignal(waitMs: number): Promise<void> {
+    if (waitMs <= 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      let done = false;
+      const wake = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        this.claimWaiters.delete(wake);
+        resolve();
+      };
+      const timer = setTimeout(wake, waitMs);
+      this.claimWaiters.add(wake);
+    });
+  }
+
+  private scheduleWakeAt(runAt: Date | null | undefined): void {
+    if (!runAt) return;
+    const time = runAt.getTime();
+    if (!Number.isFinite(time)) return;
+    const now = Date.now();
+    if (time <= now) {
+      this.notifyJobAvailability();
+      return;
+    }
+    if (this.nextRunAtTimer && this.nextRunAtTime <= time) {
+      return;
+    }
+    if (this.nextRunAtTimer) {
+      clearTimeout(this.nextRunAtTimer);
+    }
+    this.nextRunAtTime = time;
+    this.nextRunAtTimer = setTimeout(() => {
+      this.nextRunAtTimer = null;
+      this.nextRunAtTime = 0;
+      this.notifyJobAvailability();
+    }, time - now);
+    this.nextRunAtTimer.unref?.();
+  }
+
+  private notifyIfClaimable(job: JobEntity): void {
+    if (['completed', 'failed', 'canceled'].includes(job.status)) return;
+    if (job.executing) return;
+    if (job.runAt && job.runAt.getTime() > Date.now()) {
+      this.scheduleWakeAt(job.runAt);
+      return;
+    }
+    this.notifyJobAvailability();
+  }
 
   /**
    * Cached set of musicIds we know about (from mongo `musics` collection).
@@ -150,14 +237,61 @@ export class JobService {
     return ids;
   }
 
+  private async resolveUpdateScoreFriendship(input: {
+    friendCode: string;
+    botUserFriendCode: string | null;
+    friendshipReady: boolean;
+  }): Promise<{ ready: boolean; botUserFriendCode: string | null }> {
+    if (input.friendshipReady) {
+      return {
+        ready: true,
+        botUserFriendCode: input.botUserFriendCode,
+      };
+    }
+
+    const availableBots = (await this.botStatus.getAll())
+      .filter((bot) => bot.available)
+      .sort((a, b) => (a.friendCount ?? 0) - (b.friendCount ?? 0));
+    const availableBotCodes = availableBots.map((bot) => bot.friendCode);
+
+    if (input.botUserFriendCode) {
+      if (!availableBotCodes.includes(input.botUserFriendCode)) {
+        const leastLoadedBot = availableBots[0]?.friendCode ?? null;
+        return { ready: false, botUserFriendCode: leastLoadedBot };
+      }
+
+      const isFriend = await this.botFriendSnapshot.hasFriend(
+        input.botUserFriendCode,
+        input.friendCode,
+      );
+      return {
+        ready: isFriend,
+        botUserFriendCode: input.botUserFriendCode,
+      };
+    }
+
+    const botHavingFriend = await this.botFriendSnapshot.findBotHavingFriend(
+      input.friendCode,
+      availableBotCodes,
+    );
+    if (botHavingFriend) {
+      return { ready: true, botUserFriendCode: botHavingFriend };
+    }
+
+    const leastLoadedBot = availableBots[0]?.friendCode ?? null;
+
+    return { ready: false, botUserFriendCode: leastLoadedBot };
+  }
+
   async create(input: {
     friendCode: string;
     skipUpdateScore: boolean;
     jobType?: JobType;
     botUserFriendCode?: string | null;
     isAuthenticated?: boolean;
+    friendshipReady?: boolean;
     /**
-     * Only meaningful when jobType=`idle_update_score`. Set by
+     * Only meaningful when jobType=`update_score`. Set by
      * AutoUpdateScheduler to the score hash it observed; propagates to
      * `user.lastScoreHash` only after this job completes successfully.
      */
@@ -197,9 +331,9 @@ export class JobService {
   }) {
     const id = randomUUID();
     const now = new Date();
-    const resolvedJobType: JobType = input.jobType ?? 'immediate';
+    let resolvedJobType: JobType = input.jobType ?? 'send_friend_request';
     const allowCabinetOnlyShortCircuit =
-      resolvedJobType === 'idle_update_score' &&
+      resolvedJobType === 'update_score' &&
       input.allowCabinetOnlyShortCircuit === true;
 
     // [TODO] 将这个限流改为 ip 黑名单机制，同一时间对于一个 friend code 的请求如果过于频繁就拒绝
@@ -222,45 +356,44 @@ export class JobService {
         $set: {
           status: 'canceled',
           executing: false,
+          runAt: null,
           updatedAt: now,
         },
       },
     );
 
+    const isPreassignedScoreJob =
+      resolvedJobType === 'update_score' && !!input.botUserFriendCode;
+
     let resolvedStage: JobStage;
-    if (resolvedJobType === 'idle_update_score') {
+    if (resolvedJobType === 'update_score') {
       resolvedStage = 'update_score';
-    } else if (resolvedJobType === 'fetch_friend_list') {
-      resolvedStage = 'fetch_friend_list';
+    } else if (resolvedJobType === 'accept_friend_request') {
+      resolvedStage = 'wait_user_request';
+    } else if (resolvedJobType === 'get_user_recent_event') {
+      resolvedStage = 'get_user_recent_event';
     } else {
       resolvedStage = 'send_request';
     }
 
     // Cabinet-bound user fast-path: if the user has cabinetUserId, ask
     // sdgb to addRival on their behalf and skip the dxnet
-    // send_request → wait_acceptance dance entirely. Applies to any
-    // jobType that ends up scraping scores; explicit non-update jobs
-    // (idle_add_friend / fetch_friend_list / skipUpdateScore) keep the
-    // original flow.
+    // send_request -> wait_acceptance dance entirely.
     //
     // 调用方（FE / scheduler）传 botUserFriendCode 是可选的：
-    //   - AutoUpdateScheduler / IdleUpdateScheduler 会预先 pickAvailableCabinetBot
-    //     再 enqueue，所以总有 bot
-    //   - JobController.create（用户点"更新数据"）不传 bot，这里需要自己挑一个
-    //     cabinet-bound 的，否则 fast-path 永远进不去，用户还得手动接好友
+    //   - auto-update / login follow-up passes botUserFriendCode and can
+    //     start at update_score.
+    //   - JobController.create（用户点"更新数据"）不传 bot；这里需要自己挑一个
+    //     cabinet-bound bot. If sdgb addRival fails, fall back to manual
+    //     friend request.
     //
     // sdgb 失败处理（用户区分）：
-    //   - immediate（用户从前端点"更新数据"）：await addRival；如果 sdgb
-    //     挂了，**fallback 走原 send_request 流程让用户手动接好友**，
-    //     不能让 sdgb 一挂用户就完全不能更新
-    //   - idle_update_score（自动更新）：scheduler 在 enqueue 前已经做过
-    //     一次 addRival 了（auto-update-scheduler.ts），那里的 addRival
-    //     是 required 的；这里再做一次只是冗余的 best-effort，保留
-    //     fire-and-forget 即可
+    //   - manual update_score: await addRival; if sdgb fails, fall back to
+    //     send_request so the user can still complete manually.
+    //   - pre-assigned update_score: addRival has already been handled or
+    //     friendship is already expected; keep the extra addRival best-effort.
     const isScoreUpdateJob =
-      (resolvedJobType === 'immediate' ||
-        resolvedJobType === 'idle_update_score') &&
-      !input.skipUpdateScore;
+      resolvedJobType === 'update_score' && !input.skipUpdateScore;
     // When an automatic update explicitly enables cabinet-only mode AND the
     // cabinet fast-path successfully attaches cabinetScoreMap for a user with
     // cabinetUserId, we skip worker dispatch entirely: the job is created and
@@ -270,12 +403,11 @@ export class JobService {
     // mergeScoreKeepBest preserves the previous sync's fc/fs (since synthetic
     // entries set those to null).
     let cabinetOnlyShortCircuit = false;
-    if (isScoreUpdateJob) {
+    if (isScoreUpdateJob && !input.friendshipReady) {
       try {
         const user = await this.usersService.findByFriendCode(input.friendCode);
-        const userCabinetUid = (
-          user as { cabinetUserId?: number | null } | null
-        )?.cabinetUserId;
+        const userCabinetUid = (user as { cabinetUserId?: number | null } | null)
+          ?.cabinetUserId;
         if (userCabinetUid != null) {
           // Cabinet-only mode is only allowed for automatic updates. Manual
           // user/admin jobs still pick a bot, addRival, and dispatch to dxnet.
@@ -357,13 +489,13 @@ export class JobService {
 
             if (botCabinetUid != null && botFc) {
               // ── addRival ────────────────────────────────────────
-              // immediate: synchronous, fall back to send_request on
+              // send_friend_request: synchronous, fall back to send_request on
               // failure so the user can complete via the friend-request
               // flow instead of staring at a stuck stage=update_score.
-              // idle_update_score: scheduler already addRival'd before
+              // update_score: scheduler already addRival'd before
               // enqueue, this is best-effort backup.
               let addRivalOk = true;
-              if (resolvedJobType === 'immediate') {
+              if (!isPreassignedScoreJob) {
                 try {
                   const r = await this.sdgb.addRival(
                     {
@@ -376,6 +508,7 @@ export class JobService {
                     },
                   );
                   resolvedStage = 'update_score';
+                  input.friendshipReady = true;
                   this.logger.log(
                     `Cabinet fast-path fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
                   );
@@ -386,7 +519,7 @@ export class JobService {
                   );
                 }
               } else {
-                // idle: stage already update_score from scheduler intent.
+                // Pre-assigned score job: stage already update_score.
                 resolvedStage = 'update_score';
                 this.sdgb
                   .addRival(
@@ -401,12 +534,12 @@ export class JobService {
                   )
                   .then((r) =>
                     this.logger.log(
-                      `Cabinet score-update (idle, redundant) fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
+                      `Cabinet score-update (redundant) fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
                     ),
                   )
                   .catch((err) =>
                     this.logger.warn(
-                      `addRival (idle redundant) failed: ${err instanceof Error ? err.message : err}`,
+                      `addRival (redundant) failed: ${err instanceof Error ? err.message : err}`,
                     ),
                   );
               }
@@ -417,14 +550,14 @@ export class JobService {
               // diffsToScrape. These let the worker skip half the
               // friend-VS requests and skip unchanged diffs entirely.
               //
-              // Only attempt if addRival worked (immediate path) — if
+              // Only attempt if addRival worked (manual path) — if
               // sdgb is broken there's no point trying again.
               if (addRivalOk && input.cabinetScoreMap == null) {
                 try {
                   let music = input.cabinetMusic ?? null;
                   if (!music) {
-                    // Caller didn't pre-fetch (e.g. immediate path,
-                    // admin trigger, idle scheduler that didn't pass
+                    // Caller didn't pre-fetch (e.g. manual path,
+                    // admin trigger, scheduler that didn't pass
                     // music) — make our own sdgb call.
                     const r = await this.sdgb.getRivalHash(
                       { cabinetUserId: userCabinetUid },
@@ -556,13 +689,42 @@ export class JobService {
       }
     }
 
+    if (
+      resolvedJobType === 'update_score' &&
+      !input.skipUpdateScore &&
+      !cabinetOnlyShortCircuit
+    ) {
+      const friendship = await this.resolveUpdateScoreFriendship({
+        friendCode: input.friendCode,
+        botUserFriendCode: input.botUserFriendCode ?? null,
+        friendshipReady: input.friendshipReady ?? false,
+      });
+
+      if (friendship.ready) {
+        input.botUserFriendCode = friendship.botUserFriendCode;
+        resolvedStage = 'update_score';
+      } else {
+        resolvedJobType = 'send_friend_request';
+        resolvedStage = 'send_request';
+        input.botUserFriendCode = friendship.botUserFriendCode;
+        this.logger.log(
+          `update_score fc=${input.friendCode} is not in reported bot friends; queued send_friend_request first`,
+        );
+      }
+    }
+
+    const priority = getJobTypePriority(resolvedJobType);
+
     const created = await this.jobModel.create({
       id,
       friendCode: input.friendCode,
       jobType: resolvedJobType,
+      priority,
       skipUpdateScore: input.skipUpdateScore,
       botUserFriendCode: input.botUserFriendCode ?? null,
       friendRequestSentAt: null,
+      friendRequestWaitStartedAt:
+        resolvedJobType === 'accept_friend_request' ? now.toISOString() : null,
       status: 'queued',
       stage: resolvedStage,
       executing: false,
@@ -572,6 +734,7 @@ export class JobService {
       sourceScoreHash: input.sourceScoreHash ?? null,
       cabinetScoreMap: input.cabinetScoreMap ?? null,
       diffsToScrape: input.diffsToScrape ?? null,
+      runAt: null,
       createdAt: now,
       updatedAt: now,
     });
@@ -594,82 +757,8 @@ export class JobService {
       }
     }
 
+    this.notifyIfClaimable(created.toObject() as JobEntity);
     return { jobId: id, job: toJobResponse(created.toObject() as JobEntity) };
-  }
-
-  /**
-   * Out-of-band helper for QR-login: enqueue a fetch_friend_list job
-   * pre-assigned to a specific bot, then await its completion. We
-   * bypass the regular create() because:
-   *  - the friendCode column is the BOT's own friendCode (not a user's),
-   *    so the "cancel sibling jobs for same friendCode" rule there
-   *    would clobber unrelated immediate / idle jobs for that bot.
-   *  - we want to await the result inline.
-   *
-   * Throws if the job ends up in failed/canceled or if `timeoutMs` elapses.
-   */
-  async fetchFriendList(
-    botUserFriendCode: string,
-    timeoutMs = 60_000,
-  ): Promise<{
-    jobId: string;
-    friends: Array<{
-      friendCode: string;
-      userName: string | null;
-      rating: number | null;
-    }>;
-  }> {
-    const id = randomUUID();
-    const now = new Date();
-    await this.jobModel.create({
-      id,
-      // friendCode here identifies the bot (not a user) — informational only
-      // for fetch_friend_list jobs.
-      friendCode: botUserFriendCode,
-      jobType: 'fetch_friend_list',
-      skipUpdateScore: true,
-      botUserFriendCode,
-      friendRequestSentAt: null,
-      status: 'queued',
-      stage: 'fetch_friend_list',
-      executing: false,
-      error: null,
-      result: undefined,
-      isAuthenticated: true,
-      sourceScoreHash: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      const doc = await this.jobModel.findOne({ id }).lean();
-      if (!doc) throw new Error(`fetch_friend_list job ${id} disappeared`);
-      if (doc.status === 'completed') {
-        const friends = (doc.result as { friends?: unknown } | undefined)
-          ?.friends;
-        if (!Array.isArray(friends)) {
-          throw new Error(`fetch_friend_list job ${id} result missing friends`);
-        }
-        return {
-          jobId: id,
-          friends: friends as Array<{
-            friendCode: string;
-            userName: string | null;
-            rating: number | null;
-          }>,
-        };
-      }
-      if (doc.status === 'failed' || doc.status === 'canceled') {
-        throw new Error(
-          `fetch_friend_list job ${id} ended ${doc.status}: ${doc.error ?? '(no detail)'}`,
-        );
-      }
-      await new Promise((r) => setTimeout(r, 1_500));
-    }
-    throw new Error(
-      `fetch_friend_list job ${id} timed out after ${timeoutMs}ms`,
-    );
   }
 
   async get(jobId: string): Promise<JobResponse> {
@@ -680,8 +769,58 @@ export class JobService {
     return toJobResponse(job.toObject() as JobEntity);
   }
 
-  async claimNext(botUserFriendCode: string): Promise<JobResponse | null> {
+  async wake(jobId: string): Promise<JobResponse> {
+    const existing = await this.jobModel.findOne({ id: jobId });
+    if (!existing) {
+      throw new NotFoundException('Job not found');
+    }
+
+    if (['completed', 'failed', 'canceled'].includes(existing.status)) {
+      return toJobResponse(existing.toObject() as JobEntity);
+    }
+
+    const updated = await this.jobModel.findOneAndUpdate(
+      { id: jobId },
+      {
+        $set: {
+          runAt: null,
+          updatedAt: new Date(),
+        },
+      },
+      { new: true },
+    );
+
+    if (!updated) throw new NotFoundException('Job not found');
+
+    this.notifyIfClaimable(updated.toObject() as JobEntity);
+    return toJobResponse(updated.toObject() as JobEntity);
+  }
+
+  async claimNext(
+    botUserFriendCode: string,
+    waitMs = 0,
+  ): Promise<JobResponse | null> {
+    const clampedWaitMs = Math.min(
+      Math.max(Math.floor(waitMs), 0),
+      MAX_LONG_POLL_WAIT_MS,
+    );
+    const deadline = Date.now() + clampedWaitMs;
+
+    while (true) {
+      const job = await this.claimNextReady(botUserFriendCode);
+      if (job) return job;
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return null;
+      await this.waitForJobSignal(remaining);
+    }
+  }
+
+  private async claimNextReady(
+    botUserFriendCode: string,
+  ): Promise<JobResponse | null> {
     const now = new Date();
+    const due = dueFilter(now);
 
     // Release stale executing jobs before claiming.
     const staleThreshold = new Date(now.getTime() - DEAD_JOB_TIMEOUT_MS);
@@ -701,6 +840,7 @@ export class JobService {
       {
         $set: {
           status: 'failed',
+          runAt: null,
           error: '排队超时，可能是 Bot 繁忙或异常，请稍后再试',
           updatedAt: now,
         },
@@ -721,36 +861,12 @@ export class JobService {
         $set: {
           status: 'failed',
           executing: false,
+          runAt: null,
           error: '硬超时：任务存活时间超过 30 分钟',
           updatedAt: now,
         },
       },
     );
-
-    // 0) Top priority: fetch_friend_list jobs pre-assigned to this bot.
-    //    These back blocking QR-login requests, so they jump ahead of
-    //    everything — even resume-in-progress and the unassigned queue.
-    {
-      const fetchFL = await this.jobModel.findOneAndUpdate(
-        {
-          status: 'queued',
-          executing: false,
-          botUserFriendCode,
-          jobType: 'fetch_friend_list',
-        },
-        {
-          $set: {
-            status: 'processing',
-            executing: true,
-            updatedAt: now,
-          },
-        },
-        { new: true, sort: { createdAt: 1 } },
-      );
-      if (fetchFL) {
-        return toJobResponse(fetchFL.toObject() as JobEntity);
-      }
-    }
 
     // 1a) Queued first: claim the oldest unassigned queued job.
     //     To balance load across bots, only allow this bot to claim a new queued
@@ -758,6 +874,7 @@ export class JobService {
     const activeCountForThisBot = await this.jobModel.countDocuments({
       botUserFriendCode,
       status: 'processing',
+      executing: true,
     });
 
     // Find the minimum active job count among all OTHER bots that have processing jobs.
@@ -769,6 +886,7 @@ export class JobService {
       {
         $match: {
           status: 'processing',
+          executing: true,
           botUserFriendCode: { $ne: null, $nin: [botUserFriendCode] },
         },
       },
@@ -788,8 +906,13 @@ export class JobService {
     if (!shouldBalanceCheck || activeCountForThisBot <= minOtherCount + 1) {
       // Find the oldest unassigned queued job
       const candidates = await this.jobModel
-        .find({ status: 'queued', executing: false, botUserFriendCode: null })
-        .sort({ updatedAt: 1 })
+        .find({
+          status: 'queued',
+          executing: false,
+          botUserFriendCode: null,
+          ...due,
+        })
+        .sort({ priority: -1, updatedAt: 1 })
         .limit(10)
         .lean();
 
@@ -812,16 +935,18 @@ export class JobService {
             status: 'queued',
             executing: false,
             botUserFriendCode: null,
+            ...due,
           },
           {
             $set: {
               status: 'processing',
               executing: true,
               botUserFriendCode,
+              runAt: null,
               updatedAt: now,
             },
           },
-          { new: true },
+          { new: true, sort: { priority: -1, updatedAt: 1 } },
         );
         if (claimed) {
           return toJobResponse(claimed.toObject() as JobEntity);
@@ -830,39 +955,41 @@ export class JobService {
     }
 
     // 1b) Resume: pick the oldest processing job for this bot.
-    //     Only pick jobs whose updatedAt <= now (future updatedAt = intentional cooldown
-    //     from wait_acceptance stage).
+    //     Only pick jobs whose runAt is due (future runAt = intentional cooldown
+    //     from wait stages).
     const processing = await this.jobModel.findOneAndUpdate(
       {
         status: 'processing',
         botUserFriendCode,
         executing: false,
-        updatedAt: { $lte: now },
+        ...due,
       },
       {
         $set: {
           executing: true,
+          runAt: null,
           updatedAt: now,
         },
       },
-      { new: true, sort: { updatedAt: 1 } },
+      { new: true, sort: { priority: -1, updatedAt: 1 } },
     );
     if (processing) {
       return toJobResponse(processing.toObject() as JobEntity);
     }
 
-    // 2) Idle pool: claim pre-assigned queued jobs (e.g. idle_update_score)
+    // 2) Idle pool: claim pre-assigned queued jobs (e.g. update_score)
     //    Lowest priority — only picked when no main pool jobs are available.
     const idle = await this.jobModel.findOneAndUpdate(
-      { status: 'queued', executing: false, botUserFriendCode },
+      { status: 'queued', executing: false, botUserFriendCode, ...due },
       {
         $set: {
           status: 'processing',
           executing: true,
+          runAt: null,
           updatedAt: now,
         },
       },
-      { new: true, sort: { createdAt: 1 } },
+      { new: true, sort: { priority: -1, createdAt: 1 } },
     );
 
     if (!idle) return null;
@@ -872,6 +999,11 @@ export class JobService {
   async patch(jobId: string, body: JobPatchBody): Promise<JobResponse> {
     const update: Partial<JobEntity> = {};
     const additionalOps: Record<string, unknown> = {};
+    const finalStatuses: JobStatus[] = ['completed', 'failed', 'canceled'];
+    const existing = await this.jobModel.findOne({ id: jobId }).lean();
+    if (!existing) {
+      throw new NotFoundException('Job not found');
+    }
 
     if (body.botUserFriendCode !== undefined) {
       if (
@@ -895,6 +1027,11 @@ export class JobService {
     if (body.stage !== undefined) {
       if (!VALID_STAGE.includes(body.stage)) {
         throw new BadRequestException('Invalid stage value');
+      }
+      if (!JOB_STAGE_MAP[existing.jobType]?.includes(body.stage)) {
+        throw new BadRequestException(
+          `Invalid stage ${body.stage} for jobType ${existing.jobType}`,
+        );
       }
       update.stage = body.stage;
     }
@@ -926,11 +1063,38 @@ export class JobService {
       update.friendRequestSentAt = body.friendRequestSentAt;
     }
 
+    if (body.friendRequestWaitStartedAt !== undefined) {
+      if (
+        body.friendRequestWaitStartedAt !== null &&
+        typeof body.friendRequestWaitStartedAt !== 'string'
+      ) {
+        throw new BadRequestException(
+          'friendRequestWaitStartedAt must be a string or null',
+        );
+      }
+      update.friendRequestWaitStartedAt = body.friendRequestWaitStartedAt;
+    }
+
     if (body.executing !== undefined) {
       if (typeof body.executing !== 'boolean') {
         throw new BadRequestException('executing must be a boolean');
       }
       update.executing = body.executing;
+    }
+
+    if (body.runAt !== undefined) {
+      if (body.runAt === null) {
+        update.runAt = null;
+      } else {
+        if (typeof body.runAt !== 'string') {
+          throw new BadRequestException('runAt must be an ISO string or null');
+        }
+        const parsed = new Date(body.runAt);
+        if (Number.isNaN(parsed.getTime())) {
+          throw new BadRequestException('runAt must be a valid ISO date');
+        }
+        update.runAt = parsed;
+      }
     }
 
     if (body.updatedAt !== undefined) {
@@ -974,6 +1138,10 @@ export class JobService {
       };
     }
 
+    if (body.status && finalStatuses.includes(body.status)) {
+      update.runAt = null;
+    }
+
     // 构建更新操作
     const updateOps: Record<string, unknown> = {
       $set: update,
@@ -986,9 +1154,7 @@ export class JobService {
       { new: true },
     );
 
-    if (!updated) {
-      throw new NotFoundException('Job not found');
-    }
+    if (!updated) throw new NotFoundException('Job not found');
 
     // 当 job 进入 wait_acceptance 或完成时，更新用户的偏好 bot
     if (
@@ -1005,12 +1171,41 @@ export class JobService {
     }
 
     // 当 job 完成、失败或取消时，清理临时缓存
-    const finalStatuses: JobStatus[] = ['completed', 'failed', 'canceled'];
     if (finalStatuses.includes(updated.status)) {
       // 异步清理缓存，不阻塞响应
       this.tempCacheService.deleteByJobId(jobId).catch((err) => {
         console.error(`Failed to delete temp cache for job ${jobId}:`, err);
       });
+    }
+
+    if (
+      existing.status !== 'completed' &&
+      updated.status === 'completed' &&
+      !updated.skipUpdateScore &&
+      updated.jobType !== 'update_score'
+    ) {
+      const active = await this.jobModel
+        .findOne({
+          id: { $ne: updated.id },
+          friendCode: updated.friendCode,
+          skipUpdateScore: false,
+          status: { $in: ['queued', 'processing'] },
+        })
+        .lean();
+
+      if (!active) {
+        await this.create({
+          friendCode: updated.friendCode,
+          skipUpdateScore: false,
+          jobType: 'update_score',
+          botUserFriendCode: updated.botUserFriendCode ?? undefined,
+          isAuthenticated: true,
+          friendshipReady: true,
+          sourceScoreHash: updated.sourceScoreHash ?? null,
+          cabinetScoreMap: updated.cabinetScoreMap ?? null,
+          diffsToScrape: updated.diffsToScrape ?? null,
+        });
+      }
     }
 
     if (
@@ -1042,9 +1237,11 @@ export class JobService {
       }
     }
 
-    // Auto-update bookkeeping: when an idle_update_score job that was
-    // launched by AutoUpdateScheduler (identified by sourceScoreHash
-    // being set) finishes, we update the user's backoff/hash state.
+    // Auto-update bookkeeping: sourceScoreHash marks jobs launched by
+    // AutoUpdateScheduler. A preceding send_friend_request may fail before
+    // the real update_score exists, so failures/cancellations are handled for
+    // every sourceScoreHash job. Only update_score completion promotes the
+    // hash because only that job has actually scraped scores.
     //
     // - completed: promote sourceScoreHash to user.lastScoreHash AND
     //   clear backoff (failureCount=0, backoffUntil=null). We
@@ -1063,8 +1260,11 @@ export class JobService {
     //   intentionally stays gated on `completed` — a canceled job
     //   didn't necessarily scrape anything, so lastScoreHash must
     //   stay as-is for the next sweep to retry.
-    if (updated.jobType === 'idle_update_score' && updated.sourceScoreHash) {
-      if (updated.status === 'completed') {
+    if (updated.sourceScoreHash) {
+      if (
+        updated.jobType === 'update_score' &&
+        updated.status === 'completed'
+      ) {
         this.usersService
           .findByFriendCode(updated.friendCode)
           .then(async (user) => {
@@ -1115,6 +1315,7 @@ export class JobService {
       }
     }
 
+    this.notifyIfClaimable(updated.toObject() as JobEntity);
     return toJobResponse(updated.toObject() as JobEntity);
   }
 
@@ -1206,7 +1407,7 @@ export class JobService {
   async hasActiveIdleJob(friendCode: string): Promise<boolean> {
     const count = await this.jobModel.countDocuments({
       friendCode,
-      jobType: { $in: ['idle_add_friend', 'idle_update_score'] },
+      jobType: { $in: ['send_friend_request', 'update_score'] },
       status: { $in: ['queued', 'processing'] },
     });
     return count > 0;
@@ -1216,7 +1417,7 @@ export class JobService {
     const job = await this.jobModel
       .findOne({
         friendCode,
-        jobType: { $in: ['idle_add_friend', 'idle_update_score'] },
+        jobType: { $in: ['send_friend_request', 'update_score'] },
         status: { $in: ['queued', 'processing'] },
       })
       .sort({ createdAt: -1 });

@@ -16,14 +16,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import {
-  IconClock,
-  IconCloudUpload,
-  IconInfoCircle,
-  IconLogin,
-  IconMoon,
-  IconRefresh,
-} from "@tabler/icons-react";
+import { IconCloudUpload, IconLogin, IconRefresh } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useState } from "react";
 import type { JobResponse as JobStatus } from "@maimai-score-hub/shared";
@@ -33,7 +26,7 @@ import {
   createJob,
   getActiveJobByFriendCode,
   getJobById,
-  getRecentJobStats,
+  wakeJob,
 } from "../api/jobClient";
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
 import { CabinetBindingCard } from "../components/CabinetBindingCard";
@@ -64,20 +57,6 @@ type LastSyncInfo = {
   } | null;
 };
 
-type IdleUpdateStatusResponse = {
-  enabled: boolean;
-  botFriendCode: string | null;
-  pendingJob: boolean;
-  activeJob?: {
-    id: string;
-    jobType: "idle_add_friend" | "idle_update_score";
-    status: string;
-    stage: string;
-    scoreProgress?: { completedDiffs: number[]; totalDiffs: number } | null;
-    friendRequestSentAt?: string | null;
-  } | null;
-};
-
 const DIFFICULTY_NAMES: Record<number, string> = {
   0: "BASIC",
   1: "ADVANCED",
@@ -94,7 +73,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   const authorization =
     headers.get("Authorization") ?? headers.get("authorization") ?? "";
 
-  if (path === "/api/users/profile" && method === "GET" && authorization) {
+  if (path === "/api/v1/me" && method === "GET" && authorization) {
     const res = await usersApi.profile({
       headers: { authorization },
     });
@@ -105,7 +84,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
     };
   }
 
-  if (path === "/api/users/profile" && method === "PATCH" && authorization) {
+  if (path === "/api/v1/me" && method === "PATCH" && authorization) {
     const body = init?.body
       ? (JSON.parse(String(init.body)) as Record<string, unknown>)
       : {};
@@ -132,7 +111,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   }
 
   if (
-    path === "/api/users/diving-fish/token" &&
+    path === "/api/v1/me/prober-tokens/diving-fish" &&
     method === "POST" &&
     authorization
   ) {
@@ -153,52 +132,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
     };
   }
 
-  if (
-    path === "/api/users/idle-update/status" &&
-    method === "GET" &&
-    authorization
-  ) {
-    const res = await usersApi.getIdleUpdateStatus({
-      headers: { authorization },
-    });
-    return {
-      ok: res.status === 200,
-      status: res.status,
-      data: (res.body ?? null) as T,
-    };
-  }
-
-  if (
-    path === "/api/users/idle-update/enable" &&
-    method === "POST" &&
-    authorization
-  ) {
-    const res = await usersApi.enableIdleUpdate({
-      headers: { authorization },
-    });
-    return {
-      ok: res.status === 201,
-      status: res.status,
-      data: (res.body ?? null) as T,
-    };
-  }
-
-  if (
-    path === "/api/users/idle-update/disable" &&
-    method === "POST" &&
-    authorization
-  ) {
-    const res = await usersApi.disableIdleUpdate({
-      headers: { authorization },
-    });
-    return {
-      ok: res.status === 201,
-      status: res.status,
-      data: (res.body ?? null) as T,
-    };
-  }
-
-  if (path === "/api/sync/latest" && method === "GET" && authorization) {
+  if (path === "/api/v1/sync/latest" && method === "GET" && authorization) {
     const res = await syncApi.latest({
       headers: { authorization },
     });
@@ -210,7 +144,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   }
 
   if (
-    path === "/api/sync/latest/diving-fish" &&
+    path === "/api/v1/sync/latest/exports/diving-fish" &&
     method === "POST" &&
     authorization
   ) {
@@ -224,7 +158,11 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
     };
   }
 
-  if (path === "/api/sync/latest/lxns" && method === "POST" && authorization) {
+  if (
+    path === "/api/v1/sync/latest/exports/lxns" &&
+    method === "POST" &&
+    authorization
+  ) {
     const res = await syncApi.exportToLxns({
       headers: { authorization },
     });
@@ -254,7 +192,7 @@ function formatDate(dateString: string) {
 
 /**
  * Section heading used at the top level of SyncPage. Keeps the visual
- * rhythm consistent across "同步成绩 / 神秘二维码绑定 / 夜间更新 /
+ * rhythm consistent across "同步成绩 / 神秘二维码绑定 /
  * 更新查分器" without each section reinventing its own title row.
  */
 function SectionHeader({
@@ -329,18 +267,8 @@ export default function SyncPage() {
   const [syncStatus, setSyncStatus] = useState<JobStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [wakeLoading, setWakeLoading] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
-
-  // Idle update state
-  const [idleUpdateStatus, setIdleUpdateStatus] =
-    useState<IdleUpdateStatusResponse | null>(null);
-  const [idleUpdateLoading, setIdleUpdateLoading] = useState(false);
-  const [lowSuccessRate, setLowSuccessRate] = useState(false);
-  const [recentStats, setRecentStats] = useState<{
-    totalCount: number;
-    successRate: number;
-    avgDuration: number | null;
-  } | null>(null);
 
   const totalWaitSeconds = 5 * 60;
   const remainingPercent = Math.min(
@@ -360,7 +288,7 @@ export default function SyncPage() {
   const loadLastSync = useCallback(async () => {
     if (!token) return;
 
-    const res = await fetchJson<LastSyncInfo>("/api/sync/latest", {
+    const res = await fetchJson<LastSyncInfo>("/api/v1/sync/latest", {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -378,7 +306,7 @@ export default function SyncPage() {
 
     setProfileError(null);
 
-    const res = await fetchJson<UserProfileResponse>("/api/users/profile", {
+    const res = await fetchJson<UserProfileResponse>("/api/v1/me", {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -401,24 +329,17 @@ export default function SyncPage() {
 
       // Kick off all independent requests in parallel.
       // Profile is needed for friendCode → active job lookup, but
-      // /api/sync/latest, /api/users/idle-update/status, and
-      // getRecentJobStats() have no data dependency on profile and
+      // /api/v1/sync/latest has no data dependency on profile and
       // were previously waiting in series — total wall time was the
-      // sum of all four. Now profile + the other three race;
+      // sum of all requests. Now profile + the other requests race;
       // active-job lookup chains off profile (still serial there,
       // but unavoidable since it needs friendCode).
-      const profilePromise = fetchJson<UserProfileResponse>(
-        "/api/users/profile",
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      const syncPromise = fetchJson<LastSyncInfo>("/api/sync/latest", {
+      const profilePromise = fetchJson<UserProfileResponse>("/api/v1/me", {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const idlePromise = fetchJson<IdleUpdateStatusResponse>(
-        "/api/users/idle-update/status",
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      const statsPromise = getRecentJobStats().catch(() => null);
+      const syncPromise = fetchJson<LastSyncInfo>("/api/v1/sync/latest", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       const res = await profilePromise;
       if (cancelled) return;
@@ -456,21 +377,6 @@ export default function SyncPage() {
         setLastSync(syncRes.data);
       }
 
-      const idleRes = await idlePromise;
-      if (cancelled) return;
-      if (idleRes.ok && idleRes.data) {
-        setIdleUpdateStatus(idleRes.data);
-      }
-
-      const statsRes = await statsPromise;
-      if (cancelled) return;
-      if (statsRes) {
-        setRecentStats(statsRes);
-        if (statsRes.totalCount >= 5 && statsRes.successRate <= 50) {
-          setLowSuccessRate(true);
-        }
-      }
-
       setLoading(false);
     };
 
@@ -493,7 +399,7 @@ export default function SyncPage() {
     // Nothing to save
     if (Object.keys(body).length === 0) return true;
 
-    const res = await fetchJson<unknown>("/api/users/profile", {
+    const res = await fetchJson<unknown>("/api/v1/me", {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -515,7 +421,7 @@ export default function SyncPage() {
     value: boolean,
   ) => {
     if (!token) return;
-    const res = await fetchJson<unknown>("/api/users/profile", {
+    const res = await fetchJson<unknown>("/api/v1/me", {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -573,35 +479,6 @@ export default function SyncPage() {
     return () => clearInterval(interval);
   }, [syncJobId, syncing, loadProfile, loadLastSync]);
 
-  // Poll idle update status when pendingJob is true
-  useEffect(() => {
-    if (!token || !idleUpdateStatus?.pendingJob) return;
-
-    const interval = setInterval(async () => {
-      const res = await fetchJson<IdleUpdateStatusResponse>(
-        "/api/users/idle-update/status",
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-
-      if (res.ok && res.data) {
-        setIdleUpdateStatus(res.data);
-        // Stop polling once pendingJob is resolved
-        if (!res.data.pendingJob) {
-          clearInterval(interval);
-          if (res.data.enabled) {
-            notifications.show({
-              title: "闲时更新",
-              message: "Bot 已成功添加好友，闲时更新已开启",
-              color: "green",
-            });
-          }
-        }
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [token, idleUpdateStatus?.pendingJob]);
-
   // Handle timeout countdown for wait_acceptance stage
   useEffect(() => {
     if (
@@ -628,14 +505,6 @@ export default function SyncPage() {
   const startSync = async () => {
     if (!profile?.friendCode) return;
 
-    // 如果已开启闲时更新，提示用户立即更新会取消闲时更新
-    if (idleUpdateStatus?.enabled) {
-      const confirmed = window.confirm(
-        "你已开启闲时更新，立即更新将会取消闲时更新。是否继续？",
-      );
-      if (!confirmed) return;
-    }
-
     setSyncing(true);
     setSyncError(null);
     setSyncStatus(null);
@@ -651,20 +520,6 @@ export default function SyncPage() {
 
       setSyncJobId(res.jobId);
       setSyncStatus(res.job);
-
-      // 立即更新成功创建后，如果之前开启了闲时更新，更新前端状态
-      if (idleUpdateStatus?.enabled) {
-        setIdleUpdateStatus({
-          enabled: false,
-          botFriendCode: null,
-          pendingJob: false,
-        });
-        notifications.show({
-          title: "闲时更新已取消",
-          message: "已自动关闭闲时更新，如需使用请在同步完成后重新开启",
-          color: "yellow",
-        });
-      }
     } catch (error) {
       setSyncing(false);
       const errorMessage = error instanceof Error ? error.message : "未知错误";
@@ -672,83 +527,29 @@ export default function SyncPage() {
     }
   };
 
-  // Enable idle update
-  const enableIdleUpdate = async () => {
-    if (!token) return;
+  const wakeSyncJob = async () => {
+    if (!syncJobId || !token) return;
 
-    setIdleUpdateLoading(true);
-    const res = await fetchJson<{ message?: string }>(
-      "/api/users/idle-update/enable",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
-    if (res.ok) {
+    setWakeLoading(true);
+    try {
+      const res = await wakeJob(syncJobId, token);
+      setSyncStatus(res.job);
+      setSyncing(true);
       notifications.show({
-        title: "闲时更新",
-        message: "闲时更新任务已创建，等待 Bot 添加好友",
-        color: "blue",
-      });
-      // Refresh idle update status
-      const idleRes = await fetchJson<IdleUpdateStatusResponse>(
-        "/api/users/idle-update/status",
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (idleRes.ok && idleRes.data) {
-        setIdleUpdateStatus(idleRes.data);
-      }
-    } else {
-      const errorData = res.data as { message?: string; error?: string } | null;
-      notifications.show({
-        title: "开启失败",
-        message: errorData?.message || errorData?.error || `HTTP ${res.status}`,
-        color: "red",
-      });
-    }
-    setIdleUpdateLoading(false);
-  };
-
-  // Disable idle update
-  const disableIdleUpdate = async () => {
-    if (!token) return;
-
-    setIdleUpdateLoading(true);
-    const res = await fetchJson<{ message?: string }>(
-      "/api/users/idle-update/disable",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
-    if (res.ok) {
-      notifications.show({
-        title: "闲时更新",
-        message: "闲时更新已关闭",
+        title: "已提交验证",
+        message: "后台将立即重新检查好友状态",
         color: "green",
       });
-      setIdleUpdateStatus({
-        enabled: false,
-        botFriendCode: null,
-        pendingJob: false,
-      });
-    } else {
-      const errorData = res.data as { message?: string; error?: string } | null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "未知错误";
       notifications.show({
-        title: "关闭失败",
-        message: errorData?.message || errorData?.error || `HTTP ${res.status}`,
+        title: "提交失败",
+        message,
         color: "red",
       });
+    } finally {
+      setWakeLoading(false);
     }
-    setIdleUpdateLoading(false);
   };
 
   // Export to diving-fish
@@ -766,7 +567,7 @@ export default function SyncPage() {
       scores?: number;
       exported?: number;
       response?: { creates?: number; updates?: number; message?: string };
-    }>("/api/sync/latest/diving-fish", {
+    }>("/api/v1/sync/latest/exports/diving-fish", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -811,7 +612,7 @@ export default function SyncPage() {
       scores?: number;
       exported?: number;
       response?: { success?: boolean; code?: number; data?: unknown[] };
-    }>("/api/sync/latest/lxns", {
+    }>("/api/v1/sync/latest/exports/lxns", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -1187,6 +988,13 @@ export default function SyncPage() {
                           <Progress.Label>{timeLeft} 秒后过期</Progress.Label>
                         </Progress.Section>
                       </Progress.Root>
+                      <Button
+                        onClick={wakeSyncJob}
+                        loading={wakeLoading}
+                        disabled={!syncJobId}
+                      >
+                        我已接受请求
+                      </Button>
                     </Stack>
                   </Alert>
                 )}
@@ -1275,241 +1083,6 @@ export default function SyncPage() {
             />
           </Stack>
         )}
-
-        {/* Idle Update Section */}
-        <Stack gap="md">
-          <SectionHeader
-            icon={<IconMoon size={18} />}
-            color="indigo"
-            title="夜间更新"
-            subtitle="将 Bot 加为不互删好友，凌晨成功率高时自动更新"
-          />
-
-          {recentStats && recentStats.totalCount >= 5 && (
-            <Group gap="xl">
-              <Group gap={6}>
-                <Text size="sm" c="dimmed">
-                  近 1 小时立即更新成功率
-                </Text>
-                <Badge
-                  variant="light"
-                  size="lg"
-                  radius="md"
-                  color={
-                    recentStats.successRate >= 80
-                      ? "green"
-                      : recentStats.successRate >= 50
-                        ? "yellow"
-                        : "red"
-                  }
-                >
-                  {recentStats.successRate}%
-                </Badge>
-              </Group>
-              {recentStats.avgDuration != null && (
-                <Group gap={6}>
-                  <Text size="sm" c="dimmed">
-                    平均耗时
-                  </Text>
-                  <Badge variant="light" size="lg" radius="md">
-                    {recentStats.avgDuration >= 60000
-                      ? `${Math.floor(recentStats.avgDuration / 60000)}分${Math.round((recentStats.avgDuration % 60000) / 1000)}秒`
-                      : `${Math.round(recentStats.avgDuration / 1000)}秒`}
-                  </Badge>
-                </Group>
-              )}
-            </Group>
-          )}
-
-          {lowSuccessRate && !idleUpdateStatus?.enabled && (
-            <Alert
-              variant="light"
-              color="yellow"
-              title="推荐使用闲时更新"
-              icon={<IconInfoCircle size={16} />}
-              radius="md"
-            >
-              <Text size="sm">
-                当前立即更新成功率较低，建议使用闲时更新以获得更好的体验。
-              </Text>
-            </Alert>
-          )}
-
-          {idleUpdateStatus?.enabled && (
-            <Card
-              withBorder
-              padding="md"
-              radius="md"
-              style={{
-                borderLeft: "4px solid var(--mantine-color-green-6)",
-              }}
-            >
-              <Stack gap="sm">
-                <Group justify="space-between" align="center">
-                  <Group gap="xs">
-                    <Badge color="green" variant="light" size="lg">
-                      已开启
-                    </Badge>
-                    <Text size="sm" c="dimmed">
-                      Bot 将在今日凌晨自动更新成绩，请勿解除好友关系
-                    </Text>
-                  </Group>
-                  <Button
-                    variant="light"
-                    color="red"
-                    size="xs"
-                    onClick={disableIdleUpdate}
-                    disabled={idleUpdateLoading}
-                  >
-                    关闭
-                  </Button>
-                </Group>
-                {idleUpdateLoading && (
-                  <Group gap="xs" mt={4}>
-                    <Loader size="xs" />
-                    <Text size="xs" c="dimmed">
-                      正在关闭夜间更新...
-                    </Text>
-                  </Group>
-                )}
-              </Stack>
-            </Card>
-          )}
-
-          {idleUpdateStatus?.pendingJob && !idleUpdateStatus?.enabled && (
-            <Card
-              withBorder
-              padding="md"
-              radius="md"
-              style={{
-                borderLeft: "4px solid var(--mantine-color-blue-6)",
-              }}
-            >
-              <Stack gap="sm">
-                <Group gap="xs">
-                  <Loader size="xs" />
-                  <Text size="sm" fw={500}>
-                    {idleUpdateStatus.activeJob?.jobType === "idle_add_friend"
-                      ? idleUpdateStatus.activeJob?.stage === "wait_acceptance"
-                        ? "Bot 已发送好友申请，请登录 NET 接受好友请求"
-                        : idleUpdateStatus.activeJob?.stage === "send_request"
-                          ? "Bot 正在发送好友申请，请稍候..."
-                          : "闲时更新任务进行中..."
-                      : idleUpdateStatus.activeJob?.jobType ===
-                          "idle_update_score"
-                        ? idleUpdateStatus.activeJob?.stage === "update_score"
-                          ? "Bot 正在更新成绩..."
-                          : "闲时更新任务进行中..."
-                        : "闲时更新任务进行中..."}
-                  </Text>
-                </Group>
-                {idleUpdateStatus.activeJob?.jobType === "idle_add_friend" &&
-                  idleUpdateStatus.activeJob?.stage === "wait_acceptance" &&
-                  idleUpdateStatus.activeJob?.friendRequestSentAt && (
-                    <Text size="sm" c="red" fw={700}>
-                      若申请时间不是{" "}
-                      {formatFriendRequestSentAt(
-                        idleUpdateStatus.activeJob.friendRequestSentAt,
-                      )}
-                      ，请勿接受，可能是他人尝试登录！
-                    </Text>
-                  )}
-                {idleUpdateStatus.activeJob?.jobType === "idle_update_score" &&
-                  idleUpdateStatus.activeJob?.stage === "update_score" &&
-                  idleUpdateStatus.activeJob?.scoreProgress && (
-                    <Stack gap="xs">
-                      <Group justify="space-between" align="center">
-                        <Text size="sm" c="dimmed">
-                          更新进度
-                        </Text>
-                        <Text size="sm" fw={600}>
-                          {
-                            idleUpdateStatus.activeJob.scoreProgress
-                              .completedDiffs.length
-                          }{" "}
-                          /{" "}
-                          {idleUpdateStatus.activeJob.scoreProgress.totalDiffs}
-                        </Text>
-                      </Group>
-                      <Progress
-                        value={
-                          idleUpdateStatus.activeJob.scoreProgress.totalDiffs >
-                          0
-                            ? (idleUpdateStatus.activeJob.scoreProgress
-                                .completedDiffs.length /
-                                idleUpdateStatus.activeJob.scoreProgress
-                                  .totalDiffs) *
-                              100
-                            : 0
-                        }
-                        animated
-                        size="md"
-                        radius="xl"
-                      />
-                      {idleUpdateStatus.activeJob.scoreProgress.completedDiffs
-                        .length > 0 && (
-                        <Group gap="xs" mt={4}>
-                          {idleUpdateStatus.activeJob.scoreProgress.completedDiffs.map(
-                            (diff) => (
-                              <Badge
-                                radius="md"
-                                key={diff}
-                                size="sm"
-                                variant="filled"
-                                color={
-                                  diff === 0
-                                    ? "green"
-                                    : diff === 1
-                                      ? "yellow"
-                                      : diff === 2
-                                        ? "red"
-                                        : diff === 3
-                                          ? "grape"
-                                          : diff === 4
-                                            ? "violet"
-                                            : "pink"
-                                }
-                              >
-                                {DIFFICULTY_NAMES[diff] ?? `Diff ${diff}`}
-                              </Badge>
-                            ),
-                          )}
-                        </Group>
-                      )}
-                    </Stack>
-                  )}
-              </Stack>
-            </Card>
-          )}
-
-          {!idleUpdateStatus?.enabled && !idleUpdateStatus?.pendingJob && (
-            <Card withBorder padding="md" radius="md">
-              <Group justify="space-between" align="center">
-                <Text size="sm" c="dimmed">
-                  开启后 Bot 将在当日凌晨自动更新成绩
-                </Text>
-                <Button
-                  variant="light"
-                  size="xs"
-                  leftSection={<IconClock size={14} />}
-                  onClick={enableIdleUpdate}
-                  disabled={!profile?.friendCode || idleUpdateLoading}
-                >
-                  开启
-                </Button>
-              </Group>
-              {idleUpdateLoading && (
-                <Group gap="xs" mt={4}>
-                  <Loader size="xs" />
-                  <Text size="xs" c="dimmed">
-                    正在创建夜间更新任务...
-                  </Text>
-                </Group>
-              )}
-            </Card>
-          )}
-        </Stack>
-
         {/* Token Settings & Export Section */}
         <Stack gap="md">
           <SectionHeader
@@ -1664,7 +1237,7 @@ export default function SyncPage() {
                             importToken?: string;
                             nickname?: string;
                             message?: string;
-                          }>("/api/users/diving-fish/token", {
+                          }>("/api/v1/me/prober-tokens/diving-fish", {
                             method: "POST",
                             headers: {
                               Authorization: `Bearer ${token}`,
@@ -1685,7 +1258,7 @@ export default function SyncPage() {
 
                             // Step 2: Save token and export
                             const saveRes = await fetchJson<unknown>(
-                              "/api/users/profile",
+                              "/api/v1/me",
                               {
                                 method: "PATCH",
                                 headers: {
@@ -1710,7 +1283,7 @@ export default function SyncPage() {
                                   updates?: number;
                                   message?: string;
                                 };
-                              }>("/api/sync/latest/diving-fish", {
+                              }>("/api/v1/sync/latest/exports/diving-fish", {
                                 method: "POST",
                                 headers: {
                                   Authorization: `Bearer ${token}`,

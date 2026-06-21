@@ -33,7 +33,7 @@ async def fetch_bot_statuses() -> list[BotStatus]:
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
-                f"{backend_url}/api/admin/bot-status",
+                f"{backend_url}/api/v1/admin/bots",
                 headers={"x-admin-password": admin_password},
                 timeout=10,
             )

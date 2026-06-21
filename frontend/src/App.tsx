@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage";
 import { MantineProvider } from "@mantine/core";
 import { MusicProvider } from "./providers/MusicProvider";
 import { Notifications } from "@mantine/notifications";
+import { PwaInstallProvider } from "./providers/PwaInstallProvider";
 
 // Lazy-loaded routes for code splitting
 const AuthedLayout = lazy(() => import("./layouts/AuthedLayout"));
@@ -60,47 +61,52 @@ function App() {
       theme={{ fontFamily: systemSans, headings: { fontFamily: systemSans } }}
     >
       <Notifications position="top-center" />
-      <BrowserRouter>
-        <AuthProvider>
-          <Suspense fallback={<PageLoader />}>
-            <Routes>
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/admin" element={<AdminLayout />}>
-                <Route index element={<AdminActiveJobsPage />} />
-                <Route path="auto-update" element={<AdminAutoUpdatePage />} />
+      <PwaInstallProvider>
+        <BrowserRouter>
+          <AuthProvider>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/admin" element={<AdminLayout />}>
+                  <Route index element={<AdminActiveJobsPage />} />
+                  <Route path="auto-update" element={<AdminAutoUpdatePage />} />
+                  <Route
+                    path="prober-exports"
+                    element={<AdminProberExportsPage />}
+                  />
+                  <Route path="sync" element={<AdminSyncPage />} />
+                  <Route path="job-debug" element={<AdminJobDebugPage />} />
+                  <Route path="users" element={<AdminUsersPage />} />
+                  <Route
+                    path="worker-logs"
+                    element={<AdminWorkerLogsPage />}
+                  />
+                </Route>
                 <Route
-                  path="prober-exports"
-                  element={<AdminProberExportsPage />}
-                />
-                <Route path="sync" element={<AdminSyncPage />} />
-                <Route path="job-debug" element={<AdminJobDebugPage />} />
-                <Route path="users" element={<AdminUsersPage />} />
-                <Route path="worker-logs" element={<AdminWorkerLogsPage />} />
-              </Route>
-              <Route
-                element={
-                  <RequireAuth>
-                    <AuthedLayout />
-                  </RequireAuth>
-                }
-              >
-                <Route path="/app" element={<HomePage />} />
-                <Route path="/app/sync" element={<SyncPage />} />
-                <Route
-                  path="/app/scores"
                   element={
-                    <MusicProvider>
-                      <ScorePage />
-                    </MusicProvider>
+                    <RequireAuth>
+                      <AuthedLayout />
+                    </RequireAuth>
                   }
-                />
-              </Route>
-              <Route path="/about" element={<AboutPage />} />
-              <Route path="*" element={<DefaultRedirect />} />
-            </Routes>
-          </Suspense>
-        </AuthProvider>
-      </BrowserRouter>
+                >
+                  <Route path="/app" element={<HomePage />} />
+                  <Route path="/app/sync" element={<SyncPage />} />
+                  <Route
+                    path="/app/scores"
+                    element={
+                      <MusicProvider>
+                        <ScorePage />
+                      </MusicProvider>
+                    }
+                  />
+                </Route>
+                <Route path="/about" element={<AboutPage />} />
+                <Route path="*" element={<DefaultRedirect />} />
+              </Routes>
+            </Suspense>
+          </AuthProvider>
+        </BrowserRouter>
+      </PwaInstallProvider>
     </MantineProvider>
   );
 }

@@ -56,7 +56,7 @@ python app.py
 | 项目 | 默认值 | 说明 |
 |------|--------|------|
 | Backend URL | `https://api.maiscorehub.bakapiano.com` | 后端 API 地址 |
-| Admin 密码 | 空 | 用于调用 `/api/admin/bot-status` |
+| Admin 密码 | 空 | 用于调用 `/api/v1/admin/bots` |
 | 轮询间隔 | `30` 秒 | Bot 状态检查 + 自动恢复间隔 |
 | 设备扫描间隔 | `10` 秒 | ADB 设备扫描间隔 |
 

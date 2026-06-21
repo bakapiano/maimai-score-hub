@@ -8,7 +8,6 @@ import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
 
 import { BotFriendSnapshotService } from '../admin/bot-friend-snapshot.service';
 import { BotStatusService } from '../admin/bot-status.service';
-import { JobService } from '../job/job.service';
 import { MusicEntity } from '../music/music.schema';
 import type { ChartPayload, MusicDocument } from '../music/music.schema';
 import { SdgbJobDispatcher } from '../sdgb-worker/sdgb-job.dispatcher';
@@ -59,15 +58,13 @@ export class QrExpiredError extends Error {
  *  - FAST (sync): cabinetUserId already bound → look user up, sign a
  *    token, return { kind:'fast', token, user } from the original POST.
  *  - SLOW (async): brand-new user. The POST returns { kind:'async',
- *    attemptId } immediately; the FE polls /auth/login-by-qr/:id every
+ *    attemptId } immediately; the FE polls /auth/qr-login/:id every
  *    second or two until status='matched' (token attached) or 'failed'
  *    (error attached). The actual work runs in the background:
  *      1. pick a bot
- *      2. fetch_friend_list (before)  ← dxnet job
- *      3. addRival                    ← sdgb job
- *      4. fetch_friend_list (after)   ← dxnet job
- *      5. diff result2 - result1 by friendCode
- *      6. unique (name,rating) match in the candidate set → done
+ *      2. addRival                    ← sdgb job
+ *      3. wait for bot friend snapshot from worker status report
+ *      4. unique (name,rating) match in the snapshot → done
  */
 @Injectable()
 export class QrLoginService {
@@ -78,7 +75,6 @@ export class QrLoginService {
     private readonly users: UsersService,
     private readonly botStatus: BotStatusService,
     private readonly snapshot: BotFriendSnapshotService,
-    private readonly jobs: JobService,
     private readonly jwt: JwtService,
     @InjectModel(MusicEntity.name)
     private readonly musicModel: Model<MusicDocument>,
@@ -216,11 +212,8 @@ export class QrLoginService {
       `QR-login attemptId=${attemptId} addRival rc1=${rival.returnCode1} rc2=${rival.returnCode2}`,
     );
 
-    // (2) Wait for the bot's regular 60s status report to land a fresh
-    // snapshot (`updatedAt > triggeredAt`), then look up (userName,
-    // rating) in it. We never call fetch_friend_list ourselves — that
-    // job class is reserved for future use; the snapshot is good
-    // enough and saves dxnet round-trips.
+    // (2) Wait for the bot status report to land a fresh snapshot
+    // (`updatedAt > triggeredAt`), then look up (userName, rating) in it.
     await setStatus('waiting_snapshot');
     type Friend = {
       friendCode: string;
@@ -328,7 +321,7 @@ export class QrLoginService {
   }
 
   /**
-   * FE poll endpoint backing /auth/login-by-qr/:attemptId.
+   * FE poll endpoint backing /auth/qr-login/:attemptId.
    */
   async pollAttempt(attemptId: string): Promise<QrLoginPollResult> {
     const doc = await this.attemptModel.findOne({ id: attemptId }).lean();

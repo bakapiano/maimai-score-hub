@@ -11,19 +11,17 @@ export const JobStatusSchema = z.enum([
 export const JobStageSchema = z.enum([
   "send_request",
   "wait_acceptance",
+  "wait_user_request",
+  "accept_request",
   "update_score",
-  "fetch_friend_list",
+  "get_user_recent_event",
 ]);
 
 export const JobTypeSchema = z.enum([
-  "immediate",
-  "idle_add_friend",
-  "idle_update_score",
-  // QR-login support: simply fetch the bot's friend list and return it
-  // in result.friends. No score sync, no add/remove. Job is queued
-  // pre-assigned to a specific bot (botUserFriendCode) so only the
-  // worker holding that cookie picks it up.
-  "fetch_friend_list",
+  "send_friend_request",
+  "accept_friend_request",
+  "update_score",
+  "get_user_recent_event",
 ]);
 
 export const ScoreProgressSchema = z.object({
@@ -49,9 +47,11 @@ export const JobResponseSchema = z.object({
   id: z.string(),
   friendCode: z.string(),
   jobType: JobTypeSchema,
+  priority: z.number().int().optional(),
   skipUpdateScore: z.boolean(),
   botUserFriendCode: z.string().nullable().optional(),
   friendRequestSentAt: z.string().nullable().optional(),
+  friendRequestWaitStartedAt: z.string().nullable().optional(),
   status: JobStatusSchema,
   stage: JobStageSchema,
   profile: z.unknown().optional(),
@@ -66,6 +66,7 @@ export const JobResponseSchema = z.object({
     .nullable()
     .optional(),
   diffsToScrape: z.array(z.number().int()).nullable().optional(),
+  runAt: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -84,6 +85,10 @@ export const JobByFriendCodeActiveResponseSchema = z.object({
   job: JobResponseSchema.nullable(),
 });
 
+export const JobWakeResponseSchema = z.object({
+  job: JobResponseSchema,
+});
+
 export const JobPatchBodySchema = z.object({
   botUserFriendCode: z.string().nullable().optional(),
   status: JobStatusSchema.optional(),
@@ -92,7 +97,9 @@ export const JobPatchBodySchema = z.object({
   profile: z.unknown().optional(),
   error: z.string().nullable().optional(),
   friendRequestSentAt: z.string().nullable().optional(),
+  friendRequestWaitStartedAt: z.string().nullable().optional(),
   executing: z.boolean().optional(),
+  runAt: z.string().nullable().optional(),
   updatedAt: z.string().optional(),
   scoreProgress: ScoreProgressSchema.nullable().optional(),
   addCompletedDiff: z.number().int().min(0).optional(),
@@ -101,6 +108,7 @@ export const JobPatchBodySchema = z.object({
 
 export const JobNextBodySchema = z.object({
   botUserFriendCode: z.string().min(1),
+  waitMs: z.number().int().min(0).max(25000).optional(),
 });
 
 export const JobRecentStatsSchema = z.object({
@@ -118,6 +126,7 @@ export type ScoreProgress = z.infer<typeof ScoreProgressSchema>;
 export type JobResponse = z.infer<typeof JobResponseSchema>;
 export type JobCreateBody = z.infer<typeof JobCreateBodySchema>;
 export type JobCreateResponse = z.infer<typeof JobCreateResponseSchema>;
+export type JobWakeResponse = z.infer<typeof JobWakeResponseSchema>;
 export type JobPatchBody = z.infer<typeof JobPatchBodySchema>;
 export type JobNextBody = z.infer<typeof JobNextBodySchema>;
 export type JobRecentStats = z.infer<typeof JobRecentStatsSchema>;

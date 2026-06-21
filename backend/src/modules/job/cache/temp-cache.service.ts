@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import type { FriendVsSong } from '@maimai-score-hub/shared';
 import { Model } from 'mongoose';
 import {
   JobTempCacheEntity,
@@ -21,17 +22,21 @@ export class JobTempCacheService {
   ) {}
 
   /**
-   * 获取缓存的 HTML
+   * 获取缓存的 FriendVS 解析结果
    */
-  async get(jobId: string, diff: number, type: number): Promise<string | null> {
+  async get(
+    jobId: string,
+    diff: number,
+    type: number,
+  ): Promise<FriendVsSong[] | null> {
     const cache = await this.cacheModel
       .findOne({ jobId, diff, type })
-      .select('html')
+      .select('songs')
       .lean();
 
     if (cache) {
       this.logger.log(`Cache hit for job ${jobId}, diff ${diff}, type ${type}`);
-      return cache.html;
+      return cache.songs;
     }
 
     return null;
@@ -40,7 +45,12 @@ export class JobTempCacheService {
   /**
    * 设置缓存
    */
-  async set(jobId: string, diff: number, type: number, html: string) {
+  async set(
+    jobId: string,
+    diff: number,
+    type: number,
+    songs: FriendVsSong[],
+  ) {
     const now = new Date();
 
     await this.cacheModel.updateOne(
@@ -50,7 +60,7 @@ export class JobTempCacheService {
           jobId,
           diff,
           type,
-          html,
+          songs,
           createdAt: now,
         },
       },

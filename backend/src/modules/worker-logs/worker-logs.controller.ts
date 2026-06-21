@@ -22,17 +22,14 @@ interface IngestBody {
 }
 
 /**
- * Two halves:
- *   - POST /worker-logs/:kind/ingest — workers stream batches here. NO
- *     admin guard (same posture as /sdgb-job/next and /job/next: workers
- *     are trusted by virtue of network reachability, not by header).
- *   - GET  /worker-logs/* — admin-only inspection endpoints.
+ * Workers stream log batches here. Same guard posture as the other
+ * worker-facing APIs: shared secret when ADMIN_PASSWORD is configured.
  */
-@Controller('worker-logs')
-export class WorkerLogsController {
+@Controller('workers/logs')
+export class WorkerLogIngestController {
   constructor(private readonly logs: WorkerLogsService) {}
 
-  @Post(':kind/ingest')
+  @Post(':kind/batches')
   @UseGuards(WorkerAuthGuard)
   async ingest(@Param('kind') kind: string, @Body() body: IngestBody) {
     if (kind !== 'sdgb' && kind !== 'dxnet') {
@@ -52,9 +49,14 @@ export class WorkerLogsController {
       body.entries as WorkerLogIngestEntry[],
     );
   }
+}
+
+@Controller('admin/worker-logs')
+@UseGuards(AdminGuard)
+export class AdminWorkerLogsController {
+  constructor(private readonly logs: WorkerLogsService) {}
 
   @Get()
-  @UseGuards(AdminGuard)
   async list(
     @Query('workerKind') workerKind?: string,
     @Query('workerId') workerId?: string,
@@ -73,7 +75,9 @@ export class WorkerLogsController {
       : undefined;
     return this.logs.list({
       workerKind:
-        workerKind === 'sdgb' || workerKind === 'dxnet' ? workerKind : undefined,
+        workerKind === 'sdgb' || workerKind === 'dxnet'
+          ? workerKind
+          : undefined,
       workerId: workerId?.trim() || undefined,
       level:
         level === 'log' || level === 'warn' || level === 'error'
@@ -86,7 +90,6 @@ export class WorkerLogsController {
   }
 
   @Get('workers')
-  @UseGuards(AdminGuard)
   async workers() {
     return this.logs.listWorkerIds();
   }

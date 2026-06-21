@@ -64,7 +64,7 @@ export class UserEntity {
   lastHashCheckAt!: Date | null;
 
   /**
-   * Last time AutoUpdateScheduler actually created an idle_update_score
+   * Last time AutoUpdateScheduler actually created an update_score
    * job for this user. Throttle: at most once per 30 min per user.
    * Combined with an in-flight check (any queued/processing job for the
    * same friendCode → skip), this prevents both fan-out under failure
@@ -75,7 +75,7 @@ export class UserEntity {
   lastAutoUpdateJobAt!: Date | null;
 
   /**
-   * Number of consecutive failed `idle_update_score` jobs created by
+   * Number of consecutive failed `update_score` jobs created by
    * AutoUpdateScheduler for this user. Reset to 0 whenever a job
    * completes successfully or when an admin manually triggers a
    * refresh. Drives the exponential backoff window below.
@@ -97,6 +97,10 @@ export class UserEntity {
    */
   @Prop({ type: Date, default: null })
   autoUpdateBackoffUntil!: Date | null;
+
+  createdAt!: Date;
+
+  updatedAt!: Date;
 }
 
 export type UserDocument = HydratedDocument<UserEntity>;

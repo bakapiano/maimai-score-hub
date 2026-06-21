@@ -82,7 +82,8 @@ export default function AdminActiveJobsPage() {
 
   const handleCleanupJobs = useCallback(async () => {
     if (!password) return;
-    if (!window.confirm("确定要清理 7 天前的所有任务记录吗？此操作不可撤销。")) return;
+    if (!window.confirm("确定要清理 7 天前的所有任务记录吗？此操作不可撤销。"))
+      return;
     setCleanupLoading(true);
     setCleanupResult(null);
     const res = await adminApi.cleanupJobs({
@@ -138,7 +139,7 @@ export default function AdminActiveJobsPage() {
         cabinetUserId = Number(trimmed);
       }
       const res = await fetch(
-        `/api/admin/bot-status/${encodeURIComponent(friendCode)}/cabinet-user-id`,
+        `/api/v1/admin/bots/${encodeURIComponent(friendCode)}/cabinet-user-id`,
         {
           method: "PATCH",
           headers: {
@@ -178,7 +179,7 @@ export default function AdminActiveJobsPage() {
       )
         return;
       const res = await fetch(
-        `/api/admin/bot-status/${encodeURIComponent(friendCode)}`,
+        `/api/v1/admin/bots/${encodeURIComponent(friendCode)}`,
         {
           method: "DELETE",
           headers: { "x-admin-password": password },
@@ -221,7 +222,7 @@ export default function AdminActiveJobsPage() {
       setCabinetBindBusy(friendCode);
       try {
         const res = await fetch(
-          `/api/admin/bot-status/${encodeURIComponent(friendCode)}/bind-cabinet-qr`,
+          `/api/v1/admin/bots/${encodeURIComponent(friendCode)}/cabinet/bind-qr`,
           {
             method: "POST",
             headers: {
@@ -414,7 +415,10 @@ export default function AdminActiveJobsPage() {
             <IconTrash size={20} />
             <Text fw={600}>数据维护</Text>
             {cleanupResult && (
-              <Text size="sm" c={cleanupResult.startsWith("已清理") ? "green" : "red"}>
+              <Text
+                size="sm"
+                c={cleanupResult.startsWith("已清理") ? "green" : "red"}
+              >
                 {cleanupResult}
               </Text>
             )}
@@ -537,11 +541,7 @@ export default function AdminActiveJobsPage() {
                           <Text size="sm" c={bot.remark ? undefined : "dimmed"}>
                             {bot.remark || "-"}
                           </Text>
-                          <ActionIcon
-                            size="xs"
-                            variant="subtle"
-                            color="gray"
-                          >
+                          <ActionIcon size="xs" variant="subtle" color="gray">
                             <IconEdit size={12} />
                           </ActionIcon>
                         </Group>

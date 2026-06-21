@@ -5,7 +5,7 @@ export type WorkerLogLevel = 'log' | 'warn' | 'error';
 
 /**
  * One row per console line shipped by a worker. Workers buffer locally
- * and POST batches to /api/worker-logs every few seconds, so this
+ * and POST batches to /api/v1/workers/logs/:kind/batches every few seconds, so this
  * collection grows fast — keep the per-row payload tight and rely on a
  * TTL index to drop old rows.
  */

@@ -1,10 +1,10 @@
-import { initContract } from '@ts-rest/core';
+import { initContract } from "@ts-rest/core";
 
 import {
   SdgbJobNextBodySchema,
   SdgbJobPatchBodySchema,
   SdgbJobResponseSchema,
-} from './sdgb-worker.schema';
+} from "./sdgb-worker.schema";
 
 const c = initContract();
 
@@ -17,8 +17,8 @@ const c = initContract();
  */
 export const sdgbWorkerContract = c.router({
   next: {
-    method: 'POST',
-    path: '/sdgb-job/next',
+    method: "POST",
+    path: "/workers/sdgb/jobs/next",
     body: SdgbJobNextBodySchema,
     responses: {
       200: SdgbJobResponseSchema,
@@ -26,14 +26,14 @@ export const sdgbWorkerContract = c.router({
     },
   },
   get: {
-    method: 'GET',
-    path: '/sdgb-job/:jobId',
+    method: "GET",
+    path: "/workers/sdgb/jobs/:jobId",
     pathParams: c.type<{ jobId: string }>(),
     responses: { 200: SdgbJobResponseSchema, 404: c.type<{ error: string }>() },
   },
   patch: {
-    method: 'PATCH',
-    path: '/sdgb-job/:jobId',
+    method: "PATCH",
+    path: "/workers/sdgb/jobs/:jobId",
     pathParams: c.type<{ jobId: string }>(),
     body: SdgbJobPatchBodySchema,
     responses: { 200: SdgbJobResponseSchema, 404: c.type<{ error: string }>() },

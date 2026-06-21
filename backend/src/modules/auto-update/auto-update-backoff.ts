@@ -1,7 +1,7 @@
 /**
  * Exponential backoff policy for the auto-update scheduler. Pulled
  * into its own module so JobService (which records failures on the
- * dxnet idle_update_score lifecycle transitions) can use the same
+ * dxnet update_score lifecycle transitions) can use the same
  * numbers as the scheduler (which reads autoUpdateBackoffUntil to
  * decide whether to skip a user) without creating a circular import
  * between the job and auto-update modules.

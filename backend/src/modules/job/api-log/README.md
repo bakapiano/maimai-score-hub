@@ -12,7 +12,7 @@
 ## 文件说明
 
 - `api-log.controller.ts`  
-  对外提供 Worker 上报接口（挂在 `/api/job/*` 路由下）。
+  对外提供 Worker 上报接口（挂在 `/api/v1/workers/dxnet/jobs/*` 路由下）。
 
 - `api-log.schema.ts`  
   定义 `job_api_logs` 集合结构与 TTL 索引。
@@ -24,9 +24,9 @@
 
 ## 接口
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/job/:jobId/api-logs` | Worker 批量上报 API 调用日志 |
+| 方法 | 路径                                         | 说明                         |
+| ---- | -------------------------------------------- | ---------------------------- |
+| POST | `/api/v1/workers/dxnet/jobs/:jobId/api-logs` | Worker 批量上报 API 调用日志 |
 
 上报 body 结构示例：
 

@@ -21,12 +21,34 @@ import { useRef, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
 import { useAuth } from "../providers/AuthProvider";
+import { InstallAppButton } from "./InstallAppButton";
+import { usePwaInstall } from "../hooks/usePwaInstall";
 import { useNavigate } from "react-router-dom";
 
 type Props = {
   opened: boolean;
   onClose: () => void;
 };
+
+function InstallAppSettingsSection() {
+  const { status } = usePwaInstall();
+
+  if (status === "installed" || status === "unavailable") return null;
+
+  return (
+    <div>
+      <Text size="sm" fw={500} mb="xs">
+        应用
+      </Text>
+      <InstallAppButton fullWidth />
+      {status === "ios" && (
+        <Text size="xs" c="dimmed" mt={4}>
+          iOS 请使用浏览器分享菜单添加到主屏幕
+        </Text>
+      )}
+    </div>
+  );
+}
 
 export function SettingsPanel({ opened, onClose }: Props) {
   const { colorScheme, setColorScheme } = useMantineColorScheme();
@@ -49,7 +71,7 @@ export function SettingsPanel({ opened, onClose }: Props) {
 
     setDeletingAccount(true);
     try {
-      const res = await fetch("/api/users/me", {
+      const res = await fetch("/api/v1/me", {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -184,6 +206,8 @@ export function SettingsPanel({ opened, onClose }: Props) {
               ]}
             />
           </div>
+
+          <InstallAppSettingsSection />
 
           <div>
             <Text size="sm" fw={500} mb="xs">

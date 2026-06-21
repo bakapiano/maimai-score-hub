@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const MusicDetailSchema = z.object({
   level: z.number().int(),
@@ -15,16 +15,16 @@ export const MusicEntrySchema = z.object({
 // ───────────────────────── job-type union ─────────────────────────
 
 export const SdgbJobTypeSchema = z.enum([
-  'scan_qr',
-  'get_rival_hash',
-  'add_rival',
+  "scan_qr",
+  "get_rival_hash",
+  "add_rival",
 ]);
 
 export const SdgbJobStatusSchema = z.enum([
-  'queued',
-  'processing',
-  'completed',
-  'failed',
+  "queued",
+  "processing",
+  "completed",
+  "failed",
 ]);
 
 // Per-job payloads (sent by backend, consumed by sdgb-worker).
@@ -77,7 +77,7 @@ export const SdgbJobResponseSchema = z.object({
 
 // ───────────────────────── claim / patch ─────────────────────────
 
-/** Sent by sdgb-worker to /sdgb-job/next. */
+/** Sent by sdgb-worker to /workers/sdgb/jobs/next. */
 export const SdgbJobNextBodySchema = z.object({
   workerId: z.string().min(1),
 });

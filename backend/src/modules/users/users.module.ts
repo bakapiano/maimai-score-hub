@@ -3,7 +3,7 @@ import { UserEntity, UserSchema } from './user.schema';
 
 import { AuthModule } from '../auth/auth.module';
 import { MongooseModule } from '@nestjs/mongoose';
-import { UsersController } from './users.controller';
+import { MeController } from './me.controller';
 import { UsersService } from './users.service';
 import { JobModule } from '../job/job.module';
 import { AdminModule } from '../admin/admin.module';
@@ -11,6 +11,7 @@ import { CabinetService } from './cabinet.service';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { SyncEntity, SyncSchema } from '../sync/sync.schema';
 import { JobEntity, JobSchema } from '../job/job.schema';
+import { AccountDeletionService } from './account-deletion.service';
 
 @Module({
   imports: [
@@ -24,8 +25,8 @@ import { JobEntity, JobSchema } from '../job/job.schema';
       { name: JobEntity.name, schema: JobSchema },
     ]),
   ],
-  controllers: [UsersController],
-  providers: [UsersService, CabinetService],
+  controllers: [MeController],
+  providers: [UsersService, CabinetService, AccountDeletionService],
   exports: [UsersService, CabinetService],
 })
 export class UsersModule {}

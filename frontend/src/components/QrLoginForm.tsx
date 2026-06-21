@@ -77,7 +77,7 @@ export function QrLoginForm({
       return pollWithBackoff<string>(
         async () => {
           const { body } = await fetchForPoll(
-            `/api/auth/login-by-qr/${attemptId}`,
+            `/api/v1/auth/qr-login/${attemptId}`,
             { signal },
           );
           const json = body as {
@@ -165,7 +165,7 @@ export function QrLoginForm({
     setBusy(true);
     setProgress(null);
     try {
-      const res = await fetch("/api/auth/login-by-qr", {
+      const res = await fetch("/api/v1/auth/qr-login", {
         method: "POST",
         headers:
           typeof payload === "string"

@@ -12,7 +12,7 @@ import {
 import { AdminGuard } from '../admin/admin.guard';
 import { AutoUpdateSchedulerService } from './auto-update-scheduler.service';
 
-@Controller('auto-update')
+@Controller('admin/auto-updates')
 export class AutoUpdateController {
   constructor(private readonly scheduler: AutoUpdateSchedulerService) {}
 
@@ -30,7 +30,7 @@ export class AutoUpdateController {
    * Admin support tool: force a refresh for one specific user, regardless
    * of whether their score hash actually changed. Skips the hash check.
    */
-  @Post('trigger/:friendCode')
+  @Post('users/:friendCode/trigger')
   @UseGuards(AdminGuard)
   async triggerByFriendCode(@Param('friendCode') friendCode: string) {
     if (!friendCode || !/^\d+$/.test(friendCode)) {
@@ -57,7 +57,7 @@ export class AutoUpdateController {
   }
 
   /**
-   * Per-user job timeline (sdgb hash checks + dxnet idle_update_score
+   * Per-user job timeline (sdgb hash checks + dxnet update_score
    * jobs, merged by createdAt desc). Used by the admin UI to verify that
    * the hash-diff guard is working — i.e. a hash_check entry with the
    * same hash should NOT be followed by an update_job.

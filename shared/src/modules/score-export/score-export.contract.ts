@@ -1,19 +1,38 @@
-import { initContract } from '@ts-rest/core';
+import { initContract } from "@ts-rest/core";
 
 const c = initContract();
 
 export const scoreExportContract = c.router({
-  exportByFriendCode: {
-    method: 'GET',
-    path: '/score-export/:friendCode',
-    pathParams: c.type<{ friendCode: string }>(),
+  best50: {
+    method: "GET",
+    path: "/score-exports/best50",
     responses: {
-      200: c.type<{
-        friendCode: string;
-        generatedAt: string;
-        records: Array<Record<string, unknown>>;
-      }>(),
-      404: c.type<{ message: string }>(),
+      200: c.otherResponse({
+        contentType: "image/png",
+        body: c.type<Blob>(),
+      }),
+    },
+  },
+  level: {
+    method: "GET",
+    path: "/score-exports/level",
+    query: c.type<{ level?: string }>(),
+    responses: {
+      200: c.otherResponse({
+        contentType: "image/png",
+        body: c.type<Blob>(),
+      }),
+    },
+  },
+  version: {
+    method: "GET",
+    path: "/score-exports/version",
+    query: c.type<{ version?: string; minLevel?: string; plan?: string }>(),
+    responses: {
+      200: c.otherResponse({
+        contentType: "image/png",
+        body: c.type<Blob>(),
+      }),
     },
   },
 });

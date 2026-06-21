@@ -9,6 +9,7 @@ export const BotStatusItemSchema = z
     friendCode: z.string(),
     available: z.boolean(),
     friendCount: z.number().nullable().optional(),
+    friendsUpdatedAt: z.string().nullable().optional(),
     lastReportedAt: z.string().optional(),
     remark: z.string().nullable().optional(),
     cabinetUserId: z.number().int().nullable().optional(),
@@ -21,6 +22,7 @@ export const ReportBotStatusBodySchema = z.object({
       friendCode: z.string(),
       available: z.boolean(),
       friendCount: z.number().optional(),
+      friendsUpdatedAt: z.string().optional(),
       /**
        * Optional rich friend list for the QR-login reverse-mapping
        * feature. Workers populate this on every status tick when the bot

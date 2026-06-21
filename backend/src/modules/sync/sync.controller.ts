@@ -46,7 +46,7 @@ export class SyncController {
     return this.syncs.getLatestWithScores(friendCode);
   }
 
-  @Post('latest/diving-fish')
+  @Post('latest/exports/diving-fish')
   async exportToDivingFish(@Req() req: AuthedRequest) {
     const friendCode = requireFriendCode(req);
     const userId = requireUserId(req);
@@ -60,7 +60,7 @@ export class SyncController {
     return this.syncs.exportToDivingFish(friendCode, token);
   }
 
-  @Post('latest/lxns')
+  @Post('latest/exports/lxns')
   async exportToLxns(@Req() req: AuthedRequest) {
     const friendCode = requireFriendCode(req);
     const userId = requireUserId(req);

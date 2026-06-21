@@ -23,6 +23,9 @@ const CLAIM_TIMEOUT_MS = Number(process.env.SDGB_CLAIM_TIMEOUT_MS ?? 2 * 60 * 10
 
 /** Queued jobs older than this are auto-failed (the worker is presumed down). */
 const QUEUE_TIMEOUT_MS = Number(process.env.SDGB_QUEUE_TIMEOUT_MS ?? 10 * 60 * 1000);
+const WORKER_STALE_MS = Number(process.env.SDGB_WORKER_STALE_MS ?? 2 * 60 * 1000);
+const RECENT_JOB_LIMIT = 20;
+const SDGB_JOB_TYPES: SdgbJobType[] = ['scan_qr', 'get_rival_hash', 'add_rival'];
 
 export interface SdgbJobView {
   id: string;
@@ -34,6 +37,47 @@ export interface SdgbJobView {
   requesterTag: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface SdgbAdminJobView extends SdgbJobView {
+  ageSeconds: number;
+  durationMs: number | null;
+}
+
+export interface SdgbAdminStatusView {
+  workers: Array<{
+    workerId: string;
+    lastSeenAt: string;
+    ageSeconds: number;
+    jobsClaimed: number;
+    alive: boolean;
+  }>;
+  queue: Record<SdgbJobStatus, number>;
+  byType: Array<{
+    jobType: SdgbJobType;
+    queued: number;
+    processing: number;
+    completedLastHour: number;
+    failedLastHour: number;
+  }>;
+  oldestQueuedAgeSeconds: number | null;
+  oldestProcessingAgeSeconds: number | null;
+  recentJobs: SdgbAdminJobView[];
+}
+
+export interface SdgbJobListOptions {
+  jobType?: SdgbJobType;
+  status?: SdgbJobStatus;
+  tag?: string;
+  page: number;
+  pageSize: number;
+}
+
+export interface SdgbJobListView {
+  items: SdgbAdminJobView[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 function toView(doc: SdgbJobEntity): SdgbJobView {
@@ -48,6 +92,30 @@ function toView(doc: SdgbJobEntity): SdgbJobView {
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
   };
+}
+
+function secondsSince(date: Date | null | undefined, nowMs: number): number | null {
+  if (!date) return null;
+  return Math.max(0, Math.floor((nowMs - date.getTime()) / 1000));
+}
+
+function toAdminView(doc: SdgbJobEntity, nowMs: number): SdgbAdminJobView {
+  let durationMs: number | null = null;
+  if (doc.status === 'processing') {
+    const startedAt = doc.claimedAt ?? doc.updatedAt;
+    durationMs = Math.max(0, nowMs - startedAt.getTime());
+  } else if (doc.status === 'completed' || doc.status === 'failed') {
+    durationMs = Math.max(0, doc.updatedAt.getTime() - doc.createdAt.getTime());
+  }
+  return {
+    ...toView(doc),
+    ageSeconds: secondsSince(doc.updatedAt, nowMs) ?? 0,
+    durationMs,
+  };
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 @Injectable()
@@ -93,6 +161,143 @@ export class SdgbJobService {
     const doc = await this.model.findOne({ id: jobId });
     if (!doc) throw new NotFoundException('Sdgb job not found');
     return toView(doc.toObject() as SdgbJobEntity);
+  }
+
+  async getAdminStatus(): Promise<SdgbAdminStatusView> {
+    const nowMs = Date.now();
+    const now = new Date(nowMs);
+    const oneHourAgo = new Date(nowMs - 60 * 60 * 1000);
+
+    const [
+      workers,
+      queueCounts,
+      byTypeCounts,
+      oldestQueued,
+      oldestProcessing,
+      recentJobs,
+    ] = await Promise.all([
+      this.statusModel.find().sort({ lastSeenAt: -1 }).lean<SdgbWorkerStatusEntity[]>(),
+      Promise.all(
+        (['queued', 'processing', 'completed', 'failed'] as SdgbJobStatus[]).map(
+          async (status) => [status, await this.model.countDocuments({ status })] as const,
+        ),
+      ),
+      this.model
+        .aggregate<{
+          _id: { jobType: SdgbJobType; status: SdgbJobStatus };
+          count: number;
+        }>([
+          {
+            $match: {
+              jobType: { $in: SDGB_JOB_TYPES },
+              $or: [
+                { status: { $in: ['queued', 'processing'] } },
+                {
+                  status: { $in: ['completed', 'failed'] },
+                  updatedAt: { $gte: oneHourAgo },
+                },
+              ],
+            },
+          },
+          {
+            $group: {
+              _id: { jobType: '$jobType', status: '$status' },
+              count: { $sum: 1 },
+            },
+          },
+        ])
+        .exec(),
+      this.model
+        .findOne({ status: 'queued' })
+        .sort({ createdAt: 1 })
+        .lean<SdgbJobEntity>(),
+      this.model
+        .findOne({ status: 'processing' })
+        .sort({ claimedAt: 1, updatedAt: 1 })
+        .lean<SdgbJobEntity>(),
+      this.model
+        .find()
+        .sort({ updatedAt: -1 })
+        .limit(RECENT_JOB_LIMIT)
+        .lean<SdgbJobEntity[]>(),
+    ]);
+
+    const queue: Record<SdgbJobStatus, number> = {
+      queued: 0,
+      processing: 0,
+      completed: 0,
+      failed: 0,
+    };
+    for (const [status, count] of queueCounts) {
+      queue[status] = count;
+    }
+
+    const byType = SDGB_JOB_TYPES.map((jobType) => ({
+      jobType,
+      queued: 0,
+      processing: 0,
+      completedLastHour: 0,
+      failedLastHour: 0,
+    }));
+    const byTypeMap = new Map(byType.map((row) => [row.jobType, row]));
+    for (const row of byTypeCounts) {
+      const target = byTypeMap.get(row._id.jobType);
+      if (!target) continue;
+      if (row._id.status === 'queued') target.queued = row.count;
+      if (row._id.status === 'processing') target.processing = row.count;
+      if (row._id.status === 'completed') target.completedLastHour = row.count;
+      if (row._id.status === 'failed') target.failedLastHour = row.count;
+    }
+
+    return {
+      workers: workers.map((worker) => {
+        const ageSeconds = secondsSince(worker.lastSeenAt, nowMs) ?? 0;
+        return {
+          workerId: worker.workerId,
+          lastSeenAt: worker.lastSeenAt.toISOString(),
+          ageSeconds,
+          jobsClaimed: worker.jobsClaimed,
+          alive: now.getTime() - worker.lastSeenAt.getTime() <= WORKER_STALE_MS,
+        };
+      }),
+      queue,
+      byType,
+      oldestQueuedAgeSeconds: secondsSince(oldestQueued?.createdAt, nowMs),
+      oldestProcessingAgeSeconds: secondsSince(
+        oldestProcessing?.claimedAt ?? oldestProcessing?.updatedAt,
+        nowMs,
+      ),
+      recentJobs: recentJobs.map((job) => toAdminView(job, nowMs)),
+    };
+  }
+
+  async listJobs(opts: SdgbJobListOptions): Promise<SdgbJobListView> {
+    const page = Math.max(1, opts.page);
+    const pageSize = Math.min(200, Math.max(1, opts.pageSize));
+    const filter: Record<string, unknown> = {};
+    if (opts.jobType) filter.jobType = opts.jobType;
+    if (opts.status) filter.status = opts.status;
+    if (opts.tag) {
+      filter.requesterTag = { $regex: escapeRegex(opts.tag), $options: 'i' };
+    }
+
+    const [total, docs] = await Promise.all([
+      this.model.countDocuments(filter),
+      this.model
+        .find(filter)
+        .sort({ updatedAt: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .lean<SdgbJobEntity[]>(),
+    ]);
+
+    const nowMs = Date.now();
+    return {
+      items: docs.map((job) => toAdminView(job, nowMs)),
+      total,
+      page,
+      pageSize,
+    };
   }
 
   /**

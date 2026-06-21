@@ -6,7 +6,6 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MusicController } from './music.controller';
 import { MusicService } from './music.service';
-import { AdminGuard } from '../admin/admin.guard';
 
 @Module({
   imports: [
@@ -17,7 +16,7 @@ import { AdminGuard } from '../admin/admin.guard';
     ]),
   ],
   controllers: [MusicController],
-  providers: [MusicService, AdminGuard],
+  providers: [MusicService],
   exports: [MusicService],
 })
 export class MusicModule {}

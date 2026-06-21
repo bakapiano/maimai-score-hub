@@ -7,13 +7,15 @@ export type JobStatus =
 export type JobStage =
   | 'send_request'
   | 'wait_acceptance'
+  | 'wait_user_request'
+  | 'accept_request'
   | 'update_score'
-  | 'fetch_friend_list';
+  | 'get_user_recent_event';
 export type JobType =
-  | 'immediate'
-  | 'idle_add_friend'
-  | 'idle_update_score'
-  | 'fetch_friend_list';
+  | 'send_friend_request'
+  | 'accept_friend_request'
+  | 'update_score'
+  | 'get_user_recent_event';
 
 /**
  * 成绩更新进度
@@ -41,7 +43,9 @@ export interface JobPatchBody {
   profile?: UserProfile;
   error?: string | null;
   friendRequestSentAt?: string | null;
+  friendRequestWaitStartedAt?: string | null;
   executing?: boolean;
+  runAt?: string | null;
   updatedAt?: string;
   scoreProgress?: ScoreProgress | null;
   addCompletedDiff?: number;
@@ -52,9 +56,11 @@ export interface JobResponse {
   id: string;
   friendCode: string;
   jobType: JobType;
+  priority?: number;
   skipUpdateScore: boolean;
   botUserFriendCode?: string | null;
   friendRequestSentAt?: string | null;
+  friendRequestWaitStartedAt?: string | null;
   status: JobStatus;
   stage: JobStage;
   // result?: any;
@@ -70,6 +76,7 @@ export interface JobResponse {
   isAuthenticated?: boolean;
   cabinetScoreMap?: Record<string, { achievement: number; dxScore: number }> | null;
   diffsToScrape?: number[] | null;
+  runAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

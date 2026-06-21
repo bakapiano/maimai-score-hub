@@ -22,15 +22,19 @@ export class BotFriendSnapshotService {
     private readonly model: Model<BotFriendSnapshotDocument>,
   ) {}
 
-  /** Full-overwrite per bot. Workers call this every status tick. */
-  async report(botFriendCode: string, friends: BotFriendRow[]): Promise<void> {
+  /** Full-overwrite per bot. Workers call this when they have a friend list. */
+  async report(
+    botFriendCode: string,
+    friends: BotFriendRow[],
+    updatedAt = new Date(),
+  ): Promise<void> {
     await this.model.updateOne(
       { botFriendCode },
       {
         $set: {
           botFriendCode,
           friends,
-          updatedAt: new Date(),
+          updatedAt,
         },
       },
       { upsert: true },
@@ -49,6 +53,31 @@ export class BotFriendSnapshotService {
       friends: doc.friends ?? [],
       updatedAt: doc.updatedAt ?? null,
     };
+  }
+
+  async hasFriend(botFriendCode: string, friendCode: string): Promise<boolean> {
+    const doc = await this.model
+      .findOne({ botFriendCode, 'friends.friendCode': friendCode })
+      .select({ _id: 1 })
+      .lean();
+    return !!doc;
+  }
+
+  async findBotHavingFriend(
+    friendCode: string,
+    botFriendCodes: string[],
+  ): Promise<string | null> {
+    if (botFriendCodes.length === 0) return null;
+
+    const docs = await this.model
+      .find({
+        botFriendCode: { $in: botFriendCodes },
+        'friends.friendCode': friendCode,
+      })
+      .select({ botFriendCode: 1, _id: 0 })
+      .lean();
+    const hits = new Set(docs.map((d) => d.botFriendCode));
+    return botFriendCodes.find((botFriendCode) => hits.has(botFriendCode)) ?? null;
   }
 
   /**

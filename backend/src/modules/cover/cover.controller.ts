@@ -1,38 +1,11 @@
-import {
-  Controller,
-  Get,
-  Param,
-  Post,
-  Req,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { CoverService } from './cover.service';
-import { AdminGuard } from '../admin/admin.guard';
 
-@Controller('cover')
+@Controller('catalog/covers')
 export class CoverController {
   constructor(private readonly covers: CoverService) {}
-
-  @Post('sync')
-  @UseGuards(AdminGuard)
-  async syncAll() {
-    return this.covers.syncAll();
-  }
-
-  @Post('force-sync')
-  @UseGuards(AdminGuard)
-  async forceSyncAll() {
-    return await this.covers.forceSyncAll();
-  }
-
-  @Post('backfill-variants')
-  @UseGuards(AdminGuard)
-  async backfillVariants() {
-    return await this.covers.backfillLocalVariants();
-  }
 
   @Get(':id')
   async getCover(

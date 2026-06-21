@@ -29,7 +29,7 @@ import { SdgbJobService } from './sdgb-job.service';
  * Producers (CabinetService, AutoUpdateScheduler, ...) MUST go through
  * SdgbJobService.enqueue, never through these HTTP endpoints.
  */
-@Controller('sdgb-job')
+@Controller('workers/sdgb/jobs')
 @UseGuards(WorkerAuthGuard)
 export class SdgbJobController {
   constructor(private readonly jobs: SdgbJobService) {}

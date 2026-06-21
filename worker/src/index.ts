@@ -3,17 +3,12 @@
  * 启动所有服务
  */
 
-import "./env.ts";
+import config from "./common/config.ts";
+import { startBotOAuth } from "./bot-oauth/index.ts";
+import { startLogger } from "./common/logger.ts";
+import { startWorker } from "./worker/worker.ts";
 
-import config from "./config.ts";
-import { proxy } from "./proxy.ts";
-import { startServer } from "./api.ts";
-import { startLogShipper } from "./log-shipper.ts";
-import { startWorker } from "./services/index.ts";
-
-// Tap console first so even early lines reach the admin log stream.
-// `kind: "dxnet"` matches the backend-side discriminator in WorkerLogEntity.
-startLogShipper({
+startLogger({
   backendUrl: (config.jobService?.baseUrl ?? "").replace(/\/$/, ""),
   kind: "dxnet",
   workerId:
@@ -21,30 +16,17 @@ startLogShipper({
     `dxnet-worker-${process.env.HOSTNAME || "unknown"}`,
 });
 
-// 全局异常处理
 process.on("uncaughtException", (error) => {
   console.error("[Main] Uncaught Exception:", error);
   console.error("[Main] Stack:", error.stack);
-  process.exit(1); // 退出让容器重启
+  process.exit(1);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
   console.error("[Main] Unhandled Rejection at:", promise);
   console.error("[Main] Reason:", reason);
-  process.exit(1); // 退出让容器重启
+  process.exit(1);
 });
 
-
-
-
-// 启动 HTTP API 服务
-startServer();
-
-// 启动 Worker 调度器
+startBotOAuth();
 startWorker();
-
-// 启动 HTTP/HTTPS 代理服务
-proxy.listen(config.httpProxy.port);
-proxy.on("error", (error: Error) => console.log(`[Main] Proxy error ${error}`));
-
-console.log(`[Main] V2 Proxy server listen on ${config.httpProxy.port}`);

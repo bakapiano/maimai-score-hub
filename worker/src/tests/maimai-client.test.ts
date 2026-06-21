@@ -1,6 +1,6 @@
 import { dirname, resolve } from "node:path";
 
-import { extractContainerRedMessage } from "../services/maimai-client.ts";
+import { extractContainerRedMessage } from "../common/maimai/infra/errors.ts";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 

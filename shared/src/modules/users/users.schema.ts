@@ -1,4 +1,3 @@
-import { JobResponseSchema } from "../job/job.schema";
 import { z } from "zod";
 
 export const UserProfileSchema = z
@@ -36,26 +35,6 @@ export const DivingFishTokenResponseSchema = z
     message: z.string().optional(),
   })
   .passthrough();
-
-export const IdleUpdateStatusSchema = z.object({
-  enabled: z.boolean(),
-  botFriendCode: z.string().nullable(),
-  pendingJob: z.boolean(),
-  activeJob: JobResponseSchema.nullable().optional(),
-});
-
-export const IdleUpdateEnableResponseSchema = z
-  .object({
-    jobId: z.string().optional(),
-    job: JobResponseSchema.optional(),
-    message: z.string(),
-  })
-  .passthrough();
-
-export const IdleUpdateDisableResponseSchema = z.object({
-  ok: z.boolean(),
-  message: z.string(),
-});
 
 export type UpdateProfileBody = z.infer<typeof UpdateProfileBodySchema>;
 export type DivingFishTokenBody = z.infer<typeof DivingFishTokenBodySchema>;

@@ -13,6 +13,7 @@ export interface BotStatus {
   available: boolean;
   lastReportedAt: string;
   friendCount: number | null;
+  friendsUpdatedAt: string | null;
   remark: string | null;
   cabinetUserId: number | null;
 }
@@ -65,7 +66,12 @@ export class BotStatusService implements OnModuleDestroy {
    * 检测状态变化并触发飞书通知
    */
   async report(
-    bots: { friendCode: string; available: boolean; friendCount?: number }[],
+    bots: {
+      friendCode: string;
+      available: boolean;
+      friendCount?: number;
+      friendsUpdatedAt?: string;
+    }[],
   ): Promise<void> {
     const now = new Date();
 
@@ -82,6 +88,7 @@ export class BotStatusService implements OnModuleDestroy {
       const prev = previousMap.get(bot.friendCode);
       const wasAvailable = prev?.available ?? true;
       const nowAvailable = bot.available;
+      const friendsUpdatedAt = parseDateOrNull(bot.friendsUpdatedAt);
 
       // 计算 notifiedUnavailable 标记：
       // - 从可用变为不可用：保持当前值（稍后通知逻辑会更新）
@@ -96,12 +103,9 @@ export class BotStatusService implements OnModuleDestroy {
             $set: {
               available: bot.available,
               lastReportedAt: now,
-              friendCount: bot.friendCount ?? null,
-              // Worker reported friends → satisfies any pending refresh
-              // request for this bot.
-              ...(bot.friendCount !== undefined
-                ? { friendListRefreshRequestedAt: null }
-                : {}),
+              friendCount: bot.friendCount ?? prev?.friendCount ?? null,
+              friendsUpdatedAt:
+                friendsUpdatedAt ?? prev?.friendsUpdatedAt ?? null,
               ...notifiedUpdate,
             },
           },
@@ -171,6 +175,9 @@ export class BotStatusService implements OnModuleDestroy {
         available: timedOut ? false : doc.available,
         lastReportedAt: new Date(doc.lastReportedAt).toISOString(),
         friendCount: doc.friendCount,
+        friendsUpdatedAt: doc.friendsUpdatedAt
+          ? new Date(doc.friendsUpdatedAt).toISOString()
+          : null,
         remark: doc.remark ?? null,
         cabinetUserId: doc.cabinetUserId ?? null,
       };
@@ -274,65 +281,11 @@ export class BotStatusService implements OnModuleDestroy {
   }
 
   /**
-   * Mark a bot's friend list as needing an out-of-band refresh. The worker
-   * polls `getRefreshRequests()` every few seconds; when it sees this bot,
-   * it pulls + reports the friend list immediately, bypassing the 5-min
-   * tick. Used by QR-login after addRival to shrink the "wait for snapshot"
-   * window from ~60s down to ~15-20s.
-   */
-  async requestFriendListRefresh(friendCode: string): Promise<void> {
-    await this.botStatusModel.updateOne(
-      { friendCode },
-      { $set: { friendListRefreshRequestedAt: new Date() } },
-    );
-  }
-
-  /**
-   * Worker pull: which bots are awaiting a refresh. Returns just the
-   * friendCodes; the worker calls report afterwards which clears the flag.
-   *
-   * Auto-clears flags older than 5 min so a refresh request that no
-   * worker can satisfy (e.g. all bots' cookies expired, or the bot is
-   * homed on a worker that's offline) doesn't loop forever.
-   */
-  async getRefreshRequests(): Promise<string[]> {
-    const cutoff = new Date(Date.now() - 5 * 60_000);
-    await this.botStatusModel.updateMany(
-      { friendListRefreshRequestedAt: { $lt: cutoff } },
-      { $set: { friendListRefreshRequestedAt: null } },
-    );
-    const docs = await this.botStatusModel
-      .find({ friendListRefreshRequestedAt: { $ne: null } })
-      .select({ friendCode: 1 })
-      .lean();
-    return docs.map((d) => d.friendCode);
-  }
-
-  /**
-   * Clear the refresh flag once the worker has actually re-reported the
-   * friend list. We clear conditionally on "stamp earlier than now" so
-   * a refresh request landing AFTER the worker started fetching but
-   * before it finished isn't accidentally swallowed.
-   */
-  async clearRefreshRequest(friendCode: string, asOf: Date): Promise<void> {
-    await this.botStatusModel.updateOne(
-      {
-        friendCode,
-        friendListRefreshRequestedAt: { $lte: asOf },
-      },
-      { $set: { friendListRefreshRequestedAt: null } },
-    );
-  }
-
-  /**
    * Convenience: pick an available bot whose cabinetUserId is set, with
-   * the lowest current idle-update load. Returns null if none qualifies.
+   * the lowest current friend-list load. Returns null if none qualifies.
    *
    * Only filters on `available` (worker is reporting in regularly) +
-   * `cabinetUserId` (admin has configured the sdgb id). We trust
-   * available-ness as a single signal — if dxnet side is dead the
-   * fetch_friend_list job will time out cleanly and the caller can
-   * surface it.
+   * `cabinetUserId` (admin has configured the sdgb id).
    */
   async pickAvailableCabinetBot(): Promise<{
     friendCode: string;
@@ -557,4 +510,10 @@ export class BotStatusService implements OnModuleDestroy {
       );
     }
   }
+}
+
+function parseDateOrNull(value: string | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

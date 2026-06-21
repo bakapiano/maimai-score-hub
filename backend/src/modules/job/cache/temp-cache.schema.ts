@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
+import type { FriendVsSong } from '@maimai-score-hub/shared';
 import type { HydratedDocument } from 'mongoose';
 
 /**
@@ -17,8 +18,8 @@ export class JobTempCacheEntity {
   @Prop({ required: true })
   type!: number; // 1 = dxScore, 2 = score
 
-  @Prop({ required: true, type: String })
-  html!: string;
+  @Prop({ required: true, type: [Object] })
+  songs!: FriendVsSong[];
 
   @Prop({ required: true, index: true })
   createdAt!: Date;

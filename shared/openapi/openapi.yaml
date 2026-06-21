@@ -1,25 +1,17 @@
 openapi: 3.0.2
 paths:
-  /app/status:
+  /health:
     get:
-      tags: &a1
+      tags:
         - app
       parameters: []
       operationId: app.getStatus
       responses:
         "200":
           description: "200"
-  /app/version:
-    get:
-      tags: *a1
-      parameters: []
-      operationId: app.getVersion
-      responses:
-        "200":
-          description: "200"
-  /auth/login-request:
+  /auth/login-requests:
     post:
-      tags: &a2
+      tags: &a1
         - auth
       parameters: []
       operationId: auth.loginRequest
@@ -36,11 +28,14 @@ paths:
                 skipUpdateScore:
                   default: true
                   type: boolean
-                useIdleUpdate:
-                  default: false
-                  type: boolean
+                method:
+                  type: string
+                  enum:
+                    - bot_sends_request
+                    - user_sends_request
               required:
                 - friendCode
+                - method
       responses:
         "201":
           description: "201"
@@ -59,8 +54,10 @@ paths:
                     type: string
                   reused:
                     type: boolean
-                  idleUpdate:
-                    type: boolean
+                  botFriendCode:
+                    type: string
+                  createdAt:
+                    type: string
                   job:
                     type: object
                     properties:
@@ -71,16 +68,21 @@ paths:
                       jobType:
                         type: string
                         enum:
-                          - immediate
-                          - idle_add_friend
-                          - idle_update_score
-                          - fetch_friend_list
+                          - send_friend_request
+                          - accept_friend_request
+                          - update_score
+                          - get_user_recent_event
+                      priority:
+                        type: integer
                       skipUpdateScore:
                         type: boolean
                       botUserFriendCode:
                         type: string
                         nullable: true
                       friendRequestSentAt:
+                        type: string
+                        nullable: true
+                      friendRequestWaitStartedAt:
                         type: string
                         nullable: true
                       status:
@@ -96,8 +98,10 @@ paths:
                         enum:
                           - send_request
                           - wait_acceptance
+                          - wait_user_request
+                          - accept_request
                           - update_score
-                          - fetch_friend_list
+                          - get_user_recent_event
                       profile:
                         nullable: true
                       error:
@@ -168,6 +172,9 @@ paths:
                         items:
                           type: integer
                         nullable: true
+                      runAt:
+                        type: string
+                        nullable: true
                       createdAt:
                         type: string
                       updatedAt:
@@ -184,12 +191,12 @@ paths:
                 required:
                   - jobId
                 additionalProperties: true
-  /auth/login-status:
+  /auth/login-requests/{jobId}:
     get:
-      tags: *a2
+      tags: *a1
       parameters:
         - name: jobId
-          in: query
+          in: path
           required: true
           schema:
             type: string
@@ -212,9 +219,159 @@ paths:
                   message:
                     type: string
                 additionalProperties: true
-  /auth/login-by-qr:
+  /auth/login-requests/{jobId}/verify:
     post:
-      tags: *a2
+      tags: *a1
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: auth.verifyLoginRequest
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      friendCode:
+                        type: string
+                      jobType:
+                        type: string
+                        enum:
+                          - send_friend_request
+                          - accept_friend_request
+                          - update_score
+                          - get_user_recent_event
+                      priority:
+                        type: integer
+                      skipUpdateScore:
+                        type: boolean
+                      botUserFriendCode:
+                        type: string
+                        nullable: true
+                      friendRequestSentAt:
+                        type: string
+                        nullable: true
+                      friendRequestWaitStartedAt:
+                        type: string
+                        nullable: true
+                      status:
+                        type: string
+                        enum:
+                          - queued
+                          - processing
+                          - completed
+                          - failed
+                          - canceled
+                      stage:
+                        type: string
+                        enum:
+                          - send_request
+                          - wait_acceptance
+                          - wait_user_request
+                          - accept_request
+                          - update_score
+                          - get_user_recent_event
+                      profile:
+                        nullable: true
+                      error:
+                        type: string
+                        nullable: true
+                      executing:
+                        type: boolean
+                      scoreProgress:
+                        type: object
+                        properties:
+                          completedDiffs:
+                            type: array
+                            items:
+                              type: integer
+                              minimum: 0
+                              maximum: 14
+                          totalDiffs:
+                            type: integer
+                            minimum: 0
+                        required:
+                          - completedDiffs
+                          - totalDiffs
+                        nullable: true
+                      updateScoreDuration:
+                        type: number
+                        nullable: true
+                      autoExportResult:
+                        type: object
+                        properties:
+                          divingFish:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                          lxns:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                        nullable: true
+                      isAuthenticated:
+                        type: boolean
+                      cabinetScoreMap:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            achievement:
+                              type: number
+                            dxScore:
+                              type: number
+                          required:
+                            - achievement
+                            - dxScore
+                        nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
+                      runAt:
+                        type: string
+                        nullable: true
+                      createdAt:
+                        type: string
+                      updatedAt:
+                        type: string
+                    required:
+                      - id
+                      - friendCode
+                      - jobType
+                      - skipUpdateScore
+                      - status
+                      - stage
+                      - createdAt
+                      - updatedAt
+                required:
+                  - job
+  /auth/qr-login:
+    post:
+      tags: *a1
       parameters: []
       operationId: auth.loginByQr
       requestBody:
@@ -256,9 +413,28 @@ paths:
           description: "404"
         "409":
           description: "409"
-  /users/profile:
+  /auth/qr-login/{attemptId}:
     get:
-      tags: &a3
+      tags: *a1
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: auth.pollLoginByQr
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                nullable: true
+        "400":
+          description: "400"
+  /me:
+    get:
+      tags: &a2
         - users
       parameters: []
       operationId: users.profile
@@ -299,7 +475,7 @@ paths:
                   - friendCode
                 additionalProperties: true
     patch:
-      tags: *a3
+      tags: *a2
       parameters: []
       operationId: users.updateProfile
       requestBody:
@@ -355,9 +531,16 @@ paths:
                   - id
                   - friendCode
                 additionalProperties: true
-  /users/diving-fish/token:
+    delete:
+      tags: *a2
+      parameters: []
+      operationId: users.deleteMe
+      responses:
+        "200":
+          description: "200"
+  /me/prober-tokens/diving-fish:
     post:
-      tags: *a3
+      tags: *a2
       parameters: []
       operationId: users.getDivingFishToken
       requestBody:
@@ -391,314 +574,9 @@ paths:
                   message:
                     type: string
                 additionalProperties: true
-  /users/idle-update/enable:
+  /me/cabinet/bind-qr:
     post:
-      tags: *a3
-      parameters: []
-      operationId: users.enableIdleUpdate
-      responses:
-        "201":
-          description: "201"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  jobId:
-                    type: string
-                  job:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                      friendCode:
-                        type: string
-                      jobType:
-                        type: string
-                        enum:
-                          - immediate
-                          - idle_add_friend
-                          - idle_update_score
-                          - fetch_friend_list
-                      skipUpdateScore:
-                        type: boolean
-                      botUserFriendCode:
-                        type: string
-                        nullable: true
-                      friendRequestSentAt:
-                        type: string
-                        nullable: true
-                      status:
-                        type: string
-                        enum:
-                          - queued
-                          - processing
-                          - completed
-                          - failed
-                          - canceled
-                      stage:
-                        type: string
-                        enum:
-                          - send_request
-                          - wait_acceptance
-                          - update_score
-                          - fetch_friend_list
-                      profile:
-                        nullable: true
-                      error:
-                        type: string
-                        nullable: true
-                      executing:
-                        type: boolean
-                      scoreProgress:
-                        type: object
-                        properties:
-                          completedDiffs:
-                            type: array
-                            items:
-                              type: integer
-                              minimum: 0
-                              maximum: 14
-                          totalDiffs:
-                            type: integer
-                            minimum: 0
-                        required:
-                          - completedDiffs
-                          - totalDiffs
-                        nullable: true
-                      updateScoreDuration:
-                        type: number
-                        nullable: true
-                      autoExportResult:
-                        type: object
-                        properties:
-                          divingFish:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                          lxns:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                        nullable: true
-                      isAuthenticated:
-                        type: boolean
-                      cabinetScoreMap:
-                        type: object
-                        additionalProperties:
-                          type: object
-                          properties:
-                            achievement:
-                              type: number
-                            dxScore:
-                              type: number
-                          required:
-                            - achievement
-                            - dxScore
-                        nullable: true
-                      diffsToScrape:
-                        type: array
-                        items:
-                          type: integer
-                        nullable: true
-                      createdAt:
-                        type: string
-                      updatedAt:
-                        type: string
-                    required:
-                      - id
-                      - friendCode
-                      - jobType
-                      - skipUpdateScore
-                      - status
-                      - stage
-                      - createdAt
-                      - updatedAt
-                  message:
-                    type: string
-                required:
-                  - message
-                additionalProperties: true
-  /users/idle-update/disable:
-    post:
-      tags: *a3
-      parameters: []
-      operationId: users.disableIdleUpdate
-      responses:
-        "201":
-          description: "201"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                  message:
-                    type: string
-                required:
-                  - ok
-                  - message
-  /users/idle-update/status:
-    get:
-      tags: *a3
-      parameters: []
-      operationId: users.getIdleUpdateStatus
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  enabled:
-                    type: boolean
-                  botFriendCode:
-                    type: string
-                    nullable: true
-                  pendingJob:
-                    type: boolean
-                  activeJob:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                      friendCode:
-                        type: string
-                      jobType:
-                        type: string
-                        enum:
-                          - immediate
-                          - idle_add_friend
-                          - idle_update_score
-                          - fetch_friend_list
-                      skipUpdateScore:
-                        type: boolean
-                      botUserFriendCode:
-                        type: string
-                        nullable: true
-                      friendRequestSentAt:
-                        type: string
-                        nullable: true
-                      status:
-                        type: string
-                        enum:
-                          - queued
-                          - processing
-                          - completed
-                          - failed
-                          - canceled
-                      stage:
-                        type: string
-                        enum:
-                          - send_request
-                          - wait_acceptance
-                          - update_score
-                          - fetch_friend_list
-                      profile:
-                        nullable: true
-                      error:
-                        type: string
-                        nullable: true
-                      executing:
-                        type: boolean
-                      scoreProgress:
-                        type: object
-                        properties:
-                          completedDiffs:
-                            type: array
-                            items:
-                              type: integer
-                              minimum: 0
-                              maximum: 14
-                          totalDiffs:
-                            type: integer
-                            minimum: 0
-                        required:
-                          - completedDiffs
-                          - totalDiffs
-                        nullable: true
-                      updateScoreDuration:
-                        type: number
-                        nullable: true
-                      autoExportResult:
-                        type: object
-                        properties:
-                          divingFish:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                          lxns:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                        nullable: true
-                      isAuthenticated:
-                        type: boolean
-                      cabinetScoreMap:
-                        type: object
-                        additionalProperties:
-                          type: object
-                          properties:
-                            achievement:
-                              type: number
-                            dxScore:
-                              type: number
-                          required:
-                            - achievement
-                            - dxScore
-                        nullable: true
-                      diffsToScrape:
-                        type: array
-                        items:
-                          type: integer
-                        nullable: true
-                      createdAt:
-                        type: string
-                      updatedAt:
-                        type: string
-                    required:
-                      - id
-                      - friendCode
-                      - jobType
-                      - skipUpdateScore
-                      - status
-                      - stage
-                      - createdAt
-                      - updatedAt
-                    nullable: true
-                required:
-                  - enabled
-                  - botFriendCode
-                  - pendingJob
-  /users/cabinet/bind-qr:
-    post:
-      tags: *a3
+      tags: *a2
       parameters: []
       operationId: users.bindCabinetQr
       requestBody:
@@ -729,9 +607,9 @@ paths:
           description: "400"
         "409":
           description: "409"
-  /users/cabinet/auto-update:
-    post:
-      tags: *a3
+  /me/auto-update:
+    patch:
+      tags: *a2
       parameters: []
       operationId: users.setAutoUpdate
       requestBody:
@@ -746,8 +624,8 @@ paths:
               required:
                 - enabled
       responses:
-        "201":
-          description: "201"
+        "200":
+          description: "200"
           content:
             application/json:
               schema:
@@ -764,9 +642,30 @@ paths:
                   - autoUpdate
         "400":
           description: "400"
+  /me/cabinet:
+    delete:
+      tags: *a2
+      parameters: []
+      operationId: users.unbindCabinet
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                required:
+                  - ok
+        "400":
+          description: "400"
   /sync/latest:
     get:
-      tags: &a4
+      tags: &a3
         - sync
       parameters: []
       operationId: sync.latest
@@ -818,9 +717,9 @@ paths:
                   - updatedAt
                 additionalProperties: true
                 nullable: true
-  /sync/latest/diving-fish:
+  /sync/latest/exports/diving-fish:
     post:
-      tags: *a4
+      tags: *a3
       parameters: []
       operationId: sync.exportToDivingFish
       responses:
@@ -842,9 +741,9 @@ paths:
                   response:
                     nullable: true
                 additionalProperties: true
-  /sync/latest/lxns:
+  /sync/latest/exports/lxns:
     post:
-      tags: *a4
+      tags: *a3
       parameters: []
       operationId: sync.exportToLxns
       responses:
@@ -866,9 +765,9 @@ paths:
                   response:
                     nullable: true
                 additionalProperties: true
-  /job/create:
+  /me/dxnet-jobs:
     post:
-      tags: &a5
+      tags: &a4
         - job
       parameters:
         - name: authorization
@@ -912,16 +811,21 @@ paths:
                       jobType:
                         type: string
                         enum:
-                          - immediate
-                          - idle_add_friend
-                          - idle_update_score
-                          - fetch_friend_list
+                          - send_friend_request
+                          - accept_friend_request
+                          - update_score
+                          - get_user_recent_event
+                      priority:
+                        type: integer
                       skipUpdateScore:
                         type: boolean
                       botUserFriendCode:
                         type: string
                         nullable: true
                       friendRequestSentAt:
+                        type: string
+                        nullable: true
+                      friendRequestWaitStartedAt:
                         type: string
                         nullable: true
                       status:
@@ -937,8 +841,10 @@ paths:
                         enum:
                           - send_request
                           - wait_acceptance
+                          - wait_user_request
+                          - accept_request
                           - update_score
-                          - fetch_friend_list
+                          - get_user_recent_event
                       profile:
                         nullable: true
                       error:
@@ -1009,6 +915,9 @@ paths:
                         items:
                           type: integer
                         nullable: true
+                      runAt:
+                        type: string
+                        nullable: true
                       createdAt:
                         type: string
                       updatedAt:
@@ -1025,9 +934,9 @@ paths:
                 required:
                   - jobId
                   - job
-  /job/{jobId}:
+  /dxnet-jobs/{jobId}:
     get:
-      tags: *a5
+      tags: *a4
       parameters:
         - name: jobId
           in: path
@@ -1050,16 +959,21 @@ paths:
                   jobType:
                     type: string
                     enum:
-                      - immediate
-                      - idle_add_friend
-                      - idle_update_score
-                      - fetch_friend_list
+                      - send_friend_request
+                      - accept_friend_request
+                      - update_score
+                      - get_user_recent_event
+                  priority:
+                    type: integer
                   skipUpdateScore:
                     type: boolean
                   botUserFriendCode:
                     type: string
                     nullable: true
                   friendRequestSentAt:
+                    type: string
+                    nullable: true
+                  friendRequestWaitStartedAt:
                     type: string
                     nullable: true
                   status:
@@ -1075,8 +989,10 @@ paths:
                     enum:
                       - send_request
                       - wait_acceptance
+                      - wait_user_request
+                      - accept_request
                       - update_score
-                      - fetch_friend_list
+                      - get_user_recent_event
                   profile:
                     nullable: true
                   error:
@@ -1147,6 +1063,9 @@ paths:
                     items:
                       type: integer
                     nullable: true
+                  runAt:
+                    type: string
+                    nullable: true
                   createdAt:
                     type: string
                   updatedAt:
@@ -1160,8 +1079,514 @@ paths:
                   - stage
                   - createdAt
                   - updatedAt
+  /me/dxnet-jobs/active:
+    get:
+      tags: *a4
+      parameters:
+        - name: authorization
+          in: header
+          required: true
+          schema:
+            type: string
+      operationId: job.getActiveByFriendCode
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      friendCode:
+                        type: string
+                      jobType:
+                        type: string
+                        enum:
+                          - send_friend_request
+                          - accept_friend_request
+                          - update_score
+                          - get_user_recent_event
+                      priority:
+                        type: integer
+                      skipUpdateScore:
+                        type: boolean
+                      botUserFriendCode:
+                        type: string
+                        nullable: true
+                      friendRequestSentAt:
+                        type: string
+                        nullable: true
+                      friendRequestWaitStartedAt:
+                        type: string
+                        nullable: true
+                      status:
+                        type: string
+                        enum:
+                          - queued
+                          - processing
+                          - completed
+                          - failed
+                          - canceled
+                      stage:
+                        type: string
+                        enum:
+                          - send_request
+                          - wait_acceptance
+                          - wait_user_request
+                          - accept_request
+                          - update_score
+                          - get_user_recent_event
+                      profile:
+                        nullable: true
+                      error:
+                        type: string
+                        nullable: true
+                      executing:
+                        type: boolean
+                      scoreProgress:
+                        type: object
+                        properties:
+                          completedDiffs:
+                            type: array
+                            items:
+                              type: integer
+                              minimum: 0
+                              maximum: 14
+                          totalDiffs:
+                            type: integer
+                            minimum: 0
+                        required:
+                          - completedDiffs
+                          - totalDiffs
+                        nullable: true
+                      updateScoreDuration:
+                        type: number
+                        nullable: true
+                      autoExportResult:
+                        type: object
+                        properties:
+                          divingFish:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                          lxns:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                        nullable: true
+                      isAuthenticated:
+                        type: boolean
+                      cabinetScoreMap:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            achievement:
+                              type: number
+                            dxScore:
+                              type: number
+                          required:
+                            - achievement
+                            - dxScore
+                        nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
+                      runAt:
+                        type: string
+                        nullable: true
+                      createdAt:
+                        type: string
+                      updatedAt:
+                        type: string
+                    required:
+                      - id
+                      - friendCode
+                      - jobType
+                      - skipUpdateScore
+                      - status
+                      - stage
+                      - createdAt
+                      - updatedAt
+                    nullable: true
+                required:
+                  - job
+  /me/dxnet-jobs/{jobId}/wake:
+    post:
+      tags: *a4
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: authorization
+          in: header
+          required: true
+          schema:
+            type: string
+      operationId: job.wake
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema: {}
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      friendCode:
+                        type: string
+                      jobType:
+                        type: string
+                        enum:
+                          - send_friend_request
+                          - accept_friend_request
+                          - update_score
+                          - get_user_recent_event
+                      priority:
+                        type: integer
+                      skipUpdateScore:
+                        type: boolean
+                      botUserFriendCode:
+                        type: string
+                        nullable: true
+                      friendRequestSentAt:
+                        type: string
+                        nullable: true
+                      friendRequestWaitStartedAt:
+                        type: string
+                        nullable: true
+                      status:
+                        type: string
+                        enum:
+                          - queued
+                          - processing
+                          - completed
+                          - failed
+                          - canceled
+                      stage:
+                        type: string
+                        enum:
+                          - send_request
+                          - wait_acceptance
+                          - wait_user_request
+                          - accept_request
+                          - update_score
+                          - get_user_recent_event
+                      profile:
+                        nullable: true
+                      error:
+                        type: string
+                        nullable: true
+                      executing:
+                        type: boolean
+                      scoreProgress:
+                        type: object
+                        properties:
+                          completedDiffs:
+                            type: array
+                            items:
+                              type: integer
+                              minimum: 0
+                              maximum: 14
+                          totalDiffs:
+                            type: integer
+                            minimum: 0
+                        required:
+                          - completedDiffs
+                          - totalDiffs
+                        nullable: true
+                      updateScoreDuration:
+                        type: number
+                        nullable: true
+                      autoExportResult:
+                        type: object
+                        properties:
+                          divingFish:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                          lxns:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                              message:
+                                type: string
+                            required:
+                              - status
+                            nullable: true
+                        nullable: true
+                      isAuthenticated:
+                        type: boolean
+                      cabinetScoreMap:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            achievement:
+                              type: number
+                            dxScore:
+                              type: number
+                          required:
+                            - achievement
+                            - dxScore
+                        nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
+                      runAt:
+                        type: string
+                        nullable: true
+                      createdAt:
+                        type: string
+                      updatedAt:
+                        type: string
+                    required:
+                      - id
+                      - friendCode
+                      - jobType
+                      - skipUpdateScore
+                      - status
+                      - stage
+                      - createdAt
+                      - updatedAt
+                required:
+                  - job
+  /dxnet-jobs/stats/recent:
+    get:
+      tags: *a4
+      parameters: []
+      operationId: job.getRecentStats
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalCount:
+                    type: integer
+                    minimum: 0
+                  completedCount:
+                    type: integer
+                    minimum: 0
+                  failedCount:
+                    type: integer
+                    minimum: 0
+                  successRate:
+                    type: number
+                  avgDuration:
+                    type: number
+                    nullable: true
+                required:
+                  - totalCount
+                  - completedCount
+                  - failedCount
+                  - successRate
+                  - avgDuration
+  /workers/dxnet/jobs/next:
+    post:
+      tags: *a4
+      parameters: []
+      operationId: job.next
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                botUserFriendCode:
+                  type: string
+                  minLength: 1
+                waitMs:
+                  type: integer
+                  minimum: 0
+                  maximum: 25000
+              required:
+                - botUserFriendCode
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  friendCode:
+                    type: string
+                  jobType:
+                    type: string
+                    enum:
+                      - send_friend_request
+                      - accept_friend_request
+                      - update_score
+                      - get_user_recent_event
+                  priority:
+                    type: integer
+                  skipUpdateScore:
+                    type: boolean
+                  botUserFriendCode:
+                    type: string
+                    nullable: true
+                  friendRequestSentAt:
+                    type: string
+                    nullable: true
+                  friendRequestWaitStartedAt:
+                    type: string
+                    nullable: true
+                  status:
+                    type: string
+                    enum:
+                      - queued
+                      - processing
+                      - completed
+                      - failed
+                      - canceled
+                  stage:
+                    type: string
+                    enum:
+                      - send_request
+                      - wait_acceptance
+                      - wait_user_request
+                      - accept_request
+                      - update_score
+                      - get_user_recent_event
+                  profile:
+                    nullable: true
+                  error:
+                    type: string
+                    nullable: true
+                  executing:
+                    type: boolean
+                  scoreProgress:
+                    type: object
+                    properties:
+                      completedDiffs:
+                        type: array
+                        items:
+                          type: integer
+                          minimum: 0
+                          maximum: 14
+                      totalDiffs:
+                        type: integer
+                        minimum: 0
+                    required:
+                      - completedDiffs
+                      - totalDiffs
+                    nullable: true
+                  updateScoreDuration:
+                    type: number
+                    nullable: true
+                  autoExportResult:
+                    type: object
+                    properties:
+                      divingFish:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - status
+                        nullable: true
+                      lxns:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - status
+                        nullable: true
+                    nullable: true
+                  isAuthenticated:
+                    type: boolean
+                  cabinetScoreMap:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        achievement:
+                          type: number
+                        dxScore:
+                          type: number
+                      required:
+                        - achievement
+                        - dxScore
+                    nullable: true
+                  diffsToScrape:
+                    type: array
+                    items:
+                      type: integer
+                    nullable: true
+                  runAt:
+                    type: string
+                    nullable: true
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                required:
+                  - id
+                  - friendCode
+                  - jobType
+                  - skipUpdateScore
+                  - status
+                  - stage
+                  - createdAt
+                  - updatedAt
+        "204":
+          description: "204"
+          content:
+            application/json:
+              schema: {}
+  /workers/dxnet/jobs/{jobId}:
     patch:
-      tags: *a5
+      tags: *a4
       parameters:
         - name: jobId
           in: path
@@ -1192,8 +1617,10 @@ paths:
                   enum:
                     - send_request
                     - wait_acceptance
+                    - wait_user_request
+                    - accept_request
                     - update_score
-                    - fetch_friend_list
+                    - get_user_recent_event
                 result:
                   nullable: true
                 profile:
@@ -1204,8 +1631,14 @@ paths:
                 friendRequestSentAt:
                   type: string
                   nullable: true
+                friendRequestWaitStartedAt:
+                  type: string
+                  nullable: true
                 executing:
                   type: boolean
+                runAt:
+                  type: string
+                  nullable: true
                 updatedAt:
                   type: string
                 scoreProgress:
@@ -1245,16 +1678,21 @@ paths:
                   jobType:
                     type: string
                     enum:
-                      - immediate
-                      - idle_add_friend
-                      - idle_update_score
-                      - fetch_friend_list
+                      - send_friend_request
+                      - accept_friend_request
+                      - update_score
+                      - get_user_recent_event
+                  priority:
+                    type: integer
                   skipUpdateScore:
                     type: boolean
                   botUserFriendCode:
                     type: string
                     nullable: true
                   friendRequestSentAt:
+                    type: string
+                    nullable: true
+                  friendRequestWaitStartedAt:
                     type: string
                     nullable: true
                   status:
@@ -1270,8 +1708,10 @@ paths:
                     enum:
                       - send_request
                       - wait_acceptance
+                      - wait_user_request
+                      - accept_request
                       - update_score
-                      - fetch_friend_list
+                      - get_user_recent_event
                   profile:
                     nullable: true
                   error:
@@ -1342,326 +1782,8 @@ paths:
                     items:
                       type: integer
                     nullable: true
-                  createdAt:
+                  runAt:
                     type: string
-                  updatedAt:
-                    type: string
-                required:
-                  - id
-                  - friendCode
-                  - jobType
-                  - skipUpdateScore
-                  - status
-                  - stage
-                  - createdAt
-                  - updatedAt
-  /job/by-friend-code/{friendCode}/active:
-    get:
-      tags: *a5
-      parameters:
-        - name: friendCode
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: authorization
-          in: header
-          required: true
-          schema:
-            type: string
-      operationId: job.getActiveByFriendCode
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  job:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                      friendCode:
-                        type: string
-                      jobType:
-                        type: string
-                        enum:
-                          - immediate
-                          - idle_add_friend
-                          - idle_update_score
-                          - fetch_friend_list
-                      skipUpdateScore:
-                        type: boolean
-                      botUserFriendCode:
-                        type: string
-                        nullable: true
-                      friendRequestSentAt:
-                        type: string
-                        nullable: true
-                      status:
-                        type: string
-                        enum:
-                          - queued
-                          - processing
-                          - completed
-                          - failed
-                          - canceled
-                      stage:
-                        type: string
-                        enum:
-                          - send_request
-                          - wait_acceptance
-                          - update_score
-                          - fetch_friend_list
-                      profile:
-                        nullable: true
-                      error:
-                        type: string
-                        nullable: true
-                      executing:
-                        type: boolean
-                      scoreProgress:
-                        type: object
-                        properties:
-                          completedDiffs:
-                            type: array
-                            items:
-                              type: integer
-                              minimum: 0
-                              maximum: 14
-                          totalDiffs:
-                            type: integer
-                            minimum: 0
-                        required:
-                          - completedDiffs
-                          - totalDiffs
-                        nullable: true
-                      updateScoreDuration:
-                        type: number
-                        nullable: true
-                      autoExportResult:
-                        type: object
-                        properties:
-                          divingFish:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                          lxns:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                        nullable: true
-                      isAuthenticated:
-                        type: boolean
-                      cabinetScoreMap:
-                        type: object
-                        additionalProperties:
-                          type: object
-                          properties:
-                            achievement:
-                              type: number
-                            dxScore:
-                              type: number
-                          required:
-                            - achievement
-                            - dxScore
-                        nullable: true
-                      diffsToScrape:
-                        type: array
-                        items:
-                          type: integer
-                        nullable: true
-                      createdAt:
-                        type: string
-                      updatedAt:
-                        type: string
-                    required:
-                      - id
-                      - friendCode
-                      - jobType
-                      - skipUpdateScore
-                      - status
-                      - stage
-                      - createdAt
-                      - updatedAt
-                    nullable: true
-                required:
-                  - job
-  /job/stats/recent:
-    get:
-      tags: *a5
-      parameters: []
-      operationId: job.getRecentStats
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  totalCount:
-                    type: integer
-                    minimum: 0
-                  completedCount:
-                    type: integer
-                    minimum: 0
-                  failedCount:
-                    type: integer
-                    minimum: 0
-                  successRate:
-                    type: number
-                  avgDuration:
-                    type: number
-                    nullable: true
-                required:
-                  - totalCount
-                  - completedCount
-                  - failedCount
-                  - successRate
-                  - avgDuration
-  /job/next:
-    post:
-      tags: *a5
-      parameters: []
-      operationId: job.next
-      requestBody:
-        description: Body
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                botUserFriendCode:
-                  type: string
-                  minLength: 1
-              required:
-                - botUserFriendCode
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  friendCode:
-                    type: string
-                  jobType:
-                    type: string
-                    enum:
-                      - immediate
-                      - idle_add_friend
-                      - idle_update_score
-                      - fetch_friend_list
-                  skipUpdateScore:
-                    type: boolean
-                  botUserFriendCode:
-                    type: string
-                    nullable: true
-                  friendRequestSentAt:
-                    type: string
-                    nullable: true
-                  status:
-                    type: string
-                    enum:
-                      - queued
-                      - processing
-                      - completed
-                      - failed
-                      - canceled
-                  stage:
-                    type: string
-                    enum:
-                      - send_request
-                      - wait_acceptance
-                      - update_score
-                      - fetch_friend_list
-                  profile:
-                    nullable: true
-                  error:
-                    type: string
-                    nullable: true
-                  executing:
-                    type: boolean
-                  scoreProgress:
-                    type: object
-                    properties:
-                      completedDiffs:
-                        type: array
-                        items:
-                          type: integer
-                          minimum: 0
-                          maximum: 14
-                      totalDiffs:
-                        type: integer
-                        minimum: 0
-                    required:
-                      - completedDiffs
-                      - totalDiffs
-                    nullable: true
-                  updateScoreDuration:
-                    type: number
-                    nullable: true
-                  autoExportResult:
-                    type: object
-                    properties:
-                      divingFish:
-                        type: object
-                        properties:
-                          status:
-                            type: string
-                          message:
-                            type: string
-                        required:
-                          - status
-                        nullable: true
-                      lxns:
-                        type: object
-                        properties:
-                          status:
-                            type: string
-                          message:
-                            type: string
-                        required:
-                          - status
-                        nullable: true
-                    nullable: true
-                  isAuthenticated:
-                    type: boolean
-                  cabinetScoreMap:
-                    type: object
-                    additionalProperties:
-                      type: object
-                      properties:
-                        achievement:
-                          type: number
-                        dxScore:
-                          type: number
-                      required:
-                        - achievement
-                        - dxScore
-                    nullable: true
-                  diffsToScrape:
-                    type: array
-                    items:
-                      type: integer
                     nullable: true
                   createdAt:
                     type: string
@@ -1676,11 +1798,9 @@ paths:
                   - stage
                   - createdAt
                   - updatedAt
-        "204":
-          description: "204"
-  /job/active/{botUserFriendCode}:
+  /workers/dxnet/bots/{botUserFriendCode}/active-friend-codes:
     get:
-      tags: *a5
+      tags: *a4
       parameters:
         - name: botUserFriendCode
           in: path
@@ -1697,89 +1817,9 @@ paths:
                 type: array
                 items:
                   type: string
-  /job/idle-update/mark-ready:
+  /workers/dxnet/users/activity:
     post:
-      tags: *a5
-      parameters: []
-      operationId: job.markIdleUpdateReady
-      requestBody:
-        description: Body
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                friendCode:
-                  type: string
-                  minLength: 1
-                botFriendCode:
-                  type: string
-                  minLength: 1
-              required:
-                - friendCode
-                - botFriendCode
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                required:
-                  - ok
-  /job/idle-update/friends/{botFriendCode}:
-    get:
-      tags: *a5
-      parameters:
-        - name: botFriendCode
-          in: path
-          required: true
-          schema:
-            type: string
-      operationId: job.getIdleUpdateFriends
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: string
-  /job/idle-update/friends/{botFriendCode}/detailed:
-    get:
-      tags: *a5
-      parameters:
-        - name: botFriendCode
-          in: path
-          required: true
-          schema:
-            type: string
-      operationId: job.getIdleUpdateFriendsDetailed
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    friendCode:
-                      type: string
-                    lastActiveAt:
-                      type: string
-                      nullable: true
-                  required:
-                    - friendCode
-                    - lastActiveAt
-  /job/users-activity:
-    post:
-      tags: *a5
+      tags: *a4
       parameters: []
       operationId: job.getUsersActivity
       requestBody:
@@ -1813,9 +1853,41 @@ paths:
                   required:
                     - friendCode
                     - lastActiveAt
-  /job/{jobId}/cache/{diff}/{type}:
+  /workers/dxnet/users/existence:
+    post:
+      tags: *a4
+      parameters: []
+      operationId: job.getExistingUsers
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                friendCodes:
+                  type: array
+                  items:
+                    type: string
+              required:
+                - friendCodes
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  existingFriendCodes:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - existingFriendCodes
+  /workers/dxnet/jobs/{jobId}/cache/{diff}/{type}:
     get:
-      tags: *a5
+      tags: *a4
       parameters:
         - name: jobId
           in: path
@@ -1841,12 +1913,45 @@ paths:
               schema:
                 type: object
                 properties:
-                  html:
-                    type: string
+                  songs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        level:
+                          type: string
+                        name:
+                          type: string
+                        score:
+                          type: string
+                          nullable: true
+                        category:
+                          type: string
+                          nullable: true
+                        type:
+                          type: string
+                          enum:
+                            - standard
+                            - dx
+                            - utage
+                        fs:
+                          type: string
+                          nullable: true
+                        fc:
+                          type: string
+                          nullable: true
+                      required:
+                        - level
+                        - name
+                        - score
+                        - category
+                        - type
+                        - fs
+                        - fc
                 required:
-                  - html
-    post:
-      tags: *a5
+                  - songs
+    put:
+      tags: *a4
       parameters:
         - name: jobId
           in: path
@@ -1871,10 +1976,43 @@ paths:
             schema:
               type: object
               properties:
-                html:
-                  type: string
+                songs:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      level:
+                        type: string
+                      name:
+                        type: string
+                      score:
+                        type: string
+                        nullable: true
+                      category:
+                        type: string
+                        nullable: true
+                      type:
+                        type: string
+                        enum:
+                          - standard
+                          - dx
+                          - utage
+                      fs:
+                        type: string
+                        nullable: true
+                      fc:
+                        type: string
+                        nullable: true
+                    required:
+                      - level
+                      - name
+                      - score
+                      - category
+                      - type
+                      - fs
+                      - fc
               required:
-                - html
+                - songs
       responses:
         "201":
           description: "201"
@@ -1887,9 +2025,9 @@ paths:
                     type: boolean
                 required:
                   - success
-  /job/{jobId}/api-logs:
+  /workers/dxnet/jobs/{jobId}/api-logs:
     post:
-      tags: *a5
+      tags: *a4
       parameters:
         - name: jobId
           in: path
@@ -1936,9 +2074,9 @@ paths:
                     type: boolean
                 required:
                   - success
-  /music:
+  /catalog/music:
     get:
-      tags: &a6
+      tags: &a5
         - music
       parameters: []
       operationId: music.listAll
@@ -1961,27 +2099,18 @@ paths:
                   required:
                     - id
                   additionalProperties: true
-  /music/sync:
+  /admin/catalog/music/sync:
     post:
-      tags: *a6
+      tags: &a6
+        - admin
       parameters: []
-      operationId: music.forceSync
+      operationId: admin.syncMusic
       responses:
         "201":
           description: "201"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                required:
-                  - ok
-                additionalProperties: true
-  /music/source:
+  /admin/catalog/music/source:
     get:
-      tags: *a6
+      tags: *a5
       parameters: []
       operationId: music.getDataSource
       responses:
@@ -1999,8 +2128,8 @@ paths:
                       - lxns
                 required:
                   - source
-    post:
-      tags: *a6
+    put:
+      tags: *a5
       parameters: []
       operationId: music.setDataSource
       requestBody:
@@ -2018,8 +2147,8 @@ paths:
               required:
                 - source
       responses:
-        "201":
-          description: "201"
+        "200":
+          description: "200"
           content:
             application/json:
               schema:
@@ -2035,10 +2164,9 @@ paths:
                 required:
                   - source
                   - ok
-  /admin/stats:
+  /admin/dashboard/stats:
     get:
-      tags: &a7
-        - admin
+      tags: *a6
       parameters: []
       operationId: admin.getStats
       responses:
@@ -2058,9 +2186,9 @@ paths:
                   coverCount:
                     type: number
                 additionalProperties: true
-  /admin/job-stats:
+  /admin/dashboard/job-stats:
     get:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.getJobStats
       responses:
@@ -2070,9 +2198,9 @@ paths:
             application/json:
               schema:
                 nullable: true
-  /admin/auto-update-metrics:
+  /admin/dashboard/auto-update-metrics:
     get:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: window
           in: query
@@ -2089,9 +2217,9 @@ paths:
             application/json:
               schema:
                 nullable: true
-  /admin/prober-export-metrics:
+  /admin/dashboard/prober-export-metrics:
     get:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: window
           in: query
@@ -2108,9 +2236,9 @@ paths:
             application/json:
               schema:
                 nullable: true
-  /admin/job-trend:
+  /admin/dashboard/job-trend:
     get:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: hours
           in: query
@@ -2124,9 +2252,9 @@ paths:
             application/json:
               schema:
                 nullable: true
-  /admin/job-error-stats:
+  /admin/dashboard/job-error-stats:
     get:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.getJobErrorStats
       responses:
@@ -2136,9 +2264,9 @@ paths:
             application/json:
               schema:
                 nullable: true
-  /admin/jobs:
+  /admin/dxnet-jobs:
     get:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: friendCode
           in: query
@@ -2171,7 +2299,7 @@ paths:
                 nullable: true
   /admin/users:
     get:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.getAllUsers
       responses:
@@ -2183,9 +2311,9 @@ paths:
                 type: array
                 items:
                   nullable: true
-  /admin/active-jobs:
+  /admin/dxnet-jobs/active:
     get:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.getActiveJobs
       responses:
@@ -2195,9 +2323,9 @@ paths:
             application/json:
               schema:
                 nullable: true
-  /admin/bot-status:
+  /workers/bots/status:
     post:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.reportBotStatus
       requestBody:
@@ -2218,6 +2346,8 @@ paths:
                         type: boolean
                       friendCount:
                         type: number
+                      friendsUpdatedAt:
+                        type: string
                       friends:
                         type: array
                         items:
@@ -2262,8 +2392,9 @@ paths:
       responses:
         "201":
           description: "201"
+  /admin/bots:
     get:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.getBotStatus
       responses:
@@ -2283,6 +2414,9 @@ paths:
                     friendCount:
                       type: number
                       nullable: true
+                    friendsUpdatedAt:
+                      type: string
+                      nullable: true
                     lastReportedAt:
                       type: string
                     remark:
@@ -2295,9 +2429,9 @@ paths:
                     - friendCode
                     - available
                   additionalProperties: true
-  /admin/bot-status/{friendCode}/remark:
+  /admin/bots/{friendCode}/remark:
     patch:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: friendCode
           in: path
@@ -2320,9 +2454,9 @@ paths:
       responses:
         "200":
           description: "200"
-  /admin/bot-status/{friendCode}/cabinet-user-id:
+  /admin/bots/{friendCode}/cabinet-user-id:
     patch:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: friendCode
           in: path
@@ -2347,9 +2481,9 @@ paths:
       responses:
         "200":
           description: "200"
-  /admin/bot-status/{friendCode}:
+  /admin/bots/{friendCode}:
     delete:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: friendCode
           in: path
@@ -2360,9 +2494,9 @@ paths:
       responses:
         "200":
           description: "200"
-  /admin/jobs/{jobId}/api-logs:
+  /admin/dxnet-jobs/{jobId}/api-logs:
     get:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: jobId
           in: path
@@ -2379,49 +2513,33 @@ paths:
                 type: array
                 items:
                   nullable: true
-  /admin/sync-covers:
+  /admin/catalog/covers/sync:
     post:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.syncCovers
       responses:
         "201":
           description: "201"
-  /admin/force-sync-covers:
+  /admin/catalog/covers/force-sync:
     post:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.forceSyncCovers
       responses:
         "201":
           description: "201"
-  /admin/sync-music:
+  /admin/dxnet-jobs/cleanup:
     post:
-      tags: *a7
-      parameters: []
-      operationId: admin.syncMusic
-      responses:
-        "201":
-          description: "201"
-  /admin/trigger-idle-update:
-    post:
-      tags: *a7
-      parameters: []
-      operationId: admin.triggerIdleUpdate
-      responses:
-        "201":
-          description: "201"
-  /admin/cleanup-jobs:
-    post:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.cleanupJobs
       responses:
         "201":
           description: "201"
-  /admin/system-settings:
+  /admin/settings:
     get:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.getSystemSettings
       responses:
@@ -2437,7 +2555,7 @@ paths:
                 required:
                   - cabinetOnlyMode
     patch:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.updateSystemSettings
       requestBody:
@@ -2461,9 +2579,9 @@ paths:
                     type: boolean
                 required:
                   - cabinetOnlyMode
-  /cover/{songId}:
+  /catalog/covers/{songId}:
     get:
-      tags: &a8
+      tags: &a7
         - cover
       parameters:
         - name: songId
@@ -2477,9 +2595,9 @@ paths:
           description: "200"
         "404":
           description: "404"
-  /cover/{songId}.jpg:
+  /catalog/covers/{songId}.jpg:
     get:
-      tags: *a8
+      tags: *a7
       parameters:
         - name: songId
           in: path
@@ -2492,31 +2610,40 @@ paths:
           description: "200"
         "404":
           description: "404"
-  /cover/backfill-variants:
+  /admin/catalog/covers/backfill-variants:
     post:
-      tags: *a8
+      tags: *a7
       parameters: []
       operationId: cover.backfillVariants
       responses:
         "201":
           description: "201"
-  /score-export/{friendCode}:
+  /score-exports/best50:
     get:
-      tags:
+      tags: &a8
         - scoreExport
-      parameters:
-        - name: friendCode
-          in: path
-          required: true
-          schema:
-            type: string
-      operationId: scoreExport.exportByFriendCode
+      parameters: []
+      operationId: scoreExport.best50
       responses:
         "200":
           description: "200"
-        "404":
-          description: "404"
-  /sdgb-job/next:
+  /score-exports/level:
+    get:
+      tags: *a8
+      parameters: []
+      operationId: scoreExport.level
+      responses:
+        "200":
+          description: "200"
+  /score-exports/version:
+    get:
+      tags: *a8
+      parameters: []
+      operationId: scoreExport.version
+      responses:
+        "200":
+          description: "200"
+  /workers/sdgb/jobs/next:
     post:
       tags: &a9
         - sdgbWorker
@@ -2585,7 +2712,7 @@ paths:
                   - updatedAt
         "204":
           description: "204"
-  /sdgb-job/{jobId}:
+  /workers/sdgb/jobs/{jobId}:
     get:
       tags: *a9
       parameters:
@@ -2731,3 +2858,5 @@ info:
   title: Maimai Score Hub API
   version: 1.0.0
   description: Generated from @maimai-score-hub/shared ts-rest contracts
+servers:
+  - url: /api/v1

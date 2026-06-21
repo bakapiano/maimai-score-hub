@@ -1,36 +1,36 @@
-import { initContract } from '@ts-rest/core';
+import { initContract } from "@ts-rest/core";
 
 const c = initContract();
 
 export const coverContract = c.router({
   getCoverBySongId: {
-    method: 'GET',
-    path: '/cover/:songId',
+    method: "GET",
+    path: "/catalog/covers/:songId",
     pathParams: c.type<{ songId: string }>(),
     responses: {
       200: c.otherResponse({
-        contentType: 'image/jpeg',
+        contentType: "image/jpeg",
         body: c.type<Blob>(),
       }),
       404: c.type<{ message: string }>(),
     },
   },
   getCoverBySongIdJpg: {
-    method: 'GET',
-    path: '/cover/:songId.jpg',
+    method: "GET",
+    path: "/catalog/covers/:songId.jpg",
     pathParams: c.type<{ songId: string }>(),
     responses: {
       200: c.otherResponse({
-        contentType: 'image/jpeg',
+        contentType: "image/jpeg",
         body: c.type<Blob>(),
       }),
       404: c.type<{ message: string }>(),
     },
   },
   backfillVariants: {
-    method: 'POST',
-    path: '/cover/backfill-variants',
-    headers: c.type<{ 'x-admin-password': string }>(),
+    method: "POST",
+    path: "/admin/catalog/covers/backfill-variants",
+    headers: c.type<{ "x-admin-password": string }>(),
     body: c.noBody(),
     responses: {
       201: c.type<{

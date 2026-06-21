@@ -27,7 +27,7 @@ export class AuthService {
   async requestLogin(
     friendCode: string,
     skipUpdateScore = true,
-    useIdleUpdate = false,
+    method: 'bot_sends_request' | 'user_sends_request',
   ) {
     const normalized = friendCode.trim();
     if (!normalized) {
@@ -56,15 +56,7 @@ export class AuthService {
       return { skipAuth: true, token, user };
     }
 
-    // 如果用户选择了闲时更新，创建 idle_add_friend job
-    if (useIdleUpdate && !skipUpdateScore) {
-      // 检查是否已有活跃的闲时任务
-      const hasActive = await this.jobs.hasActiveIdleJob(normalized);
-      if (hasActive) {
-        throw new BadRequestException('已有进行中的闲时更新任务，请勿重复创建');
-      }
-
-      // 选择好友最少的可用 bot
+    if (method === 'user_sends_request') {
       const availableBots = (await this.botStatus.getAll()).filter(
         (b) => b.available,
       );
@@ -72,54 +64,34 @@ export class AuthService {
         throw new BadRequestException('当前没有可用的 Bot');
       }
 
-      const limit = Number(process.env.BOT_IDLE_FRIEND_LIMIT ?? 80);
-      let selectedBot: string | null = null;
-      let minCount = Infinity;
-      for (const bot of availableBots) {
-        const count = await this.users.countIdleUpdateByBot(bot.friendCode);
-        const reportedCount =
-          (await this.botStatus.getFriendCount(bot.friendCode)) ?? 0;
-        const effectiveCount = Math.max(count, reportedCount);
-        if (effectiveCount < limit && effectiveCount < minCount) {
-          selectedBot = bot.friendCode;
-          minCount = effectiveCount;
-        }
-      }
+      const selectedBot =
+        availableBots
+          .slice()
+          .sort((a, b) => (a.friendCount ?? 0) - (b.friendCount ?? 0))[0]
+          ?.friendCode ?? null;
 
-      if (!selectedBot) {
-        throw new BadRequestException('所有 Bot 的闲时更新名额已满');
-      }
-
-      const { jobId } = await this.jobs.create({
+      const result = await this.jobs.create({
         friendCode: normalized,
-        skipUpdateScore: true,
-        jobType: 'idle_add_friend',
+        skipUpdateScore,
+        jobType: 'accept_friend_request',
         botUserFriendCode: selectedBot,
       });
 
-      return { jobId, userId: user._id };
+      return {
+        ...result,
+        userId: user._id,
+        botFriendCode: selectedBot,
+        createdAt: result.job.createdAt,
+      };
     }
 
-    // 如果用户开启了闲时更新，优先选择不是闲时更新的那个 bot
-    let botUserFriendCode: string | undefined;
-    if (user.idleUpdateBotFriendCode) {
-      const availableBots = (await this.botStatus.getAll()).filter(
-        (b) => b.available,
-      );
-      const nonIdleBot = availableBots.find(
-        (b) => b.friendCode !== user.idleUpdateBotFriendCode,
-      );
-      botUserFriendCode =
-        nonIdleBot?.friendCode ?? availableBots[0]?.friendCode;
-    }
-
-    const { jobId } = await this.jobs.create({
+    const result = await this.jobs.create({
       friendCode: normalized,
       skipUpdateScore,
-      botUserFriendCode,
+      jobType: 'send_friend_request',
     });
 
-    return { jobId, userId: user._id };
+    return { ...result, userId: user._id };
   }
 
   async checkStatus(jobId: string) {
@@ -150,10 +122,46 @@ export class AuthService {
       const token = await this.jwt.signAsync(payload, {
         expiresIn: '30d',
       });
-      return { status, token, user };
+      let syncJob: unknown;
+      let syncJobId: string | undefined;
+      if (!job.skipUpdateScore && job.jobType !== 'update_score') {
+        const active = await this.jobs.getActiveByFriendCode(job.friendCode);
+        if (active) {
+          syncJob = active;
+          syncJobId = active.id;
+        } else {
+          const created = await this.jobs.create({
+            friendCode: job.friendCode,
+            skipUpdateScore: false,
+            jobType: 'update_score',
+            botUserFriendCode: job.botUserFriendCode ?? undefined,
+            isAuthenticated: true,
+            friendshipReady: true,
+          });
+          syncJob = created.job;
+          syncJobId = created.jobId;
+        }
+      }
+      return { status, token, user, syncJobId, syncJob };
     }
 
     return { status, job };
+  }
+
+  async verifyLoginRequest(jobId: string) {
+    const job = await this.jobs.get(jobId);
+    if (
+      job.jobType !== 'accept_friend_request' &&
+      job.jobType !== 'send_friend_request'
+    ) {
+      throw new BadRequestException(
+        'verify is only valid for login friend-request jobs',
+      );
+    }
+    if (job.executing) {
+      return { job };
+    }
+    return { job: await this.jobs.wake(jobId) };
   }
 
   verifyToken(token: string) {

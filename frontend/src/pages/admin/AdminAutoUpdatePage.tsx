@@ -293,7 +293,7 @@ export default function AdminAutoUpdatePage() {
               )}
             </Group>
             <Text size="sm" c="dimmed">
-              ON 时所有绑定机台的用户更新（自动 + 手动 immediate）跳过 DXNet
+              ON 时所有绑定机台的用户更新（自动 + 手动 update_score）跳过 DXNet
               worker，直接用 sdgb 机台数据写入 score；fc/fs 保留上次值不刷新。
               未绑定机台的用户不受影响，仍走 worker。
             </Text>

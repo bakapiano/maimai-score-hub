@@ -214,16 +214,6 @@ export class UsersService {
   }
 
   /**
-   * 获取所有开启了闲时更新的用户
-   */
-  async getIdleUpdateUsers() {
-    const users = await this.userModel
-      .find({ idleUpdateBotFriendCode: { $ne: null } })
-      .lean();
-    return users;
-  }
-
-  /**
    * 更新用户最后活跃时间
    */
   async updateLastActiveAt(userId: string): Promise<void> {
@@ -287,15 +277,6 @@ export class UsersService {
       .select('friendCode')
       .lean();
     return users.map((u) => u.friendCode);
-  }
-
-  /**
-   * 统计某个 bot 有多少用户正在使用它做闲时更新
-   */
-  async countIdleUpdateByBot(botFriendCode: string): Promise<number> {
-    return this.userModel.countDocuments({
-      idleUpdateBotFriendCode: botFriendCode,
-    });
   }
 
   /**
@@ -385,7 +366,7 @@ export class UsersService {
   /**
    * Throttle CAS for the auto-update sweep's job-creation phase.
    * Identical contract to tryClaimHashCheck but scoped to job creation.
-   * Combined with an in-flight idle_update_score check, prevents both
+   * Combined with an in-flight update_score check, prevents both
    * back-to-back duplicate jobs and the "create cancels in-flight" foot-gun.
    */
   async tryClaimAutoUpdateJob(
@@ -464,7 +445,7 @@ export class UsersService {
 
   /**
    * Clear backoff state. Called by JobService.patch on successful
-   * idle_update_score completion (alongside the lastScoreHash promote)
+   * update_score completion (alongside the lastScoreHash promote)
    * and by AutoUpdateScheduler.triggerByFriendCode (admin manual
    * trigger should put the user back on a fresh cadence regardless of
    * past failures).

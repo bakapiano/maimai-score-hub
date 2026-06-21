@@ -1,61 +1,38 @@
-import { initContract } from '@ts-rest/core';
+import { initContract } from "@ts-rest/core";
 
 import {
   BindCabinetQrBodySchema,
   BindCabinetQrResponseSchema,
   DivingFishTokenBodySchema,
   DivingFishTokenResponseSchema,
-  IdleUpdateDisableResponseSchema,
-  IdleUpdateEnableResponseSchema,
-  IdleUpdateStatusSchema,
   SetAutoUpdateBodySchema,
   SetAutoUpdateResponseSchema,
   UpdateProfileBodySchema,
   UserProfileSchema,
-} from './users.schema';
+} from "./users.schema";
 
 const c = initContract();
 
 export const usersContract = c.router({
   profile: {
-    method: 'GET',
-    path: '/users/profile',
+    method: "GET",
+    path: "/me",
     headers: c.type<{ authorization: string }>(),
     responses: { 200: UserProfileSchema },
   },
   updateProfile: {
-    method: 'PATCH',
-    path: '/users/profile',
+    method: "PATCH",
+    path: "/me",
     headers: c.type<{ authorization: string }>(),
     body: UpdateProfileBodySchema,
     responses: { 200: UserProfileSchema },
   },
   getDivingFishToken: {
-    method: 'POST',
-    path: '/users/diving-fish/token',
+    method: "POST",
+    path: "/me/prober-tokens/diving-fish",
     headers: c.type<{ authorization: string }>(),
     body: DivingFishTokenBodySchema,
     responses: { 201: DivingFishTokenResponseSchema },
-  },
-  enableIdleUpdate: {
-    method: 'POST',
-    path: '/users/idle-update/enable',
-    headers: c.type<{ authorization: string }>(),
-    body: c.noBody(),
-    responses: { 201: IdleUpdateEnableResponseSchema },
-  },
-  disableIdleUpdate: {
-    method: 'POST',
-    path: '/users/idle-update/disable',
-    headers: c.type<{ authorization: string }>(),
-    body: c.noBody(),
-    responses: { 201: IdleUpdateDisableResponseSchema },
-  },
-  getIdleUpdateStatus: {
-    method: 'GET',
-    path: '/users/idle-update/status',
-    headers: c.type<{ authorization: string }>(),
-    responses: { 200: IdleUpdateStatusSchema },
   },
   /**
    * Bind a cabinet (sdgb) userId to this account by scanning the player's
@@ -65,8 +42,8 @@ export const usersContract = c.router({
    * at the controller layer.
    */
   bindCabinetQr: {
-    method: 'POST',
-    path: '/users/cabinet/bind-qr',
+    method: "POST",
+    path: "/me/cabinet/bind-qr",
     headers: c.type<{ authorization: string }>(),
     body: BindCabinetQrBodySchema,
     responses: {
@@ -76,13 +53,36 @@ export const usersContract = c.router({
     },
   },
   setAutoUpdate: {
-    method: 'POST',
-    path: '/users/cabinet/auto-update',
+    method: "PATCH",
+    path: "/me/auto-update",
     headers: c.type<{ authorization: string }>(),
     body: SetAutoUpdateBodySchema,
     responses: {
-      201: SetAutoUpdateResponseSchema,
+      200: SetAutoUpdateResponseSchema,
       400: c.type<{ error: string }>(),
+    },
+  },
+  unbindCabinet: {
+    method: "DELETE",
+    path: "/me/cabinet",
+    headers: c.type<{ authorization: string }>(),
+    body: c.noBody(),
+    responses: {
+      200: BindCabinetQrResponseSchema,
+      400: c.type<{ error: string }>(),
+    },
+  },
+  deleteMe: {
+    method: "DELETE",
+    path: "/me",
+    headers: c.type<{ authorization: string }>(),
+    body: c.noBody(),
+    responses: {
+      200: c.type<{
+        ok: true;
+        friendCode: string;
+        deleted: { user: number; syncs: number; jobs: number };
+      }>(),
     },
   },
 });

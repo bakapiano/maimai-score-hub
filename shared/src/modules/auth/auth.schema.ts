@@ -5,7 +5,7 @@ import { JobCreateResponseSchema } from '../job/job.schema';
 export const LoginRequestBodySchema = z.object({
   friendCode: z.string().min(1),
   skipUpdateScore: z.boolean().optional().default(true),
-  useIdleUpdate: z.boolean().optional().default(false),
+  method: z.enum(["bot_sends_request", "user_sends_request"]),
 });
 
 export const LoginRequestResponseSchema = z
@@ -15,10 +15,15 @@ export const LoginRequestResponseSchema = z
     authToken: z.string().optional(),
     message: z.string().optional(),
     reused: z.boolean().optional(),
-    idleUpdate: z.boolean().optional(),
+    botFriendCode: z.string().optional(),
+    createdAt: z.string().optional(),
     job: JobCreateResponseSchema.shape.job.optional(),
   })
   .passthrough();
+
+export const LoginRequestVerifyResponseSchema = z.object({
+  job: JobCreateResponseSchema.shape.job,
+});
 
 export const LoginStatusQuerySchema = z.object({
   jobId: z.string().min(1),

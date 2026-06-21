@@ -16,6 +16,9 @@ export class BotStatusEntity {
   @Prop({ type: Number, default: null })
   friendCount!: number | null;
 
+  @Prop({ type: Date, default: null })
+  friendsUpdatedAt!: Date | null;
+
   @Prop({ type: String, default: null })
   remark!: string | null;
 
@@ -31,14 +34,6 @@ export class BotStatusEntity {
   @Prop({ type: Number, default: null })
   cabinetUserId!: number | null;
 
-  /**
-   * Set by code paths that need a fresh friend list ASAP (currently:
-   * QR-login, after addRival succeeds). Worker pulls a list of bots with
-   * non-null `friendListRefreshRequestedAt` every few seconds and
-   * fetches+reports their friend list out of band, then clears the field.
-   */
-  @Prop({ type: Date, default: null })
-  friendListRefreshRequestedAt!: Date | null;
 }
 
 export type BotStatusDocument = HydratedDocument<BotStatusEntity>;

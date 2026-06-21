@@ -1,19 +1,23 @@
-import { initClient } from '@ts-rest/core';
-import * as sharedContract from '@maimai-score-hub/shared';
+import { initClient } from "@ts-rest/core";
+import * as sharedContract from "@maimai-score-hub/shared";
 import {
   type JobCreateBody,
   type JobCreateResponse,
   type JobRecentStats,
   type JobResponse,
-} from '@maimai-score-hub/shared';
+  type JobWakeResponse,
+} from "@maimai-score-hub/shared";
 
 const { jobContract } = sharedContract;
 
 const client = initClient(jobContract, {
-  baseUrl: '/api',
+  baseUrl: "/api/v1",
 });
 
-export async function createJob(body: JobCreateBody, authToken: string): Promise<JobCreateResponse> {
+export async function createJob(
+  body: JobCreateBody,
+  authToken: string,
+): Promise<JobCreateResponse> {
   const response = await client.create({
     body,
     headers: { authorization: `Bearer ${authToken}` },
@@ -33,11 +37,26 @@ export async function getJobById(jobId: string): Promise<JobResponse> {
 }
 
 export async function getActiveJobByFriendCode(
-  friendCode: string,
+  _friendCode: string,
   authToken: string,
 ): Promise<{ job: JobResponse | null }> {
   const response = await client.getActiveByFriendCode({
-    params: { friendCode },
+    headers: { authorization: `Bearer ${authToken}` },
+  });
+
+  if (response.status !== 200) {
+    throw new Error(`Unexpected status: ${response.status}`);
+  }
+
+  return response.body;
+}
+
+export async function wakeJob(
+  jobId: string,
+  authToken: string,
+): Promise<JobWakeResponse> {
+  const response = await client.wake({
+    params: { jobId },
     headers: { authorization: `Bearer ${authToken}` },
   });
 

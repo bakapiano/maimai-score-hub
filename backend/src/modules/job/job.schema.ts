@@ -13,8 +13,11 @@ export class JobEntity {
   @Prop({ required: true })
   friendCode!: string;
 
-  @Prop({ required: true, type: String, default: 'immediate' })
+  @Prop({ required: true, type: String, default: 'send_friend_request' })
   jobType!: JobType;
+
+  @Prop({ required: true, type: Number, default: 0 })
+  priority!: number;
 
   @Prop({ required: true, default: false })
   skipUpdateScore!: boolean;
@@ -24,6 +27,9 @@ export class JobEntity {
 
   @Prop({ type: String, default: null })
   friendRequestSentAt!: string | null;
+
+  @Prop({ type: String, default: null })
+  friendRequestWaitStartedAt!: string | null;
 
   @Prop({ required: true, type: String })
   status!: JobStatus;
@@ -60,7 +66,7 @@ export class JobEntity {
 
   /**
    * Score hash observed by the auto-update sweep at the moment this job
-   * was created. Set ONLY for jobType=`idle_update_score` jobs created by
+   * was created. Set ONLY for jobType=`update_score` jobs created by
    * AutoUpdateScheduler. When the job completes successfully, JobService
    * uses this to advance the user's `lastScoreHash` — that way a failed
    * job doesn't burn the hash transition the next sweep should retry.
@@ -73,7 +79,7 @@ export class JobEntity {
    * uses this to skip half the friend-VS requests (achievement +
    * dxScore are authoritative from cabinet; only fc/fs need scraping).
    * Shape: { "<musicId>_<chartIndex>": { achievement, dxScore } }.
-   * Only populated for idle_update_score jobs from AutoUpdateScheduler.
+   * Only populated for update_score jobs from AutoUpdateScheduler.
    */
   @Prop({ type: MongooseSchema.Types.Mixed, default: null })
   cabinetScoreMap!: Record<string, { achievement: number; dxScore: number }> | null;
@@ -85,6 +91,13 @@ export class JobEntity {
    */
   @Prop({ type: [Number], default: null })
   diffsToScrape!: number[] | null;
+
+  /**
+   * Next time this job may be claimed. Null means immediately claimable.
+   * Used for waiting/cooldown stages so updatedAt stays a real audit field.
+   */
+  @Prop({ type: Date, default: null })
+  runAt!: Date | null;
 
   @Prop({ required: true })
   createdAt!: Date;
@@ -109,6 +122,21 @@ JobSchema.index(
   { name: 'hot_claim' },
 );
 JobSchema.index({ executing: 1, updatedAt: 1 }, { name: 'stale_lock' });
+JobSchema.index(
+  { status: 1, botUserFriendCode: 1, executing: 1, runAt: 1 },
+  { name: 'hot_claim_due' },
+);
+JobSchema.index(
+  {
+    status: 1,
+    botUserFriendCode: 1,
+    executing: 1,
+    runAt: 1,
+    priority: -1,
+    updatedAt: 1,
+  },
+  { name: 'hot_claim_priority' },
+);
 JobSchema.index(
   { botUserFriendCode: 1, status: 1 },
   { name: 'bot_status' },

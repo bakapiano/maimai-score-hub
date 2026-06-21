@@ -110,7 +110,7 @@ export function getRankFromScore(score: string | null): string {
  * v=3: bust browser cache after enabling webp content-negotiation
  */
 export function getCoverUrl(musicId: string): string {
-  return `/api/cover/${musicId}?v=3`;
+  return `/api/v1/catalog/covers/${musicId}?v=3`;
 }
 
 /**

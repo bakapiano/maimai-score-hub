@@ -183,6 +183,10 @@ export class AdminService {
     return this.coverService.forceSyncAll();
   }
 
+  async backfillCoverVariants() {
+    return this.coverService.backfillLocalVariants();
+  }
+
   async syncMusic() {
     return this.musicService.syncMusicData();
   }
@@ -272,7 +276,8 @@ export class AdminService {
     now: number,
   ): Promise<JobStatsAggregateRow> {
     const sevenDaysAgo = new Date(now - JOB_STATS_RANGES[2].ms);
-    const group: Record<string, unknown> = { _id: null };
+    const group = { _id: null } as PipelineStage.Group['$group'] &
+      Record<string, unknown>;
 
     for (const range of JOB_STATS_RANGES) {
       const start = new Date(now - range.ms);
@@ -608,7 +613,7 @@ export class AdminService {
 
     return {
       data: jobs.map((job) => {
-        const { _id, __v, ...raw } = job as Record<string, unknown>;
+        const { _id, __v, ...raw } = job as unknown as Record<string, unknown>;
         return {
           id: job.id,
           friendCode: job.friendCode,
@@ -640,7 +645,7 @@ export class AdminService {
    *   - "now" snapshot: queued + processing counts, per-bot inflight,
    *     active auto-update user count
    *   - capacity estimate: throughput vs current load
-   *   - cabinet-optimization hit rate: % of recent idle_update_score jobs
+   *   - cabinet-optimization hit rate: % of recent update_score jobs
    *     that received a cabinetScoreMap; avg friend-VS request count saved
    */
   async getAutoUpdateMetrics(window: '24h' | '7d') {
@@ -710,7 +715,7 @@ export class AdminService {
       }>([
         {
           $match: {
-            jobType: 'idle_update_score',
+            jobType: 'update_score',
             status: 'completed',
             updateScoreDuration: { $ne: null, $gt: 0 },
             createdAt: { $gte: since },
@@ -735,10 +740,7 @@ export class AdminService {
       .exec();
     const percentile = (sorted: number[], q: number): number => {
       if (!sorted.length) return 0;
-      const idx = Math.min(
-        sorted.length - 1,
-        Math.floor(sorted.length * q),
-      );
+      const idx = Math.min(sorted.length - 1, Math.floor(sorted.length * q));
       return sorted[idx];
     };
     const durationBuckets = durationsByBucket.map((d) => {
@@ -795,11 +797,11 @@ export class AdminService {
     const [queuedCount, processingCount, perBotInflight, autoUpdateUsers] =
       await Promise.all([
         this.jobModel.countDocuments({
-          jobType: 'idle_update_score',
+          jobType: 'update_score',
           status: 'queued',
         }),
         this.jobModel.countDocuments({
-          jobType: 'idle_update_score',
+          jobType: 'update_score',
           status: 'processing',
         }),
         this.jobModel.aggregate<{ _id: string; count: number }>([
@@ -815,9 +817,9 @@ export class AdminService {
         this.userModel.countDocuments({ autoUpdate: true }),
       ]);
 
-    // ---- (6) cabinet optimization hit rate (last 200 idle_update_score jobs) ----
+    // ---- (6) cabinet optimization hit rate (last 200 update_score jobs) ----
     const recentIdle = await this.jobModel
-      .find({ jobType: 'idle_update_score' })
+      .find({ jobType: 'update_score' })
       .sort({ createdAt: -1 })
       .limit(200)
       .select({ cabinetScoreMap: 1, diffsToScrape: 1, createdAt: 1 })
@@ -856,12 +858,14 @@ export class AdminService {
       cabinetUserId: { $ne: null },
     });
     // Per-bot throughput rough estimate: 60s/2.5s spacing = 24 req/min;
-    // a typical idle_update_score job under cabinet path needs ~16 req
+    // a typical update_score job under cabinet path needs ~16 req
     // (8 diffs × 2 sides for scoreType=2 only). Without cabinet (rare
     // now): ~32 req. Assume cabinet hit rate from recent.
-    const reqsPerJob = 16 * (1 - cabinetHitRate / 100) + 8 * (cabinetHitRate / 100);
+    const reqsPerJob =
+      16 * (1 - cabinetHitRate / 100) + 8 * (cabinetHitRate / 100);
     const reqsPerMinPerBot = 24;
-    const jobsPerMin = (activeCabinetBots * reqsPerMinPerBot) / Math.max(reqsPerJob, 1);
+    const jobsPerMin =
+      (activeCabinetBots * reqsPerMinPerBot) / Math.max(reqsPerJob, 1);
     const jobsPerSweep = jobsPerMin * 5;
     // sweep触发率 = recent triggered / sweepCount → per-user trigger probability ≈
     // (total triggered in window) / (total sweeps in window × N users)
@@ -890,7 +894,9 @@ export class AdminService {
         : null;
     const maxUsersPeak =
       triggerRatePerSweep > 0 && peakFactor > 0
-        ? Math.floor((jobsPerSweep * safetyFactor) / (triggerRatePerSweep * peakFactor))
+        ? Math.floor(
+            (jobsPerSweep * safetyFactor) / (triggerRatePerSweep * peakFactor),
+          )
         : null;
 
     return {
@@ -943,7 +949,7 @@ export class AdminService {
 
   /**
    * Aggregated stats for prober auto-export (diving-fish + lxns) across
-   * ALL job types (immediate / idle / manual) — not just auto-update.
+   * ALL job types (send_friend_request / update_score / manual) — not just auto-update.
    * Source of truth: jobs.autoExportResult populated by JobService.runAutoExport
    * after the score sync completes.
    */
@@ -1041,7 +1047,10 @@ export class AdminService {
         lastSeen: Date;
       }>([
         {
-          $match: { createdAt: { $gte: since }, autoExportResult: { $ne: null } },
+          $match: {
+            createdAt: { $gte: since },
+            autoExportResult: { $ne: null },
+          },
         },
         {
           $project: {
