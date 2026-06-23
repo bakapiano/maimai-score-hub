@@ -111,7 +111,7 @@ export interface ApiLogEntry {
   url: string;
   method: string;
   statusCode: number;
-  responseBody: string | null;
+  bodySize: number | null;
   createdAt: string;
 }
 

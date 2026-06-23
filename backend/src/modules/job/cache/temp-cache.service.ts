@@ -1,109 +1,80 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { ConfigService } from '@nestjs/config';
 import type { FriendVsSong } from '@maimai-score-hub/shared';
-import { Model } from 'mongoose';
-import {
-  JobTempCacheEntity,
-  type JobTempCacheDocument,
-} from './temp-cache.schema';
+
+import { RedisService } from '../../../common/redis/redis.service';
 
 /**
- * Job 临时缓存服务
- * 用于在 update_score 阶段存储中间结果，支持任务恢复
+ * Job 临时缓存服务。
+ * 存储 update_score 阶段的中间结果，Redis TTL 到期后自动清理。
  */
 @Injectable()
 export class JobTempCacheService {
   private readonly logger = new Logger(JobTempCacheService.name);
+  private readonly ttlSeconds: number;
 
   constructor(
-    @InjectModel(JobTempCacheEntity.name)
-    private readonly cacheModel: Model<JobTempCacheDocument>,
-  ) {}
+    private readonly redis: RedisService,
+    config: ConfigService,
+  ) {
+    this.ttlSeconds = this.getPositiveInt(
+      config,
+      'JOB_TEMP_CACHE_TTL_SECONDS',
+      60 * 60,
+    );
+  }
 
-  /**
-   * 获取缓存的 FriendVS 解析结果
-   */
   async get(
     jobId: string,
     diff: number,
     type: number,
   ): Promise<FriendVsSong[] | null> {
-    const cache = await this.cacheModel
-      .findOne({ jobId, diff, type })
-      .select('songs')
-      .lean();
+    const songs = await this.redis.getJson<FriendVsSong[]>(
+      this.cacheKey(jobId, diff, type),
+    );
 
-    if (cache) {
+    if (songs) {
       this.logger.log(`Cache hit for job ${jobId}, diff ${diff}, type ${type}`);
-      return cache.songs;
     }
 
-    return null;
+    return songs;
   }
 
-  /**
-   * 设置缓存
-   */
-  async set(
-    jobId: string,
-    diff: number,
-    type: number,
-    songs: FriendVsSong[],
-  ) {
-    const now = new Date();
-
-    await this.cacheModel.updateOne(
-      { jobId, diff, type },
-      {
-        $set: {
-          jobId,
-          diff,
-          type,
-          songs,
-          createdAt: now,
-        },
-      },
-      { upsert: true },
-    );
+  async set(jobId: string, diff: number, type: number, songs: FriendVsSong[]) {
+    await this.redis.setJson(this.cacheKey(jobId, diff, type), songs, {
+      ttlSeconds: this.ttlSeconds,
+    });
 
     this.logger.log(`Cache set for job ${jobId}, diff ${diff}, type ${type}`);
   }
 
-  /**
-   * 删除指定 job 的所有缓存
-   */
   async deleteByJobId(jobId: string): Promise<number> {
-    const result = await this.cacheModel.deleteMany({ jobId });
-    const count = result.deletedCount ?? 0;
+    const keys = await this.redis.keys(this.cacheKey(jobId, '*', '*'));
+    if (!keys.length) return 0;
 
-    if (count > 0) {
-      this.logger.log(`Deleted ${count} cache entries for job ${jobId}`);
+    let deleted = 0;
+    for (const key of keys) {
+      deleted += await this.redis.del(key);
     }
 
-    return count;
+    this.logger.log(`Deleted ${deleted} cache entries for job ${jobId}`);
+    return deleted;
   }
 
-  /**
-   * 清理过期的缓存（兜底方法，主要依靠 TTL 索引）
-   * 删除创建时间超过 12 小时的记录
-   * 每天凌晨 3 点执行
-   */
-  @Cron(CronExpression.EVERY_DAY_AT_3AM, { timeZone: 'Asia/Shanghai' })
-  async cleanupExpired(): Promise<number> {
-    this.logger.log('Running scheduled cleanup of expired cache entries...');
-    const cutoffTime = new Date(Date.now() - 12 * 60 * 60 * 1000);
-    const result = await this.cacheModel.deleteMany({
-      createdAt: { $lt: cutoffTime },
-    });
+  private cacheKey(jobId: string, diff: number | '*', type: number | '*') {
+    return this.redis.key(`cache:job-temp:${jobId}:${diff}:${type}`);
+  }
 
-    const count = result.deletedCount ?? 0;
-    if (count > 0) {
-      this.logger.log(`Cleaned up ${count} expired cache entries`);
-    } else {
-      this.logger.log('No expired cache entries found');
-    }
-
-    return count;
+  private getPositiveInt(
+    config: ConfigService,
+    key: string,
+    fallback: number,
+  ): number {
+    const raw = config.get<string | number>(key);
+    if (raw == null || raw === '') return fallback;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0
+      ? Math.floor(parsed)
+      : fallback;
   }
 }

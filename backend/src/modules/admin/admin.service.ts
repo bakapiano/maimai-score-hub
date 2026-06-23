@@ -6,10 +6,10 @@ import { MusicEntity } from '../music/music.schema';
 import { SyncEntity } from '../sync/sync.schema';
 import { JobEntity } from '../job/job.schema';
 import { BotStatusEntity } from './bot-status.schema';
-import { WorkerLogEntity } from '../worker-logs/worker-log.schema';
 import { AutoUpdateRunEntity } from '../auto-update/auto-update-run.schema';
 import { CoverService } from '../cover/cover.service';
 import { MusicService } from '../music/music.service';
+import { RedisService } from '../../common/redis/redis.service';
 
 export interface AdminStats {
   userCount: number;
@@ -128,12 +128,11 @@ export class AdminService {
     private readonly jobModel: Model<JobEntity>,
     @InjectModel(BotStatusEntity.name)
     private readonly botStatusModel: Model<BotStatusEntity>,
-    @InjectModel(WorkerLogEntity.name)
-    private readonly workerLogModel: Model<WorkerLogEntity>,
     @InjectModel(AutoUpdateRunEntity.name)
     private readonly autoUpdateRunModel: Model<AutoUpdateRunEntity>,
     private readonly coverService: CoverService,
     private readonly musicService: MusicService,
+    private readonly redis: RedisService,
   ) {}
 
   async getStats(): Promise<AdminStats> {
@@ -641,7 +640,7 @@ export class AdminService {
    *   - timeline buckets: triggered / skippedHashUnchanged / skippedThrottled
    *     / failed counts per bucket (5min for 24h window, 1h for 7d window)
    *   - duration trend per bucket: avg, p50, p99 of updateScoreDuration
-   *   - 567 rate-limit hits per bucket (parsed from worker_logs)
+   *   - 567 rate-limit hits per bucket (parsed from Redis worker log stream)
    *   - "now" snapshot: queued + processing counts, per-bot inflight,
    *     active auto-update user count
    *   - capacity estimate: throughput vs current load
@@ -755,16 +754,10 @@ export class AdminService {
     });
 
     // ---- (3) 567 rate-limit hits per bucket ----
-    const limitLogs = await this.workerLogModel
-      .find({ ts: { $gte: since }, message: /\(567\)/ })
-      .select({ ts: 1 })
-      .lean()
-      .exec();
-    const limitByBucket = new Map<number, number>();
-    for (const l of limitLogs) {
-      const k = bucketKey(l.ts);
-      limitByBucket.set(k, (limitByBucket.get(k) ?? 0) + 1);
-    }
+    const limitByBucket = await this.countRateLimitLogsByBucket(
+      since,
+      bucketMs,
+    );
 
     // ---- (4) merged timeline ----
     const allBucketKeys = new Set<number>([
@@ -945,6 +938,26 @@ export class AdminService {
         total567: timeline.reduce((s, b) => s + b.rateLimit567, 0),
       },
     };
+  }
+
+  private async countRateLimitLogsByBucket(
+    since: Date,
+    bucketMs: number,
+  ): Promise<Map<number, number>> {
+    const streamKey = this.redis.key('logs:worker:dxnet');
+    const rows = await this.redis.xRevRange(streamKey, 10_000);
+    const sinceMs = since.getTime();
+    const buckets = new Map<number, number>();
+
+    for (const row of rows) {
+      const ts = row.fields.ts ? new Date(row.fields.ts).getTime() : NaN;
+      if (!Number.isFinite(ts) || ts < sinceMs) continue;
+      if (!row.fields.message?.includes('(567)')) continue;
+      const bucket = Math.floor(ts / bucketMs) * bucketMs;
+      buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1);
+    }
+
+    return buckets;
   }
 
   /**

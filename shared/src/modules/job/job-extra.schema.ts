@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const TempCachePathSchema = z.object({
   jobId: z.string(),
@@ -6,7 +6,7 @@ export const TempCachePathSchema = z.object({
   type: z.coerce.number().int(),
 });
 
-export const ChartTypeSchema = z.enum(['standard', 'dx', 'utage']);
+export const ChartTypeSchema = z.enum(["standard", "dx", "utage"]);
 
 export const FriendVsSongSchema = z.object({
   level: z.string(),
@@ -30,7 +30,7 @@ export const ApiLogEntrySchema = z.object({
   url: z.string(),
   method: z.string(),
   statusCode: z.number(),
-  responseBody: z.string().nullable().optional(),
+  bodySize: z.number().int().nonnegative().nullable().optional(),
 });
 
 export const AddApiLogsBodySchema = z.object({

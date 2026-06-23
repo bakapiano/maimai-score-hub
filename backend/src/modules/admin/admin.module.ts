@@ -1,15 +1,7 @@
 import { JobEntity, JobSchema } from '../job/job.schema';
-import {
-  JobApiLogEntity,
-  JobApiLogSchema,
-} from '../job/api-log/api-log.schema';
 import { MusicEntity, MusicSchema } from '../music/music.schema';
 import { SyncEntity, SyncSchema } from '../sync/sync.schema';
 import { UserEntity, UserSchema } from '../users/user.schema';
-import {
-  WorkerLogEntity,
-  WorkerLogSchema,
-} from '../worker-logs/worker-log.schema';
 import {
   AutoUpdateRunEntity,
   AutoUpdateRunSchema,
@@ -50,14 +42,12 @@ import { WorkerBotStatusController } from './worker-bot-status.controller';
       { name: MusicEntity.name, schema: MusicSchema },
       { name: SyncEntity.name, schema: SyncSchema },
       { name: JobEntity.name, schema: JobSchema },
-      { name: JobApiLogEntity.name, schema: JobApiLogSchema },
       { name: BotStatusEntity.name, schema: BotStatusSchema },
       {
         name: BotFriendSnapshotEntity.name,
         schema: BotFriendSnapshotSchema,
       },
       { name: NotifyStateEntity.name, schema: NotifyStateSchema },
-      { name: WorkerLogEntity.name, schema: WorkerLogSchema },
       { name: AutoUpdateRunEntity.name, schema: AutoUpdateRunSchema },
     ]),
     CoverModule,

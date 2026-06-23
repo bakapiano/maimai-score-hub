@@ -1,27 +1,19 @@
 import {
-  ActionIcon,
   Badge,
   Button,
   Card,
   Code,
   Group,
-  Modal,
   Pagination,
   ScrollArea,
   Select,
   Stack,
   Switch,
-  Tooltip as MantineTooltip,
   Table,
   Text,
   TextInput,
 } from "@mantine/core";
-import {
-  IconBug,
-  IconCode,
-  IconExternalLink,
-  IconEye,
-} from "@tabler/icons-react";
+import { IconBug } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -50,12 +42,6 @@ export default function AdminJobDebugPage() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [apiLogs, setApiLogs] = useState<ApiLogEntry[]>([]);
   const [apiLogsLoading, setApiLogsLoading] = useState(false);
-
-  const [responseViewerOpen, setResponseViewerOpen] = useState(false);
-  const [responseViewerContent, setResponseViewerContent] = useState("");
-  const [responseViewerRenderHtml, setResponseViewerRenderHtml] =
-    useState(true);
-  const [responseViewerUrl, setResponseViewerUrl] = useState("");
 
   const searchJobs = useCallback(
     async (p = 1) => {
@@ -183,101 +169,101 @@ export default function AdminJobDebugPage() {
                       categorizeJobError(job.error) !== "user_error",
                   )
                   .map((job) => (
-                  <Table.Tr
-                    key={job.id}
-                    bg={
-                      selectedJobId === job.id
-                        ? "var(--mantine-color-blue-light)"
-                        : undefined
-                    }
-                  >
-                    <Table.Td>
-                      <Text size="sm" ff="monospace">
-                        {job.friendCode}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge
-                        color={
-                          job.status === "completed"
-                            ? "green"
-                            : job.status === "failed"
-                              ? "red"
-                              : job.status === "processing"
-                                ? "blue"
-                                : job.status === "canceled"
-                                  ? "gray"
-                                  : "yellow"
-                        }
-                        variant="light"
-                        size="sm"
-                      >
-                        {job.status}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm">{job.stage}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" ff="monospace" c="dimmed">
-                        {job.botUserFriendCode ?? "-"}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      {job.error ? (
-                        <Group gap={6} wrap="nowrap" align="flex-start">
-                          {(() => {
-                            const cat = categorizeJobError(job.error);
-                            const meta = ERROR_CATEGORY_META[cat];
-                            return (
-                              <Badge
-                                size="xs"
-                                variant="light"
-                                color={meta.color}
-                                style={{ flexShrink: 0 }}
-                              >
-                                {meta.label}
-                              </Badge>
-                            );
-                          })()}
-                          <Text
-                            size="sm"
-                            c="red"
-                            lineClamp={1}
-                            style={{ maxWidth: 200 }}
-                          >
-                            {job.error}
-                          </Text>
-                        </Group>
-                      ) : (
-                        <Text size="sm" c="dimmed">
-                          -
+                    <Table.Tr
+                      key={job.id}
+                      bg={
+                        selectedJobId === job.id
+                          ? "var(--mantine-color-blue-light)"
+                          : undefined
+                      }
+                    >
+                      <Table.Td>
+                        <Text size="sm" ff="monospace">
+                          {job.friendCode}
                         </Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" c="dimmed">
-                        {new Date(job.createdAt).toLocaleString("zh-CN", {
-                          month: "2-digit",
-                          day: "2-digit",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        })}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Button
-                        variant="subtle"
-                        size="xs"
-                        onClick={() => loadApiLogs(job.id)}
-                        loading={apiLogsLoading && selectedJobId === job.id}
-                      >
-                        调试
-                      </Button>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge
+                          color={
+                            job.status === "completed"
+                              ? "green"
+                              : job.status === "failed"
+                                ? "red"
+                                : job.status === "processing"
+                                  ? "blue"
+                                  : job.status === "canceled"
+                                    ? "gray"
+                                    : "yellow"
+                          }
+                          variant="light"
+                          size="sm"
+                        >
+                          {job.status}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm">{job.stage}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" ff="monospace" c="dimmed">
+                          {job.botUserFriendCode ?? "-"}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        {job.error ? (
+                          <Group gap={6} wrap="nowrap" align="flex-start">
+                            {(() => {
+                              const cat = categorizeJobError(job.error);
+                              const meta = ERROR_CATEGORY_META[cat];
+                              return (
+                                <Badge
+                                  size="xs"
+                                  variant="light"
+                                  color={meta.color}
+                                  style={{ flexShrink: 0 }}
+                                >
+                                  {meta.label}
+                                </Badge>
+                              );
+                            })()}
+                            <Text
+                              size="sm"
+                              c="red"
+                              lineClamp={1}
+                              style={{ maxWidth: 200 }}
+                            >
+                              {job.error}
+                            </Text>
+                          </Group>
+                        ) : (
+                          <Text size="sm" c="dimmed">
+                            -
+                          </Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" c="dimmed">
+                          {new Date(job.createdAt).toLocaleString("zh-CN", {
+                            month: "2-digit",
+                            day: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Button
+                          variant="subtle"
+                          size="xs"
+                          onClick={() => loadApiLogs(job.id)}
+                          loading={apiLogsLoading && selectedJobId === job.id}
+                        >
+                          调试
+                        </Button>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
               </Table.Tbody>
             </ScrollableTable>
             <Group justify="space-between" align="center">
@@ -338,7 +324,7 @@ export default function AdminJobDebugPage() {
                         <Table.Th>方法</Table.Th>
                         <Table.Th>URL</Table.Th>
                         <Table.Th>状态码</Table.Th>
-                        <Table.Th>响应</Table.Th>
+                        <Table.Th>响应大小</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
@@ -388,65 +374,11 @@ export default function AdminJobDebugPage() {
                             </Badge>
                           </Table.Td>
                           <Table.Td>
-                            {log.responseBody ? (
-                              <Group gap={4} wrap="nowrap">
-                                <Code
-                                  block
-                                  style={{
-                                    maxHeight: 60,
-                                    overflow: "hidden",
-                                    maxWidth: 200,
-                                    fontSize: 10,
-                                  }}
-                                >
-                                  {log.responseBody.slice(0, 200)}
-                                  {log.responseBody.length > 200 ? "..." : ""}
-                                </Code>
-                                <Stack gap={2}>
-                                  <MantineTooltip label="查看完整响应">
-                                    <ActionIcon
-                                      variant="subtle"
-                                      size="xs"
-                                      onClick={() => {
-                                        setResponseViewerContent(
-                                          log.responseBody ?? "",
-                                        );
-                                        setResponseViewerUrl(log.url);
-                                        setResponseViewerRenderHtml(
-                                          log.responseBody
-                                            ?.trimStart()
-                                            .startsWith("<") ?? false,
-                                        );
-                                        setResponseViewerOpen(true);
-                                      }}
-                                    >
-                                      <IconEye size={14} />
-                                    </ActionIcon>
-                                  </MantineTooltip>
-                                  <MantineTooltip label="新窗口打开">
-                                    <ActionIcon
-                                      variant="subtle"
-                                      size="xs"
-                                      onClick={() => {
-                                        const w = window.open("", "_blank");
-                                        if (w) {
-                                          w.document.write(
-                                            log.responseBody ?? "",
-                                          );
-                                          w.document.close();
-                                        }
-                                      }}
-                                    >
-                                      <IconExternalLink size={14} />
-                                    </ActionIcon>
-                                  </MantineTooltip>
-                                </Stack>
-                              </Group>
-                            ) : (
-                              <Text size="xs" c="dimmed">
-                                -
-                              </Text>
-                            )}
+                            <Text size="xs" c="dimmed" ff="monospace">
+                              {log.bodySize == null
+                                ? "-"
+                                : `${log.bodySize.toLocaleString()} B`}
+                            </Text>
                           </Table.Td>
                         </Table.Tr>
                       ))}
@@ -467,91 +399,6 @@ export default function AdminJobDebugPage() {
             暂无任务记录
           </Text>
         )}
-
-        <Modal
-          opened={responseViewerOpen}
-          onClose={() => setResponseViewerOpen(false)}
-          title={
-            <Group gap="sm">
-              <Text fw={600} size="sm">
-                响应内容
-              </Text>
-              <Text size="xs" c="dimmed" ff="monospace" lineClamp={1}>
-                {responseViewerUrl}
-              </Text>
-            </Group>
-          }
-          size="90vw"
-          styles={{
-            body: { padding: 0 },
-            header: { padding: "8px 16px" },
-          }}
-        >
-          <Group
-            gap="xs"
-            px="md"
-            py={6}
-            style={{
-              borderBottom: "1px solid var(--mantine-color-default-border)",
-            }}
-          >
-            <Button
-              variant={responseViewerRenderHtml ? "filled" : "light"}
-              size="xs"
-              leftSection={<IconEye size={14} />}
-              onClick={() => setResponseViewerRenderHtml(true)}
-            >
-              渲染 HTML
-            </Button>
-            <Button
-              variant={!responseViewerRenderHtml ? "filled" : "light"}
-              size="xs"
-              leftSection={<IconCode size={14} />}
-              onClick={() => setResponseViewerRenderHtml(false)}
-            >
-              源代码
-            </Button>
-            <Button
-              variant="light"
-              size="xs"
-              leftSection={<IconExternalLink size={14} />}
-              onClick={() => {
-                const w = window.open("", "_blank");
-                if (w) {
-                  w.document.write(responseViewerContent);
-                  w.document.close();
-                }
-              }}
-            >
-              新窗口打开
-            </Button>
-          </Group>
-          {responseViewerRenderHtml ? (
-            <iframe
-              srcDoc={responseViewerContent}
-              style={{
-                width: "100%",
-                height: "75vh",
-                border: "none",
-              }}
-              sandbox="allow-same-origin"
-              title="Response HTML Preview"
-            />
-          ) : (
-            <ScrollArea h="75vh" p="md">
-              <Code
-                block
-                style={{
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-all",
-                  fontSize: 12,
-                }}
-              >
-                {responseViewerContent}
-              </Code>
-            </ScrollArea>
-          )}
-        </Modal>
       </Stack>
     </Card>
   );

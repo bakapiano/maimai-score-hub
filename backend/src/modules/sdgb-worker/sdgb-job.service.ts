@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
 import type { Model } from 'mongoose';
@@ -13,19 +9,26 @@ import {
   type SdgbJobStatus,
   type SdgbJobType,
 } from './sdgb-job.schema';
-import {
-  SdgbWorkerStatusEntity,
-  type SdgbWorkerStatusDocument,
-} from './sdgb-worker-status.schema';
+import { RedisService } from '../../common/redis/redis.service';
 
 /** A claim can be reclaimed if the worker hasn't patched it within this window. */
-const CLAIM_TIMEOUT_MS = Number(process.env.SDGB_CLAIM_TIMEOUT_MS ?? 2 * 60 * 1000);
+const CLAIM_TIMEOUT_MS = Number(
+  process.env.SDGB_CLAIM_TIMEOUT_MS ?? 2 * 60 * 1000,
+);
 
 /** Queued jobs older than this are auto-failed (the worker is presumed down). */
-const QUEUE_TIMEOUT_MS = Number(process.env.SDGB_QUEUE_TIMEOUT_MS ?? 10 * 60 * 1000);
-const WORKER_STALE_MS = Number(process.env.SDGB_WORKER_STALE_MS ?? 2 * 60 * 1000);
+const QUEUE_TIMEOUT_MS = Number(
+  process.env.SDGB_QUEUE_TIMEOUT_MS ?? 10 * 60 * 1000,
+);
+const WORKER_STALE_MS = Number(
+  process.env.SDGB_WORKER_STALE_MS ?? 2 * 60 * 1000,
+);
 const RECENT_JOB_LIMIT = 20;
-const SDGB_JOB_TYPES: SdgbJobType[] = ['scan_qr', 'get_rival_hash', 'add_rival'];
+const SDGB_JOB_TYPES: SdgbJobType[] = [
+  'scan_qr',
+  'get_rival_hash',
+  'add_rival',
+];
 
 export interface SdgbJobView {
   id: string;
@@ -80,6 +83,12 @@ export interface SdgbJobListView {
   pageSize: number;
 }
 
+interface SdgbWorkerStatus {
+  workerId: string;
+  lastSeenAt: string;
+  jobsClaimed: number;
+}
+
 function toView(doc: SdgbJobEntity): SdgbJobView {
   return {
     id: doc.id,
@@ -94,7 +103,10 @@ function toView(doc: SdgbJobEntity): SdgbJobView {
   };
 }
 
-function secondsSince(date: Date | null | undefined, nowMs: number): number | null {
+function secondsSince(
+  date: Date | null | undefined,
+  nowMs: number,
+): number | null {
   if (!date) return null;
   return Math.max(0, Math.floor((nowMs - date.getTime()) / 1000));
 }
@@ -121,13 +133,18 @@ function escapeRegex(value: string): string {
 @Injectable()
 export class SdgbJobService {
   private readonly logger = new Logger(SdgbJobService.name);
+  private readonly workerStatusTtlSeconds: number;
 
   constructor(
     @InjectModel(SdgbJobEntity.name)
     private readonly model: Model<SdgbJobDocument>,
-    @InjectModel(SdgbWorkerStatusEntity.name)
-    private readonly statusModel: Model<SdgbWorkerStatusDocument>,
-  ) {}
+    private readonly redis: RedisService,
+  ) {
+    this.workerStatusTtlSeconds = Math.max(
+      1,
+      Math.floor(WORKER_STALE_MS / 1000) * 2,
+    );
+  }
 
   /**
    * Insert a new job in `queued` state and return its view. Producers (e.g.
@@ -176,10 +193,13 @@ export class SdgbJobService {
       oldestProcessing,
       recentJobs,
     ] = await Promise.all([
-      this.statusModel.find().sort({ lastSeenAt: -1 }).lean<SdgbWorkerStatusEntity[]>(),
+      this.getWorkerStatuses(),
       Promise.all(
-        (['queued', 'processing', 'completed', 'failed'] as SdgbJobStatus[]).map(
-          async (status) => [status, await this.model.countDocuments({ status })] as const,
+        (
+          ['queued', 'processing', 'completed', 'failed'] as SdgbJobStatus[]
+        ).map(
+          async (status) =>
+            [status, await this.model.countDocuments({ status })] as const,
         ),
       ),
       this.model
@@ -251,13 +271,14 @@ export class SdgbJobService {
 
     return {
       workers: workers.map((worker) => {
-        const ageSeconds = secondsSince(worker.lastSeenAt, nowMs) ?? 0;
+        const lastSeenAt = new Date(worker.lastSeenAt);
+        const ageSeconds = secondsSince(lastSeenAt, nowMs) ?? 0;
         return {
           workerId: worker.workerId,
-          lastSeenAt: worker.lastSeenAt.toISOString(),
+          lastSeenAt: lastSeenAt.toISOString(),
           ageSeconds,
           jobsClaimed: worker.jobsClaimed,
-          alive: now.getTime() - worker.lastSeenAt.getTime() <= WORKER_STALE_MS,
+          alive: now.getTime() - lastSeenAt.getTime() <= WORKER_STALE_MS,
         };
       }),
       queue,
@@ -310,11 +331,7 @@ export class SdgbJobService {
 
     // Heartbeat first — every poll counts as "worker is alive", regardless
     // of whether we end up returning a job.
-    await this.statusModel.updateOne(
-      { workerId },
-      { $set: { lastSeenAt: now } },
-      { upsert: true },
-    );
+    await this.touchWorkerStatus(workerId, now, 0);
 
     // Release stale claims first.
     const staleThreshold = new Date(now.getTime() - CLAIM_TIMEOUT_MS);
@@ -361,10 +378,7 @@ export class SdgbJobService {
     );
 
     if (!claimed) return null;
-    await this.statusModel.updateOne(
-      { workerId },
-      { $inc: { jobsClaimed: 1 } },
-    );
+    await this.touchWorkerStatus(workerId, now, 1);
     this.logger.log(
       `worker=${workerId} claimed job ${claimed.id} (${claimed.jobType})`,
     );
@@ -388,10 +402,7 @@ export class SdgbJobService {
     if (body.status !== undefined) update.status = body.status;
     if (body.result !== undefined) update.result = body.result;
     if (body.error !== undefined) update.error = body.error;
-    if (
-      body.status === 'completed' ||
-      body.status === 'failed'
-    ) {
+    if (body.status === 'completed' || body.status === 'failed') {
       update.executing = false;
     }
 
@@ -426,5 +437,46 @@ export class SdgbJobService {
       await new Promise((r) => setTimeout(r, pollIntervalMs));
     }
     throw new Error(`sdgb job ${jobId} timed out after ${timeoutMs}ms`);
+  }
+
+  private async getWorkerStatuses(): Promise<SdgbWorkerStatus[]> {
+    const keys = await this.redis.keys(this.redis.key('status:worker:sdgb:*'));
+    const rows: SdgbWorkerStatus[] = [];
+    for (const key of keys) {
+      const status = await this.redis.getJson<SdgbWorkerStatus>(key);
+      if (status?.workerId && status.lastSeenAt) {
+        rows.push({
+          workerId: status.workerId,
+          lastSeenAt: status.lastSeenAt,
+          jobsClaimed: status.jobsClaimed ?? 0,
+        });
+      }
+    }
+    return rows.sort(
+      (a, b) =>
+        new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime(),
+    );
+  }
+
+  private async touchWorkerStatus(
+    workerId: string,
+    seenAt: Date,
+    claimedDelta: number,
+  ): Promise<void> {
+    const key = this.workerStatusKey(workerId);
+    const previous = await this.redis.getJson<SdgbWorkerStatus>(key);
+    await this.redis.setJson(
+      key,
+      {
+        workerId,
+        lastSeenAt: seenAt.toISOString(),
+        jobsClaimed: (previous?.jobsClaimed ?? 0) + claimedDelta,
+      },
+      { ttlSeconds: this.workerStatusTtlSeconds },
+    );
+  }
+
+  private workerStatusKey(workerId: string): string {
+    return this.redis.key(`status:worker:sdgb:${workerId}`);
   }
 }

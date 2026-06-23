@@ -1,10 +1,5 @@
-import { JobApiLogEntity, JobApiLogSchema } from './api-log/api-log.schema';
 import { JobEntity, JobSchema } from './job.schema';
 import { MusicEntity, MusicSchema } from '../music/music.schema';
-import {
-  JobTempCacheEntity,
-  JobTempCacheSchema,
-} from './cache/temp-cache.schema';
 import { Module, forwardRef } from '@nestjs/common';
 
 import { AdminModule } from '../admin/admin.module';
@@ -27,8 +22,6 @@ import { UsersModule } from '../users/users.module';
   imports: [
     MongooseModule.forFeature([
       { name: JobEntity.name, schema: JobSchema },
-      { name: JobTempCacheEntity.name, schema: JobTempCacheSchema },
-      { name: JobApiLogEntity.name, schema: JobApiLogSchema },
       { name: MusicEntity.name, schema: MusicSchema },
     ]),
     SdgbWorkerModule,

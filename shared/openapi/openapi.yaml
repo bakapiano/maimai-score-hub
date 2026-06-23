@@ -2053,8 +2053,9 @@ paths:
                         type: string
                       statusCode:
                         type: number
-                      responseBody:
-                        type: string
+                      bodySize:
+                        type: integer
+                        minimum: 0
                         nullable: true
                     required:
                       - url

@@ -23,11 +23,15 @@ interface ApiLogEntry {
   responseBody: string | null;
 }
 
-/** 每个 job 维护一个待上报的日志缓冲区 */
-const logBuffers = new Map<string, ApiLogEntry[]>();
+interface ApiLogPayload {
+  url: string;
+  method: string;
+  statusCode: number;
+  bodySize: number | null;
+}
 
-/** Response body 最大截断长度 (1 MB，确保 HTML 页面不被截断) */
-const MAX_BODY_LENGTH = 1024 * 1024;
+/** 每个 job 维护一个待上报的日志缓冲区 */
+const logBuffers = new Map<string, ApiLogPayload[]>();
 
 /**
  * 记录一条 API 调用日志
@@ -40,10 +44,11 @@ export function recordApiLog(jobId: string, entry: ApiLogEntry): void {
   }
 
   buffer.push({
-    ...entry,
-    responseBody: entry.responseBody
-      ? entry.responseBody.slice(0, MAX_BODY_LENGTH)
-      : null,
+    url: entry.url,
+    method: entry.method,
+    statusCode: entry.statusCode,
+    bodySize:
+      typeof entry.responseBody === "string" ? entry.responseBody.length : null,
   });
 }
 

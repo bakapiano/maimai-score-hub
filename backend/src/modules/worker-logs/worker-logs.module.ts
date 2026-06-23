@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
 
 import { AdminModule } from '../admin/admin.module';
-import { WorkerLogEntity, WorkerLogSchema } from './worker-log.schema';
 import {
   AdminWorkerLogsController,
   WorkerLogIngestController,
@@ -10,12 +8,7 @@ import {
 import { WorkerLogsService } from './worker-logs.service';
 
 @Module({
-  imports: [
-    AdminModule,
-    MongooseModule.forFeature([
-      { name: WorkerLogEntity.name, schema: WorkerLogSchema },
-    ]),
-  ],
+  imports: [AdminModule],
   controllers: [WorkerLogIngestController, AdminWorkerLogsController],
   providers: [WorkerLogsService],
   exports: [WorkerLogsService],

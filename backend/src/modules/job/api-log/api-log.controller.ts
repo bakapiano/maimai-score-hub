@@ -36,8 +36,7 @@ export class WorkerDxnetApiLogController {
         url: entry.url,
         method: entry.method,
         statusCode: entry.statusCode,
-        responseBody:
-          typeof entry.responseBody === 'string' ? entry.responseBody : null,
+        bodySize: typeof entry.bodySize === 'number' ? entry.bodySize : null,
       });
     }
 

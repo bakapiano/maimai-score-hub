@@ -9,6 +9,7 @@ import { JobModule } from './modules/job/job.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MusicModule } from './modules/music/music.module';
+import { RedisModule } from './common/redis/redis.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ScoreExportModule } from './modules/score-export/score-export.module';
 import { SdgbWorkerModule } from './modules/sdgb-worker/sdgb-worker.module';
@@ -109,6 +110,7 @@ function getPositiveInt(
         };
       },
     }),
+    RedisModule,
     AuthModule,
     AdminModule,
     AutoUpdateModule,
