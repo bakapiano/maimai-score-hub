@@ -78,7 +78,7 @@ const config = {
     port: parseInt(process.env.HTTP_PROXY_PORT || "2222", 10),
     // Basic auth password for the HTTP/CONNECT proxy. If empty/unset,
     // proxy runs without auth (legacy behavior).
-    adminPassword: process.env.ADMIN_PASSWORD || "",
+    proxyPassword: process.env.HTTP_PROXY_PASSWORD || "",
   },
   jobService: {
     baseUrl:

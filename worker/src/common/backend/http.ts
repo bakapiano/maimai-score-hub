@@ -55,13 +55,17 @@ type BackendFetchInit = NonNullable<Parameters<typeof undiciFetch>[1]>;
  */
 export const backendTsRestApi: NonNullable<
   Parameters<typeof import("@ts-rest/core").initClient>[1]["api"]
-> = async ({ path, method, headers, body, fetchOptions, route, validateResponse }) => {
-  // Worker→backend RPC auth: shared secret echoed back via X-Admin-Password.
-  // Empty when ADMIN_PASSWORD is unset (local dev) — backend guard treats
-  // that as "auth not configured" and lets the request through, so this is
-  // safe to roll out before all hosts pin a real value.
-  const authHeaders: Record<string, string> = process.env.ADMIN_PASSWORD
-    ? { "X-Admin-Password": process.env.ADMIN_PASSWORD }
+> = async ({
+  path,
+  method,
+  headers,
+  body,
+  fetchOptions,
+  route,
+  validateResponse,
+}) => {
+  const authHeaders: Record<string, string> = process.env.API_SHARED_SECRET
+    ? { "X-API-Secret": process.env.API_SHARED_SECRET }
     : {};
 
   const result = await backendFetchWithRetry(path, {
@@ -72,10 +76,7 @@ export const backendTsRestApi: NonNullable<
   });
 
   const contentType = result.headers.get("content-type") ?? "";
-  if (
-    contentType.includes("application/") &&
-    contentType.includes("json")
-  ) {
+  if (contentType.includes("application/") && contentType.includes("json")) {
     const response = {
       status: result.status,
       body: await result.json(),

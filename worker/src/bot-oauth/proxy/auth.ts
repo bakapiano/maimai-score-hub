@@ -13,7 +13,7 @@ export function getProxyAuthHeader(
 }
 
 export function isProxyAuthValid(headerValue: string | undefined): boolean {
-  const expected = config.httpProxy.adminPassword;
+  const expected = config.httpProxy.proxyPassword;
   if (!expected) return true;
 
   if (!headerValue || !headerValue.toLowerCase().startsWith("basic ")) {
@@ -56,9 +56,7 @@ export function writeHttpProxyAuthRequired(
   }
 }
 
-export function writeConnectProxyAuthRequired(
-  clientSocket: net.Socket,
-): void {
+export function writeConnectProxyAuthRequired(clientSocket: net.Socket): void {
   try {
     clientSocket.end(
       "HTTP/1.1 407 Proxy Authentication Required\r\n" +

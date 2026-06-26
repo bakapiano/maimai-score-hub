@@ -77,8 +77,8 @@ export function startLogger(opts: LoggerOptions): void {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(process.env.ADMIN_PASSWORD
-              ? { "X-Admin-Password": process.env.ADMIN_PASSWORD }
+            ...(process.env.API_SHARED_SECRET
+              ? { "X-API-Secret": process.env.API_SHARED_SECRET }
               : {}),
           },
           body: JSON.stringify({
