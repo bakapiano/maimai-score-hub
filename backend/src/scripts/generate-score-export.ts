@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 
 import { AppModule } from '../app.module';
 import { NestFactory } from '@nestjs/core';
-import { ScoreExportService } from '../modules/score-export/score-export.service';
+import { ScoreExportService } from '../modules/score-export/services/score-export.service';
 import { join } from 'node:path';
 
 async function run() {

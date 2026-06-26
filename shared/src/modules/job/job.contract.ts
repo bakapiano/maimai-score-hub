@@ -9,9 +9,8 @@ import {
   JobCreateResponseSchema,
   JobNextBodySchema,
   JobPatchBodySchema,
-  JobRecentStatsSchema,
   JobResponseSchema,
-  JobWakeResponseSchema,
+  JobVerifyResponseSchema,
 } from "./job.schema";
 
 import { initContract } from "@ts-rest/core";
@@ -31,7 +30,8 @@ export const jobContract = c.router({
   },
   getById: {
     method: "GET",
-    path: "/dxnet-jobs/:jobId",
+    path: "/me/dxnet-jobs/:jobId",
+    headers: z.object({ authorization: z.string() }),
     pathParams: z.object({ jobId: z.string() }),
     responses: {
       200: JobResponseSchema,
@@ -45,21 +45,14 @@ export const jobContract = c.router({
       200: JobByFriendCodeActiveResponseSchema,
     },
   },
-  wake: {
+  verify: {
     method: "POST",
-    path: "/me/dxnet-jobs/:jobId/wake",
+    path: "/me/dxnet-jobs/:jobId/verify",
     headers: z.object({ authorization: z.string() }),
     pathParams: z.object({ jobId: z.string() }),
     body: z.undefined(),
     responses: {
-      200: JobWakeResponseSchema,
-    },
-  },
-  getRecentStats: {
-    method: "GET",
-    path: "/dxnet-jobs/stats/recent",
-    responses: {
-      200: JobRecentStatsSchema,
+      200: JobVerifyResponseSchema,
     },
   },
   next: {

@@ -5,7 +5,7 @@ const c = initContract();
 export const scoreExportContract = c.router({
   best50: {
     method: "GET",
-    path: "/score-exports/best50",
+    path: "/me/score-exports/best50",
     responses: {
       200: c.otherResponse({
         contentType: "image/png",
@@ -15,7 +15,7 @@ export const scoreExportContract = c.router({
   },
   level: {
     method: "GET",
-    path: "/score-exports/level",
+    path: "/me/score-exports/level",
     query: c.type<{ level?: string }>(),
     responses: {
       200: c.otherResponse({
@@ -26,7 +26,7 @@ export const scoreExportContract = c.router({
   },
   version: {
     method: "GET",
-    path: "/score-exports/version",
+    path: "/me/score-exports/version",
     query: c.type<{ version?: string; minLevel?: string; plan?: string }>(),
     responses: {
       200: c.otherResponse({

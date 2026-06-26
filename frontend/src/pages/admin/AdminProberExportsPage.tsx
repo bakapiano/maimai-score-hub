@@ -109,7 +109,7 @@ export default function AdminProberExportsPage() {
     setError(null);
     try {
       const res = await adminApi.getProberExportMetrics({
-        headers: { "x-admin-password": password },
+        headers: { "x-api-secret": password },
         query: { window },
       });
       if (res.status === 200) {

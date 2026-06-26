@@ -1,21 +1,11 @@
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
-import { AdminModule } from './modules/admin/admin.module';
 import { AppController } from './app.controller';
-import { AuthModule } from './modules/auth/auth.module';
-import { AutoUpdateModule } from './modules/auto-update/auto-update.module';
-import { CoverModule } from './modules/cover/cover.module';
-import { JobModule } from './modules/job/job.module';
+import { BackendApiModule } from './api/backend-api.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { MusicModule } from './modules/music/music.module';
 import { RedisModule } from './common/redis/redis.module';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ScoreExportModule } from './modules/score-export/score-export.module';
-import { SdgbWorkerModule } from './modules/sdgb-worker/sdgb-worker.module';
-import { SyncModule } from './modules/sync/sync.module';
-import { UsersModule } from './modules/users/users.module';
-import { WorkerLogsModule } from './modules/worker-logs/worker-logs.module';
 import { createMongooseQueryTimeoutPlugin } from './common/mongoose-query-timeout.plugin';
 
 function getPositiveInt(
@@ -111,17 +101,7 @@ function getPositiveInt(
       },
     }),
     RedisModule,
-    AuthModule,
-    AdminModule,
-    AutoUpdateModule,
-    CoverModule,
-    JobModule,
-    MusicModule,
-    ScoreExportModule,
-    SdgbWorkerModule,
-    SyncModule,
-    UsersModule,
-    WorkerLogsModule,
+    BackendApiModule,
   ],
   controllers: [AppController],
 })

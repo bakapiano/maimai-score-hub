@@ -1,7 +1,7 @@
 import type {
   ChartPayload,
   SongMetadata,
-} from '../../../modules/music/music.schema';
+} from '../../../modules/music/schemas/music.schema';
 import {
   getDivingFishMusicSourceUrl,
   mapDivingFishCategory,
@@ -38,7 +38,6 @@ function mapVersion(version: string | null | undefined): string | null {
   return VERSION_MAP[version] ?? version;
 }
 
-
 type ItemOverride = {
   title?: string;
   category?: string | null;
@@ -53,7 +52,6 @@ type ItemOverride = {
 const ITEM_OVERRIDES: Record<string, ItemOverride> = {
   '11568': { category: '流行&动漫' }, // INTERNET OVERDOSE
   '383': { title: 'Link' },
-
 };
 
 function getOverrideForItem(id: string | number): ItemOverride | undefined {

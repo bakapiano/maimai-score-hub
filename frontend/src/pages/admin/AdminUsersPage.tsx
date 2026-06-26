@@ -36,7 +36,7 @@ export default function AdminUsersPage() {
     if (!password) return;
     setLoading(true);
     const res = await adminApi.getAllUsers({
-      headers: { "x-admin-password": password },
+      headers: { "x-api-secret": password },
     });
     setLoading(false);
     if (res.status === 200) {

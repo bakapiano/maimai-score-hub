@@ -1,6 +1,6 @@
-import type { ChartPayload } from '../music/music.schema';
-import type { MusicEntity } from '../music/music.schema';
-import type { SyncScore } from '../sync/sync.schema';
+import type { ChartPayload } from '../music/schemas/music.schema';
+import type { MusicEntity } from '../music/schemas/music.schema';
+import type { SyncScore } from '../sync/schemas/sync.schema';
 
 export type MusicRow = MusicEntity & { charts?: ChartPayload[] };
 

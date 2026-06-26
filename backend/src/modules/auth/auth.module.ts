@@ -1,19 +1,18 @@
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Module, forwardRef } from '@nestjs/common';
 
-import { AdminModule } from '../admin/admin.module';
-import { AuthController } from './auth.controller';
-import { AuthGuard } from './auth.guard';
-import { AuthService } from './auth.service';
+import { AuthGuard } from './guards/auth.guard';
+import { AuthService } from './services/auth.service';
+import { BotsModule } from '../bots/bots.module';
 import { JobModule } from '../job/job.module';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
-import { MusicEntity, MusicSchema } from '../music/music.schema';
+import { MusicEntity, MusicSchema } from '../music/schemas/music.schema';
 import {
   QrLoginAttemptEntity,
   QrLoginAttemptSchema,
-} from './qr-login-attempt.schema';
-import { QrLoginService } from './qr-login.service';
+} from './schemas/qr-login-attempt.schema';
+import { QrLoginService } from './services/qr-login.service';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { UsersModule } from '../users/users.module';
 import { randomBytes } from 'node:crypto';
@@ -37,11 +36,10 @@ import { randomBytes } from 'node:crypto';
     ]),
     UsersModule,
     SdgbWorkerModule,
-    forwardRef(() => AdminModule),
+    BotsModule,
     forwardRef(() => JobModule),
   ],
-  controllers: [AuthController],
   providers: [AuthService, AuthGuard, QrLoginService],
-  exports: [AuthService, AuthGuard],
+  exports: [AuthService, AuthGuard, QrLoginService],
 })
 export class AuthModule {}

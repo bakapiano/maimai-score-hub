@@ -30,7 +30,7 @@ export const coverContract = c.router({
   backfillVariants: {
     method: "POST",
     path: "/admin/catalog/covers/backfill-variants",
-    headers: c.type<{ "x-admin-password": string }>(),
+    headers: c.type<{ "x-api-secret": string }>(),
     body: c.noBody(),
     responses: {
       201: c.type<{

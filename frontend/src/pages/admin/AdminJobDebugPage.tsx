@@ -48,7 +48,7 @@ export default function AdminJobDebugPage() {
       if (!password) return;
       setLoading(true);
       const res = await adminApi.searchJobs({
-        headers: { "x-admin-password": password },
+        headers: { "x-api-secret": password },
         query: {
           friendCode: friendCode.trim() || undefined,
           status: status || undefined,
@@ -78,7 +78,7 @@ export default function AdminJobDebugPage() {
       setSelectedJobId(jobId);
       setApiLogsLoading(true);
       const res = await adminApi.getJobApiLogs({
-        headers: { "x-admin-password": password },
+        headers: { "x-api-secret": password },
         params: { jobId },
       });
       setApiLogsLoading(false);

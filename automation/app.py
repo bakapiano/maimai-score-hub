@@ -123,7 +123,7 @@ class BindingUpdate(BaseModel):
 
 class SettingsUpdate(BaseModel):
     backend_url: Optional[str] = None
-    admin_password: Optional[str] = None
+    api_shared_secret: Optional[str] = None
     poll_interval: Optional[int] = None
     device_scan_interval: Optional[int] = None
 
@@ -337,8 +337,8 @@ async def api_update_settings(req: SettingsUpdate):
     updates = {}
     if req.backend_url is not None:
         updates["backend_url"] = req.backend_url.rstrip("/")
-    if req.admin_password is not None:
-        updates["admin_password"] = req.admin_password
+    if req.api_shared_secret is not None:
+        updates["api_shared_secret"] = req.api_shared_secret
     if req.poll_interval is not None:
         updates["poll_interval"] = str(req.poll_interval)
     if req.device_scan_interval is not None:

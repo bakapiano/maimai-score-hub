@@ -131,7 +131,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
     if (!token) return;
     setExporting(true);
     try {
-      const res = await fetch("/api/v1/score-exports/best50", {
+      const res = await fetch("/api/v1/me/score-exports/best50", {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {

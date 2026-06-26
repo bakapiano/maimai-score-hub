@@ -117,7 +117,7 @@ export interface ApiLogEntry {
 
 // ── Constants ──
 
-export const ADMIN_PASSWORD_KEY = "admin_password";
+export const API_SHARED_SECRET_KEY = "api_shared_secret";
 
 export type JobErrorCategory = "user_error" | "remote_error" | "system_error";
 
@@ -163,10 +163,10 @@ export function categorizeJobError(
 
 // ── Hooks ──
 
-export function useAdminPassword() {
+export function useApiSharedSecret() {
   const [password, setPassword] = useState<string>(() => {
     try {
-      return localStorage.getItem(ADMIN_PASSWORD_KEY) || "";
+      return localStorage.getItem(API_SHARED_SECRET_KEY) || "";
     } catch {
       return "";
     }
@@ -176,9 +176,9 @@ export function useAdminPassword() {
     setPassword(pwd);
     try {
       if (pwd) {
-        localStorage.setItem(ADMIN_PASSWORD_KEY, pwd);
+        localStorage.setItem(API_SHARED_SECRET_KEY, pwd);
       } else {
-        localStorage.removeItem(ADMIN_PASSWORD_KEY);
+        localStorage.removeItem(API_SHARED_SECRET_KEY);
       }
     } catch {
       // ignore

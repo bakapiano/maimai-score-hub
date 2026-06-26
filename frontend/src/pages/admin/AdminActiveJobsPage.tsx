@@ -87,7 +87,7 @@ export default function AdminActiveJobsPage() {
     setCleanupLoading(true);
     setCleanupResult(null);
     const res = await adminApi.cleanupJobs({
-      headers: { "x-admin-password": password },
+      headers: { "x-api-secret": password },
     });
     setCleanupLoading(false);
     if (res.status === 201) {
@@ -102,7 +102,7 @@ export default function AdminActiveJobsPage() {
       if (!password) return;
       const remark = editRemarkValue.trim() || null;
       await adminApi.updateBotRemark({
-        headers: { "x-admin-password": password },
+        headers: { "x-api-secret": password },
         params: { friendCode },
         body: { remark },
       });
@@ -144,7 +144,7 @@ export default function AdminActiveJobsPage() {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            "x-admin-password": password,
+            "x-api-secret": password,
           },
           body: JSON.stringify({ cabinetUserId }),
         },
@@ -182,7 +182,7 @@ export default function AdminActiveJobsPage() {
         `/api/v1/admin/bots/${encodeURIComponent(friendCode)}`,
         {
           method: "DELETE",
-          headers: { "x-admin-password": password },
+          headers: { "x-api-secret": password },
         },
       );
       if (!res.ok) {
@@ -227,7 +227,7 @@ export default function AdminActiveJobsPage() {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "x-admin-password": password,
+              "x-api-secret": password,
             },
             body: JSON.stringify({ qrCode: qrCode.trim() }),
           },
@@ -274,7 +274,7 @@ export default function AdminActiveJobsPage() {
     if (!password) return;
     setActiveJobsLoading(true);
     const res = await adminApi.getActiveJobs({
-      headers: { "x-admin-password": password },
+      headers: { "x-api-secret": password },
     });
     setActiveJobsLoading(false);
     if (res.status === 200) {
@@ -286,7 +286,7 @@ export default function AdminActiveJobsPage() {
     if (!password) return;
     setBotStatusesLoading(true);
     const res = await adminApi.getBotStatus({
-      headers: { "x-admin-password": password },
+      headers: { "x-api-secret": password },
     });
     setBotStatusesLoading(false);
     if (res.status === 200) {
@@ -298,7 +298,7 @@ export default function AdminActiveJobsPage() {
     if (!password) return;
     setJobStatsLoading(true);
     const res = await adminApi.getJobStats({
-      headers: { "x-admin-password": password },
+      headers: { "x-api-secret": password },
     });
     setJobStatsLoading(false);
     if (res.status === 200) {
@@ -312,7 +312,7 @@ export default function AdminActiveJobsPage() {
       setJobTrendLoading(true);
       const h = hours ?? trendHours;
       const res = await adminApi.getJobTrend({
-        headers: { "x-admin-password": password },
+        headers: { "x-api-secret": password },
         query: { hours: h },
       });
       setJobTrendLoading(false);
@@ -327,7 +327,7 @@ export default function AdminActiveJobsPage() {
     if (!password) return;
     setJobErrorStatsLoading(true);
     const res = await adminApi.getJobErrorStats({
-      headers: { "x-admin-password": password },
+      headers: { "x-api-secret": password },
     });
     setJobErrorStatsLoading(false);
     if (res.status === 200) {

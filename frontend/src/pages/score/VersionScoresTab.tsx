@@ -322,7 +322,7 @@ export function VersionScoresTab({
         plan: platePlan,
       });
       const res = await fetch(
-        `/api/v1/score-exports/version?${params.toString()}`,
+        `/api/v1/me/score-exports/version?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },

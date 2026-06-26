@@ -1,13 +1,12 @@
 import { Module, forwardRef } from '@nestjs/common';
-import { MusicEntity, MusicSchema } from '../music/music.schema';
-import { SyncEntity, SyncSchema } from '../sync/sync.schema';
+import { MusicEntity, MusicSchema } from '../music/schemas/music.schema';
+import { SyncEntity, SyncSchema } from '../sync/schemas/sync.schema';
 
 import { AuthModule } from '../auth/auth.module';
 import { CoverModule } from '../cover/cover.module';
 import { UsersModule } from '../users/users.module';
 import { MongooseModule } from '@nestjs/mongoose';
-import { ScoreExportController } from './score-export.controller';
-import { ScoreExportService } from './score-export.service';
+import { ScoreExportService } from './services/score-export.service';
 
 @Module({
   imports: [
@@ -19,7 +18,6 @@ import { ScoreExportService } from './score-export.service';
       { name: MusicEntity.name, schema: MusicSchema },
     ]),
   ],
-  controllers: [ScoreExportController],
   providers: [ScoreExportService],
   exports: [ScoreExportService],
 })

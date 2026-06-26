@@ -43,7 +43,7 @@ config = Config()
 # ====== 运行时配置默认值（会被 DB 中的值覆盖）======
 SETTING_DEFAULTS = {
     "backend_url": "https://api.maiscorehub.bakapiano.com",
-    "admin_password": "",
+    "api_shared_secret": "",
     "poll_interval": "30",
     "device_scan_interval": "10",
     "log_retention_count": "500",

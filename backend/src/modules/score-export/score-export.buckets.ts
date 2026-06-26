@@ -6,8 +6,8 @@ import type {
   VersionBucket,
 } from './score-export.types';
 
-import type { ChartPayload } from '../music/music.schema';
-import type { SyncScore } from '../sync/sync.schema';
+import type { ChartPayload } from '../music/schemas/music.schema';
+import type { SyncScore } from '../sync/schemas/sync.schema';
 import { VERSION_ORDER } from './rendering/score-export.constants';
 
 export function buildRatingSummary(scores: SyncScore[]): RatingSummary | null {

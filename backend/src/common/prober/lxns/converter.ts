@@ -1,4 +1,4 @@
-import type { SyncScore } from '../../../modules/sync/sync.schema';
+import type { SyncScore } from '../../../modules/sync/schemas/sync.schema';
 import { normalizeAchievement } from '../../rating';
 
 export type LxnsScore = {

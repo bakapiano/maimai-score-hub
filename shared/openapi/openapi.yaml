@@ -2,16 +2,54 @@ openapi: 3.0.2
 paths:
   /health:
     get:
-      tags:
+      tags: &a1
         - app
       parameters: []
       operationId: app.getStatus
       responses:
         "200":
           description: "200"
+  /statistics:
+    get:
+      tags: *a1
+      parameters: []
+      operationId: app.getStatistics
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dxnetJobs:
+                    type: object
+                    properties:
+                      totalCount:
+                        type: integer
+                        minimum: 0
+                      completedCount:
+                        type: integer
+                        minimum: 0
+                      failedCount:
+                        type: integer
+                        minimum: 0
+                      successRate:
+                        type: number
+                      avgDuration:
+                        type: number
+                        nullable: true
+                    required:
+                      - totalCount
+                      - completedCount
+                      - failedCount
+                      - successRate
+                      - avgDuration
+                required:
+                  - dxnetJobs
   /auth/login-requests:
     post:
-      tags: &a1
+      tags: &a2
         - auth
       parameters: []
       operationId: auth.loginRequest
@@ -193,7 +231,7 @@ paths:
                 additionalProperties: true
   /auth/login-requests/{jobId}:
     get:
-      tags: *a1
+      tags: *a2
       parameters:
         - name: jobId
           in: path
@@ -221,7 +259,7 @@ paths:
                 additionalProperties: true
   /auth/login-requests/{jobId}/verify:
     post:
-      tags: *a1
+      tags: *a2
       parameters:
         - name: jobId
           in: path
@@ -371,7 +409,7 @@ paths:
                   - job
   /auth/qr-login:
     post:
-      tags: *a1
+      tags: *a2
       parameters: []
       operationId: auth.loginByQr
       requestBody:
@@ -415,7 +453,7 @@ paths:
           description: "409"
   /auth/qr-login/{attemptId}:
     get:
-      tags: *a1
+      tags: *a2
       parameters:
         - name: attemptId
           in: path
@@ -434,7 +472,7 @@ paths:
           description: "400"
   /me:
     get:
-      tags: &a2
+      tags: &a3
         - users
       parameters: []
       operationId: users.profile
@@ -475,7 +513,7 @@ paths:
                   - friendCode
                 additionalProperties: true
     patch:
-      tags: *a2
+      tags: *a3
       parameters: []
       operationId: users.updateProfile
       requestBody:
@@ -494,6 +532,8 @@ paths:
                 autoExportDivingFish:
                   type: boolean
                 autoExportLxns:
+                  type: boolean
+                autoUpdate:
                   type: boolean
       responses:
         "200":
@@ -532,7 +572,7 @@ paths:
                   - friendCode
                 additionalProperties: true
     delete:
-      tags: *a2
+      tags: *a3
       parameters: []
       operationId: users.deleteMe
       responses:
@@ -540,7 +580,7 @@ paths:
           description: "200"
   /me/prober-tokens/diving-fish:
     post:
-      tags: *a2
+      tags: *a3
       parameters: []
       operationId: users.getDivingFishToken
       requestBody:
@@ -574,9 +614,9 @@ paths:
                   message:
                     type: string
                 additionalProperties: true
-  /me/cabinet/bind-qr:
-    post:
-      tags: *a2
+  /me/cabinet:
+    put:
+      tags: *a3
       parameters: []
       operationId: users.bindCabinetQr
       requestBody:
@@ -607,44 +647,8 @@ paths:
           description: "400"
         "409":
           description: "409"
-  /me/auto-update:
-    patch:
-      tags: *a2
-      parameters: []
-      operationId: users.setAutoUpdate
-      requestBody:
-        description: Body
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                enabled:
-                  type: boolean
-              required:
-                - enabled
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                    enum:
-                      - true
-                  autoUpdate:
-                    type: boolean
-                required:
-                  - ok
-                  - autoUpdate
-        "400":
-          description: "400"
-  /me/cabinet:
     delete:
-      tags: *a2
+      tags: *a3
       parameters: []
       operationId: users.unbindCabinet
       responses:
@@ -663,9 +667,9 @@ paths:
                   - ok
         "400":
           description: "400"
-  /sync/latest:
+  /me/sync/latest:
     get:
-      tags: &a3
+      tags: &a4
         - sync
       parameters: []
       operationId: sync.latest
@@ -717,9 +721,9 @@ paths:
                   - updatedAt
                 additionalProperties: true
                 nullable: true
-  /sync/latest/exports/diving-fish:
+  /me/sync/latest/exports/diving-fish:
     post:
-      tags: *a3
+      tags: *a4
       parameters: []
       operationId: sync.exportToDivingFish
       responses:
@@ -741,9 +745,9 @@ paths:
                   response:
                     nullable: true
                 additionalProperties: true
-  /sync/latest/exports/lxns:
+  /me/sync/latest/exports/lxns:
     post:
-      tags: *a3
+      tags: *a4
       parameters: []
       operationId: sync.exportToLxns
       responses:
@@ -767,7 +771,7 @@ paths:
                 additionalProperties: true
   /me/dxnet-jobs:
     post:
-      tags: &a4
+      tags: &a5
         - job
       parameters:
         - name: authorization
@@ -783,14 +787,9 @@ paths:
             schema:
               type: object
               properties:
-                friendCode:
-                  type: string
-                  minLength: 1
                 skipUpdateScore:
                   default: false
                   type: boolean
-              required:
-                - friendCode
       responses:
         "201":
           description: "201"
@@ -934,12 +933,17 @@ paths:
                 required:
                   - jobId
                   - job
-  /dxnet-jobs/{jobId}:
+  /me/dxnet-jobs/{jobId}:
     get:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: jobId
           in: path
+          required: true
+          schema:
+            type: string
+        - name: authorization
+          in: header
           required: true
           schema:
             type: string
@@ -1081,7 +1085,7 @@ paths:
                   - updatedAt
   /me/dxnet-jobs/active:
     get:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: authorization
           in: header
@@ -1230,9 +1234,9 @@ paths:
                     nullable: true
                 required:
                   - job
-  /me/dxnet-jobs/{jobId}/wake:
+  /me/dxnet-jobs/{jobId}/verify:
     post:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: jobId
           in: path
@@ -1244,7 +1248,7 @@ paths:
           required: true
           schema:
             type: string
-      operationId: job.wake
+      operationId: job.verify
       requestBody:
         description: Body
         content:
@@ -1390,42 +1394,9 @@ paths:
                       - updatedAt
                 required:
                   - job
-  /dxnet-jobs/stats/recent:
-    get:
-      tags: *a4
-      parameters: []
-      operationId: job.getRecentStats
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  totalCount:
-                    type: integer
-                    minimum: 0
-                  completedCount:
-                    type: integer
-                    minimum: 0
-                  failedCount:
-                    type: integer
-                    minimum: 0
-                  successRate:
-                    type: number
-                  avgDuration:
-                    type: number
-                    nullable: true
-                required:
-                  - totalCount
-                  - completedCount
-                  - failedCount
-                  - successRate
-                  - avgDuration
   /workers/dxnet/jobs/next:
     post:
-      tags: *a4
+      tags: *a5
       parameters: []
       operationId: job.next
       requestBody:
@@ -1586,7 +1557,7 @@ paths:
               schema: {}
   /workers/dxnet/jobs/{jobId}:
     patch:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: jobId
           in: path
@@ -1800,7 +1771,7 @@ paths:
                   - updatedAt
   /workers/dxnet/bots/{botUserFriendCode}/active-friend-codes:
     get:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: botUserFriendCode
           in: path
@@ -1819,7 +1790,7 @@ paths:
                   type: string
   /workers/dxnet/users/activity:
     post:
-      tags: *a4
+      tags: *a5
       parameters: []
       operationId: job.getUsersActivity
       requestBody:
@@ -1855,7 +1826,7 @@ paths:
                     - lastActiveAt
   /workers/dxnet/users/existence:
     post:
-      tags: *a4
+      tags: *a5
       parameters: []
       operationId: job.getExistingUsers
       requestBody:
@@ -1887,7 +1858,7 @@ paths:
                   - existingFriendCodes
   /workers/dxnet/jobs/{jobId}/cache/{diff}/{type}:
     get:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: jobId
           in: path
@@ -1951,7 +1922,7 @@ paths:
                 required:
                   - songs
     put:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: jobId
           in: path
@@ -2027,7 +1998,7 @@ paths:
                   - success
   /workers/dxnet/jobs/{jobId}/api-logs:
     post:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: jobId
           in: path
@@ -2077,7 +2048,7 @@ paths:
                   - success
   /catalog/music:
     get:
-      tags: &a5
+      tags: &a6
         - music
       parameters: []
       operationId: music.listAll
@@ -2102,7 +2073,7 @@ paths:
                   additionalProperties: true
   /admin/catalog/music/sync:
     post:
-      tags: &a6
+      tags: &a7
         - admin
       parameters: []
       operationId: admin.syncMusic
@@ -2111,7 +2082,7 @@ paths:
           description: "201"
   /admin/catalog/music/source:
     get:
-      tags: *a5
+      tags: *a6
       parameters: []
       operationId: music.getDataSource
       responses:
@@ -2130,7 +2101,7 @@ paths:
                 required:
                   - source
     put:
-      tags: *a5
+      tags: *a6
       parameters: []
       operationId: music.setDataSource
       requestBody:
@@ -2167,7 +2138,7 @@ paths:
                   - ok
   /admin/dashboard/stats:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getStats
       responses:
@@ -2189,7 +2160,7 @@ paths:
                 additionalProperties: true
   /admin/dashboard/job-stats:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getJobStats
       responses:
@@ -2201,7 +2172,7 @@ paths:
                 nullable: true
   /admin/dashboard/auto-update-metrics:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: window
           in: query
@@ -2220,7 +2191,7 @@ paths:
                 nullable: true
   /admin/dashboard/prober-export-metrics:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: window
           in: query
@@ -2239,7 +2210,7 @@ paths:
                 nullable: true
   /admin/dashboard/job-trend:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: hours
           in: query
@@ -2255,7 +2226,7 @@ paths:
                 nullable: true
   /admin/dashboard/job-error-stats:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getJobErrorStats
       responses:
@@ -2267,7 +2238,7 @@ paths:
                 nullable: true
   /admin/dxnet-jobs:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: friendCode
           in: query
@@ -2300,7 +2271,7 @@ paths:
                 nullable: true
   /admin/users:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getAllUsers
       responses:
@@ -2314,7 +2285,7 @@ paths:
                   nullable: true
   /admin/dxnet-jobs/active:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getActiveJobs
       responses:
@@ -2326,7 +2297,7 @@ paths:
                 nullable: true
   /workers/bots/status:
     post:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.reportBotStatus
       requestBody:
@@ -2395,7 +2366,7 @@ paths:
           description: "201"
   /admin/bots:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getBotStatus
       responses:
@@ -2432,7 +2403,7 @@ paths:
                   additionalProperties: true
   /admin/bots/{friendCode}/remark:
     patch:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: friendCode
           in: path
@@ -2457,7 +2428,7 @@ paths:
           description: "200"
   /admin/bots/{friendCode}/cabinet-user-id:
     patch:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: friendCode
           in: path
@@ -2484,7 +2455,7 @@ paths:
           description: "200"
   /admin/bots/{friendCode}:
     delete:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: friendCode
           in: path
@@ -2497,7 +2468,7 @@ paths:
           description: "200"
   /admin/dxnet-jobs/{jobId}/api-logs:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: jobId
           in: path
@@ -2516,7 +2487,7 @@ paths:
                   nullable: true
   /admin/catalog/covers/sync:
     post:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.syncCovers
       responses:
@@ -2524,7 +2495,7 @@ paths:
           description: "201"
   /admin/catalog/covers/force-sync:
     post:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.forceSyncCovers
       responses:
@@ -2532,7 +2503,7 @@ paths:
           description: "201"
   /admin/dxnet-jobs/cleanup:
     post:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.cleanupJobs
       responses:
@@ -2540,7 +2511,7 @@ paths:
           description: "201"
   /admin/settings:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getSystemSettings
       responses:
@@ -2556,7 +2527,7 @@ paths:
                 required:
                   - cabinetOnlyMode
     patch:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.updateSystemSettings
       requestBody:
@@ -2582,7 +2553,7 @@ paths:
                   - cabinetOnlyMode
   /catalog/covers/{songId}:
     get:
-      tags: &a7
+      tags: &a8
         - cover
       parameters:
         - name: songId
@@ -2598,7 +2569,7 @@ paths:
           description: "404"
   /catalog/covers/{songId}.jpg:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: songId
           in: path
@@ -2613,32 +2584,32 @@ paths:
           description: "404"
   /admin/catalog/covers/backfill-variants:
     post:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: cover.backfillVariants
       responses:
         "201":
           description: "201"
-  /score-exports/best50:
+  /me/score-exports/best50:
     get:
-      tags: &a8
+      tags: &a9
         - scoreExport
       parameters: []
       operationId: scoreExport.best50
       responses:
         "200":
           description: "200"
-  /score-exports/level:
+  /me/score-exports/level:
     get:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: scoreExport.level
       responses:
         "200":
           description: "200"
-  /score-exports/version:
+  /me/score-exports/version:
     get:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: scoreExport.version
       responses:
@@ -2646,7 +2617,7 @@ paths:
           description: "200"
   /workers/sdgb/jobs/next:
     post:
-      tags: &a9
+      tags: &a10
         - sdgbWorker
       parameters: []
       operationId: sdgbWorker.next
@@ -2715,7 +2686,7 @@ paths:
           description: "204"
   /workers/sdgb/jobs/{jobId}:
     get:
-      tags: *a9
+      tags: *a10
       parameters:
         - name: jobId
           in: path
@@ -2775,7 +2746,7 @@ paths:
         "404":
           description: "404"
     patch:
-      tags: *a9
+      tags: *a10
       parameters:
         - name: jobId
           in: path

@@ -64,7 +64,7 @@ export default function AdminWorkerLogsPage() {
   const loadWorkers = useCallback(async () => {
     if (!password) return;
     const res = await fetch("/api/v1/admin/worker-logs/workers", {
-      headers: { "x-admin-password": password },
+      headers: { "x-api-secret": password },
     });
     if (!res.ok) return;
     const body = (await res.json()) as WorkerEntry[];
@@ -86,7 +86,7 @@ export default function AdminWorkerLogsPage() {
       const res = await fetch(
         `/api/v1/admin/worker-logs?${params.toString()}`,
         {
-          headers: { "x-admin-password": password },
+          headers: { "x-api-secret": password },
         },
       );
       if (!res.ok) return;

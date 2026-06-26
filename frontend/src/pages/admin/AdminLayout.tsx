@@ -26,7 +26,7 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { adminApi } from "../../api/appClient";
-import { useAdminPassword } from "./adminUtils";
+import { useApiSharedSecret } from "./adminUtils";
 import { useDisclosure } from "@mantine/hooks";
 
 type AdminPageMeta = {
@@ -82,7 +82,7 @@ const adminPages: AdminPageMeta[] = [
 ];
 
 export default function AdminLayout() {
-  const { password, savePassword } = useAdminPassword();
+  const { password, savePassword } = useApiSharedSecret();
   const [inputPassword, setInputPassword] = useState(password);
   const [verified, setVerified] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -98,14 +98,14 @@ export default function AdminLayout() {
 
   const verifyPassword = useCallback(async () => {
     if (!inputPassword.trim()) {
-      setError("请输入管理员密码");
+      setError("请输入 API 共享密钥");
       return;
     }
     setVerifying(true);
     setError("");
 
     const res = await adminApi.getStats({
-      headers: { "x-admin-password": inputPassword.trim() },
+      headers: { "x-api-secret": inputPassword.trim() },
     });
     setVerifying(false);
 
@@ -124,7 +124,7 @@ export default function AdminLayout() {
       (async () => {
         setVerifying(true);
         const res = await adminApi.getStats({
-          headers: { "x-admin-password": password },
+          headers: { "x-api-secret": password },
         });
         setVerifying(false);
         if (res.status === 200) {
@@ -140,11 +140,11 @@ export default function AdminLayout() {
         <Card withBorder shadow="sm" padding="xl" radius="md">
           <Stack gap="md">
             <Title order={3} ta="center">
-              管理员登录
+              管理入口
             </Title>
             <PasswordInput
-              label="管理员密码"
-              placeholder="输入密码"
+              label="API 共享密钥"
+              placeholder="输入 API 共享密钥"
               value={inputPassword}
               onChange={(e) => setInputPassword(e.currentTarget.value)}
               onKeyDown={(e) => {

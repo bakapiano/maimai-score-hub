@@ -1,25 +1,29 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
-import { AdminModule } from '../admin/admin.module';
+import { BotsModule } from '../bots/bots.module';
 import { JobModule } from '../job/job.module';
-import { JobEntity, JobSchema } from '../job/job.schema';
+import { JobEntity, JobSchema } from '../job/schemas/job.schema';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
-import { SdgbJobEntity, SdgbJobSchema } from '../sdgb-worker/sdgb-job.schema';
+import {
+  SdgbJobEntity,
+  SdgbJobSchema,
+} from '../sdgb-worker/schemas/sdgb-job.schema';
 import { SyncModule } from '../sync/sync.module';
+import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { UsersModule } from '../users/users.module';
-import { AutoUpdateController } from './auto-update.controller';
 import {
   AutoUpdateRunEntity,
   AutoUpdateRunSchema,
-} from './auto-update-run.schema';
-import { AutoUpdateSchedulerService } from './auto-update-scheduler.service';
+} from './schemas/auto-update-run.schema';
+import { AutoUpdateSchedulerService } from './services/auto-update-scheduler.service';
 
 @Module({
   imports: [
     UsersModule,
     JobModule,
-    AdminModule,
+    BotsModule,
+    SystemSettingsModule,
     SdgbWorkerModule,
     SyncModule,
     MongooseModule.forFeature([
@@ -28,7 +32,7 @@ import { AutoUpdateSchedulerService } from './auto-update-scheduler.service';
       { name: AutoUpdateRunEntity.name, schema: AutoUpdateRunSchema },
     ]),
   ],
-  controllers: [AutoUpdateController],
   providers: [AutoUpdateSchedulerService],
+  exports: [AutoUpdateSchedulerService],
 })
 export class AutoUpdateModule {}

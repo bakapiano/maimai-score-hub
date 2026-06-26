@@ -282,7 +282,7 @@ export function LevelScoresTab({
     setExporting(true);
     try {
       const res = await fetch(
-        `/api/v1/score-exports/level?level=${encodeURIComponent(current.levelKey)}`,
+        `/api/v1/me/score-exports/level?level=${encodeURIComponent(current.levelKey)}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },

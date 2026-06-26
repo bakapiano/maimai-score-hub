@@ -18,20 +18,20 @@ export const musicContract = c.router({
   forceSync: {
     method: "POST",
     path: "/admin/catalog/music/sync",
-    headers: c.type<{ "x-admin-password": string }>(),
+    headers: c.type<{ "x-api-secret": string }>(),
     body: c.noBody(),
     responses: { 201: MusicSyncResponseSchema },
   },
   getDataSource: {
     method: "GET",
     path: "/admin/catalog/music/source",
-    headers: c.type<{ "x-admin-password": string }>(),
+    headers: c.type<{ "x-api-secret": string }>(),
     responses: { 200: MusicSourceResponseSchema },
   },
   setDataSource: {
     method: "PUT",
     path: "/admin/catalog/music/source",
-    headers: c.type<{ "x-admin-password": string }>(),
+    headers: c.type<{ "x-api-secret": string }>(),
     body: SetMusicSourceBodySchema,
     responses: {
       200: MusicSourceResponseSchema.extend({

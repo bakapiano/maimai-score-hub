@@ -36,7 +36,7 @@ export default function AdminSyncPage() {
     setDataSourceLoading(true);
     try {
       const res = await musicApi.getDataSource({
-        headers: { "x-admin-password": password },
+        headers: { "x-api-secret": password },
       });
       if (res.status === 200) {
         setDataSource(res.body.source);
@@ -52,7 +52,7 @@ export default function AdminSyncPage() {
       if (!password) return;
       setDataSourceSwitching(true);
       const res = await musicApi.setDataSource({
-        headers: { "x-admin-password": password },
+        headers: { "x-api-secret": password },
         body: { source: newSource },
       });
       setDataSourceSwitching(false);
@@ -68,7 +68,7 @@ export default function AdminSyncPage() {
     setCoverSyncing(true);
     setCoverSyncResult("");
     const res = await adminApi.syncCovers({
-      headers: { "x-admin-password": password },
+      headers: { "x-api-secret": password },
     });
     setCoverSyncing(false);
     if (res.status === 201) {
@@ -85,7 +85,7 @@ export default function AdminSyncPage() {
     setCoverForceSyncing(true);
     setCoverForceSyncResult("");
     const res = await adminApi.forceSyncCovers({
-      headers: { "x-admin-password": password },
+      headers: { "x-api-secret": password },
     });
     setCoverForceSyncing(false);
     if (res.status === 201) {
@@ -102,7 +102,7 @@ export default function AdminSyncPage() {
     setCoverBackfilling(true);
     setCoverBackfillResult("");
     const res = await coverApi.backfillVariants({
-      headers: { "x-admin-password": password },
+      headers: { "x-api-secret": password },
     });
     if (res.status === 201) {
       setCoverBackfillResult(
@@ -119,7 +119,7 @@ export default function AdminSyncPage() {
     setMusicSyncing(true);
     setMusicSyncResult("");
     const res = await adminApi.syncMusic({
-      headers: { "x-admin-password": password },
+      headers: { "x-api-secret": password },
     });
     setMusicSyncing(false);
     if (res.status === 201) {

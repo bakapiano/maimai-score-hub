@@ -35,9 +35,8 @@ import { QrLoginForm } from "../components/QrLoginForm";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
-import { authApi, getHealthStatus } from "../api/appClient";
+import { authApi, getHealthStatus, getStatistics } from "../api/appClient";
 import { notifications } from "@mantine/notifications";
-import { getRecentJobStats } from "../api/jobClient";
 import { useAuth } from "../providers/AuthProvider";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { hasOfflineData } from "../utils/offlineCache";
@@ -203,10 +202,11 @@ export default function LoginPage() {
     // Fetch recent stats on mount
     (async () => {
       try {
-        const statsRes = await getRecentJobStats();
-        if (statsRes) {
-          setRecentStats(statsRes);
-          if (statsRes.totalCount >= 5 && statsRes.successRate <= 50) {
+        const statistics = await getStatistics();
+        const dxnetJobs = statistics.dxnetJobs;
+        if (dxnetJobs) {
+          setRecentStats(dxnetJobs);
+          if (dxnetJobs.totalCount >= 5 && dxnetJobs.successRate <= 50) {
             setLowSuccessRate(true);
           }
         }

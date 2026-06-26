@@ -1,7 +1,7 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const AdminHeaderSchema = z.object({
-  'x-admin-password': z.string(),
+  "x-api-secret": z.string(),
 });
 
 export const BotStatusItemSchema = z
@@ -103,7 +103,7 @@ export const UpdateSystemSettingsBodySchema = z
     cabinetOnlyMode: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
-    message: 'at least one field must be provided',
+    message: "at least one field must be provided",
   });
 
 export type SystemSettings = z.infer<typeof SystemSettingsSchema>;

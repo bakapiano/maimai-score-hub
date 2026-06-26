@@ -72,7 +72,6 @@ export const JobResponseSchema = z.object({
 });
 
 export const JobCreateBodySchema = z.object({
-  friendCode: z.string().min(1),
   skipUpdateScore: z.boolean().optional().default(false),
 });
 
@@ -85,7 +84,7 @@ export const JobByFriendCodeActiveResponseSchema = z.object({
   job: JobResponseSchema.nullable(),
 });
 
-export const JobWakeResponseSchema = z.object({
+export const JobVerifyResponseSchema = z.object({
   job: JobResponseSchema,
 });
 
@@ -126,7 +125,7 @@ export type ScoreProgress = z.infer<typeof ScoreProgressSchema>;
 export type JobResponse = z.infer<typeof JobResponseSchema>;
 export type JobCreateBody = z.infer<typeof JobCreateBodySchema>;
 export type JobCreateResponse = z.infer<typeof JobCreateResponseSchema>;
-export type JobWakeResponse = z.infer<typeof JobWakeResponseSchema>;
+export type JobVerifyResponse = z.infer<typeof JobVerifyResponseSchema>;
 export type JobPatchBody = z.infer<typeof JobPatchBodySchema>;
 export type JobNextBody = z.infer<typeof JobNextBodySchema>;
 export type JobRecentStats = z.infer<typeof JobRecentStatsSchema>;

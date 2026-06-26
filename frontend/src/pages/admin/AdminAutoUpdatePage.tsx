@@ -146,7 +146,7 @@ export default function AdminAutoUpdatePage() {
     if (!password) return;
     try {
       const res = await adminApi.getSystemSettings({
-        headers: { "x-admin-password": password },
+        headers: { "x-api-secret": password },
       });
       if (res.status === 200) {
         setCabinetOnlyMode(res.body.cabinetOnlyMode);
@@ -168,7 +168,7 @@ export default function AdminAutoUpdatePage() {
       setSettingsError(null);
       try {
         const res = await adminApi.updateSystemSettings({
-          headers: { "x-admin-password": password },
+          headers: { "x-api-secret": password },
           body: { cabinetOnlyMode: next },
         });
         if (res.status === 200) {
@@ -193,7 +193,7 @@ export default function AdminAutoUpdatePage() {
     setError(null);
     try {
       const res = await adminApi.getAutoUpdateMetrics({
-        headers: { "x-admin-password": password },
+        headers: { "x-api-secret": password },
         query: { window },
       });
       if (res.status === 200) {
@@ -247,7 +247,8 @@ export default function AdminAutoUpdatePage() {
     rateLimit567: b.rateLimit567,
     p50Sec: b.p50Ms != null ? Math.round(b.p50Ms / 100) / 10 : null,
     p99Sec: b.p99Ms != null ? Math.round(b.p99Ms / 100) / 10 : null,
-    avgSec: b.avgDurationMs != null ? Math.round(b.avgDurationMs / 100) / 10 : null,
+    avgSec:
+      b.avgDurationMs != null ? Math.round(b.avgDurationMs / 100) / 10 : null,
   }));
 
   const utilColor =
@@ -403,7 +404,12 @@ export default function AdminAutoUpdatePage() {
             <YAxis allowDecimals={false} />
             <Tooltip />
             <Legend />
-            <Bar dataKey="triggered" stackId="a" fill="#12b886" name="triggered" />
+            <Bar
+              dataKey="triggered"
+              stackId="a"
+              fill="#12b886"
+              name="triggered"
+            />
             <Bar dataKey="skipped" stackId="a" fill="#adb5bd" name="skipped" />
             <Bar dataKey="failed" stackId="a" fill="#fa5252" name="failed" />
           </BarChart>
@@ -494,8 +500,8 @@ export default function AdminAutoUpdatePage() {
                 <b>{data.capacity.estimatedJobsPerMin} job/min</b>
               </Text>
               <Text size="xs" c="dimmed" mt={4}>
-                每 5min sweep 间隔可消化{" "}
-                {data.capacity.estimatedJobsPerSweep} 个 job
+                每 5min sweep 间隔可消化 {data.capacity.estimatedJobsPerSweep}{" "}
+                个 job
               </Text>
             </Box>
           </Grid.Col>
@@ -509,8 +515,7 @@ export default function AdminAutoUpdatePage() {
                 <b>
                   {(data.capacity.triggerRatePerUserPerSweep * 100).toFixed(2)}%
                 </b>{" "}
-                · peak/avg ={" "}
-                <b>{data.capacity.peakFactor}×</b>
+                · peak/avg = <b>{data.capacity.peakFactor}×</b>
               </Text>
               <Text size="xs" c="dimmed" mt={4}>
                 平均承受 {data.capacity.maxUsersAvg ?? "—"} user · 峰值安全

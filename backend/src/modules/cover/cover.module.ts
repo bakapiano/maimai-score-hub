@@ -1,7 +1,6 @@
-import { MusicEntity, MusicSchema } from '../music/music.schema';
+import { MusicEntity, MusicSchema } from '../music/schemas/music.schema';
 
-import { CoverController } from './cover.controller';
-import { CoverService } from './cover.service';
+import { CoverService } from './services/cover.service';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MusicModule } from '../music/music.module';
@@ -13,7 +12,6 @@ import { MusicModule } from '../music/music.module';
     ]),
     MusicModule,
   ],
-  controllers: [CoverController],
   providers: [CoverService],
   exports: [CoverService],
 })

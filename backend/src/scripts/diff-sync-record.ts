@@ -14,11 +14,14 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { AppModule } from '../app.module';
-import { SyncEntity, type SyncDocument } from '../modules/sync/sync.schema';
+import {
+  SyncEntity,
+  type SyncDocument,
+} from '../modules/sync/schemas/sync.schema';
 import {
   MusicEntity,
   type MusicDocument,
-} from '../modules/music/music.schema';
+} from '../modules/music/schemas/music.schema';
 
 async function run() {
   const friendCode = '634142510810999';
@@ -47,9 +50,7 @@ async function run() {
     return;
   }
 
-  console.log(
-    `Sync found: id=${sync.id}, scores=${sync.scores?.length ?? 0}`,
-  );
+  console.log(`Sync found: id=${sync.id}, scores=${sync.scores?.length ?? 0}`);
 
   // 2. Load record.json
   const recordPath = join(__dirname, 'record.json');
@@ -122,8 +123,7 @@ async function run() {
       onlyInRecord.push({
         musicId: songId,
         title: recordTitleById.get(songId) ?? '(unknown)',
-        type:
-          records.find((r) => String(r.song_id) === songId)?.type ?? '?',
+        type: records.find((r) => String(r.song_id) === songId)?.type ?? '?',
         levelIndices: [...indices].sort(),
       });
     }

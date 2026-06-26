@@ -5,8 +5,6 @@ import {
   BindCabinetQrResponseSchema,
   DivingFishTokenBodySchema,
   DivingFishTokenResponseSchema,
-  SetAutoUpdateBodySchema,
-  SetAutoUpdateResponseSchema,
   UpdateProfileBodySchema,
   UserProfileSchema,
 } from "./users.schema";
@@ -42,23 +40,13 @@ export const usersContract = c.router({
    * at the controller layer.
    */
   bindCabinetQr: {
-    method: "POST",
-    path: "/me/cabinet/bind-qr",
+    method: "PUT",
+    path: "/me/cabinet",
     headers: c.type<{ authorization: string }>(),
     body: BindCabinetQrBodySchema,
     responses: {
       201: BindCabinetQrResponseSchema,
       409: c.type<{ error: string }>(),
-      400: c.type<{ error: string }>(),
-    },
-  },
-  setAutoUpdate: {
-    method: "PATCH",
-    path: "/me/auto-update",
-    headers: c.type<{ authorization: string }>(),
-    body: SetAutoUpdateBodySchema,
-    responses: {
-      200: SetAutoUpdateResponseSchema,
       400: c.type<{ error: string }>(),
     },
   },

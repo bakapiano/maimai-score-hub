@@ -3,9 +3,8 @@ import * as sharedContract from "@maimai-score-hub/shared";
 import {
   type JobCreateBody,
   type JobCreateResponse,
-  type JobRecentStats,
   type JobResponse,
-  type JobWakeResponse,
+  type JobVerifyResponse,
 } from "@maimai-score-hub/shared";
 
 const { jobContract } = sharedContract;
@@ -28,8 +27,14 @@ export async function createJob(
   return response.body;
 }
 
-export async function getJobById(jobId: string): Promise<JobResponse> {
-  const response = await client.getById({ params: { jobId } });
+export async function getJobById(
+  jobId: string,
+  authToken: string,
+): Promise<JobResponse> {
+  const response = await client.getById({
+    params: { jobId },
+    headers: { authorization: `Bearer ${authToken}` },
+  });
   if (response.status !== 200) {
     throw new Error(`Unexpected status: ${response.status}`);
   }
@@ -51,11 +56,11 @@ export async function getActiveJobByFriendCode(
   return response.body;
 }
 
-export async function wakeJob(
+export async function verifyJob(
   jobId: string,
   authToken: string,
-): Promise<JobWakeResponse> {
-  const response = await client.wake({
+): Promise<JobVerifyResponse> {
+  const response = await client.verify({
     params: { jobId },
     headers: { authorization: `Bearer ${authToken}` },
   });
@@ -64,13 +69,5 @@ export async function wakeJob(
     throw new Error(`Unexpected status: ${response.status}`);
   }
 
-  return response.body;
-}
-
-export async function getRecentJobStats(): Promise<JobRecentStats> {
-  const response = await client.getRecentStats({});
-  if (response.status !== 200) {
-    throw new Error(`Unexpected status: ${response.status}`);
-  }
   return response.body;
 }

@@ -26,7 +26,7 @@ import {
   createJob,
   getActiveJobByFriendCode,
   getJobById,
-  wakeJob,
+  verifyJob,
 } from "../api/jobClient";
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
 import { CabinetBindingCard } from "../components/CabinetBindingCard";
@@ -132,7 +132,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
     };
   }
 
-  if (path === "/api/v1/sync/latest" && method === "GET" && authorization) {
+  if (path === "/api/v1/me/sync/latest" && method === "GET" && authorization) {
     const res = await syncApi.latest({
       headers: { authorization },
     });
@@ -144,7 +144,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   }
 
   if (
-    path === "/api/v1/sync/latest/exports/diving-fish" &&
+    path === "/api/v1/me/sync/latest/exports/diving-fish" &&
     method === "POST" &&
     authorization
   ) {
@@ -159,7 +159,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   }
 
   if (
-    path === "/api/v1/sync/latest/exports/lxns" &&
+    path === "/api/v1/me/sync/latest/exports/lxns" &&
     method === "POST" &&
     authorization
   ) {
@@ -267,7 +267,7 @@ export default function SyncPage() {
   const [syncStatus, setSyncStatus] = useState<JobStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [wakeLoading, setWakeLoading] = useState(false);
+  const [verifyLoading, setVerifyLoading] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
 
   const totalWaitSeconds = 5 * 60;
@@ -288,7 +288,7 @@ export default function SyncPage() {
   const loadLastSync = useCallback(async () => {
     if (!token) return;
 
-    const res = await fetchJson<LastSyncInfo>("/api/v1/sync/latest", {
+    const res = await fetchJson<LastSyncInfo>("/api/v1/me/sync/latest", {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -329,7 +329,7 @@ export default function SyncPage() {
 
       // Kick off all independent requests in parallel.
       // Profile is needed for friendCode → active job lookup, but
-      // /api/v1/sync/latest has no data dependency on profile and
+      // /api/v1/me/sync/latest has no data dependency on profile and
       // were previously waiting in series — total wall time was the
       // sum of all requests. Now profile + the other requests race;
       // active-job lookup chains off profile (still serial there,
@@ -337,7 +337,7 @@ export default function SyncPage() {
       const profilePromise = fetchJson<UserProfileResponse>("/api/v1/me", {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const syncPromise = fetchJson<LastSyncInfo>("/api/v1/sync/latest", {
+      const syncPromise = fetchJson<LastSyncInfo>("/api/v1/me/sync/latest", {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -442,11 +442,11 @@ export default function SyncPage() {
 
   // Poll job status
   useEffect(() => {
-    if (!syncJobId || !syncing) return;
+    if (!syncJobId || !syncing || !token) return;
 
     const interval = setInterval(async () => {
       try {
-        const job = await getJobById(syncJobId);
+        const job = await getJobById(syncJobId, token);
         setSyncStatus(job);
 
         if (
@@ -462,7 +462,7 @@ export default function SyncPage() {
             // Re-fetch job after a delay to pick up auto-export results
             setTimeout(async () => {
               try {
-                const updated = await getJobById(syncJobId);
+                const updated = await getJobById(syncJobId, token);
                 setSyncStatus(updated);
               } catch {
                 // ignore
@@ -477,7 +477,7 @@ export default function SyncPage() {
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [syncJobId, syncing, loadProfile, loadLastSync]);
+  }, [syncJobId, syncing, token, loadProfile, loadLastSync]);
 
   // Handle timeout countdown for wait_acceptance stage
   useEffect(() => {
@@ -512,7 +512,6 @@ export default function SyncPage() {
     try {
       const res = await createJob(
         {
-          friendCode: profile.friendCode,
           skipUpdateScore: false,
         },
         token!,
@@ -527,12 +526,12 @@ export default function SyncPage() {
     }
   };
 
-  const wakeSyncJob = async () => {
+  const verifySyncJob = async () => {
     if (!syncJobId || !token) return;
 
-    setWakeLoading(true);
+    setVerifyLoading(true);
     try {
-      const res = await wakeJob(syncJobId, token);
+      const res = await verifyJob(syncJobId, token);
       setSyncStatus(res.job);
       setSyncing(true);
       notifications.show({
@@ -548,7 +547,7 @@ export default function SyncPage() {
         color: "red",
       });
     } finally {
-      setWakeLoading(false);
+      setVerifyLoading(false);
     }
   };
 
@@ -567,7 +566,7 @@ export default function SyncPage() {
       scores?: number;
       exported?: number;
       response?: { creates?: number; updates?: number; message?: string };
-    }>("/api/v1/sync/latest/exports/diving-fish", {
+    }>("/api/v1/me/sync/latest/exports/diving-fish", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -612,7 +611,7 @@ export default function SyncPage() {
       scores?: number;
       exported?: number;
       response?: { success?: boolean; code?: number; data?: unknown[] };
-    }>("/api/v1/sync/latest/exports/lxns", {
+    }>("/api/v1/me/sync/latest/exports/lxns", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -989,8 +988,8 @@ export default function SyncPage() {
                         </Progress.Section>
                       </Progress.Root>
                       <Button
-                        onClick={wakeSyncJob}
-                        loading={wakeLoading}
+                        onClick={verifySyncJob}
+                        loading={verifyLoading}
                         disabled={!syncJobId}
                       >
                         我已接受请求
@@ -1283,7 +1282,7 @@ export default function SyncPage() {
                                   updates?: number;
                                   message?: string;
                                 };
-                              }>("/api/v1/sync/latest/exports/diving-fish", {
+                              }>("/api/v1/me/sync/latest/exports/diving-fish", {
                                 method: "POST",
                                 headers: {
                                   Authorization: `Bearer ${token}`,

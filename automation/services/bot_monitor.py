@@ -23,10 +23,10 @@ async def fetch_bot_statuses() -> list[BotStatus]:
     global _bot_statuses, _last_error
 
     backend_url = await db.get_setting("backend_url")
-    admin_password = await db.get_setting("admin_password")
+    api_shared_secret = await db.get_setting("api_shared_secret")
 
-    if not admin_password:
-        _last_error = "admin_password 未配置"
+    if not api_shared_secret:
+        _last_error = "api_shared_secret 未配置"
         logger.warning(_last_error)
         return []
 
@@ -34,7 +34,7 @@ async def fetch_bot_statuses() -> list[BotStatus]:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{backend_url}/api/v1/admin/bots",
-                headers={"x-admin-password": admin_password},
+                headers={"x-api-secret": api_shared_secret},
                 timeout=10,
             )
 

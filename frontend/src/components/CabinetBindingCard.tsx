@@ -71,8 +71,8 @@ export function CabinetBindingCard({
     async (formData: FormData | string) => {
       setBusy("bind");
       try {
-        const res = await fetch("/api/v1/me/cabinet/bind-qr", {
-          method: "POST",
+        const res = await fetch("/api/v1/me/cabinet", {
+          method: "PUT",
           headers:
             typeof formData === "string"
               ? {
@@ -145,13 +145,13 @@ export function CabinetBindingCard({
   const toggleAutoUpdate = async (enabled: boolean) => {
     setBusy("toggle");
     try {
-      const res = await fetch("/api/v1/me/auto-update", {
+      const res = await fetch("/api/v1/me", {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify({ autoUpdate: enabled }),
       });
       const text = await res.text();
       const json = text ? JSON.parse(text) : null;

@@ -1,4 +1,4 @@
-import type { ChartPayload } from '../../../modules/music/music.schema';
+import type { ChartPayload } from '../../../modules/music/schemas/music.schema';
 
 const LXNS_SONG_LIST_URL = 'https://maimai.lxns.net/api/v0/maimai/song/list';
 
@@ -11,8 +11,6 @@ type VersionMapItem = { id: number; title: string; version: number };
 const LXNS_TITLE_MAP: Record<string, string> = {
   // Add entries here if LXNS titles differ from actual game titles
 };
-
-
 
 type LxnsDifficulty = {
   type: string; // 'standard' | 'dx' | 'utage'

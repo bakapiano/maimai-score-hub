@@ -1,5 +1,7 @@
 import { initContract } from "@ts-rest/core";
 
+import { AppStatisticsSchema } from "./app.schema";
+
 const c = initContract();
 
 export const appContract = c.router({
@@ -12,6 +14,13 @@ export const appContract = c.router({
         timestamp?: string;
         env?: string;
       }>(),
+    },
+  },
+  getStatistics: {
+    method: "GET",
+    path: "/statistics",
+    responses: {
+      200: AppStatisticsSchema,
     },
   },
 });

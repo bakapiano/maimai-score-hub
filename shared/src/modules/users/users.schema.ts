@@ -21,6 +21,7 @@ export const UpdateProfileBodySchema = z.object({
   lxnsImportToken: z.string().nullable().optional(),
   autoExportDivingFish: z.boolean().optional(),
   autoExportLxns: z.boolean().optional(),
+  autoUpdate: z.boolean().optional(),
 });
 
 export const DivingFishTokenBodySchema = z.object({
@@ -56,14 +57,4 @@ export const BindCabinetQrResponseSchema = z.object({
   ok: z.literal(true),
 });
 
-export const SetAutoUpdateBodySchema = z.object({
-  enabled: z.boolean(),
-});
-
-export const SetAutoUpdateResponseSchema = z.object({
-  ok: z.literal(true),
-  autoUpdate: z.boolean(),
-});
-
 export type BindCabinetQrBody = z.infer<typeof BindCabinetQrBodySchema>;
-export type SetAutoUpdateBody = z.infer<typeof SetAutoUpdateBodySchema>;

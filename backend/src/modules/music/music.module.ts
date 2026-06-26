@@ -1,11 +1,13 @@
-import { MusicEntity, MusicSchema } from './music.schema';
-import { MusicConfigEntity, MusicConfigSchema } from './music-config.schema';
+import { MusicEntity, MusicSchema } from './schemas/music.schema';
+import {
+  MusicConfigEntity,
+  MusicConfigSchema,
+} from './schemas/music-config.schema';
 
 import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { MusicController } from './music.controller';
-import { MusicService } from './music.service';
+import { MusicService } from './services/music.service';
 
 @Module({
   imports: [
@@ -15,7 +17,6 @@ import { MusicService } from './music.service';
       { name: MusicConfigEntity.name, schema: MusicConfigSchema },
     ]),
   ],
-  controllers: [MusicController],
   providers: [MusicService],
   exports: [MusicService],
 })

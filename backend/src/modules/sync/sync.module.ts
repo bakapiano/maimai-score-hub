@@ -1,14 +1,13 @@
 import { Module, forwardRef } from '@nestjs/common';
-import { MusicEntity, MusicSchema } from '../music/music.schema';
-import { SyncEntity, SyncSchema } from './sync.schema';
+import { MusicEntity, MusicSchema } from '../music/schemas/music.schema';
+import { SyncEntity, SyncSchema } from './schemas/sync.schema';
 
 import { AuthModule } from '../auth/auth.module';
 import { MongooseModule } from '@nestjs/mongoose';
-import { SyncController } from './sync.controller';
-import { SyncService } from './sync.service';
+import { SyncService } from './services/sync.service';
 import { UsersModule } from '../users/users.module';
 import { MusicModule } from '../music/music.module';
-import { ProberExportMapService } from './prober-export-map.service';
+import { ProberExportMapService } from './services/prober-export-map.service';
 
 @Module({
   imports: [
@@ -20,7 +19,6 @@ import { ProberExportMapService } from './prober-export-map.service';
       { name: MusicEntity.name, schema: MusicSchema },
     ]),
   ],
-  controllers: [SyncController],
   providers: [SyncService, ProberExportMapService],
   exports: [SyncService],
 })
