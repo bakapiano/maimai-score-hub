@@ -4,11 +4,16 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
   forwardRef,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { randomUUID } from 'crypto';
+import { Queue } from 'bullmq';
+import { Interval } from '@nestjs/schedule';
 import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
 
 import { SyncService } from '../../sync/services/sync.service';
@@ -29,6 +34,12 @@ import type {
 } from '../job.types';
 import { getJobTypePriority } from '@maimai-score-hub/shared';
 import { JobEntity } from '../schemas/job.schema';
+import {
+  DEFAULT_WORKER_JOB_OPTIONS,
+  DXNET_WORKER_QUEUE_NAME,
+  type DxnetWorkerJobData,
+  createBullmqQueueOptions,
+} from '../../../common/bullmq/bullmq.config';
 
 export interface RecentJobStats {
   totalCount: number;
@@ -56,22 +67,14 @@ const PROCESSING_HARD_TIMEOUT_MS = Number(
   process.env.PROCESSING_HARD_TIMEOUT_MS ?? 30 * 60 * 1000,
 );
 
-const MAX_LONG_POLL_WAIT_MS = 25_000;
+const DISPATCH_SWEEP_INTERVAL_MS = Number(
+  process.env.DXNET_DISPATCH_SWEEP_INTERVAL_MS ?? 30_000,
+);
 
 // [TODO] Change this to 1min
 // const MIN_CREATE_INTERVAL_MS = Number(
 //   process.env.MIN_CREATE_INTERVAL_MS ?? 1000 * 60,
 // );
-
-function dueFilter(now: Date) {
-  return {
-    $or: [
-      { runAt: null },
-      { runAt: { $exists: false } },
-      { runAt: { $lte: now } },
-    ],
-  };
-}
 
 function toJobResponse(job: JobEntity): JobResponse {
   return {
@@ -126,11 +129,10 @@ const JOB_STAGE_MAP: Record<JobType, readonly JobStage[]> = {
 };
 
 @Injectable()
-export class JobService {
+export class JobService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(JobService.name);
-  private readonly claimWaiters = new Set<() => void>();
-  private nextRunAtTimer: NodeJS.Timeout | null = null;
-  private nextRunAtTime = 0;
+  private readonly dxnetQueue: Queue<DxnetWorkerJobData>;
+  private dispatchSweepRunning = false;
 
   constructor(
     @InjectModel(JobEntity.name)
@@ -146,63 +148,130 @@ export class JobService {
     @Inject(forwardRef(() => BotStatusService))
     private readonly botStatus: BotStatusService,
     private readonly systemSettings: SystemSettingsService,
-  ) {}
-
-  private notifyJobAvailability(): void {
-    if (this.claimWaiters.size === 0) return;
-    const waiters = [...this.claimWaiters];
-    this.claimWaiters.clear();
-    for (const wake of waiters) wake();
-  }
-
-  private waitForJobSignal(waitMs: number): Promise<void> {
-    if (waitMs <= 0) return Promise.resolve();
-    return new Promise((resolve) => {
-      let done = false;
-      const wake = () => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        this.claimWaiters.delete(wake);
-        resolve();
-      };
-      const timer = setTimeout(wake, waitMs);
-      this.claimWaiters.add(wake);
+    config: ConfigService,
+  ) {
+    this.dxnetQueue = new Queue<DxnetWorkerJobData>(DXNET_WORKER_QUEUE_NAME, {
+      ...createBullmqQueueOptions(config),
+      defaultJobOptions: DEFAULT_WORKER_JOB_OPTIONS,
     });
   }
 
-  private scheduleWakeAt(runAt: Date | null | undefined): void {
-    if (!runAt) return;
-    const time = runAt.getTime();
-    if (!Number.isFinite(time)) return;
-    const now = Date.now();
-    if (time <= now) {
-      this.notifyJobAvailability();
-      return;
-    }
-    if (this.nextRunAtTimer && this.nextRunAtTime <= time) {
-      return;
-    }
-    if (this.nextRunAtTimer) {
-      clearTimeout(this.nextRunAtTimer);
-    }
-    this.nextRunAtTime = time;
-    this.nextRunAtTimer = setTimeout(() => {
-      this.nextRunAtTimer = null;
-      this.nextRunAtTime = 0;
-      this.notifyJobAvailability();
-    }, time - now);
-    this.nextRunAtTimer.unref?.();
+  async onModuleInit(): Promise<void> {
+    await this.sweepAndDispatchJobs();
   }
 
-  private notifyIfClaimable(job: JobEntity): void {
+  async onModuleDestroy(): Promise<void> {
+    await this.dxnetQueue.close();
+  }
+
+  @Interval(DISPATCH_SWEEP_INTERVAL_MS)
+  private async sweepAndDispatchJobs(): Promise<void> {
+    if (this.dispatchSweepRunning) return;
+    this.dispatchSweepRunning = true;
+    try {
+      const now = new Date();
+      await this.releaseStaleAndTimedOutJobs(now);
+
+      const dispatchable = await this.jobModel
+        .find({
+          status: { $in: ['queued', 'processing'] },
+          executing: false,
+        })
+        .sort({ priority: -1, updatedAt: 1 })
+        .limit(500)
+        .lean<JobEntity[]>()
+        .exec();
+
+      await Promise.all(dispatchable.map((job) => this.enqueueWorkerJob(job)));
+    } catch (err) {
+      this.logger.warn(
+        `dxnet BullMQ dispatch sweep failed: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+    } finally {
+      this.dispatchSweepRunning = false;
+    }
+  }
+
+  private async releaseStaleAndTimedOutJobs(now: Date): Promise<void> {
+    const staleThreshold = new Date(now.getTime() - DEAD_JOB_TIMEOUT_MS);
+    await this.jobModel.updateMany(
+      { executing: true, updatedAt: { $lte: staleThreshold } },
+      { $set: { executing: false, updatedAt: now } },
+    );
+
+    const queuedDeadline = new Date(now.getTime() - QUEUED_JOB_TIMEOUT_MS);
+    await this.jobModel.updateMany(
+      {
+        status: 'queued',
+        botUserFriendCode: null,
+        createdAt: { $lte: queuedDeadline },
+      },
+      {
+        $set: {
+          status: 'failed',
+          runAt: null,
+          error: '排队超时，可能是 Bot 繁忙或异常，请稍后再试',
+          updatedAt: now,
+        },
+      },
+    );
+
+    const hardDeadline = new Date(now.getTime() - PROCESSING_HARD_TIMEOUT_MS);
+    await this.jobModel.updateMany(
+      {
+        status: { $in: ['queued', 'processing'] },
+        createdAt: { $lte: hardDeadline },
+      },
+      {
+        $set: {
+          status: 'failed',
+          executing: false,
+          runAt: null,
+          error: '硬超时：任务存活时间超过 30 分钟',
+          updatedAt: now,
+        },
+      },
+    );
+  }
+
+  private async enqueueWorkerJob(job: JobEntity): Promise<void> {
     if (['completed', 'failed', 'canceled'].includes(job.status)) return;
     if (job.executing) return;
-    if (job.runAt && job.runAt.getTime() > Date.now()) {
-      this.scheduleWakeAt(job.runAt);
+
+    const now = Date.now();
+    const delay = job.runAt ? Math.max(0, job.runAt.getTime() - now) : 0;
+    await this.dxnetQueue.add(
+      'dxnet-job',
+      { jobId: job.id },
+      {
+        jobId: job.id,
+        delay,
+        priority: this.toBullmqPriority(job.priority ?? 0),
+      },
+    );
+  }
+
+  private async promoteOrEnqueueWorkerJob(job: JobEntity): Promise<void> {
+    if (['completed', 'failed', 'canceled'].includes(job.status)) return;
+    if (job.executing) return;
+
+    const queued = await this.dxnetQueue.getJob(job.id);
+    if (queued) {
+      const state = await queued.getState();
+      if (state === 'delayed') {
+        await queued.promote();
+      }
       return;
     }
-    this.notifyJobAvailability();
+
+    await this.enqueueWorkerJob(job);
+  }
+
+  private toBullmqPriority(priority: number): number | undefined {
+    if (!Number.isFinite(priority) || priority <= 0) return undefined;
+    return Math.max(1, 100 - Math.floor(priority));
   }
 
   /**
@@ -758,8 +827,9 @@ export class JobService {
       }
     }
 
-    this.notifyIfClaimable(created.toObject() as JobEntity);
-    return { jobId: id, job: toJobResponse(created.toObject() as JobEntity) };
+    const createdEntity = created.toObject() as JobEntity;
+    await this.enqueueWorkerJob(createdEntity);
+    return { jobId: id, job: toJobResponse(createdEntity) };
   }
 
   async get(jobId: string): Promise<JobResponse> {
@@ -793,208 +863,8 @@ export class JobService {
 
     if (!updated) throw new NotFoundException('Job not found');
 
-    this.notifyIfClaimable(updated.toObject() as JobEntity);
+    await this.promoteOrEnqueueWorkerJob(updated.toObject() as JobEntity);
     return toJobResponse(updated.toObject() as JobEntity);
-  }
-
-  async claimNext(
-    botUserFriendCode: string,
-    waitMs = 0,
-  ): Promise<JobResponse | null> {
-    const clampedWaitMs = Math.min(
-      Math.max(Math.floor(waitMs), 0),
-      MAX_LONG_POLL_WAIT_MS,
-    );
-    const deadline = Date.now() + clampedWaitMs;
-
-    while (true) {
-      const job = await this.claimNextReady(botUserFriendCode);
-      if (job) return job;
-
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) return null;
-      await this.waitForJobSignal(remaining);
-    }
-  }
-
-  private async claimNextReady(
-    botUserFriendCode: string,
-  ): Promise<JobResponse | null> {
-    const now = new Date();
-    const due = dueFilter(now);
-
-    // Release stale executing jobs before claiming.
-    const staleThreshold = new Date(now.getTime() - DEAD_JOB_TIMEOUT_MS);
-    await this.jobModel.updateMany(
-      { executing: true, updatedAt: { $lte: staleThreshold } },
-      { $set: { executing: false } },
-    );
-
-    // Fail queued jobs that have been waiting too long (unassigned only).
-    const queuedDeadline = new Date(now.getTime() - QUEUED_JOB_TIMEOUT_MS);
-    await this.jobModel.updateMany(
-      {
-        status: 'queued',
-        botUserFriendCode: null,
-        createdAt: { $lte: queuedDeadline },
-      },
-      {
-        $set: {
-          status: 'failed',
-          runAt: null,
-          error: '排队超时，可能是 Bot 繁忙或异常，请稍后再试',
-          updatedAt: now,
-        },
-      },
-    );
-
-    // Hard ceiling: any non-terminal job alive longer than this is
-    // force-failed. Worker's per-job watchdog should normally fire
-    // first and PATCH failed itself; this catches the worker-died
-    // / PATCH-lost case so wedged jobs don't pile up.
-    const hardDeadline = new Date(now.getTime() - PROCESSING_HARD_TIMEOUT_MS);
-    await this.jobModel.updateMany(
-      {
-        status: { $in: ['queued', 'processing'] },
-        createdAt: { $lte: hardDeadline },
-      },
-      {
-        $set: {
-          status: 'failed',
-          executing: false,
-          runAt: null,
-          error: '硬超时：任务存活时间超过 30 分钟',
-          updatedAt: now,
-        },
-      },
-    );
-
-    // 1a) Queued first: claim the oldest unassigned queued job.
-    //     To balance load across bots, only allow this bot to claim a new queued
-    //     job if it doesn't already have more active jobs than any other bot.
-    const activeCountForThisBot = await this.jobModel.countDocuments({
-      botUserFriendCode,
-      status: 'processing',
-      executing: true,
-    });
-
-    // Find the minimum active job count among all OTHER bots that have processing jobs.
-    // If no other bots have any jobs, minOtherCount stays at Infinity and this bot can claim.
-    const otherBotCounts = await this.jobModel.aggregate<{
-      _id: string;
-      count: number;
-    }>([
-      {
-        $match: {
-          status: 'processing',
-          executing: true,
-          botUserFriendCode: { $ne: null, $nin: [botUserFriendCode] },
-        },
-      },
-      { $group: { _id: '$botUserFriendCode', count: { $sum: 1 } } },
-    ]);
-
-    // When no other bots have processing jobs, skip the balance check entirely
-    // so the only active bot is not artificially capped at 2.
-    const shouldBalanceCheck = otherBotCounts.length > 0;
-    const minOtherCount = shouldBalanceCheck
-      ? Math.min(...otherBotCounts.map((b) => b.count))
-      : 0;
-
-    // Only claim new queued job if this bot's active count is not too far ahead of others.
-    // Allow up to 1 more than the minimum, so a single bot going offline won't block others.
-    // When this is the only active bot, skip the check entirely.
-    if (!shouldBalanceCheck || activeCountForThisBot <= minOtherCount + 1) {
-      // Find the oldest unassigned queued job
-      const candidates = await this.jobModel
-        .find({
-          status: 'queued',
-          executing: false,
-          botUserFriendCode: null,
-          ...due,
-        })
-        .sort({ priority: -1, updatedAt: 1 })
-        .limit(10)
-        .lean();
-
-      for (const candidate of candidates) {
-        // Check preferred bot: if job is queued < 30s and user prefers a different bot, skip
-        const queuedDuration = now.getTime() - candidate.createdAt.getTime();
-        if (queuedDuration < 30_000) {
-          const preferredBot = await this.usersService.getPreferredBot(
-            candidate.friendCode,
-          );
-          if (preferredBot && preferredBot !== botUserFriendCode) {
-            continue; // Let the preferred bot pick this job
-          }
-        }
-
-        // Try to atomically claim this job
-        const claimed = await this.jobModel.findOneAndUpdate(
-          {
-            id: candidate.id,
-            status: 'queued',
-            executing: false,
-            botUserFriendCode: null,
-            ...due,
-          },
-          {
-            $set: {
-              status: 'processing',
-              executing: true,
-              botUserFriendCode,
-              runAt: null,
-              updatedAt: now,
-            },
-          },
-          { new: true, sort: { priority: -1, updatedAt: 1 } },
-        );
-        if (claimed) {
-          return toJobResponse(claimed.toObject() as JobEntity);
-        }
-      }
-    }
-
-    // 1b) Resume: pick the oldest processing job for this bot.
-    //     Only pick jobs whose runAt is due (future runAt = intentional cooldown
-    //     from wait stages).
-    const processing = await this.jobModel.findOneAndUpdate(
-      {
-        status: 'processing',
-        botUserFriendCode,
-        executing: false,
-        ...due,
-      },
-      {
-        $set: {
-          executing: true,
-          runAt: null,
-          updatedAt: now,
-        },
-      },
-      { new: true, sort: { priority: -1, updatedAt: 1 } },
-    );
-    if (processing) {
-      return toJobResponse(processing.toObject() as JobEntity);
-    }
-
-    // 2) Idle pool: claim pre-assigned queued jobs (e.g. update_score)
-    //    Lowest priority — only picked when no main pool jobs are available.
-    const idle = await this.jobModel.findOneAndUpdate(
-      { status: 'queued', executing: false, botUserFriendCode, ...due },
-      {
-        $set: {
-          status: 'processing',
-          executing: true,
-          runAt: null,
-          updatedAt: now,
-        },
-      },
-      { new: true, sort: { priority: -1, createdAt: 1 } },
-    );
-
-    if (!idle) return null;
-    return toJobResponse(idle.toObject() as JobEntity);
   }
 
   async patch(jobId: string, body: JobPatchBody): Promise<JobResponse> {
@@ -1316,7 +1186,6 @@ export class JobService {
       }
     }
 
-    this.notifyIfClaimable(updated.toObject() as JobEntity);
     return toJobResponse(updated.toObject() as JobEntity);
   }
 
@@ -1511,7 +1380,7 @@ export class JobService {
         { id: jobId },
         { $set: { autoExportResult: exportResult } },
       ),
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+
       this.syncService.updateAutoExportResult(jobId, exportResult),
     ]);
   }

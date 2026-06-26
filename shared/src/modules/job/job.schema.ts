@@ -105,11 +105,6 @@ export const JobPatchBodySchema = z.object({
   updateScoreDuration: z.number().nullable().optional(),
 });
 
-export const JobNextBodySchema = z.object({
-  botUserFriendCode: z.string().min(1),
-  waitMs: z.number().int().min(0).max(25000).optional(),
-});
-
 export const JobRecentStatsSchema = z.object({
   totalCount: z.number().int().nonnegative(),
   completedCount: z.number().int().nonnegative(),
@@ -127,5 +122,4 @@ export type JobCreateBody = z.infer<typeof JobCreateBodySchema>;
 export type JobCreateResponse = z.infer<typeof JobCreateResponseSchema>;
 export type JobVerifyResponse = z.infer<typeof JobVerifyResponseSchema>;
 export type JobPatchBody = z.infer<typeof JobPatchBodySchema>;
-export type JobNextBody = z.infer<typeof JobNextBodySchema>;
 export type JobRecentStats = z.infer<typeof JobRecentStatsSchema>;

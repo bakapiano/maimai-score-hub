@@ -28,8 +28,8 @@ const backendDispatcher = new Agent({
   // enough that a flaky upstream gets fresh sockets.
   keepAliveTimeout: 10_000,
   keepAliveMaxTimeout: 30_000,
-  // Long-poll job claims may intentionally hold a response for up to 25s.
-  // Keep these above that window while the bounded pool still caps damage.
+  // Job state PATCHes can include large score payloads and should not be
+  // cut off by the bounded backend pool too aggressively.
   connect: { timeout: 5_000 },
   headersTimeout: 35_000,
   bodyTimeout: 35_000,

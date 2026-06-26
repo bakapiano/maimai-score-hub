@@ -24,7 +24,7 @@ export class JobHandler {
     this.watchdog = new JobWatchdog(this.session);
   }
 
-  async execute(): Promise<void> {
+  async execute(): Promise<Job> {
     try {
       this.watchdog.start();
       await runWithRequestContext(
@@ -44,14 +44,13 @@ export class JobHandler {
         console.warn(
           `[JobHandler] Job ${this.session.job.id}: Cookie expired, will retry later`,
         );
-        return;
+      } else {
+        const error = e as Error;
+        console.error(`[JobHandler] Job ${this.session.job.id} failed:`, error);
+        await this.session.fail(error?.message || String(error), {
+          updatedAt: new Date(),
+        });
       }
-
-      const error = e as Error;
-      console.error(`[JobHandler] Job ${this.session.job.id} failed:`, error);
-      await this.session.fail(error?.message || String(error), {
-        updatedAt: new Date(),
-      });
     } finally {
       this.watchdog.stop();
 
@@ -74,5 +73,7 @@ export class JobHandler {
         }
       }
     }
+
+    return this.session.job;
   }
 }

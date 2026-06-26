@@ -1394,27 +1394,16 @@ paths:
                       - updatedAt
                 required:
                   - job
-  /workers/dxnet/jobs/next:
-    post:
+  /workers/dxnet/jobs/{jobId}:
+    get:
       tags: *a5
-      parameters: []
-      operationId: job.next
-      requestBody:
-        description: Body
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                botUserFriendCode:
-                  type: string
-                  minLength: 1
-                waitMs:
-                  type: integer
-                  minimum: 0
-                  maximum: 25000
-              required:
-                - botUserFriendCode
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: job.getWorkerJob
       responses:
         "200":
           description: "200"
@@ -1550,12 +1539,6 @@ paths:
                   - stage
                   - createdAt
                   - updatedAt
-        "204":
-          description: "204"
-          content:
-            application/json:
-              schema: {}
-  /workers/dxnet/jobs/{jobId}:
     patch:
       tags: *a5
       parameters:
@@ -2615,78 +2598,10 @@ paths:
       responses:
         "200":
           description: "200"
-  /workers/sdgb/jobs/next:
-    post:
-      tags: &a10
-        - sdgbWorker
-      parameters: []
-      operationId: sdgbWorker.next
-      requestBody:
-        description: Body
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                workerId:
-                  type: string
-                  minLength: 1
-              required:
-                - workerId
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  jobType:
-                    type: string
-                    enum:
-                      - scan_qr
-                      - get_rival_hash
-                      - add_rival
-                  status:
-                    type: string
-                    enum:
-                      - queued
-                      - processing
-                      - completed
-                      - failed
-                  payload:
-                    type: object
-                    additionalProperties: {}
-                  result:
-                    type: object
-                    additionalProperties: {}
-                    nullable: true
-                  error:
-                    type: string
-                    nullable: true
-                  requesterTag:
-                    type: string
-                    nullable: true
-                  createdAt:
-                    type: string
-                  updatedAt:
-                    type: string
-                required:
-                  - id
-                  - jobType
-                  - status
-                  - payload
-                  - result
-                  - error
-                  - createdAt
-                  - updatedAt
-        "204":
-          description: "204"
   /workers/sdgb/jobs/{jobId}:
     get:
-      tags: *a10
+      tags: &a10
+        - sdgbWorker
       parameters:
         - name: jobId
           in: path

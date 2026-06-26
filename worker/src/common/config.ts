@@ -47,6 +47,11 @@ export function loadEnv() {
 
 loadEnv();
 
+function getEnvInt(key: string, fallback: number): number {
+  const parsed = Number(process.env[key]);
+  return Number.isFinite(parsed) ? Math.floor(parsed) : fallback;
+}
+
 // ============================================================================
 // Worker 配置
 // ============================================================================
@@ -55,7 +60,7 @@ export const WORKER_DEFAULTS = {
   /** 心跳间隔 (ms) */
   heartbeatIntervalMs: 20_000,
   /** 最大并发处理任务数 */
-  maxProcessJobs: 8,
+  maxProcessJobs: getEnvInt("MAX_PROCESS_JOBS", 8),
   /** Friend VS 并发数 */
   friendVSConcurrency: 2,
   /** 清理任务间隔 (ms) - 默认 5 分钟 */
@@ -64,8 +69,8 @@ export const WORKER_DEFAULTS = {
   cookieHealthCheckIntervalMs: 60 * 1000,
   /** Bot 状态上报间隔 (ms) - 默认 1 分钟 */
   botStatusReportIntervalMs: 60_000,
-  /** Job claim long-poll 最大等待时间 (ms) */
-  jobClaimLongPollWaitMs: 25_000,
+  /** BullMQ job 因 bot 暂不可用而延后重试的时间 (ms) */
+  queueRetryDelayMs: getEnvInt("BULLMQ_JOB_RETRY_DELAY_MS", 5_000),
 } as const;
 
 const env = process.env.NODE_ENV || "dev";

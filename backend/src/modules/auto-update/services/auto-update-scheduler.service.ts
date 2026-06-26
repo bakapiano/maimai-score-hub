@@ -394,8 +394,8 @@ export class AutoUpdateSchedulerService
    *   - schedule add-rival on the cabinet via sdgb-worker
    *   - create an update_score job assigned to that bot for worker/
    * The two operations are independent: add-rival is idempotent on the
-   * cabinet (returnCode 1 = already friends), and the worker/ side will
-   * pick up the queued job whenever it next polls.
+   * cabinet (returnCode 1 = already friends), and the worker side will pick
+   * up the queued job from BullMQ.
    */
   private async triggerUpdateForUser(
     friendCode: string,
@@ -776,7 +776,7 @@ export class AutoUpdateSchedulerService
           requesterTag: d.requesterTag ?? null,
           hash:
             d.result && typeof d.result.hash === 'string'
-              ? (d.result.hash as string)
+              ? d.result.hash
               : null,
           error: d.error ?? null,
           createdAt: d.createdAt.toISOString(),

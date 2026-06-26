@@ -7,7 +7,6 @@ import {
   JobByFriendCodeActiveResponseSchema,
   JobCreateBodySchema,
   JobCreateResponseSchema,
-  JobNextBodySchema,
   JobPatchBodySchema,
   JobResponseSchema,
   JobVerifyResponseSchema,
@@ -55,13 +54,12 @@ export const jobContract = c.router({
       200: JobVerifyResponseSchema,
     },
   },
-  next: {
-    method: "POST",
-    path: "/workers/dxnet/jobs/next",
-    body: JobNextBodySchema,
+  getWorkerJob: {
+    method: "GET",
+    path: "/workers/dxnet/jobs/:jobId",
+    pathParams: z.object({ jobId: z.string() }),
     responses: {
       200: JobResponseSchema,
-      204: z.undefined(),
     },
   },
   patch: {

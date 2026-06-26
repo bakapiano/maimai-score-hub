@@ -43,7 +43,7 @@ export class SdgbJobEntity {
   @Prop({ type: String, default: null })
   error!: string | null;
 
-  /** Set on claim, cleared on terminal state. Used to release stale claims. */
+  /** Set when the BullMQ consumer starts work, cleared on terminal state. */
   @Prop({ type: Boolean, default: false })
   executing!: boolean;
 

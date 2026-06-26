@@ -96,8 +96,9 @@ export class JobEntity {
   diffsToScrape!: number[] | null;
 
   /**
-   * Next time this job may be claimed. Null means immediately claimable.
-   * Used for waiting/cooldown stages so updatedAt stays a real audit field.
+   * Next time this job may be delivered by BullMQ. Null means immediately
+   * dispatchable. Used for waiting/cooldown stages so updatedAt stays a real
+   * audit field.
    */
   @Prop({ type: Date, default: null })
   runAt!: Date | null;
@@ -116,7 +117,7 @@ export const JobSchema = SchemaFactory.createForClass(JobEntity);
 JobSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7 * 24 * 60 * 60 });
 
 // Hot-path indexes. Before these, the `jobs` collection only had
-// _id / id / createdAt (TTL), and every claimNext + stale-lock release
+// _id / id / createdAt (TTL), and every dispatch sweep + stale-lock release
 // + pickAvailableCabinetBot bot-load aggregation did a full COLLSCAN.
 // With cabinet-only mode driving request volume up, this overloaded
 // mongo (169% CPU) on 2026-05-29.

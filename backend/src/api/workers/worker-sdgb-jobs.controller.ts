@@ -1,19 +1,6 @@
+import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  Param,
-  Patch,
-  Post,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
-import type { Response } from 'express';
-import {
-  SdgbJobNextBodySchema,
   SdgbJobPatchBodySchema,
-  type SdgbJobNextBody,
   type SdgbJobPatchBody,
 } from '@maimai-score-hub/shared';
 
@@ -22,7 +9,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { SdgbJobService } from '../../modules/sdgb-worker/services/sdgb-job.service';
 
 /**
- * HTTP surface that the standalone sdgb-worker polls. Guarded by
+ * HTTP surface that the standalone sdgb-worker uses after BullMQ delivery. Guarded by
  * SharedSecretGuard (X-API-Secret), the same shared-secret auth used by
  * admin APIs.
  *
@@ -33,20 +20,6 @@ import { SdgbJobService } from '../../modules/sdgb-worker/services/sdgb-job.serv
 @UseGuards(SharedSecretGuard)
 export class WorkerSdgbJobsController {
   constructor(private readonly jobs: SdgbJobService) {}
-
-  @Post('next')
-  @HttpCode(200)
-  async next(
-    @Res() res: Response,
-    @Body(new ZodValidationPipe(SdgbJobNextBodySchema)) body: SdgbJobNextBody,
-  ) {
-    const job = await this.jobs.claimNext(body.workerId);
-    if (!job) {
-      res.status(204).send();
-      return;
-    }
-    res.json(job);
-  }
 
   @Get(':jobId')
   async get(@Param('jobId') jobId: string) {

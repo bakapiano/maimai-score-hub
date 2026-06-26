@@ -34,7 +34,7 @@
 | Key 模式                                 | 保留期                                    | 用途                                      |
 | ---------------------------------------- | ----------------------------------------- | ----------------------------------------- |
 | `logs:worker:dxnet` / `logs:worker:sdgb` | `WORKER_LOG_STREAM_MAXLEN` 限长           | worker 控制台日志 Redis Stream            |
-| `status:worker:sdgb:{workerId}`          | 约 `SDGB_WORKER_STALE_MS * 2`             | sdgb-worker 心跳和启动后 claim 计数       |
+| `status:worker:sdgb:{workerId}`          | 约 `SDGB_WORKER_STALE_MS * 2`             | sdgb-worker 心跳和处理计数                |
 | `cache:job-temp:{jobId}:{diff}:{type}`   | `JOB_TEMP_CACHE_TTL_SECONDS`，默认 1 小时 | `update_score` 中间结果缓存               |
 | `debug:api:{jobId}`                      | `API_DEBUG_TTL_SECONDS`，默认 24 小时     | worker API 调用 metadata，不保存 raw body |
 
@@ -230,7 +230,7 @@ interface SongMetadata {
 | `result`                     | `any`                                                              | `Mixed`, default `undefined`            | 执行结果                             |
 | `profile`                    | `UserNetProfile`                                                   | `Mixed`, default `undefined`            | 任务得到的用户资料                   |
 | `error`                      | `string \| null`                                                   | default `null`                          | 错误信息                             |
-| `executing`                  | `boolean`                                                          | required, default `false`               | 是否已被 worker claim                |
+| `executing`                  | `boolean`                                                          | required, default `false`               | BullMQ worker 是否正在执行           |
 | `scoreProgress`              | `ScoreProgress \| null`                                            | `Mixed`, default `null`                 | 成绩更新进度                         |
 | `updateScoreDuration`        | `number \| null`                                                   | default `null`                          | `update_score` 耗时                  |
 | `autoExportResult`           | `AutoExportResult \| null`                                         | `Mixed`, default `null`                 | 自动导出结果                         |
@@ -238,7 +238,7 @@ interface SongMetadata {
 | `sourceScoreHash`            | `string \| null`                                                   | default `null`                          | 自动更新创建 job 时观测到的成绩 hash |
 | `cabinetScoreMap`            | `Record<string, { achievement: number; dxScore: number }> \| null` | `Mixed`, default `null`                 | 自动更新从机台侧拿到的成绩 map       |
 | `diffsToScrape`              | `number[] \| null`                                                 | default `null`                          | 限定 worker 抓取的难度               |
-| `runAt`                      | `Date \| null`                                                     | default `null`                          | 下次允许 claim 的时间                |
+| `runAt`                      | `Date \| null`                                                     | default `null`                          | 下次允许 BullMQ 投递的时间           |
 | `createdAt`                  | `Date`                                                             | required                                | 创建时间                             |
 | `updatedAt`                  | `Date`                                                             | required                                | 更新时间                             |
 
@@ -422,8 +422,8 @@ type BotFriendSnapshotFriend = {
 | `payload`      | `Record<string, unknown>`         | `Mixed`, required       | job 输入              |
 | `result`       | `Record<string, unknown> \| null` | `Mixed`, default `null` | job 结果              |
 | `error`        | `string \| null`                  | default `null`          | 错误信息              |
-| `executing`    | `boolean`                         | default `false`         | 是否已被 worker claim |
-| `claimedAt`    | `Date \| null`                    | default `null`          | claim 时间            |
+| `executing`    | `boolean`                         | default `false`         | worker 是否正在执行   |
+| `claimedAt`    | `Date \| null`                    | default `null`          | 开始执行时间          |
 | `requesterTag` | `string \| null`                  | default `null`, index   | 生产者自定义追踪 tag  |
 | `createdAt`    | `Date`                            | timestamps              | 创建时间              |
 | `updatedAt`    | `Date`                            | timestamps              | 更新时间              |

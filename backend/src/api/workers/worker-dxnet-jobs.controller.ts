@@ -7,15 +7,9 @@ import {
   Param,
   Patch,
   Post,
-  Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
-import {
-  JobNextBodySchema,
-  JobPatchBodySchema,
-  type JobNextBody,
-} from '@maimai-score-hub/shared';
+import { JobPatchBodySchema } from '@maimai-score-hub/shared';
 
 import { JobService } from '../../modules/job/services/job.service';
 import { UsersService } from '../../modules/users/services/users.service';
@@ -36,24 +30,6 @@ export class WorkerDxnetJobsController {
     @Param('botUserFriendCode') botUserFriendCode: string,
   ) {
     return this.jobs.getActiveFriendCodesByBot(botUserFriendCode);
-  }
-
-  @Post('jobs/next')
-  @HttpCode(200)
-  async next(
-    @Res() res: Response,
-    @Body(new ZodValidationPipe(JobNextBodySchema)) body: JobNextBody,
-  ) {
-    const job = await this.jobs.claimNext(
-      body.botUserFriendCode,
-      body.waitMs ?? 0,
-    );
-    if (!job) {
-      res.status(204).send();
-      return;
-    }
-
-    res.json(job);
   }
 
   @Get('jobs/:jobId')

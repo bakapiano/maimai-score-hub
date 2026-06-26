@@ -75,12 +75,7 @@ export const SdgbJobResponseSchema = z.object({
   updatedAt: z.string(),
 });
 
-// ───────────────────────── claim / patch ─────────────────────────
-
-/** Sent by sdgb-worker to /workers/sdgb/jobs/next. */
-export const SdgbJobNextBodySchema = z.object({
-  workerId: z.string().min(1),
-});
+// ───────────────────────── patch ─────────────────────────
 
 export const SdgbJobPatchBodySchema = z.object({
   status: SdgbJobStatusSchema.optional(),
@@ -93,7 +88,6 @@ export const SdgbJobPatchBodySchema = z.object({
 export type SdgbJobType = z.infer<typeof SdgbJobTypeSchema>;
 export type SdgbJobStatus = z.infer<typeof SdgbJobStatusSchema>;
 export type SdgbJobResponse = z.infer<typeof SdgbJobResponseSchema>;
-export type SdgbJobNextBody = z.infer<typeof SdgbJobNextBodySchema>;
 export type SdgbJobPatchBody = z.infer<typeof SdgbJobPatchBodySchema>;
 export type SdgbWorkerMusicEntry = z.infer<typeof MusicEntrySchema>;
 export type SdgbWorkerMusicDetail = z.infer<typeof MusicDetailSchema>;

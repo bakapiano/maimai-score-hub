@@ -66,22 +66,15 @@ export function getJobServiceBaseUrl(): string {
 }
 
 /**
- * 领取下一个待处理的任务
+ * 获取 BullMQ 分发的任务详情。
  */
-export async function claimNextJob(
-  botUserFriendCode?: string,
-  waitMs?: number,
-): Promise<Job | null> {
-  const response = await client.next({
-    body: { botUserFriendCode: botUserFriendCode ?? "", waitMs },
+export async function getJob(jobId: string): Promise<Job> {
+  const response = await client.getWorkerJob({
+    params: { jobId },
   });
 
-  if (response.status === 204) {
-    return null;
-  }
-
   if (response.status !== 200) {
-    throw new Error(`Failed to claim next job. Status: ${response.status}`);
+    throw new Error(`Failed to fetch job ${jobId}. Status: ${response.status}`);
   }
 
   return deserializeJob(response.body as unknown as JobResponse);

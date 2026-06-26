@@ -33,6 +33,7 @@
     "@nestjs/mongoose": "^11.0.4",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/schedule": "^5.0.0",
+    "bullmq": "^5.79.1",
     "cache-manager": "^7.2.7",
     "cron": "^3.1.7",
     "jsqr": "^1.4.0",

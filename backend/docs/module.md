@@ -79,7 +79,7 @@
 
 - 管理 DXNet worker 任务，任务类型包括 `send_friend_request`、`accept_friend_request`、`update_score` 和 `get_user_recent_event`。
 - 创建 job 时会取消同一好友码的旧活跃 job，并按任务类型设置初始 stage。
-- 为 worker 提供长轮询 claim：分配新 queued job、恢复本 bot 的 processing job、处理 `runAt` 延迟、释放 stale claim、超时失败。
+- 创建和唤醒 job 时写入 BullMQ；worker 直接消费队列，处理 `runAt` 延迟、释放 stale execution、超时失败由后台 sweep 兜底。
 - 处理 worker PATCH 回写的状态、stage、进度、profile、result、error 和执行标记。
 - job 成功完成后会触发 `SyncService.createFromJob()` 写入同步成绩，并按用户设置执行自动导出。
 - 支持机台绑定用户的 cabinet fast path：通过 sdgb 加 rival、使用 cabinet score map 优化 `update_score`，在 `cabinetOnlyMode` 下可短路为纯机台数据同步。
@@ -105,9 +105,9 @@
 ### `SdgbWorkerModule`
 
 - 管理 sdgb-worker 使用的机台协议任务，任务类型包括 `scan_qr`、`get_rival_hash` 和 `add_rival`。
-- `SdgbJobService` 负责入队、FIFO claim、worker PATCH、等待完成、管理后台状态和分页查询。
-- worker 每次 claim 会写 Redis 心跳，用于后台展示 worker 存活状态和 claim 计数。
-- 会释放 stale processing job、失败超时 queued job，并通过 Mongo TTL 清理历史 job。
+- `SdgbJobService` 负责写入 Mongo + BullMQ、worker PATCH、等待完成、管理后台状态和分页查询。
+- sdgb-worker 直接消费 BullMQ，不再通过 HTTP claim/next 认领任务。
+- Mongo TTL 清理历史 job。
 - `SdgbJobDispatcher` 把“入队 + 等待完成 + 返回 result”封装成同步调用，供登录、机台绑定、自动更新和 bot 绑定使用。
 
 ### `SyncModule`

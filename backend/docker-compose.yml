@@ -67,6 +67,14 @@ services:
       MONGO_USER: ${MONGO_USER:-root}
       MONGO_PASSWORD: ${MONGO_PASSWORD:-example}
       MONGO_AUTH_SOURCE: ${MONGO_AUTH_SOURCE:-admin}
+      REDIS_URL: ${REDIS_URL:-}
+      REDIS_HOST: ${REDIS_HOST:-127.0.0.1}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-maimai:}
+      BULLMQ_PREFIX: ${BULLMQ_PREFIX:-}
+      DXNET_DISPATCH_SWEEP_INTERVAL_MS: ${DXNET_DISPATCH_SWEEP_INTERVAL_MS:-30000}
       MUSIC_DATA_URL: ${MUSIC_DATA_URL:-https://www.diving-fish.com/api/maimaidxprober/music_data}
       MUSIC_SYNC_CRON: ${MUSIC_SYNC_CRON:-0 */6 * * *}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-change-me-in-production}

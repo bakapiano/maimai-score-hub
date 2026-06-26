@@ -98,7 +98,6 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | 方法  | 路径                                                         | 入参                                                                                                                                                 | 说明                                                                     |
 | ----- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | GET   | `/workers/dxnet/bots/:botUserFriendCode/active-friend-codes` | path: `botUserFriendCode`                                                                                                                            | 查询指定 bot 当前活跃 job 覆盖的好友码列表。                             |
-| POST  | `/workers/dxnet/jobs/next`                                   | body: `botUserFriendCode`, `waitMs?` 最大 25000                                                                                                      | worker 长轮询并 claim 下一个 job。无 job 时返回 204；有 job 时返回 job。 |
 | GET   | `/workers/dxnet/jobs/:jobId`                                 | path: `jobId`                                                                                                                                        | worker 按 id 获取 job。                                                  |
 | PATCH | `/workers/dxnet/jobs/:jobId`                                 | body: `status?`, `stage?`, `result?`, `profile?`, `error?`, `executing?`, `runAt?`, `scoreProgress?`, `addCompletedDiff?`, `updateScoreDuration?` 等 | worker 更新 job 状态、阶段、进度、结果或错误。                           |
 | POST  | `/workers/dxnet/users/activity`                              | body: `friendCodes: string[]`                                                                                                                        | 批量查询用户最近活跃时间，返回 `{ friendCode, lastActiveAt }[]`。        |
@@ -111,7 +110,6 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 | 方法  | 路径                        | 入参                                 | 说明                                                                              |
 | ----- | --------------------------- | ------------------------------------ | --------------------------------------------------------------------------------- |
-| POST  | `/workers/sdgb/jobs/next`   | body: `workerId`                     | sdgb-worker claim 下一个机台协议 job。无 job 时返回 204；有 job 时返回 sdgb job。 |
 | GET   | `/workers/sdgb/jobs/:jobId` | path: `jobId`                        | 查询 sdgb job 详情。                                                              |
 | PATCH | `/workers/sdgb/jobs/:jobId` | body: `status?`, `result?`, `error?` | sdgb-worker 回写 job 状态、结果或错误。                                           |
 
