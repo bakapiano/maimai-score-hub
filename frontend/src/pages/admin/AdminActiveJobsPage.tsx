@@ -193,19 +193,12 @@ export default function AdminActiveJobsPage() {
         });
         return;
       }
-      const body = (await res.json().catch(() => ({}))) as {
-        usersUnpinned?: number;
-      };
       setBotStatuses(
         (prev) => prev?.filter((b) => b.friendCode !== friendCode) ?? null,
       );
       notifications.show({
         color: "green",
-        message: `已删除 bot${
-          body.usersUnpinned
-            ? ` (顺带清除 ${body.usersUnpinned} 个用户的 idle 绑定)`
-            : ""
-        }`,
+        message: "已删除 bot",
       });
     },
     [password],

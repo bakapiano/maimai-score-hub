@@ -494,9 +494,6 @@ paths:
                     type: boolean
                   profile:
                     nullable: true
-                  idleUpdateBotFriendCode:
-                    type: string
-                    nullable: true
                   autoExportDivingFish:
                     type: boolean
                   autoExportLxns:
@@ -552,9 +549,6 @@ paths:
                   hasLxnsImportToken:
                     type: boolean
                   profile:
-                    nullable: true
-                  idleUpdateBotFriendCode:
-                    type: string
                     nullable: true
                   autoExportDivingFish:
                     type: boolean

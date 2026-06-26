@@ -7,7 +7,6 @@ export const UserProfileSchema = z
     hasDivingFishImportToken: z.boolean().optional(),
     hasLxnsImportToken: z.boolean().optional(),
     profile: z.unknown().nullable().optional(),
-    idleUpdateBotFriendCode: z.string().nullable().optional(),
     autoExportDivingFish: z.boolean().optional(),
     autoExportLxns: z.boolean().optional(),
     hasCabinetUserId: z.boolean().optional(),

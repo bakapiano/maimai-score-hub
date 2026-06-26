@@ -81,10 +81,8 @@ export class UsersService {
       divingFishImportToken?: string | null;
       lxnsImportToken?: string | null;
       profile?: UserNetProfile | null;
-      idleUpdateBotFriendCode?: string | null;
       autoExportDivingFish?: boolean;
       autoExportLxns?: boolean;
-      preferredBotFriendCode?: string | null;
       cabinetUserId?: number | null;
       autoUpdate?: boolean;
       lastScoreHash?: string | null;
@@ -104,17 +102,11 @@ export class UsersService {
     if ('profile' in input) {
       updateDoc.profile = input.profile ?? null;
     }
-    if ('idleUpdateBotFriendCode' in input) {
-      updateDoc.idleUpdateBotFriendCode = input.idleUpdateBotFriendCode ?? null;
-    }
     if ('autoExportDivingFish' in input) {
       updateDoc.autoExportDivingFish = !!input.autoExportDivingFish;
     }
     if ('autoExportLxns' in input) {
       updateDoc.autoExportLxns = !!input.autoExportLxns;
-    }
-    if ('preferredBotFriendCode' in input) {
-      updateDoc.preferredBotFriendCode = input.preferredBotFriendCode ?? null;
     }
     if ('cabinetUserId' in input) {
       updateDoc.cabinetUserId = input.cabinetUserId ?? null;
@@ -223,30 +215,6 @@ export class UsersService {
       { _id: userId },
       { lastActiveAt: new Date() },
     );
-  }
-
-  /**
-   * 更新用户偏好的 bot
-   */
-  async updatePreferredBot(
-    friendCode: string,
-    botFriendCode: string,
-  ): Promise<void> {
-    await this.userModel.updateOne(
-      { friendCode },
-      { preferredBotFriendCode: botFriendCode },
-    );
-  }
-
-  /**
-   * 获取用户偏好的 bot
-   */
-  async getPreferredBot(friendCode: string): Promise<string | null> {
-    const user = await this.userModel
-      .findOne({ friendCode })
-      .select('preferredBotFriendCode')
-      .lean();
-    return user?.preferredBotFriendCode ?? null;
   }
 
   /**

@@ -20,12 +20,11 @@
 - [] https://github.com/Lxns-Network/maimai-prober-frontend/blob/bbaa066ba0f2d06ced0a9f5306ac55a52195b1c2/src/pages/public/Chart.tsx#L390 铺面预览?
 - [] 所有铺面 search by name
 - [] 更新完成自动导出水鱼
-- [] TODO idle update 触发 hanlde deploy 打断的情况
 - [] 白 link 无法导入
 - [] 登陆后保持一段时间好友
 - [] 可选更新难度
 - [] 支持不登陆状态下，直接公众号发送好友请求给 bot 来更新
-- [] 容量瓶颈再来一次：把 idle_update_score 完全切成 sdgb get_rival_music
+- [] 容量瓶颈再来一次：把 auto-update score 完全切成 sdgb get_rival_music
   路径（成绩从 cabinet 拿，零 friend-VS 请求）；fc/fs 信息单独跑
   低频 background 任务（每天 1 次 / 用户）通过 friend-VS 补一次。
   适用条件：当前优化（cabinet 砍一半 + diff skip）已经把单 job 砍到

@@ -446,7 +446,7 @@ export default function AdminAutoUpdatePage() {
 
       <Text size="xs" c="dimmed" ta="right">
         生成于 {new Date(data.generatedAt).toLocaleString("zh-CN")} · 自动 30s
-        刷新 · sample {data.optimization.sampleSize} 个最近 idle job
+        刷新 · sample {data.optimization.sampleSize} 个最近 update_score job
       </Text>
     </Container>
   );

@@ -79,8 +79,7 @@ export class AdminBotsController {
    * Use case: bot's worker is permanently dead and the row clutters
    * admin UI. If the worker is actually still alive its next 60s
    * heartbeat will recreate the row, so this is safe — there's no
-   * "blacklist" semantic. Also nulls out user.idleUpdateBotFriendCode
-   * pointers to avoid dangling references.
+   * "blacklist" semantic.
    */
   @Delete(':friendCode')
   async removeBot(@Param('friendCode') friendCode: string) {

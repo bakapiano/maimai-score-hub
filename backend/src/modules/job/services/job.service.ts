@@ -1011,20 +1011,6 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
 
     if (!updated) throw new NotFoundException('Job not found');
 
-    // 当 job 进入 wait_acceptance 或完成时，更新用户的偏好 bot
-    if (
-      updated.botUserFriendCode &&
-      (body.stage === 'update_score' || body.status === 'completed')
-    ) {
-      this.usersService
-        .updatePreferredBot(updated.friendCode, updated.botUserFriendCode)
-        .catch((err) => {
-          this.logger.error(
-            `Failed to update preferred bot for ${updated.friendCode}: ${err?.message}`,
-          );
-        });
-    }
-
     // 当 job 完成、失败或取消时，清理临时缓存
     if (finalStatuses.includes(updated.status)) {
       // 异步清理缓存，不阻塞响应
@@ -1252,37 +1238,6 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
           ? Math.round((completedCount / totalCount) * 10000) / 100
           : 0,
       avgDuration,
-    };
-  }
-
-  /**
-   * 检查指定 friendCode 是否已有活跃的闲时更新任务
-   */
-  async hasActiveIdleJob(friendCode: string): Promise<boolean> {
-    const count = await this.jobModel.countDocuments({
-      friendCode,
-      jobType: { $in: ['send_friend_request', 'update_score'] },
-      status: { $in: ['queued', 'processing'] },
-    });
-    return count > 0;
-  }
-
-  async getActiveIdleJob(friendCode: string) {
-    const job = await this.jobModel
-      .findOne({
-        friendCode,
-        jobType: { $in: ['send_friend_request', 'update_score'] },
-        status: { $in: ['queued', 'processing'] },
-      })
-      .sort({ createdAt: -1 });
-    if (!job) return null;
-    return {
-      id: job.id,
-      jobType: job.jobType,
-      status: job.status,
-      stage: job.stage,
-      scoreProgress: job.scoreProgress,
-      friendRequestSentAt: job.friendRequestSentAt,
     };
   }
 

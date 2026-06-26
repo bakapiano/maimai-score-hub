@@ -2,7 +2,6 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { JobEntity } from '../../job/schemas/job.schema';
-import { UserEntity } from '../../users/schemas/user.schema';
 import { BotStatusEntity } from '../schemas/bot-status.schema';
 import { BotFriendSnapshotEntity } from '../schemas/bot-friend-snapshot.schema';
 import { NotifyStateEntity } from '../schemas/notify-state.schema';
@@ -45,8 +44,6 @@ export class BotStatusService implements OnModuleDestroy {
     private readonly botStatusModel: Model<BotStatusEntity>,
     @InjectModel(NotifyStateEntity.name)
     private readonly notifyStateModel: Model<NotifyStateEntity>,
-    @InjectModel(UserEntity.name)
-    private readonly userModel: Model<UserEntity>,
     @InjectModel(BotFriendSnapshotEntity.name)
     private readonly botFriendSnapshotModel: Model<BotFriendSnapshotEntity>,
     private readonly feishuNotify: FeishuNotifyService,
@@ -222,55 +219,21 @@ export class BotStatusService implements OnModuleDestroy {
    * Side effects:
    *   - bot_friend_snapshots row also deleted (avoids stale data
    *     polluting QR-login reverse mapping)
-   *   - any user.idleUpdateBotFriendCode pointing here is set to null
-   *     (avoids dangling pointer; idle scheduler will pick a new bot
-   *     next sweep)
-   *   - any user.preferredBotFriendCode pointing here is set to null
    */
   async remove(friendCode: string): Promise<{
     botStatusDeleted: number;
     snapshotDeleted: number;
-    usersUnpinned: number;
   }> {
-    const [botRes, snapRes, userRes] = await Promise.all([
+    const [botRes, snapRes] = await Promise.all([
       this.botStatusModel.deleteOne({ friendCode }),
       this.botFriendSnapshotModel.deleteOne({ botFriendCode: friendCode }),
-      this.userModel.updateMany(
-        {
-          $or: [
-            { idleUpdateBotFriendCode: friendCode },
-            { preferredBotFriendCode: friendCode },
-          ],
-        },
-        [
-          {
-            $set: {
-              idleUpdateBotFriendCode: {
-                $cond: [
-                  { $eq: ['$idleUpdateBotFriendCode', friendCode] },
-                  null,
-                  '$idleUpdateBotFriendCode',
-                ],
-              },
-              preferredBotFriendCode: {
-                $cond: [
-                  { $eq: ['$preferredBotFriendCode', friendCode] },
-                  null,
-                  '$preferredBotFriendCode',
-                ],
-              },
-            },
-          },
-        ],
-      ),
     ]);
     this.logger.log(
-      `removed bot fc=${friendCode}: botStatus=${botRes.deletedCount}, snapshot=${snapRes.deletedCount}, users unpinned=${userRes.modifiedCount}`,
+      `removed bot fc=${friendCode}: botStatus=${botRes.deletedCount}, snapshot=${snapRes.deletedCount}`,
     );
     return {
       botStatusDeleted: botRes.deletedCount ?? 0,
       snapshotDeleted: snapRes.deletedCount ?? 0,
-      usersUnpinned: userRes.modifiedCount ?? 0,
     };
   }
 

@@ -49,11 +49,9 @@
 | `divingFishImportToken`   | `string \| null`         | default `null`               | Diving Fish 导入 token               |
 | `lxnsImportToken`         | `string \| null`         | default `null`               | LXNS 导入 token                      |
 | `profile`                 | `UserNetProfile \| null` | `Mixed`, default `undefined` | DXNet 用户资料缓存                   |
-| `idleUpdateBotFriendCode` | `string \| null`         | default `null`               | 空闲更新使用的 bot                   |
 | `autoExportDivingFish`    | `boolean`                | default `false`              | 同步后自动导出到 Diving Fish         |
 | `autoExportLxns`          | `boolean`                | default `false`              | 同步后自动导出到 LXNS                |
 | `lastActiveAt`            | `Date \| null`           | default `null`               | 最近活跃时间                         |
-| `preferredBotFriendCode`  | `string \| null`         | default `null`               | 用户偏好的 bot                       |
 | `cabinetUserId`           | `number \| null`         | default `null`               | 机台侧数字 userId，`null` 表示未绑定 |
 | `autoUpdate`              | `boolean`                | default `false`              | 是否参与自动更新                     |
 | `lastScoreHash`           | `string \| null`         | default `null`               | 上次观测到的机台成绩 hash            |

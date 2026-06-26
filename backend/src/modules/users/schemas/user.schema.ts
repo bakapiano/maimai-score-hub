@@ -18,9 +18,6 @@ export class UserEntity {
   @Prop({ type: MongooseSchema.Types.Mixed, default: undefined })
   profile?: UserNetProfile | null;
 
-  @Prop({ type: String, default: null })
-  idleUpdateBotFriendCode!: string | null;
-
   @Prop({ type: Boolean, default: false })
   autoExportDivingFish!: boolean;
 
@@ -29,9 +26,6 @@ export class UserEntity {
 
   @Prop({ type: Date, default: null })
   lastActiveAt!: Date | null;
-
-  @Prop({ type: String, default: null })
-  preferredBotFriendCode!: string | null;
 
   /**
    * Numeric maimai cabinet userId, populated by scanning the player's card

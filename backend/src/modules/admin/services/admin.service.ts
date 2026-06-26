@@ -811,7 +811,7 @@ export class AdminService {
       ]);
 
     // ---- (6) cabinet optimization hit rate (last 200 update_score jobs) ----
-    const recentIdle = await this.jobModel
+    const recentUpdateScoreJobs = await this.jobModel
       .find({ jobType: 'update_score' })
       .sort({ createdAt: -1 })
       .limit(200)
@@ -822,7 +822,7 @@ export class AdminService {
     let withDiffsToScrape = 0;
     let totalDiffsScraped = 0;
     let diffsToScrapeCount = 0;
-    for (const j of recentIdle) {
+    for (const j of recentUpdateScoreJobs) {
       const csm = (j as { cabinetScoreMap?: unknown }).cabinetScoreMap;
       const dts = (j as { diffsToScrape?: number[] | null }).diffsToScrape;
       if (csm && Object.keys(csm as Record<string, unknown>).length > 0) {
@@ -834,11 +834,13 @@ export class AdminService {
         diffsToScrapeCount++;
       }
     }
-    const cabinetHitRate = recentIdle.length
-      ? Math.round((withCabinet / recentIdle.length) * 1000) / 10
+    const cabinetHitRate = recentUpdateScoreJobs.length
+      ? Math.round((withCabinet / recentUpdateScoreJobs.length) * 1000) / 10
       : 0;
-    const diffSkipHitRate = recentIdle.length
-      ? Math.round((withDiffsToScrape / recentIdle.length) * 1000) / 10
+    const diffSkipHitRate = recentUpdateScoreJobs.length
+      ? Math.round(
+          (withDiffsToScrape / recentUpdateScoreJobs.length) * 1000,
+        ) / 10
       : 0;
     const avgDiffsScraped = diffsToScrapeCount
       ? Math.round((totalDiffsScraped / diffsToScrapeCount) * 10) / 10
@@ -908,7 +910,7 @@ export class AdminService {
         activeCabinetBots,
       },
       optimization: {
-        sampleSize: recentIdle.length,
+        sampleSize: recentUpdateScoreJobs.length,
         cabinetHitRate, // %
         diffSkipHitRate, // %
         avgDiffsScraped, // when diffsToScrape used, average size

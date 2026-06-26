@@ -116,7 +116,6 @@ export const adminContract = c.router({
         ok: true;
         botStatusDeleted: number;
         snapshotDeleted: number;
-        usersUnpinned: number;
       }>(),
     },
   },
