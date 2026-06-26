@@ -10,12 +10,14 @@ export type JobStage =
   | 'wait_user_request'
   | 'accept_request'
   | 'update_score'
-  | 'get_user_recent_event';
+  | 'get_user_recent_event'
+  | 'get_full_friend_list';
 export type JobType =
   | 'send_friend_request'
   | 'accept_friend_request'
   | 'update_score'
-  | 'get_user_recent_event';
+  | 'get_user_recent_event'
+  | 'get_full_friend_list';
 
 /**
  * 成绩更新进度

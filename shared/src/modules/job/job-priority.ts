@@ -10,6 +10,7 @@ export function getJobTypePriority(jobType?: JobType | null): number {
   switch (jobType) {
     case 'send_friend_request':
     case 'accept_friend_request':
+    case 'get_full_friend_list':
       return JOB_PRIORITY.userAuthRequest;
     case 'update_score':
       return JOB_PRIORITY.updateScore;

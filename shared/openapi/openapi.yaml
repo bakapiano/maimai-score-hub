@@ -63,9 +63,6 @@ paths:
                 friendCode:
                   type: string
                   minLength: 1
-                skipUpdateScore:
-                  default: true
-                  type: boolean
                 method:
                   type: string
                   enum:
@@ -110,6 +107,7 @@ paths:
                           - accept_friend_request
                           - update_score
                           - get_user_recent_event
+                          - get_full_friend_list
                       priority:
                         type: integer
                       skipUpdateScore:
@@ -140,6 +138,7 @@ paths:
                           - accept_request
                           - update_score
                           - get_user_recent_event
+                          - get_full_friend_list
                       profile:
                         nullable: true
                       error:
@@ -289,6 +288,7 @@ paths:
                           - accept_friend_request
                           - update_score
                           - get_user_recent_event
+                          - get_full_friend_list
                       priority:
                         type: integer
                       skipUpdateScore:
@@ -319,6 +319,7 @@ paths:
                           - accept_request
                           - update_score
                           - get_user_recent_event
+                          - get_full_friend_list
                       profile:
                         nullable: true
                       error:
@@ -439,6 +440,9 @@ paths:
                         type: string
                       friendCode:
                         type: string
+                      username:
+                        type: string
+                        nullable: true
                     required:
                       - friendCode
                     additionalProperties: true
@@ -470,6 +474,62 @@ paths:
                 nullable: true
         "400":
           description: "400"
+  /auth/password-login:
+    post:
+      tags: *a2
+      parameters: []
+      operationId: auth.passwordLogin
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                friendCode:
+                  type: string
+                  pattern: ^\d{15}$
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 32
+                  pattern: ^[A-Za-z0-9_]+$
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 72
+              required:
+                - password
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      friendCode:
+                        type: string
+                      username:
+                        type: string
+                        nullable: true
+                    required:
+                      - friendCode
+                    additionalProperties: true
+                required:
+                  - token
+                  - user
+        "400":
+          description: "400"
+        "401":
+          description: "401"
   /me:
     get:
       tags: &a3
@@ -488,6 +548,11 @@ paths:
                     type: string
                   friendCode:
                     type: string
+                  username:
+                    type: string
+                    nullable: true
+                  hasPassword:
+                    type: boolean
                   hasDivingFishImportToken:
                     type: boolean
                   hasLxnsImportToken:
@@ -544,6 +609,11 @@ paths:
                     type: string
                   friendCode:
                     type: string
+                  username:
+                    type: string
+                    nullable: true
+                  hasPassword:
+                    type: boolean
                   hasDivingFishImportToken:
                     type: boolean
                   hasLxnsImportToken:
@@ -572,6 +642,75 @@ paths:
       responses:
         "200":
           description: "200"
+  /me/password:
+    put:
+      tags: *a3
+      parameters: []
+      operationId: users.setPassword
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 32
+                  pattern: ^[A-Za-z0-9_]+$
+                currentPassword:
+                  type: string
+                  minLength: 1
+                  maxLength: 72
+                newPassword:
+                  type: string
+                  minLength: 8
+                  maxLength: 72
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  friendCode:
+                    type: string
+                  username:
+                    type: string
+                    nullable: true
+                  hasPassword:
+                    type: boolean
+                  hasDivingFishImportToken:
+                    type: boolean
+                  hasLxnsImportToken:
+                    type: boolean
+                  profile:
+                    nullable: true
+                  autoExportDivingFish:
+                    type: boolean
+                  autoExportLxns:
+                    type: boolean
+                  hasCabinetUserId:
+                    type: boolean
+                  autoUpdate:
+                    type: boolean
+                  lastScoreHash:
+                    type: string
+                    nullable: true
+                required:
+                  - id
+                  - friendCode
+                additionalProperties: true
+        "400":
+          description: "400"
+        "401":
+          description: "401"
+        "409":
+          description: "409"
   /me/prober-tokens/diving-fish:
     post:
       tags: *a3
@@ -808,6 +947,7 @@ paths:
                           - accept_friend_request
                           - update_score
                           - get_user_recent_event
+                          - get_full_friend_list
                       priority:
                         type: integer
                       skipUpdateScore:
@@ -838,6 +978,7 @@ paths:
                           - accept_request
                           - update_score
                           - get_user_recent_event
+                          - get_full_friend_list
                       profile:
                         nullable: true
                       error:
@@ -961,6 +1102,7 @@ paths:
                       - accept_friend_request
                       - update_score
                       - get_user_recent_event
+                      - get_full_friend_list
                   priority:
                     type: integer
                   skipUpdateScore:
@@ -991,6 +1133,7 @@ paths:
                       - accept_request
                       - update_score
                       - get_user_recent_event
+                      - get_full_friend_list
                   profile:
                     nullable: true
                   error:
@@ -1109,6 +1252,7 @@ paths:
                           - accept_friend_request
                           - update_score
                           - get_user_recent_event
+                          - get_full_friend_list
                       priority:
                         type: integer
                       skipUpdateScore:
@@ -1139,6 +1283,7 @@ paths:
                           - accept_request
                           - update_score
                           - get_user_recent_event
+                          - get_full_friend_list
                       profile:
                         nullable: true
                       error:
@@ -1270,6 +1415,7 @@ paths:
                           - accept_friend_request
                           - update_score
                           - get_user_recent_event
+                          - get_full_friend_list
                       priority:
                         type: integer
                       skipUpdateScore:
@@ -1300,6 +1446,7 @@ paths:
                           - accept_request
                           - update_score
                           - get_user_recent_event
+                          - get_full_friend_list
                       profile:
                         nullable: true
                       error:
@@ -1417,6 +1564,7 @@ paths:
                       - accept_friend_request
                       - update_score
                       - get_user_recent_event
+                      - get_full_friend_list
                   priority:
                     type: integer
                   skipUpdateScore:
@@ -1447,6 +1595,7 @@ paths:
                       - accept_request
                       - update_score
                       - get_user_recent_event
+                      - get_full_friend_list
                   profile:
                     nullable: true
                   error:
@@ -1569,6 +1718,7 @@ paths:
                     - accept_request
                     - update_score
                     - get_user_recent_event
+                    - get_full_friend_list
                 result:
                   nullable: true
                 profile:
@@ -1630,6 +1780,7 @@ paths:
                       - accept_friend_request
                       - update_score
                       - get_user_recent_event
+                      - get_full_friend_list
                   priority:
                     type: integer
                   skipUpdateScore:
@@ -1660,6 +1811,7 @@ paths:
                       - accept_request
                       - update_score
                       - get_user_recent_event
+                      - get_full_friend_list
                   profile:
                     nullable: true
                   error:

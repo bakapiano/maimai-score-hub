@@ -10,6 +10,15 @@ export class UserEntity {
   friendCode!: string;
 
   @Prop({ type: String, default: null })
+  username!: string | null;
+
+  @Prop({ type: String, default: null, select: false })
+  passwordHash!: string | null;
+
+  @Prop({ type: Date, default: null })
+  passwordUpdatedAt!: Date | null;
+
+  @Prop({ type: String, default: null })
   divingFishImportToken!: string | null;
 
   @Prop({ type: String, default: null })
@@ -102,5 +111,13 @@ export const UserSchema = SchemaFactory.createForClass(UserEntity);
 UserSchema.index(
   { autoUpdate: 1, cabinetUserId: 1 },
   { name: 'auto_update_cabinet' },
+);
+UserSchema.index(
+  { username: 1 },
+  {
+    name: 'username_unique',
+    unique: true,
+    partialFilterExpression: { username: { $type: 'string' } },
+  },
 );
 UserSchema.index({ createdAt: -1 }, { name: 'createdAt_desc' });

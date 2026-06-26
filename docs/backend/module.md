@@ -5,8 +5,8 @@
 ## 基础约定
 
 - HTTP controller 统一放在 `backend/src/api` 下；业务 module 通常只放 service、schema、领域 helper。
-- `BackendApiModule` 负责把 controller 和业务 module 装配在一起；具体 HTTP 路由见 `backend/docs/api.md`。
-- MongoDB 类型与集合字段见 `backend/docs/db.md`。本文只说明 module 层面的职责和依赖边界。
+- `BackendApiModule` 负责把 controller 和业务 module 装配在一起；具体 HTTP 路由见 `./api.md`。
+- MongoDB 类型与集合字段见 `./db.md`。本文只说明 module 层面的职责和依赖边界。
 - `RedisModule` 是 `@Global()` module，其他 module 可以直接注入 `RedisService`。
 
 ## 入口与基础设施
@@ -75,8 +75,8 @@
 
 ### `JobModule`
 
-- 管理 DXNet worker 任务，任务类型包括 `send_friend_request`、`accept_friend_request`、`update_score` 和 `get_user_recent_event`。
-- 创建 job 时会取消同一好友码的旧活跃 job，并按任务类型设置初始 stage。
+- 管理 DXNet worker 任务，任务类型包括 `send_friend_request`、`accept_friend_request`、`update_score`、`get_user_recent_event` 和 `get_full_friend_list`。
+- 创建 job 时默认会取消同一好友码的旧活跃 job，并按任务类型设置初始 stage；`get_full_friend_list` 这类内部刷新任务可跳过取消旧 job。
 - 创建和唤醒 job 时写入 BullMQ；worker 直接消费队列，处理 `runAt` 延迟、释放 stale execution、超时失败由后台 sweep 兜底。
 - 处理 worker PATCH 回写的状态、stage、进度、profile、result、error 和执行标记。
 - job 成功完成后会触发 `SyncService.createFromJob()` 写入同步成绩，并按用户设置执行自动导出。

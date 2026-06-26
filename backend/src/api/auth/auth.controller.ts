@@ -13,8 +13,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import {
   LoginByQrBodySchema,
   LoginRequestBodySchema,
+  PasswordLoginBodySchema,
   type LoginByQrBody,
   type LoginRequestBody,
+  type PasswordLoginBody,
 } from '@maimai-score-hub/shared';
 
 import { AuthService } from '../../modules/auth/services/auth.service';
@@ -38,7 +40,6 @@ export class AuthController {
   ) {
     return this.auth.requestLogin(
       body.friendCode,
-      body.skipUpdateScore,
       body.method,
     );
   }
@@ -52,6 +53,18 @@ export class AuthController {
   @Get('login-requests/:jobId')
   async loginStatus(@Param('jobId') jobId: string) {
     return this.auth.checkStatus(jobId);
+  }
+
+  @Post('password-login')
+  @HttpCode(200)
+  async passwordLogin(
+    @Body(new ZodValidationPipe(PasswordLoginBodySchema))
+    body: PasswordLoginBody,
+  ) {
+    return this.auth.loginWithPassword(
+      { friendCode: body.friendCode, username: body.username },
+      body.password,
+    );
   }
 
   /**

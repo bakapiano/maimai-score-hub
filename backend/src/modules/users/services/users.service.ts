@@ -1,9 +1,22 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { isValidObjectId } from 'mongoose';
+import { promisify } from 'node:util';
+import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { UserEntity } from '../schemas/user.schema';
 import type { UserNetProfile } from '../user.types';
+
+const scryptAsync = promisify(scrypt);
+const PASSWORD_HASH_VERSION = 'scrypt';
+const PASSWORD_KEY_LENGTH = 64;
+const USERNAME_RE = /^[a-z0-9_]{3,32}$/;
+const FRIEND_CODE_RE = /^\d{15}$/;
 
 @Injectable()
 export class UsersService {
@@ -15,6 +28,42 @@ export class UsersService {
   async findByFriendCode(friendCode: string) {
     const doc = await this.userModel.findOne({ friendCode });
     return doc ? doc.toObject() : null;
+  }
+
+  async findByUsername(username: string) {
+    const normalized = this.normalizeUsername(username);
+    const doc = await this.userModel.findOne({ username: normalized });
+    return doc ? doc.toObject() : null;
+  }
+
+  async verifyPasswordCredentials(
+    login: { friendCode?: string; username?: string },
+    password: string,
+  ) {
+    let query: { friendCode: string } | { username: string } | null = null;
+    if (login.friendCode) {
+      const friendCode = login.friendCode.trim();
+      query = FRIEND_CODE_RE.test(friendCode) ? { friendCode } : null;
+    } else if (login.username) {
+      try {
+        query = { username: this.normalizeUsername(login.username) };
+      } catch {
+        query = null;
+      }
+    }
+    if (!query) return null;
+
+    const doc = await this.userModel.findOne(query).select('+passwordHash');
+    if (!doc?.passwordHash) return null;
+
+    const ok = await this.verifyPassword(password, doc.passwordHash);
+    if (!ok) return null;
+
+    const { passwordHash: _passwordHash, ...user } = doc.toObject() as Record<
+      string,
+      unknown
+    >;
+    return user;
   }
 
   /**
@@ -57,8 +106,21 @@ export class UsersService {
     return doc.toObject();
   }
 
+  async getByIdWithPasswordHash(id: string) {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('User not found');
+    }
+
+    const doc = await this.userModel.findById(id).select('+passwordHash');
+    if (!doc) {
+      throw new NotFoundException('User not found');
+    }
+    return doc.toObject();
+  }
+
   async create(input: {
     friendCode: string;
+    username?: string | null;
     divingFishImportToken?: string | null;
     lxnsImportToken?: string | null;
     profile?: UserNetProfile | null;
@@ -67,6 +129,7 @@ export class UsersService {
   }) {
     const created = await this.userModel.create({
       friendCode: input.friendCode,
+      username: input.username ? this.normalizeUsername(input.username) : null,
       divingFishImportToken: input.divingFishImportToken ?? null,
       lxnsImportToken: input.lxnsImportToken ?? null,
       profile: input.profile ?? null,
@@ -78,6 +141,7 @@ export class UsersService {
   async update(
     id: string,
     input: {
+      username?: string | null;
       divingFishImportToken?: string | null;
       lxnsImportToken?: string | null;
       profile?: UserNetProfile | null;
@@ -93,6 +157,11 @@ export class UsersService {
     }
 
     const updateDoc: Record<string, unknown> = {};
+    if ('username' in input) {
+      updateDoc.username = input.username
+        ? this.normalizeUsername(input.username)
+        : null;
+    }
     if ('divingFishImportToken' in input) {
       updateDoc.divingFishImportToken = input.divingFishImportToken ?? null;
     }
@@ -127,6 +196,136 @@ export class UsersService {
     }
 
     return updated.toObject();
+  }
+
+  async setAccountPassword(
+    id: string,
+    input: {
+      username?: string;
+      currentPassword?: string;
+      newPassword?: string;
+    },
+  ) {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('User not found');
+    }
+    if (input.username === undefined && input.newPassword === undefined) {
+      throw new BadRequestException('username or newPassword is required');
+    }
+
+    const user = await this.userModel.findById(id).select('+passwordHash');
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const updateDoc: Record<string, unknown> = {};
+    const normalizedUsername =
+      input.username !== undefined
+        ? this.normalizeUsername(input.username)
+        : undefined;
+    const usernameChanged =
+      normalizedUsername !== undefined &&
+      normalizedUsername !== (user.username ?? null);
+    const passwordChanged = input.newPassword !== undefined;
+    const hasPassword = !!user.passwordHash;
+
+    if (!hasPassword && !passwordChanged) {
+      throw new BadRequestException('请先设置密码');
+    }
+
+    if (hasPassword && (usernameChanged || passwordChanged)) {
+      if (!input.currentPassword) {
+        throw new BadRequestException('请输入当前密码');
+      }
+      const currentPasswordOk = await this.verifyPassword(
+        input.currentPassword,
+        user.passwordHash!,
+      );
+      if (!currentPasswordOk) {
+        throw new BadRequestException('当前密码不正确');
+      }
+    }
+
+    if (usernameChanged && normalizedUsername) {
+      const existing = await this.userModel.exists({
+        _id: { $ne: user._id },
+        username: normalizedUsername,
+      });
+      if (existing) {
+        throw new ConflictException('用户名已被使用');
+      }
+      updateDoc.username = normalizedUsername;
+    }
+
+    if (passwordChanged) {
+      updateDoc.passwordHash = await this.hashPassword(input.newPassword!);
+      updateDoc.passwordUpdatedAt = new Date();
+    }
+
+    if (Object.keys(updateDoc).length === 0) {
+      return user.toObject();
+    }
+
+    const updated = await this.userModel
+      .findByIdAndUpdate(id, updateDoc, {
+        new: true,
+      })
+      .select('+passwordHash');
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+    return updated.toObject();
+  }
+
+  private normalizeUsername(username: string): string {
+    const normalized = username.trim().toLowerCase();
+    if (!USERNAME_RE.test(normalized)) {
+      throw new BadRequestException(
+        '用户名只能包含 3-32 位英文字母、数字或下划线',
+      );
+    }
+    if (FRIEND_CODE_RE.test(normalized)) {
+      throw new BadRequestException('用户名不能是 15 位纯数字好友码');
+    }
+    return normalized;
+  }
+
+  private async hashPassword(password: string): Promise<string> {
+    const salt = randomBytes(16).toString('hex');
+    const derived = (await scryptAsync(
+      password,
+      salt,
+      PASSWORD_KEY_LENGTH,
+    )) as Buffer;
+    return `${PASSWORD_HASH_VERSION}:${salt}:${derived.toString('hex')}`;
+  }
+
+  private async verifyPassword(
+    password: string,
+    storedHash: string,
+  ): Promise<boolean> {
+    const [version, salt, expectedHex] = storedHash.split(':');
+    if (
+      version !== PASSWORD_HASH_VERSION ||
+      !salt ||
+      !expectedHex ||
+      expectedHex.length !== PASSWORD_KEY_LENGTH * 2
+    ) {
+      return false;
+    }
+
+    const expected = Buffer.from(expectedHex, 'hex');
+    if (expected.length !== PASSWORD_KEY_LENGTH) {
+      return false;
+    }
+    const actual = (await scryptAsync(
+      password,
+      salt,
+      expected.length,
+    )) as Buffer;
+    return (
+      expected.length === actual.length && timingSafeEqual(expected, actual)
+    );
   }
 
   /**

@@ -18,9 +18,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import {
   BindCabinetQrBodySchema,
   DivingFishTokenBodySchema,
+  SetAccountPasswordBodySchema,
   UpdateProfileBodySchema,
   type BindCabinetQrBody,
   type DivingFishTokenBody,
+  type SetAccountPasswordBody,
   type UpdateProfileBody,
 } from '@maimai-score-hub/shared';
 import type { Request } from 'express';
@@ -43,6 +45,26 @@ function extractUserId(req: AuthedRequest): string | undefined {
   return typeof candidate === 'string' ? candidate : undefined;
 }
 
+function toSafeProfile(user: Record<string, unknown>) {
+  const {
+    divingFishImportToken,
+    lxnsImportToken,
+    cabinetUserId,
+    passwordHash,
+    ...rest
+  } = user;
+  return {
+    ...rest,
+    id: String(user._id ?? user.id),
+    hasDivingFishImportToken: !!divingFishImportToken,
+    hasLxnsImportToken: !!lxnsImportToken,
+    hasCabinetUserId: cabinetUserId != null,
+    hasPassword: !!passwordHash,
+    autoUpdate: !!user.autoUpdate,
+    lastScoreHash: (user.lastScoreHash as string | null | undefined) ?? null,
+  };
+}
+
 @Controller('me')
 @UseGuards(AuthGuard)
 export class MeController {
@@ -59,20 +81,9 @@ export class MeController {
     if (!userId) {
       throw new BadRequestException('No user context');
     }
-    const user = await this.users.getById(userId);
-    // Never expose actual tokens to the client; the raw cabinetUserId is
-    // also intentionally NOT echoed back — it's only useful to backend /
-    // sdgb-worker. Frontend just needs the boolean "is it bound".
-    const { divingFishImportToken, lxnsImportToken, cabinetUserId, ...rest } =
-      user;
-    return {
-      ...rest,
-      hasDivingFishImportToken: !!divingFishImportToken,
-      hasLxnsImportToken: !!lxnsImportToken,
-      hasCabinetUserId: cabinetUserId != null,
-      autoUpdate: !!user.autoUpdate,
-      lastScoreHash: user.lastScoreHash ?? null,
-    };
+    const user = await this.users.getByIdWithPasswordHash(userId);
+    // Never expose actual tokens, passwordHash, or raw cabinetUserId.
+    return toSafeProfile(user as Record<string, unknown>);
   }
 
   @Patch()
@@ -110,19 +121,25 @@ export class MeController {
       updateInput.autoUpdate = body.autoUpdate;
     }
 
-    const updated = await this.users.update(userId, updateInput);
+    await this.users.update(userId, updateInput);
+    const updated = await this.users.getByIdWithPasswordHash(userId);
+    return toSafeProfile(updated as Record<string, unknown>);
+  }
 
-    // Never expose actual tokens to the client
-    const {
-      divingFishImportToken: _df,
-      lxnsImportToken: _lx,
-      ...rest
-    } = updated;
-    return {
-      ...rest,
-      hasDivingFishImportToken: !!_df,
-      hasLxnsImportToken: !!_lx,
-    };
+  @Put('password')
+  @HttpCode(200)
+  async setPassword(
+    @Req() req: AuthedRequest,
+    @Body(new ZodValidationPipe(SetAccountPasswordBodySchema))
+    body: SetAccountPasswordBody,
+  ) {
+    const userId = extractUserId(req);
+    if (!userId) {
+      throw new BadRequestException('No user context');
+    }
+
+    const updated = await this.users.setAccountPassword(userId, body);
+    return toSafeProfile(updated as Record<string, unknown>);
   }
 
   /**

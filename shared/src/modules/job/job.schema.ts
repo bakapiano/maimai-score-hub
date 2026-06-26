@@ -15,6 +15,7 @@ export const JobStageSchema = z.enum([
   "accept_request",
   "update_score",
   "get_user_recent_event",
+  "get_full_friend_list",
 ]);
 
 export const JobTypeSchema = z.enum([
@@ -22,6 +23,7 @@ export const JobTypeSchema = z.enum([
   "accept_friend_request",
   "update_score",
   "get_user_recent_event",
+  "get_full_friend_list",
 ]);
 
 export const ScoreProgressSchema = z.object({

@@ -8,6 +8,7 @@ import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
 
 import { BotFriendSnapshotService } from '../../bots/services/bot-friend-snapshot.service';
 import { BotStatusService } from '../../bots/services/bot-status.service';
+import { JobService } from '../../job/services/job.service';
 import { MusicEntity } from '../../music/schemas/music.schema';
 import type {
   ChartPayload,
@@ -66,7 +67,7 @@ export class QrExpiredError extends Error {
  *    (error attached). The actual work runs in the background:
  *      1. pick a bot
  *      2. addRival                    ← sdgb job
- *      3. wait for bot friend snapshot from worker status report
+ *      3. dispatch high-priority full friend-list refresh job
  *      4. unique (name,rating) match in the snapshot → done
  */
 @Injectable()
@@ -78,6 +79,7 @@ export class QrLoginService {
     private readonly users: UsersService,
     private readonly botStatus: BotStatusService,
     private readonly snapshot: BotFriendSnapshotService,
+    private readonly jobs: JobService,
     private readonly jwt: JwtService,
     @InjectModel(MusicEntity.name)
     private readonly musicModel: Model<MusicDocument>,
@@ -215,9 +217,24 @@ export class QrLoginService {
       `QR-login attemptId=${attemptId} addRival rc1=${rival.returnCode1} rc2=${rival.returnCode2}`,
     );
 
-    // (2) Wait for the bot status report to land a fresh snapshot
-    // (`updatedAt > triggeredAt`), then look up (userName, rating) in it.
+    // (2) Actively ask the same DXNet worker to fetch the full friend
+    // list after addRival. That job reports the list immediately on
+    // completion, so QR login no longer depends on the periodic status
+    // heartbeat timing.
     await setStatus('waiting_snapshot');
+    const refreshJob = await this.jobs.create({
+      friendCode: bot.friendCode,
+      jobType: 'get_full_friend_list',
+      botUserFriendCode: bot.friendCode,
+      skipUpdateScore: true,
+      cancelActiveJobs: false,
+    });
+    this.logger.log(
+      `QR-login attemptId=${attemptId} dispatched full friend-list refresh job=${refreshJob.jobId} bot=${bot.friendCode}`,
+    );
+
+    // (3) Wait for the refresh job report to land a fresh snapshot
+    // (`updatedAt > triggeredAt`), then look up (userName, rating) in it.
     type Friend = {
       friendCode: string;
       userName: string | null;
@@ -405,6 +422,13 @@ export class QrLoginService {
     token: string;
     user: { id: string; friendCode: string; [key: string]: unknown };
   }> {
+    const {
+      passwordHash: _passwordHash,
+      divingFishImportToken: _divingFishImportToken,
+      lxnsImportToken: _lxnsImportToken,
+      cabinetUserId: _cabinetUserId,
+      ...safeUser
+    } = user;
     const userId = String(user._id);
     const now = Math.floor(Date.now() / 1000);
     const token = await this.jwt.signAsync(
@@ -413,7 +437,7 @@ export class QrLoginService {
     );
     return {
       token,
-      user: { ...user, id: userId, friendCode: user.friendCode },
+      user: { ...safeUser, id: userId, friendCode: user.friendCode },
     };
   }
 }

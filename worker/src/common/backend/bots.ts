@@ -20,6 +20,6 @@ export async function postBotStatus(
   });
 
   if (response.status !== 201) {
-    console.error(`[BotStatusReport] Report failed: ${response.status}`);
+    throw new Error(`Bot status report failed: ${response.status}`);
   }
 }

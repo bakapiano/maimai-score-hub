@@ -5,6 +5,7 @@ import {
   BindCabinetQrResponseSchema,
   DivingFishTokenBodySchema,
   DivingFishTokenResponseSchema,
+  SetAccountPasswordBodySchema,
   UpdateProfileBodySchema,
   UserProfileSchema,
 } from "./users.schema";
@@ -24,6 +25,18 @@ export const usersContract = c.router({
     headers: c.type<{ authorization: string }>(),
     body: UpdateProfileBodySchema,
     responses: { 200: UserProfileSchema },
+  },
+  setPassword: {
+    method: "PUT",
+    path: "/me/password",
+    headers: c.type<{ authorization: string }>(),
+    body: SetAccountPasswordBodySchema,
+    responses: {
+      200: UserProfileSchema,
+      400: c.type<{ error: string }>(),
+      401: c.type<{ error: string }>(),
+      409: c.type<{ error: string }>(),
+    },
   },
   getDivingFishToken: {
     method: "POST",

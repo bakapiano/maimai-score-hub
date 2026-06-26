@@ -118,6 +118,7 @@ const VALID_STAGE: readonly JobStage[] = [
   'accept_request',
   'update_score',
   'get_user_recent_event',
+  'get_full_friend_list',
 ] as const;
 
 const JOB_STAGE_MAP: Record<JobType, readonly JobStage[]> = {
@@ -125,6 +126,7 @@ const JOB_STAGE_MAP: Record<JobType, readonly JobStage[]> = {
   accept_friend_request: ['wait_user_request', 'accept_request'],
   update_score: ['update_score'],
   get_user_recent_event: ['get_user_recent_event'],
+  get_full_friend_list: ['get_full_friend_list'],
 };
 
 @Injectable()
@@ -352,7 +354,7 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
 
   async create(input: {
     friendCode: string;
-    skipUpdateScore: boolean;
+    skipUpdateScore?: boolean;
     jobType?: JobType;
     botUserFriendCode?: string | null;
     isAuthenticated?: boolean;
@@ -395,10 +397,13 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
      * user/admin jobs must still go through addRival + dxnet score update.
      */
     allowCabinetOnlyShortCircuit?: boolean;
+    cancelActiveJobs?: boolean;
   }) {
     const id = randomUUID();
     const now = new Date();
     let resolvedJobType: JobType = input.jobType ?? 'send_friend_request';
+    input.skipUpdateScore =
+      input.skipUpdateScore ?? resolvedJobType !== 'update_score';
     const allowCabinetOnlyShortCircuit =
       resolvedJobType === 'update_score' &&
       input.allowCabinetOnlyShortCircuit === true;
@@ -414,20 +419,22 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     //   }
     // }
 
-    await this.jobModel.updateMany(
-      {
-        friendCode: input.friendCode,
-        status: { $nin: ['completed', 'failed', 'canceled'] },
-      },
-      {
-        $set: {
-          status: 'canceled',
-          executing: false,
-          runAt: null,
-          updatedAt: now,
+    if (input.cancelActiveJobs !== false) {
+      await this.jobModel.updateMany(
+        {
+          friendCode: input.friendCode,
+          status: { $nin: ['completed', 'failed', 'canceled'] },
         },
-      },
-    );
+        {
+          $set: {
+            status: 'canceled',
+            executing: false,
+            runAt: null,
+            updatedAt: now,
+          },
+        },
+      );
+    }
 
     const isPreassignedScoreJob =
       resolvedJobType === 'update_score' && !!input.botUserFriendCode;
@@ -439,6 +446,8 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
       resolvedStage = 'wait_user_request';
     } else if (resolvedJobType === 'get_user_recent_event') {
       resolvedStage = 'get_user_recent_event';
+    } else if (resolvedJobType === 'get_full_friend_list') {
+      resolvedStage = 'get_full_friend_list';
     } else {
       resolvedStage = 'send_request';
     }

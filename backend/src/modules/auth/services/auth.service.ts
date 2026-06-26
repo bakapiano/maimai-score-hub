@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 
 import { BotStatusService } from '../../bots/services/bot-status.service';
@@ -26,7 +27,6 @@ export class AuthService {
 
   async requestLogin(
     friendCode: string,
-    skipUpdateScore = true,
     method: 'bot_sends_request' | 'user_sends_request',
   ) {
     const normalized = friendCode.trim();
@@ -43,17 +43,7 @@ export class AuthService {
 
     // Skip auth: directly return token without creating job, for testing purposes
     if (this.skipAuth) {
-      const now = Math.floor(Date.now() / 1000);
-      const userId = String(user._id);
-      const payload = {
-        sub: userId,
-        friendCode: user.friendCode,
-        iat: now,
-      };
-      const token = await this.jwt.signAsync(payload, {
-        expiresIn: '30d',
-      });
-      return { skipAuth: true, token, user };
+      return { skipAuth: true, ...(await this.signForUser(user as never)) };
     }
 
     if (method === 'user_sends_request') {
@@ -72,7 +62,6 @@ export class AuthService {
 
       const result = await this.jobs.create({
         friendCode: normalized,
-        skipUpdateScore,
         jobType: 'accept_friend_request',
         botUserFriendCode: selectedBot,
       });
@@ -87,7 +76,6 @@ export class AuthService {
 
     const result = await this.jobs.create({
       friendCode: normalized,
-      skipUpdateScore,
       jobType: 'send_friend_request',
     });
 
@@ -97,55 +85,39 @@ export class AuthService {
   async checkStatus(jobId: string) {
     const job = await this.jobs.get(jobId);
     const status = job.status;
-    const stage = job.stage;
 
-    if (
-      status === 'completed' ||
-      (status === 'processing' && stage === 'update_score')
-    ) {
+    if (status === 'completed') {
       const user = await this.users.findByFriendCode(job.friendCode);
       if (!user) {
         throw new NotFoundException('User not found for job');
       }
 
-      const now = Math.floor(Date.now() / 1000);
       const userId = String(user._id);
       if (job.profile) {
         await this.users.update(userId, { profile: job.profile });
       }
 
-      const payload = {
-        sub: userId,
-        friendCode: user.friendCode,
-        iat: now,
+      const signed = await this.signForUser(user as never);
+      return {
+        status,
+        token: signed.token,
+        user: signed.user,
       };
-      const token = await this.jwt.signAsync(payload, {
-        expiresIn: '30d',
-      });
-      let syncJob: unknown;
-      let syncJobId: string | undefined;
-      if (!job.skipUpdateScore && job.jobType !== 'update_score') {
-        const active = await this.jobs.getActiveByFriendCode(job.friendCode);
-        if (active) {
-          syncJob = active;
-          syncJobId = active.id;
-        } else {
-          const created = await this.jobs.create({
-            friendCode: job.friendCode,
-            skipUpdateScore: false,
-            jobType: 'update_score',
-            botUserFriendCode: job.botUserFriendCode ?? undefined,
-            isAuthenticated: true,
-            friendshipReady: true,
-          });
-          syncJob = created.job;
-          syncJobId = created.jobId;
-        }
-      }
-      return { status, token, user, syncJobId, syncJob };
     }
 
     return { status, job };
+  }
+
+  async loginWithPassword(
+    login: { friendCode?: string; username?: string },
+    password: string,
+  ) {
+    const user = await this.users.verifyPasswordCredentials(login, password);
+    if (!user) {
+      throw new UnauthorizedException('账号或密码不正确');
+    }
+    this.updateLastActiveAt(String(user._id));
+    return this.signForUser(user as never);
   }
 
   async verifyLoginRequest(jobId: string) {
@@ -177,5 +149,36 @@ export class AuthService {
    */
   updateLastActiveAt(userId: string): void {
     this.users.updateLastActiveAt(userId).catch(() => {});
+  }
+
+  private async signForUser(user: {
+    _id: unknown;
+    friendCode: string;
+    [key: string]: unknown;
+  }): Promise<{
+    token: string;
+    user: { id: string; friendCode: string; [key: string]: unknown };
+  }> {
+    const {
+      passwordHash: _passwordHash,
+      divingFishImportToken: _divingFishImportToken,
+      lxnsImportToken: _lxnsImportToken,
+      cabinetUserId: _cabinetUserId,
+      ...safeUser
+    } = user;
+    const now = Math.floor(Date.now() / 1000);
+    const userId = String(user._id);
+    const token = await this.jwt.signAsync(
+      {
+        sub: userId,
+        friendCode: user.friendCode,
+        iat: now,
+      },
+      { expiresIn: '30d' },
+    );
+    return {
+      token,
+      user: { ...safeUser, id: userId, friendCode: user.friendCode },
+    };
   }
 }

@@ -3,9 +3,11 @@ import {
   Button,
   Drawer,
   Group,
+  PasswordInput,
   SegmentedControl,
   Stack,
   Text,
+  TextInput,
   useMantineColorScheme,
 } from "@mantine/core";
 import {
@@ -17,13 +19,14 @@ import {
   IconSun,
   IconTrash,
 } from "@tabler/icons-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
 import { useAuth } from "../providers/AuthProvider";
 import { InstallAppButton } from "./InstallAppButton";
 import { usePwaInstall } from "../hooks/usePwaInstall";
 import { useNavigate } from "react-router-dom";
+import { usersApi } from "../api/appClient";
 
 type Props = {
   opened: boolean;
@@ -57,6 +60,36 @@ export function SettingsPanel({ opened, onClose }: Props) {
   const touchStartX = useRef<number | null>(null);
   const [clearing, setClearing] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [accountUsername, setAccountUsername] = useState("");
+  const [initialUsername, setInitialUsername] = useState("");
+  const [accountHasPassword, setAccountHasPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  useEffect(() => {
+    if (!opened || !token || offline) return;
+
+    let cancelled = false;
+    void (async () => {
+      const res = await usersApi.profile({
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (cancelled || res.status !== 200) return;
+      const body = res.body as {
+        username?: string | null;
+        hasPassword?: boolean;
+      };
+      const username = body.username ?? "";
+      setAccountUsername(username);
+      setInitialUsername(username);
+      setAccountHasPassword(!!body.hasPassword);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [opened, token, offline]);
 
   const handleDeleteAccount = async () => {
     if (!token) return;
@@ -95,6 +128,7 @@ export function SettingsPanel({ opened, onClose }: Props) {
       try {
         localStorage.removeItem("netbot_token");
         localStorage.removeItem("lastFriendCode");
+        localStorage.removeItem("lastUsername");
         localStorage.removeItem("pendingLoginJobId");
       } catch {
         // ignore
@@ -120,6 +154,111 @@ export function SettingsPanel({ opened, onClose }: Props) {
     clearToken();
     onClose();
     navigate("/login", { replace: true });
+  };
+
+  const handleSavePassword = async () => {
+    if (!token) return;
+
+    const trimmedUsername = accountUsername.trim();
+    const normalizedUsername = trimmedUsername.toLowerCase();
+    const usernameChanged = normalizedUsername !== initialUsername;
+    const passwordChanged = newPassword.length > 0;
+
+    if (!usernameChanged && !passwordChanged) {
+      notifications.show({
+        color: "yellow",
+        message: "没有需要保存的更改",
+      });
+      return;
+    }
+    if (usernameChanged && !trimmedUsername) {
+      notifications.show({
+        color: "red",
+        title: "用户名不能为空",
+        message: "如需修改用户名，请输入 3-32 位英文字母、数字或下划线。",
+      });
+      return;
+    }
+    if (!accountHasPassword && !passwordChanged) {
+      notifications.show({
+        color: "red",
+        title: "请先设置密码",
+        message: "首次设置用户名时也需要同时设置密码。",
+      });
+      return;
+    }
+    if (accountHasPassword && !currentPassword) {
+      notifications.show({
+        color: "red",
+        title: "请输入当前密码",
+        message: "修改用户名或密码需要验证当前密码。",
+      });
+      return;
+    }
+
+    setSavingPassword(true);
+    try {
+      const body: {
+        username?: string;
+        currentPassword?: string;
+        newPassword?: string;
+      } = {};
+      if (usernameChanged && normalizedUsername) body.username = normalizedUsername;
+      if (currentPassword) body.currentPassword = currentPassword;
+      if (passwordChanged) body.newPassword = newPassword;
+
+      const res = await usersApi.setPassword({
+        headers: { authorization: `Bearer ${token}` },
+        body,
+      });
+
+      if (res.status !== 200) {
+        const responseBody = res.body as {
+          message?: string | { message?: string };
+          error?: string;
+        };
+        const message =
+          (typeof responseBody?.message === "object" &&
+            responseBody.message?.message) ||
+          (typeof responseBody?.message === "string" && responseBody.message) ||
+          responseBody?.error ||
+          `HTTP ${res.status}`;
+        notifications.show({
+          color: "red",
+          title: "保存失败",
+          message,
+        });
+        return;
+      }
+
+      const responseBody = res.body as {
+        username?: string | null;
+        hasPassword?: boolean;
+      };
+      const savedUsername = responseBody.username ?? "";
+      setAccountUsername(savedUsername);
+      setInitialUsername(savedUsername);
+      setAccountHasPassword(!!responseBody.hasPassword);
+      try {
+        if (savedUsername) localStorage.setItem("lastUsername", savedUsername);
+      } catch {
+        // ignore
+      }
+      setCurrentPassword("");
+      setNewPassword("");
+      notifications.show({
+        color: "green",
+        message: "账号登录设置已保存",
+      });
+    } catch (err) {
+      notifications.show({
+        color: "red",
+        title: "保存失败",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setSavingPassword(false);
+    }
   };
 
   const handleClearCache = () => {
@@ -255,6 +394,48 @@ export function SettingsPanel({ opened, onClose }: Props) {
                   </>
                 ) : (
                   <>
+                    <Stack gap="xs">
+                      <TextInput
+                        label="自定义用户名"
+                        placeholder="可选，用于密码登录"
+                        value={accountUsername}
+                        onChange={(event) =>
+                          setAccountUsername(event.currentTarget.value)
+                        }
+                      />
+                      {accountHasPassword && (
+                        <PasswordInput
+                          label="当前密码"
+                          value={currentPassword}
+                          onChange={(event) =>
+                            setCurrentPassword(event.currentTarget.value)
+                          }
+                          placeholder="修改用户名或密码时必填"
+                        />
+                      )}
+                      <PasswordInput
+                        label={accountHasPassword ? "新密码" : "设置密码"}
+                        value={newPassword}
+                        onChange={(event) =>
+                          setNewPassword(event.currentTarget.value)
+                        }
+                        placeholder={
+                          accountHasPassword ? "不修改密码可留空" : "至少 8 位"
+                        }
+                      />
+                      <Button
+                        variant="light"
+                        color="teal"
+                        fullWidth
+                        loading={savingPassword}
+                        onClick={handleSavePassword}
+                      >
+                        保存登录设置
+                      </Button>
+                      <Text size="xs" c="dimmed">
+                        保存后可使用好友码或自定义用户名 + 密码登录。用户名可修改，但需要当前密码。
+                      </Text>
+                    </Stack>
                     <Button
                       variant="light"
                       color="blue"

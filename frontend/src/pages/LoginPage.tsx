@@ -2,7 +2,6 @@ import {
   Alert,
   Anchor,
   AppShell,
-  Badge,
   Box,
   Button,
   Collapse,
@@ -11,8 +10,8 @@ import {
   Image,
   Loader,
   Paper,
+  PasswordInput,
   Progress,
-  Checkbox,
   SegmentedControl,
   Stack,
   Tabs,
@@ -35,7 +34,7 @@ import { QrLoginForm } from "../components/QrLoginForm";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
-import { authApi, getHealthStatus, getStatistics } from "../api/appClient";
+import { authApi, getHealthStatus } from "../api/appClient";
 import { notifications } from "@mantine/notifications";
 import { useAuth } from "../providers/AuthProvider";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -115,16 +114,27 @@ export default function LoginPage() {
       return "";
     }
   });
-  const [skipUpdateScore, setSkipUpdateScore] = useState(true);
+  const [passwordFriendCode, setPasswordFriendCode] = useState(() => {
+    try {
+      const username = localStorage.getItem("lastUsername") || "";
+      if (username) return "";
+      return localStorage.getItem("lastFriendCode") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [passwordUsername, setPasswordUsername] = useState(() => {
+    try {
+      return localStorage.getItem("lastUsername") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [passwordLoginPassword, setPasswordLoginPassword] = useState("");
+  const [passwordLoginLoading, setPasswordLoginLoading] = useState(false);
   const [loginMethod, setLoginMethod] = useState<
     "bot_sends_request" | "user_sends_request" | null
   >(null);
-  const [lowSuccessRate, setLowSuccessRate] = useState(false);
-  const [recentStats, setRecentStats] = useState<{
-    totalCount: number;
-    successRate: number;
-    avgDuration: number | null;
-  } | null>(null);
   const [_health, setHealth] = useState("");
   const [jobId, setJobId] = useState(() => {
     try {
@@ -178,6 +188,29 @@ export default function LoginPage() {
     [friendCode, loginMethod, loading],
   );
 
+  const canPasswordLogin = useMemo(
+    () => {
+      const hasFriendCode = passwordFriendCode.trim().length > 0;
+      const hasUsername = passwordUsername.trim().length > 0;
+      return (
+        hasFriendCode !== hasUsername &&
+        (!hasFriendCode || /^\d{15}$/.test(passwordFriendCode.trim())) &&
+        passwordLoginPassword.length > 0 &&
+        !passwordLoginLoading &&
+        !polling &&
+        !qrBusy
+      );
+    },
+    [
+      passwordFriendCode,
+      passwordUsername,
+      passwordLoginPassword,
+      passwordLoginLoading,
+      polling,
+      qrBusy,
+    ],
+  );
+
   const quickLoginUrl = useMemo(() => {
     if (friendCode.trim().length === 15) {
       return `${window.location.origin}/login?friendCode=${friendCode.trim()}`;
@@ -197,20 +230,6 @@ export default function LoginPage() {
     (async () => {
       const res = await getHealthStatus();
       setHealth(res.ok ? JSON.stringify(res.data) : `HTTP ${res.status}`);
-    })();
-
-    // Fetch recent stats on mount
-    (async () => {
-      try {
-        const statistics = await getStatistics();
-        const dxnetJobs = statistics.dxnetJobs;
-        if (dxnetJobs) {
-          setRecentStats(dxnetJobs);
-          if (dxnetJobs.totalCount >= 5 && dxnetJobs.successRate <= 50) {
-            setLowSuccessRate(true);
-          }
-        }
-      } catch {}
     })();
   }, []);
 
@@ -371,7 +390,6 @@ export default function LoginPage() {
     setAssignedBotFriendCode("");
     setLoginCreatedAt("");
     setTimeLeft(0);
-    setLowSuccessRate(false);
 
     const trimmedCode = friendCode.trim();
     try {
@@ -381,7 +399,6 @@ export default function LoginPage() {
     const res = await authApi.loginRequest({
       body: {
         friendCode: trimmedCode,
-        skipUpdateScore,
         method: loginMethod!,
       },
     });
@@ -433,6 +450,75 @@ export default function LoginPage() {
     }
 
     setLoading(false);
+  };
+
+  const startPasswordLogin = async () => {
+    setPasswordLoginLoading(true);
+    try {
+      const friendCode = passwordFriendCode.trim();
+      const username = passwordUsername.trim();
+      if (!!friendCode === !!username) {
+        notifications.show({
+          title: "密码登录失败",
+          message: "请只填写好友码或用户名其中一项",
+          color: "red",
+        });
+        return;
+      }
+
+      const res = await authApi.passwordLogin({
+        body: {
+          ...(friendCode ? { friendCode } : { username }),
+          password: passwordLoginPassword,
+        },
+      });
+
+      if (res.status === 200 && res.body?.token) {
+        const user = res.body.user as
+          | { friendCode?: string; username?: string | null }
+          | undefined;
+        try {
+          if (user?.friendCode) {
+            localStorage.setItem("lastFriendCode", user.friendCode);
+          }
+          if (user?.username) {
+            localStorage.setItem("lastUsername", user.username);
+          }
+        } catch {}
+        setToken(String(res.body.token));
+        setPasswordLoginPassword("");
+        notifications.show({
+          title: "登录成功",
+          message: "欢迎使用 maimai Score Hub！",
+          color: "green",
+        });
+        navigate("/app", { replace: true });
+        return;
+      }
+
+      const body = res.body as {
+        message?: string | { message?: string };
+        error?: string;
+      };
+      const message =
+        (typeof body?.message === "object" && body.message?.message) ||
+        (typeof body?.message === "string" && body.message) ||
+        body?.error ||
+        `HTTP ${res.status}`;
+      notifications.show({
+        title: "密码登录失败",
+        message,
+        color: "red",
+      });
+    } catch (err) {
+      notifications.show({
+        title: "密码登录失败",
+        message: err instanceof Error ? err.message : String(err),
+        color: "red",
+      });
+    } finally {
+      setPasswordLoginLoading(false);
+    }
   };
 
   const wakeLoginJob = async () => {
@@ -621,6 +707,7 @@ export default function LoginPage() {
                   <Tabs defaultValue="friendCode" keepMounted={false}>
                     <Tabs.List grow>
                       <Tabs.Tab value="friendCode">好友码登录</Tabs.Tab>
+                      <Tabs.Tab value="password">密码登录</Tabs.Tab>
                       <Tabs.Tab value="qr">神秘二维码登录</Tabs.Tab>
                     </Tabs.List>
 
@@ -671,15 +758,6 @@ export default function LoginPage() {
                             )}
                           </Group>
 
-                          <Checkbox
-                            label="同时更新成绩"
-                            checked={!skipUpdateScore}
-                            onChange={(e) =>
-                              setSkipUpdateScore(!e.currentTarget.checked)
-                            }
-                            disabled={polling || qrBusy}
-                          />
-
                           <Stack gap={6}>
                             <Text size="sm" fw={500}>
                               好友申请方式
@@ -706,62 +784,6 @@ export default function LoginPage() {
                               ]}
                             />
                           </Stack>
-
-                          {!skipUpdateScore &&
-                            recentStats &&
-                            recentStats.totalCount >= 5 && (
-                              <Group gap="xl">
-                                <Group gap={6}>
-                                  <Text size="sm" c="dimmed">
-                                    近 1 小时更新成功率
-                                  </Text>
-                                  <Badge
-                                    variant="light"
-                                    size="lg"
-                                    radius="md"
-                                    color={
-                                      recentStats.successRate >= 80
-                                        ? "green"
-                                        : recentStats.successRate >= 50
-                                          ? "yellow"
-                                          : "red"
-                                    }
-                                  >
-                                    {recentStats.successRate}%
-                                  </Badge>
-                                </Group>
-                                {recentStats.avgDuration != null && (
-                                  <Group gap={6}>
-                                    <Text size="sm" c="dimmed">
-                                      平均耗时
-                                    </Text>
-                                    <Badge
-                                      variant="light"
-                                      size="lg"
-                                      radius="md"
-                                    >
-                                      {recentStats.avgDuration >= 60000
-                                        ? `${Math.floor(recentStats.avgDuration / 60000)}分${Math.round((recentStats.avgDuration % 60000) / 1000)}秒`
-                                        : `${Math.round(recentStats.avgDuration / 1000)}秒`}
-                                    </Badge>
-                                  </Group>
-                                )}
-                              </Group>
-                            )}
-
-                          {lowSuccessRate && !skipUpdateScore && (
-                            <Alert
-                              variant="light"
-                              color="yellow"
-                              title="当前更新成功率较低"
-                              icon={<IconInfoCircle size={16} />}
-                              radius="md"
-                            >
-                              <Text size="sm">
-                                成绩更新可能需要更长时间；登录本身不受影响。
-                              </Text>
-                            </Alert>
-                          )}
 
                           <Group justify="center" gap="sm">
                             <Button
@@ -804,6 +826,58 @@ export default function LoginPage() {
                                 </Text>
                               </Group>
                             )}
+                        </Stack>
+                      </Paper>
+                    </Tabs.Panel>
+
+                    <Tabs.Panel value="password" pt="md">
+                      <Paper shadow="xs" p="lg" radius="md" withBorder>
+                        <Stack gap="md">
+                          <TextInput
+                            label="好友码"
+                            placeholder="15 位好友码"
+                            value={passwordFriendCode}
+                            onChange={(event) => {
+                              const value = event.currentTarget.value;
+                              if (/^\d*$/.test(value) && value.length <= 15) {
+                                setPasswordFriendCode(value);
+                              }
+                            }}
+                            disabled={polling || qrBusy || passwordLoginLoading}
+                          />
+                          <TextInput
+                            label="用户名"
+                            placeholder="自定义用户名"
+                            value={passwordUsername}
+                            onChange={(event) =>
+                              setPasswordUsername(event.currentTarget.value)
+                            }
+                            disabled={polling || qrBusy || passwordLoginLoading}
+                          />
+                          <PasswordInput
+                            label="密码"
+                            placeholder="请输入密码"
+                            value={passwordLoginPassword}
+                            onChange={(event) =>
+                              setPasswordLoginPassword(event.currentTarget.value)
+                            }
+                            disabled={polling || qrBusy || passwordLoginLoading}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" && canPasswordLogin) {
+                                void startPasswordLogin();
+                              }
+                            }}
+                          />
+                          <Button
+                            onClick={startPasswordLogin}
+                            disabled={!canPasswordLogin}
+                            loading={passwordLoginLoading}
+                          >
+                            密码登录
+                          </Button>
+                          <Text size="xs" c="dimmed">
+                            好友码和用户名二选一填写。密码需要先在已登录账号的设置中创建。
+                          </Text>
                         </Stack>
                       </Paper>
                     </Tabs.Panel>

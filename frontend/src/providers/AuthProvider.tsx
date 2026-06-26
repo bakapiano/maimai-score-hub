@@ -86,10 +86,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // it if the user logs out (covers QR-login users too — they
         // never typed their fc but we know it now). Only writes when
         // profile actually returned one.
-        const fc = (res.body as { friendCode?: string } | null)?.friendCode;
-        if (fc) {
+        const profile = res.body as {
+          friendCode?: string;
+          username?: string | null;
+        } | null;
+        const fc = profile?.friendCode;
+        const username = profile?.username;
+        if (fc || username) {
           try {
-            localStorage.setItem("lastFriendCode", fc);
+            if (fc) localStorage.setItem("lastFriendCode", fc);
+            if (username) localStorage.setItem("lastUsername", username);
           } catch {
             // ignore
           }

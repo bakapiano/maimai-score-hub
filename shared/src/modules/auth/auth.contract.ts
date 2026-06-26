@@ -9,6 +9,8 @@ import {
   LoginRequestVerifyResponseSchema,
   LoginStatusQuerySchema,
   LoginStatusResponseSchema,
+  PasswordLoginBodySchema,
+  TokenLoginResponseSchema,
 } from "./auth.schema";
 
 const c = initContract();
@@ -51,6 +53,16 @@ export const authContract = c.router({
     responses: {
       200: z.unknown(),
       400: c.type<{ error: string }>(),
+    },
+  },
+  passwordLogin: {
+    method: "POST",
+    path: "/auth/password-login",
+    body: PasswordLoginBodySchema,
+    responses: {
+      200: TokenLoginResponseSchema,
+      400: c.type<{ error: string }>(),
+      401: c.type<{ error: string }>(),
     },
   },
 });

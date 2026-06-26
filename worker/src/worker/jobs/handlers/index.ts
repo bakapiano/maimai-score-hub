@@ -7,6 +7,7 @@ import type {
 
 import type { MaimaiClient } from "../../../common/maimai/client.ts";
 import { acceptFriendRequestJobHandler } from "./accept-friend-request/index.ts";
+import { getFullFriendListJobHandler } from "./get-full-friend-list/index.ts";
 import { getUserRecentEventJobHandler } from "./get-user-recent-event/index.ts";
 import { sendFriendRequestJobHandler } from "./send-friend-request/index.ts";
 import { updateScoreJobHandler } from "./update-score/index.ts";
@@ -51,6 +52,8 @@ function getJobTypeHandlerByType(jobType?: JobType | null): JobTypeHandler {
       return updateScoreJobHandler;
     case "get_user_recent_event":
       return getUserRecentEventJobHandler;
+    case "get_full_friend_list":
+      return getFullFriendListJobHandler;
     default:
       throw new Error(`Unknown jobType: ${String(jobType)}`);
   }
