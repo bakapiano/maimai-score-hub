@@ -1,14 +1,13 @@
 import { Button, Card, Group, Stack, Text } from "@mantine/core";
-import { adminApi, coverApi, musicApi } from "../../api/appClient";
+import { adminApi, coverApi } from "../../api/appClient";
 import {
   IconArrowsExchange,
-  IconDatabase,
   IconMusic,
   IconPhoto,
   IconRefresh,
 } from "@tabler/icons-react";
 import { useAdminContext } from "./adminUtils";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 export default function AdminSyncPage() {
   const { password } = useAdminContext();
@@ -24,44 +23,6 @@ export default function AdminSyncPage() {
 
   const [musicSyncing, setMusicSyncing] = useState(false);
   const [musicSyncResult, setMusicSyncResult] = useState("");
-
-  const [dataSource, setDataSource] = useState<"diving-fish" | "lxns" | null>(
-    null,
-  );
-  const [dataSourceLoading, setDataSourceLoading] = useState(false);
-  const [dataSourceSwitching, setDataSourceSwitching] = useState(false);
-
-  const loadDataSource = useCallback(async () => {
-    if (!password) return;
-    setDataSourceLoading(true);
-    try {
-      const res = await musicApi.getDataSource({
-        headers: { "x-api-secret": password },
-      });
-      if (res.status === 200) {
-        setDataSource(res.body.source);
-      }
-    } catch {
-      // ignore
-    }
-    setDataSourceLoading(false);
-  }, [password]);
-
-  const switchDataSource = useCallback(
-    async (newSource: "diving-fish" | "lxns") => {
-      if (!password) return;
-      setDataSourceSwitching(true);
-      const res = await musicApi.setDataSource({
-        headers: { "x-api-secret": password },
-        body: { source: newSource },
-      });
-      setDataSourceSwitching(false);
-      if (res.status === 200) {
-        setDataSource(res.body.source);
-      }
-    },
-    [password],
-  );
 
   const syncCovers = useCallback(async () => {
     if (!password) return;
@@ -131,12 +92,6 @@ export default function AdminSyncPage() {
     }
   }, [password]);
 
-  useEffect(() => {
-    if (dataSource === null) {
-      void loadDataSource();
-    }
-  }, [dataSource, loadDataSource]);
-
   return (
     <Stack gap="lg">
       <Card withBorder shadow="sm" padding="lg" radius="md">
@@ -199,7 +154,7 @@ export default function AdminSyncPage() {
                 onClick={syncMusic}
                 loading={musicSyncing}
               >
-                同步歌曲数据
+                同步歌曲数据（Diving-Fish）
               </Button>
             </Group>
             {musicSyncResult && (
@@ -208,58 +163,6 @@ export default function AdminSyncPage() {
               </Text>
             )}
           </div>
-        </Group>
-      </Card>
-
-      <Card withBorder shadow="sm" padding="lg" radius="md">
-        <Group gap="xs" mb="md">
-          <IconDatabase size={20} />
-          <Text fw={600}>歌曲数据源</Text>
-        </Group>
-        <Group gap="md" align="center">
-          <Group gap="xs">
-            <Text size="sm" c="dimmed">
-              当前数据源:
-            </Text>
-            {dataSourceLoading ? (
-              <Text size="sm">加载中...</Text>
-            ) : (
-              <Text size="sm" fw={600}>
-                {dataSource === "diving-fish"
-                  ? "Diving-Fish (水鱼)"
-                  : dataSource === "lxns"
-                    ? "落雪 (LXNS)"
-                    : "未知"}
-              </Text>
-            )}
-          </Group>
-          <Button
-            variant="light"
-            size="xs"
-            leftSection={<IconRefresh size={14} />}
-            onClick={loadDataSource}
-            loading={dataSourceLoading}
-          >
-            刷新
-          </Button>
-          <Button
-            variant={dataSource === "diving-fish" ? "filled" : "outline"}
-            size="xs"
-            onClick={() => switchDataSource("diving-fish")}
-            loading={dataSourceSwitching}
-            disabled={dataSource === "diving-fish"}
-          >
-            Diving-Fish
-          </Button>
-          <Button
-            variant={dataSource === "lxns" ? "filled" : "outline"}
-            size="xs"
-            onClick={() => switchDataSource("lxns")}
-            loading={dataSourceSwitching}
-            disabled={dataSource === "lxns"}
-          >
-            落雪 (LXNS)
-          </Button>
         </Group>
       </Card>
     </Stack>

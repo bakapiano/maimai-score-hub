@@ -6,14 +6,12 @@ import { AuthModule } from '../auth/auth.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { SyncService } from './services/sync.service';
 import { UsersModule } from '../users/users.module';
-import { MusicModule } from '../music/music.module';
 import { ProberExportMapService } from './services/prober-export-map.service';
 
 @Module({
   imports: [
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
-    MusicModule,
     MongooseModule.forFeature([
       { name: SyncEntity.name, schema: SyncSchema },
       { name: MusicEntity.name, schema: MusicSchema },

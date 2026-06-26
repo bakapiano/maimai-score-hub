@@ -8,8 +8,6 @@ import sharp from 'sharp';
 
 import { MusicEntity } from '../../music/schemas/music.schema';
 import type { MusicDocument } from '../../music/schemas/music.schema';
-import { MusicService } from '../../music/services/music.service';
-import type { MusicDataSource } from '../../music/services/music.service';
 import {
   buildDivingFishDocs,
   buildIdMap,
@@ -48,7 +46,6 @@ export class CoverService {
   constructor(
     @InjectModel(MusicEntity.name)
     private readonly musicModel: Model<MusicDocument>,
-    private readonly musicService: MusicService,
   ) {}
 
   private padId(id: string) {
@@ -112,7 +109,7 @@ export class CoverService {
     await mkdir(this.baseDir, { recursive: true });
   }
 
-  private async buildCrossIdMap(dataSource: MusicDataSource): Promise<{
+  private async buildCrossIdMap(): Promise<{
     toDivingFishId: (dbId: string) => string | null;
     toLxnsId: (dbId: string) => string | null;
   }> {
@@ -131,22 +128,15 @@ export class CoverService {
 
     const dfDocs = buildDivingFishDocs(dfRaw);
     const lxDocs = buildLxnsDocs(lxnsRaw);
-    const { dfToLxns, lxnsToDf } = buildIdMap(dfDocs, lxDocs);
+    const { dfToLxns } = buildIdMap(dfDocs, lxDocs);
 
     this.logger.log(
       `ID mapping built: ${dfToLxns.size} diving-fish↔lxns pairs`,
     );
 
-    if (dataSource === 'diving-fish') {
-      return {
-        toDivingFishId: (dbId) => dbId,
-        toLxnsId: (dbId) => dfToLxns.get(dbId) ?? null,
-      };
-    }
-
     return {
-      toDivingFishId: (dbId) => lxnsToDf.get(dbId) ?? null,
-      toLxnsId: (dbId) => dbId,
+      toDivingFishId: (dbId) => dbId,
+      toLxnsId: (dbId) => dfToLxns.get(dbId) ?? null,
     };
   }
 
@@ -235,8 +225,7 @@ export class CoverService {
   }
 
   private async doSync(force: boolean): Promise<SyncSummary> {
-    const dataSource = await this.musicService.getDataSource();
-    this.logger.log(`Current data source: ${dataSource}, force=${force}`);
+    this.logger.log(`Using diving-fish music data source, force=${force}`);
 
     const musics = await this.musicModel.find().select({ id: 1 }).lean();
     const summary: SyncSummary = {
@@ -248,7 +237,7 @@ export class CoverService {
 
     await this.ensureDir();
 
-    const { toDivingFishId, toLxnsId } = await this.buildCrossIdMap(dataSource);
+    const { toDivingFishId, toLxnsId } = await this.buildCrossIdMap();
 
     let processed = 0;
     const tasks = musics.map((m) => async () => {

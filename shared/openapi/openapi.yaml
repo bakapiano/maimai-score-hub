@@ -2025,7 +2025,7 @@ paths:
                   - success
   /catalog/music:
     get:
-      tags: &a6
+      tags:
         - music
       parameters: []
       operationId: music.listAll
@@ -2050,72 +2050,16 @@ paths:
                   additionalProperties: true
   /admin/catalog/music/sync:
     post:
-      tags: &a7
+      tags: &a6
         - admin
       parameters: []
       operationId: admin.syncMusic
       responses:
         "201":
           description: "201"
-  /admin/catalog/music/source:
-    get:
-      tags: *a6
-      parameters: []
-      operationId: music.getDataSource
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  source:
-                    type: string
-                    enum:
-                      - diving-fish
-                      - lxns
-                required:
-                  - source
-    put:
-      tags: *a6
-      parameters: []
-      operationId: music.setDataSource
-      requestBody:
-        description: Body
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                source:
-                  type: string
-                  enum:
-                    - diving-fish
-                    - lxns
-              required:
-                - source
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  source:
-                    type: string
-                    enum:
-                      - diving-fish
-                      - lxns
-                  ok:
-                    type: boolean
-                required:
-                  - source
-                  - ok
   /admin/dashboard/stats:
     get:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.getStats
       responses:
@@ -2137,7 +2081,7 @@ paths:
                 additionalProperties: true
   /admin/dashboard/job-stats:
     get:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.getJobStats
       responses:
@@ -2149,7 +2093,7 @@ paths:
                 nullable: true
   /admin/dashboard/auto-update-metrics:
     get:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: window
           in: query
@@ -2168,7 +2112,7 @@ paths:
                 nullable: true
   /admin/dashboard/prober-export-metrics:
     get:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: window
           in: query
@@ -2187,7 +2131,7 @@ paths:
                 nullable: true
   /admin/dashboard/job-trend:
     get:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: hours
           in: query
@@ -2203,7 +2147,7 @@ paths:
                 nullable: true
   /admin/dashboard/job-error-stats:
     get:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.getJobErrorStats
       responses:
@@ -2215,7 +2159,7 @@ paths:
                 nullable: true
   /admin/dxnet-jobs:
     get:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: friendCode
           in: query
@@ -2248,7 +2192,7 @@ paths:
                 nullable: true
   /admin/users:
     get:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.getAllUsers
       responses:
@@ -2262,7 +2206,7 @@ paths:
                   nullable: true
   /admin/dxnet-jobs/active:
     get:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.getActiveJobs
       responses:
@@ -2274,7 +2218,7 @@ paths:
                 nullable: true
   /workers/bots/status:
     post:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.reportBotStatus
       requestBody:
@@ -2343,7 +2287,7 @@ paths:
           description: "201"
   /admin/bots:
     get:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.getBotStatus
       responses:
@@ -2380,7 +2324,7 @@ paths:
                   additionalProperties: true
   /admin/bots/{friendCode}/remark:
     patch:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: friendCode
           in: path
@@ -2405,7 +2349,7 @@ paths:
           description: "200"
   /admin/bots/{friendCode}/cabinet-user-id:
     patch:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: friendCode
           in: path
@@ -2432,7 +2376,7 @@ paths:
           description: "200"
   /admin/bots/{friendCode}:
     delete:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: friendCode
           in: path
@@ -2445,7 +2389,7 @@ paths:
           description: "200"
   /admin/dxnet-jobs/{jobId}/api-logs:
     get:
-      tags: *a7
+      tags: *a6
       parameters:
         - name: jobId
           in: path
@@ -2464,7 +2408,7 @@ paths:
                   nullable: true
   /admin/catalog/covers/sync:
     post:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.syncCovers
       responses:
@@ -2472,7 +2416,7 @@ paths:
           description: "201"
   /admin/catalog/covers/force-sync:
     post:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.forceSyncCovers
       responses:
@@ -2480,7 +2424,7 @@ paths:
           description: "201"
   /admin/dxnet-jobs/cleanup:
     post:
-      tags: *a7
+      tags: *a6
       parameters: []
       operationId: admin.cleanupJobs
       responses:
@@ -2488,7 +2432,7 @@ paths:
           description: "201"
   /catalog/covers/{songId}:
     get:
-      tags: &a8
+      tags: &a7
         - cover
       parameters:
         - name: songId
@@ -2504,7 +2448,7 @@ paths:
           description: "404"
   /catalog/covers/{songId}.jpg:
     get:
-      tags: *a8
+      tags: *a7
       parameters:
         - name: songId
           in: path
@@ -2519,7 +2463,7 @@ paths:
           description: "404"
   /admin/catalog/covers/backfill-variants:
     post:
-      tags: *a8
+      tags: *a7
       parameters: []
       operationId: cover.backfillVariants
       responses:
@@ -2527,7 +2471,7 @@ paths:
           description: "201"
   /me/score-exports/best50:
     get:
-      tags: &a9
+      tags: &a8
         - scoreExport
       parameters: []
       operationId: scoreExport.best50
@@ -2536,7 +2480,7 @@ paths:
           description: "200"
   /me/score-exports/level:
     get:
-      tags: *a9
+      tags: *a8
       parameters: []
       operationId: scoreExport.level
       responses:
@@ -2544,7 +2488,7 @@ paths:
           description: "200"
   /me/score-exports/version:
     get:
-      tags: *a9
+      tags: *a8
       parameters: []
       operationId: scoreExport.version
       responses:
@@ -2552,7 +2496,7 @@ paths:
           description: "200"
   /workers/sdgb/jobs/{jobId}:
     get:
-      tags: &a10
+      tags: &a9
         - sdgbWorker
       parameters:
         - name: jobId
@@ -2613,7 +2557,7 @@ paths:
         "404":
           description: "404"
     patch:
-      tags: *a10
+      tags: *a9
       parameters:
         - name: jobId
           in: path
