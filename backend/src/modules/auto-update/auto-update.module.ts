@@ -5,12 +5,7 @@ import { BotsModule } from '../bots/bots.module';
 import { JobModule } from '../job/job.module';
 import { JobEntity, JobSchema } from '../job/schemas/job.schema';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
-import {
-  SdgbJobEntity,
-  SdgbJobSchema,
-} from '../sdgb-worker/schemas/sdgb-job.schema';
 import { SyncModule } from '../sync/sync.module';
-import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { UsersModule } from '../users/users.module';
 import {
   AutoUpdateRunEntity,
@@ -23,12 +18,10 @@ import { AutoUpdateSchedulerService } from './services/auto-update-scheduler.ser
     UsersModule,
     JobModule,
     BotsModule,
-    SystemSettingsModule,
     SdgbWorkerModule,
     SyncModule,
     MongooseModule.forFeature([
       { name: JobEntity.name, schema: JobSchema },
-      { name: SdgbJobEntity.name, schema: SdgbJobSchema },
       { name: AutoUpdateRunEntity.name, schema: AutoUpdateRunSchema },
     ]),
   ],

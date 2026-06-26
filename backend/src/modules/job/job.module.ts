@@ -10,7 +10,6 @@ import { JobTempCacheService } from './cache/temp-cache.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { SyncModule } from '../sync/sync.module';
-import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { UsersModule } from '../users/users.module';
 
 @Module({
@@ -21,7 +20,6 @@ import { UsersModule } from '../users/users.module';
     ]),
     SdgbWorkerModule,
     BotsModule,
-    SystemSettingsModule,
     forwardRef(() => SyncModule),
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),

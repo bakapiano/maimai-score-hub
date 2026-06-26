@@ -9,7 +9,6 @@ import {
   Loader,
   SegmentedControl,
   Stack,
-  Switch,
   Text,
   Title,
 } from "@mantine/core";
@@ -138,54 +137,6 @@ export default function AdminAutoUpdatePage() {
   const [data, setData] = useState<AutoUpdateMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cabinetOnlyMode, setCabinetOnlyMode] = useState<boolean | null>(null);
-  const [settingsBusy, setSettingsBusy] = useState(false);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
-
-  const loadSettings = useCallback(async () => {
-    if (!password) return;
-    try {
-      const res = await adminApi.getSystemSettings({
-        headers: { "x-api-secret": password },
-      });
-      if (res.status === 200) {
-        setCabinetOnlyMode(res.body.cabinetOnlyMode);
-        setSettingsError(null);
-      } else {
-        setSettingsError(`HTTP ${res.status}`);
-      }
-    } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : String(err));
-    }
-  }, [password]);
-
-  const toggleCabinetOnly = useCallback(
-    async (next: boolean) => {
-      if (!password || settingsBusy) return;
-      const prev = cabinetOnlyMode;
-      setCabinetOnlyMode(next); // optimistic
-      setSettingsBusy(true);
-      setSettingsError(null);
-      try {
-        const res = await adminApi.updateSystemSettings({
-          headers: { "x-api-secret": password },
-          body: { cabinetOnlyMode: next },
-        });
-        if (res.status === 200) {
-          setCabinetOnlyMode(res.body.cabinetOnlyMode);
-        } else {
-          setCabinetOnlyMode(prev);
-          setSettingsError(`HTTP ${res.status}`);
-        }
-      } catch (err) {
-        setCabinetOnlyMode(prev);
-        setSettingsError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setSettingsBusy(false);
-      }
-    },
-    [password, cabinetOnlyMode, settingsBusy],
-  );
 
   const load = useCallback(async () => {
     if (!password) return;
@@ -210,11 +161,10 @@ export default function AdminAutoUpdatePage() {
 
   useEffect(() => {
     void load();
-    void loadSettings();
     // refresh every 30s for live snapshot
     const id = setInterval(() => void load(), 30_000);
     return () => clearInterval(id);
-  }, [load, loadSettings]);
+  }, [load]);
 
   if (!data && loading) {
     return (
@@ -280,38 +230,6 @@ export default function AdminAutoUpdatePage() {
           size="xs"
         />
       </Group>
-
-      {/* ── Cabinet-only mode toggle ── */}
-      <Card withBorder padding="md" radius="md" mb="md">
-        <Group justify="space-between" wrap="nowrap" align="flex-start">
-          <Box style={{ flex: 1 }}>
-            <Group gap="xs" mb={4}>
-              <Text fw={600}>Cabinet-only 模式</Text>
-              {cabinetOnlyMode === true && (
-                <Badge color="orange" variant="filled" size="sm">
-                  ON
-                </Badge>
-              )}
-            </Group>
-            <Text size="sm" c="dimmed">
-              ON 时所有绑定机台的用户更新（自动 + 手动 update_score）跳过 DXNet
-              worker，直接用 sdgb 机台数据写入 score；fc/fs 保留上次值不刷新。
-              未绑定机台的用户不受影响，仍走 worker。
-            </Text>
-            {settingsError && (
-              <Text size="xs" c="red" mt={4}>
-                {settingsError}
-              </Text>
-            )}
-          </Box>
-          <Switch
-            size="lg"
-            checked={cabinetOnlyMode === true}
-            disabled={cabinetOnlyMode === null || settingsBusy}
-            onChange={(e) => void toggleCabinetOnly(e.currentTarget.checked)}
-          />
-        </Group>
-      </Card>
 
       {/* ── KPI 行 ── */}
       <Grid gutter="md" mb="md">

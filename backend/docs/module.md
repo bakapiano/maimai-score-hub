@@ -23,7 +23,7 @@
 | ---------------------- | ----------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `AdminModule`          | `backend/src/modules/admin`               | `AdminService`                                                              | 管理后台聚合查询与运维动作入口。                                             |
 | `AuthModule`           | `backend/src/modules/auth`                | `AuthService`、`AuthGuard`、`QrLoginService`                                | 登录、JWT 校验、好友请求登录和机台二维码登录。                               |
-| `AutoUpdateModule`     | `backend/src/modules/auto-update`         | `AutoUpdateSchedulerService`                                                | 自动更新调度、hash 检查、强制触发与自动更新历史。                            |
+| `AutoUpdateModule`     | `backend/src/modules/auto-update`         | `AutoUpdateSchedulerService`                                                | 自动更新调度、hash 检查、job 创建节流与失败退避。                            |
 | `BotsModule`           | `backend/src/modules/bots`                | `BotStatusService`、`BotFriendSnapshotService`                              | DXNet bot 状态、好友快照、可用性选择和告警。                                 |
 | `CoverModule`          | `backend/src/modules/cover`               | `CoverService`                                                              | 本地封面文件查找、同步、格式变体生成和封面数量统计。                         |
 | `JobModule`            | `backend/src/modules/job`                 | `JobService`、`JobTempCacheService`、`JobApiLogService`                     | DXNet worker 任务队列与任务生命周期。                                        |
@@ -31,7 +31,6 @@
 | `ScoreExportModule`    | `backend/src/modules/score-export`        | `ScoreExportService`                                                        | 将同步成绩渲染为 PNG 图片。                                                  |
 | `SdgbWorkerModule`     | `backend/src/modules/sdgb-worker`         | `SdgbJobService`、`SdgbJobDispatcher`                                       | 机台协议 worker 的任务队列、调度和同步调用封装。                             |
 | `SyncModule`           | `backend/src/modules/sync`                | `SyncService`                                                               | 成绩同步快照落库、成绩合并和导出到 prober。                                  |
-| `SystemSettingsModule` | `backend/src/modules/system-settings`     | `SystemSettingsService`                                                     | 全局系统设置，目前主要是 `cabinetOnlyMode`。                                  |
 | `UsersModule`          | `backend/src/modules/users`               | `UsersService`、`CabinetService`、`AccountDeletionService`                  | 用户资料、导入 token、机台绑定、自动更新状态和账号删除。                     |
 | `WorkerLogsModule`     | `backend/src/modules/worker-logs`         | `WorkerLogsService`                                                         | worker 日志上报、查询、workerId 列表和日志指标聚合。                         |
 
@@ -56,7 +55,6 @@
 - 定时扫描开启 `autoUpdate` 且已绑定 `cabinetUserId` 的用户。
 - 通过 `SdgbJobDispatcher.getRivalHash()` 检查机台成绩 hash；hash 未变则跳过，变化则创建 `update_score` job。
 - 处理 hash check 节流、job 创建节流、in-flight job 跳过和失败退避。
-- 提供管理后台手动 sweep、按好友码强制触发、开启用户列表、用户自动更新历史和开启人数统计。
 - 持有 `auto_update_runs`，记录每轮自动更新执行摘要。
 
 ### `BotsModule`
@@ -82,7 +80,7 @@
 - 创建和唤醒 job 时写入 BullMQ；worker 直接消费队列，处理 `runAt` 延迟、释放 stale execution、超时失败由后台 sweep 兜底。
 - 处理 worker PATCH 回写的状态、stage、进度、profile、result、error 和执行标记。
 - job 成功完成后会触发 `SyncService.createFromJob()` 写入同步成绩，并按用户设置执行自动导出。
-- 支持机台绑定用户的 cabinet fast path：通过 sdgb 加 rival、使用 cabinet score map 优化 `update_score`，在 `cabinetOnlyMode` 下可短路为纯机台数据同步。
+- 支持机台绑定用户的 cabinet fast path：通过 sdgb 加 rival、使用 cabinet score map 优化 `update_score`；自动更新固定启用 cabinet-only 短路，直接写入纯机台数据。
 - `JobTempCacheService` 用 Redis 临时缓存 `update_score` 中间 FriendVS 解析结果。
 - `JobApiLogService` 用 Redis 保存 worker 外部 API 调用 metadata，供调试页面查看。
 
@@ -105,7 +103,7 @@
 ### `SdgbWorkerModule`
 
 - 管理 sdgb-worker 使用的机台协议任务，任务类型包括 `scan_qr`、`get_rival_hash` 和 `add_rival`。
-- `SdgbJobService` 负责写入 Mongo + BullMQ、worker PATCH、等待完成、管理后台状态和分页查询。
+- `SdgbJobService` 负责写入 Mongo + BullMQ、worker PATCH 和等待完成。
 - sdgb-worker 直接消费 BullMQ，不再通过 HTTP claim/next 认领任务。
 - Mongo TTL 清理历史 job。
 - `SdgbJobDispatcher` 把“入队 + 等待完成 + 返回 result”封装成同步调用，供登录、机台绑定、自动更新和 bot 绑定使用。
@@ -118,13 +116,6 @@
 - 对外提供当前用户最新同步成绩查询。
 - `ProberExportMapService` 缓存 Diving Fish 与 LXNS 的曲目 id 映射，支持在不同曲库来源下导出。
 - 支持把最新 sync 上传到 Diving Fish 或 LXNS，并记录自动导出结果。
-
-### `SystemSettingsModule`
-
-- 管理全局系统设置集合 `system_settings`。
-- 当前设置项为 `cabinetOnlyMode`，影响自动更新创建 `update_score` job 时是否允许 cabinet-only short circuit。
-- `SystemSettingsService.get()` 有 5 秒内存缓存，减少 `JobService.create()` 热路径上的 Mongo 查询。
-- 修改设置后会立即失效本实例缓存。
 
 ### `UsersModule`
 

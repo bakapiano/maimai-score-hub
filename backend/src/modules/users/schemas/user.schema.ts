@@ -77,8 +77,7 @@ export class UserEntity {
   /**
    * Number of consecutive failed `update_score` jobs created by
    * AutoUpdateScheduler for this user. Reset to 0 whenever a job
-   * completes successfully or when an admin manually triggers a
-   * refresh. Drives the exponential backoff window below.
+   * completes successfully. Drives the exponential backoff window below.
    *
    * Only counts dxnet job failures (status=failed). Transient
    * sdgb getRivalHash / addRival errors do NOT increment this — they

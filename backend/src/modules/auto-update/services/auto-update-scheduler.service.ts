@@ -14,8 +14,6 @@ import { JobService } from '../../job/services/job.service';
 import { JobEntity } from '../../job/schemas/job.schema';
 import { BotStatusService } from '../../bots/services/bot-status.service';
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
-import { SystemSettingsService } from '../../system-settings/system-settings.service';
-import { SdgbJobEntity } from '../../sdgb-worker/schemas/sdgb-job.schema';
 import { SyncService } from '../../sync/services/sync.service';
 import { AutoUpdateRunEntity } from '../schemas/auto-update-run.schema';
 import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
@@ -27,8 +25,7 @@ const AUTO_UPDATE_JOB_THROTTLE_MS = 30 * 60 * 1000;
 
 /**
  * Exponential backoff for users whose update_score jobs keep
- * failing. Reset to 0 on a successful job OR on an admin manual
- * trigger.
+ * failing. Reset to 0 on a successful job.
  *
  * Why bother? Without backoff a persistently failing user (cookie
  * died, bot got banned, cabinet refused) keeps consuming a bot slot
@@ -53,12 +50,10 @@ const AUTO_UPDATE_JOB_THROTTLE_MS = 30 * 60 * 1000;
  *   3. If the hash is unchanged from `lastScoreHash`, skip.
  *   4. Try to claim a job-creation slot (CAS on user.lastAutoUpdateJobAt;
  *      at most once per AUTO_UPDATE_JOB_THROTTLE_MS).
- *   5. In parallel:
- *        - Tell sdgb-worker to add the bot as the user's cabinet rival
- *          (replaces the manual "accept friend on cabinet" step).
- *        - Create an `update_score` job carrying the observed hash
- *          as `sourceScoreHash`. JobService.patch promotes that hash to
- *          user.lastScoreHash ONLY after the job completes successfully.
+ *   5. Create an `update_score` job carrying the observed hash as
+ *      `sourceScoreHash`. JobService completes cabinet-only jobs from
+ *      the cabinet score map and promotes the hash to user.lastScoreHash
+ *      ONLY after the job completes successfully.
  *
  * The "promote on success" rule means a failed/canceled job leaves the
  * stored hash alone, so the next sweep retries the same diff.
@@ -78,12 +73,9 @@ export class AutoUpdateSchedulerService
     private readonly jobs: JobService,
     private readonly botStatus: BotStatusService,
     private readonly sdgb: SdgbJobDispatcher,
-    private readonly systemSettings: SystemSettingsService,
     private readonly syncService: SyncService,
     @InjectModel(JobEntity.name)
     private readonly jobsModel: Model<JobEntity>,
-    @InjectModel(SdgbJobEntity.name)
-    private readonly sdgbJobsModel: Model<SdgbJobEntity>,
     @InjectModel(AutoUpdateRunEntity.name)
     private readonly runsModel: Model<AutoUpdateRunEntity>,
     config: ConfigService,
@@ -96,9 +88,7 @@ export class AutoUpdateSchedulerService
       this.cronExpr,
       () => {
         // Cron-fired sweeps must claim the bucket so that multiple backend
-        // instances do not all run the same sweep at the same tick. Manual
-        // admin-triggered sweeps go through runSweep() directly with no
-        // claim, which is intentional ("force run now").
+        // instances do not all run the same sweep at the same tick.
         this.runSweepClaimed().catch((err) =>
           this.logger.error('Auto-update cron sweep failed', err),
         );
@@ -258,8 +248,7 @@ export class AutoUpdateSchedulerService
         // user.autoUpdateBackoffUntil is set to a future time. Skip
         // until the window expires. The window grows exponentially
         // with consecutive failures (see AUTO_UPDATE_BACKOFF_POLICY).
-        // Reset happens in JobService.patch on successful completion
-        // and in triggerByFriendCode on admin manual trigger.
+        // Reset happens in JobService.patch on successful completion.
         const backoffUntil = (u as { autoUpdateBackoffUntil?: Date | null })
           .autoUpdateBackoffUntil;
         if (backoffUntil && backoffUntil.getTime() > Date.now()) {
@@ -344,15 +333,10 @@ export class AutoUpdateSchedulerService
             continue;
           }
 
-          // (5) create job + addRival; sourceScoreHash piggybacks on the
-          // job and is promoted to user.lastScoreHash by JobService.patch
-          // ONLY after the job completes successfully.
-          await this.triggerUpdateForUser(
-            u.friendCode,
-            cabinetUserId,
-            hash,
-            music,
-          );
+          // (5) create a cabinet-only update job; sourceScoreHash piggybacks
+          // on the job and is promoted to user.lastScoreHash by
+          // JobService.patch ONLY after the job completes successfully.
+          await this.triggerUpdateForUser(u.friendCode, hash, music);
           triggered++;
           entries.push({
             friendCode: u.friendCode,
@@ -390,16 +374,12 @@ export class AutoUpdateSchedulerService
   }
 
   /**
-   * Pick a bot that has a configured cabinetUserId and, in parallel,
-   *   - schedule add-rival on the cabinet via sdgb-worker
-   *   - create an update_score job assigned to that bot for worker/
-   * The two operations are independent: add-rival is idempotent on the
-   * cabinet (returnCode 1 = already friends), and the worker side will pick
-   * up the queued job from BullMQ.
+   * Create an update_score job. Cabinet-only mode is fixed on, so JobService
+   * will complete the job from the cabinet score map when possible; the
+   * preselected bot is only retained for worker fallback.
    */
   private async triggerUpdateForUser(
     friendCode: string,
-    cabinetUserId: number,
     sourceScoreHash: string | null,
     cabinetMusic: SdgbWorkerMusicEntry[],
   ): Promise<void> {
@@ -410,418 +390,25 @@ export class AutoUpdateSchedulerService
       );
     }
 
-    // In cabinet-only mode, JobService short-circuits via getRivalHash
-    // + cabinetScoreMap and never touches the bot's rival list, so an
-    // addRival here is pure waste (and noise on the sdgb queue).
-    let cabinetOnlyMode = false;
-    try {
-      cabinetOnlyMode = (await this.systemSettings.get()).cabinetOnlyMode;
-    } catch (err) {
-      this.logger.warn(
-        `system-settings lookup failed; assuming bot-based flow: ${err instanceof Error ? err.message : err}`,
-      );
-    }
-
     // We just made a getRivalHash call (the hash check) and got the
     // music back. Pass it straight through to JobService.create —
     // JobService is the central place that derives cabinetScoreMap +
     // diffsToScrape (and admin trigger / immediate path use the same
     // logic). Without this transit JobService would make a redundant
     // sdgb call.
-    const createJob = this.jobs
-      .create({
-        friendCode,
-        skipUpdateScore: false,
-        jobType: 'update_score',
-        botUserFriendCode: bot.friendCode,
-        isAuthenticated: true,
-        sourceScoreHash,
-        cabinetMusic,
-        allowCabinetOnlyShortCircuit: true,
-      })
-      .then(({ jobId }) =>
-        this.logger.log(
-          `auto-update job created fc=${friendCode} bot=${bot.friendCode} jobId=${jobId} sourceHash=${sourceScoreHash?.slice(0, 8) ?? '-'}`,
-        ),
-      );
-
-    if (cabinetOnlyMode) {
-      await createJob;
-      return;
-    }
-
-    await Promise.all([
-      this.sdgb
-        .addRival(
-          {
-            botCabinetUserId: bot.cabinetUserId,
-            targetCabinetUserId: cabinetUserId,
-          },
-          { tag: `auto-add:${friendCode}`, timeoutMs: 120_000 },
-        )
-        .then((r) =>
-          this.logger.log(
-            `addRival fc=${friendCode} bot=${bot.friendCode} returnCodes=${r.returnCode1}/${r.returnCode2}`,
-          ),
-        )
-        .catch((err) => {
-          // Don't fail the whole trigger if add-rival itself errors; the
-          // user might still be on each other's friends list. Just log it.
-          this.logger.warn(
-            `addRival fc=${friendCode} failed (continuing): ${err instanceof Error ? err.message : err}`,
-          );
-        }),
-      createJob,
-    ]);
-  }
-
-  /**
-   * Admin manual trigger: skip the hash-diff check and just kick off the
-   * full update flow for one user (add bot as cabinet rival + create
-   * update_score job). Used by `POST /admin/auto-updates/users/:friendCode/trigger` for
-   * support-style "force-refresh this user now" use cases.
-   *
-   * Does NOT touch lastScoreHash so the next cron tick will still run
-   * naturally if the hash is different by then.
-   */
-  async triggerByFriendCode(friendCode: string): Promise<{
-    friendCode: string;
-    cabinetUserId: number;
-    bot: { friendCode: string; cabinetUserId: number };
-    jobId: string;
-    addRival: { returnCode1: number; returnCode2: number } | { error: string };
-  }> {
-    const user = await this.users.findByFriendCode(friendCode);
-    if (!user) {
-      throw new Error(`user not found for friendCode=${friendCode}`);
-    }
-    const cabinetUserId = (user as { cabinetUserId?: number | null })
-      .cabinetUserId;
-    if (cabinetUserId == null) {
-      throw new Error(
-        `friendCode=${friendCode} 未绑定 cabinetUserId，请先在前台扫码绑定`,
-      );
-    }
-    const bot = await this.botStatus.pickAvailableCabinetBot();
-    if (!bot) {
-      throw new Error('没有可用的、配置了 cabinetUserId 的 bot');
-    }
-
-    // Admin manual trigger clears any active backoff: the human just
-    // told us this user matters now. If the forced refresh ALSO fails,
-    // JobService.patch will re-record a failure and the backoff
-    // sequence restarts from failureCount=1 (= 30m), not where it
-    // left off — that's intentional, see decision in design doc.
-    await this.users.resetAutoUpdateBackoff(String(user._id));
-
-    const [addRivalResult, jobResult] = await Promise.all([
-      this.sdgb
-        .addRival(
-          {
-            botCabinetUserId: bot.cabinetUserId,
-            targetCabinetUserId: cabinetUserId,
-          },
-          { tag: `admin-trigger:${friendCode}`, timeoutMs: 120_000 },
-        )
-        .then((r) => {
-          this.logger.log(
-            `[admin-trigger] addRival fc=${friendCode} returnCodes=${r.returnCode1}/${r.returnCode2}`,
-          );
-          return r as
-            | { returnCode1: number; returnCode2: number }
-            | { error: string };
-        })
-        .catch((err) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          this.logger.warn(
-            `[admin-trigger] addRival fc=${friendCode} failed (continuing): ${msg}`,
-          );
-          return { error: msg };
-        }),
-      this.jobs.create({
-        friendCode,
-        skipUpdateScore: false,
-        jobType: 'update_score',
-        botUserFriendCode: bot.friendCode,
-        isAuthenticated: true,
-      }),
-    ]);
+    const { jobId } = await this.jobs.create({
+      friendCode,
+      skipUpdateScore: false,
+      jobType: 'update_score',
+      botUserFriendCode: bot.friendCode,
+      isAuthenticated: true,
+      sourceScoreHash,
+      cabinetMusic,
+      allowCabinetOnlyShortCircuit: true,
+    });
 
     this.logger.log(
-      `[admin-trigger] job created fc=${friendCode} bot=${bot.friendCode} jobId=${jobResult.jobId}`,
+      `auto-update job created fc=${friendCode} bot=${bot.friendCode} jobId=${jobId} sourceHash=${sourceScoreHash?.slice(0, 8) ?? '-'}`,
     );
-
-    return {
-      friendCode,
-      cabinetUserId,
-      bot,
-      jobId: jobResult.jobId,
-      addRival: addRivalResult,
-    };
-  }
-
-  /**
-   * Admin overview: every user that has autoUpdate=true, plus the most
-   * recent dxnet update_score job per friendCode and the latest sdgb
-   * "auto-hash" job (so the admin can see whether the scheduler observed
-   * a hash change recently).
-   */
-  async listAutoUpdateUsers(): Promise<
-    Array<{
-      friendCode: string;
-      cabinetUserId: number | null;
-      lastScoreHash: string | null;
-      preferredBotFriendCode: string | null;
-      autoUpdateFailureCount: number;
-      autoUpdateBackoffUntil: string | null;
-      lastIdleJob: {
-        id: string;
-        botUserFriendCode: string | null;
-        status: string;
-        stage: string;
-        createdAt: string;
-        updatedAt: string;
-        error: string | null;
-      } | null;
-      lastHashJob: {
-        id: string;
-        status: string;
-        result: Record<string, unknown> | null;
-        error: string | null;
-        createdAt: string;
-        updatedAt: string;
-      } | null;
-    }>
-  > {
-    const users = await this.users.getAutoUpdateUsers();
-    if (!users.length) return [];
-
-    const friendCodes = users.map((u) => u.friendCode);
-
-    // Get latest update_score job per friendCode
-    const latestIdleJobs = await this.jobsModel.aggregate<{
-      _id: string;
-      doc: {
-        id: string;
-        friendCode: string;
-        botUserFriendCode: string | null;
-        status: string;
-        stage: string;
-        error: string | null;
-        createdAt: Date;
-        updatedAt: Date;
-      };
-    }>([
-      {
-        $match: {
-          friendCode: { $in: friendCodes },
-          jobType: 'update_score',
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      {
-        $group: {
-          _id: '$friendCode',
-          doc: { $first: '$$ROOT' },
-        },
-      },
-    ]);
-    const idleByFc = new Map(latestIdleJobs.map((row) => [row._id, row.doc]));
-
-    // Get latest sdgb get_rival_hash job per friendCode (matched via tag).
-    // Tag format is "auto-hash:<friendCode>" or "admin-trigger:<friendCode>".
-    const tags = friendCodes.flatMap((fc) => [
-      `auto-hash:${fc}`,
-      `admin-trigger:${fc}`,
-    ]);
-    const latestHashJobs = await this.sdgbJobsModel.aggregate<{
-      _id: string;
-      doc: {
-        id: string;
-        status: string;
-        result: Record<string, unknown> | null;
-        error: string | null;
-        requesterTag: string;
-        createdAt: Date;
-        updatedAt: Date;
-      };
-    }>([
-      {
-        $match: {
-          jobType: 'get_rival_hash',
-          requesterTag: { $in: tags },
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      {
-        $group: {
-          _id: '$requesterTag',
-          doc: { $first: '$$ROOT' },
-        },
-      },
-    ]);
-    const hashByFc = new Map<string, (typeof latestHashJobs)[number]['doc']>();
-    for (const row of latestHashJobs) {
-      const fc = row._id.split(':')[1];
-      if (!fc) continue;
-      const existing = hashByFc.get(fc);
-      if (!existing || existing.createdAt < row.doc.createdAt) {
-        hashByFc.set(fc, row.doc);
-      }
-    }
-
-    // aggregate $$ROOT can return createdAt/updatedAt as either Date or
-    // string depending on mongoose path resolution — normalize before
-    // calling .toISOString(). Same defensive coerce for user fields.
-    const toIso = (v: Date | string | null | undefined): string | null => {
-      if (v == null) return null;
-      if (v instanceof Date) return v.toISOString();
-      return new Date(v).toISOString();
-    };
-
-    return users.map((u) => {
-      const idle = idleByFc.get(u.friendCode);
-      const hash = hashByFc.get(u.friendCode);
-      return {
-        friendCode: u.friendCode,
-        cabinetUserId:
-          (u as { cabinetUserId?: number | null }).cabinetUserId ?? null,
-        lastScoreHash:
-          (u as { lastScoreHash?: string | null }).lastScoreHash ?? null,
-        preferredBotFriendCode:
-          (u as { preferredBotFriendCode?: string | null })
-            .preferredBotFriendCode ?? null,
-        autoUpdateFailureCount:
-          (u as { autoUpdateFailureCount?: number }).autoUpdateFailureCount ??
-          0,
-        autoUpdateBackoffUntil: toIso(
-          (u as { autoUpdateBackoffUntil?: Date | string | null })
-            .autoUpdateBackoffUntil,
-        ),
-        lastIdleJob: idle
-          ? {
-              id: idle.id,
-              botUserFriendCode: idle.botUserFriendCode ?? null,
-              status: idle.status,
-              stage: idle.stage,
-              createdAt: toIso(idle.createdAt)!,
-              updatedAt: toIso(idle.updatedAt)!,
-              error: idle.error ?? null,
-            }
-          : null,
-        lastHashJob: hash
-          ? {
-              id: hash.id,
-              status: hash.status,
-              result: hash.result ?? null,
-              error: hash.error ?? null,
-              createdAt: toIso(hash.createdAt)!,
-              updatedAt: toIso(hash.updatedAt)!,
-            }
-          : null,
-      };
-    });
-  }
-
-  async getAutoUpdateUserCount(): Promise<{ enabledUserCount: number }> {
-    return {
-      enabledUserCount: await this.users.countAutoUpdateUsers(),
-    };
-  }
-
-  /**
-   * Per-user activity timeline used by the admin "查看历史" modal. Pulls
-   * the last N sdgb hash-check jobs (matched by requesterTag) and the
-   * last N dxnet update_score jobs for that friendCode, then merges
-   * them by createdAt desc so the admin can see whether the hash actually
-   * changed at each tick — and whether the resulting refresh job ran.
-   *
-   * Each entry carries `kind` so the FE can render heterogeneously.
-   */
-  async getUserJobHistory(
-    friendCode: string,
-    limit = 30,
-  ): Promise<UserJobHistoryEntry[]> {
-    const tags = [
-      `auto-hash:${friendCode}`,
-      `admin-trigger:${friendCode}`,
-      `auto-add:${friendCode}`,
-    ];
-    const [hashDocs, jobDocs] = await Promise.all([
-      this.sdgbJobsModel
-        .find({
-          jobType: 'get_rival_hash',
-          requesterTag: { $in: tags },
-        })
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .lean(),
-      this.jobsModel
-        .find({
-          friendCode,
-          jobType: 'update_score',
-        })
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .lean(),
-    ]);
-
-    const merged: Array<{ createdAt: Date; entry: UserJobHistoryEntry }> = [
-      ...hashDocs.map((d) => ({
-        createdAt: d.createdAt,
-        entry: {
-          kind: 'hash_check' as const,
-          id: d.id,
-          status: d.status,
-          requesterTag: d.requesterTag ?? null,
-          hash:
-            d.result && typeof d.result.hash === 'string'
-              ? d.result.hash
-              : null,
-          error: d.error ?? null,
-          createdAt: d.createdAt.toISOString(),
-          updatedAt: d.updatedAt.toISOString(),
-        },
-      })),
-      ...jobDocs.map((d) => ({
-        createdAt: d.createdAt,
-        entry: {
-          kind: 'update_job' as const,
-          id: d.id,
-          status: d.status,
-          stage: d.stage,
-          botUserFriendCode: d.botUserFriendCode ?? null,
-          error: d.error ?? null,
-          createdAt: d.createdAt.toISOString(),
-          updatedAt: d.updatedAt.toISOString(),
-        },
-      })),
-    ];
-    merged.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    return merged.slice(0, limit).map((m) => m.entry);
   }
 }
-
-export type UserJobHistoryEntry =
-  | {
-      kind: 'hash_check';
-      id: string;
-      status: string;
-      requesterTag: string | null;
-      /** md5 from result.hash, when present */
-      hash: string | null;
-      /** error message when status === failed */
-      error: string | null;
-      createdAt: string;
-      updatedAt: string;
-    }
-  | {
-      kind: 'update_job';
-      id: string;
-      status: string;
-      stage: string;
-      botUserFriendCode: string | null;
-      error: string | null;
-      createdAt: string;
-      updatedAt: string;
-    };

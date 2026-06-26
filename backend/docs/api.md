@@ -158,17 +158,6 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | GET  | `/admin/catalog/music/source`             | -                                    | 查询曲库数据源，返回 `{ source }`。            |
 | PUT  | `/admin/catalog/music/source`             | body: `source = diving-fish \| lxns` | 设置曲库数据源，返回 `{ ok: true, source }`。  |
 
-### 自动更新与 SDGB
-
-| 方法 | 路径                                            | 入参                                                                | 说明                                                                                                                                       |
-| ---- | ----------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| POST | `/admin/auto-updates/run`                       | body ignored                                                        | 手动执行一轮自动更新 sweep，返回本轮统计和逐用户 entry。                                                                                   |
-| POST | `/admin/auto-updates/users/:friendCode/trigger` | path: numeric `friendCode`                                          | 强制刷新指定用户，跳过 hash-diff 检查。                                                                                                    |
-| GET  | `/admin/auto-updates/users`                     | -                                                                   | 返回开启自动更新的用户数量：`{ enabledUserCount }`。                                                                                       |
-| GET  | `/admin/auto-updates/users/:friendCode/history` | path: numeric `friendCode`; query: `limit?`，1 到 200，默认 30      | 查询指定用户自动更新历史，合并 hash check 与 update job 时间线。                                                                           |
-| GET  | `/admin/sdgb/status`                            | -                                                                   | sdgb-worker dashboard 数据：心跳、队列深度、近期 jobs。                                                                                    |
-| GET  | `/admin/sdgb/jobs`                              | query: `jobType?`, `status?`, `tag?`, `page?`, `pageSize?` 最大 200 | 分页查询 sdgb jobs。`jobType` 支持 `scan_qr`、`get_rival_hash`、`add_rival`；`status` 支持 `queued`、`processing`、`completed`、`failed`。 |
-
 ### Bot 管理
 
 | 方法   | 路径                                          | 入参                                  | 说明                                                                                  |
@@ -180,19 +169,10 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | DELETE | `/admin/bots/:friendCode`                     | path: numeric `friendCode`            | 删除 bot 状态行和快照，并清理用户侧 dangling pointer。worker 仍在线时下次心跳会重建。 |
 | POST   | `/admin/bots/:friendCode/cabinet/bind-qr`     | body: `qrCode: string`                | 通过 sdgb-worker 扫码绑定 bot 的 `cabinetUserId`。                                    |
 
-### 系统设置
-
-| 方法  | 路径              | 入参                                   | 说明                                         |
-| ----- | ----------------- | -------------------------------------- | -------------------------------------------- |
-| GET   | `/admin/settings` | -                                      | 返回系统设置，目前包含 `cabinetOnlyMode`。   |
-| PATCH | `/admin/settings` | body: `cabinetOnlyMode?`，至少一个字段 | 更新系统设置；当前只支持 `cabinetOnlyMode`。 |
-
 ## OpenAPI 覆盖差异
 
 `/api/v1/swagger` 使用 `shared/openapi/openapi.yaml`。该文件覆盖了 shared contracts 中定义的大部分用户、worker、admin 和 catalog 接口，但下列 controller-only 接口当前不在 generated OpenAPI 中，或实现比 contract 多：
 
-- `/admin/auto-updates/*`
-- `/admin/sdgb/*`
 - `GET /admin/bots/:botFriendCode/friend-snapshots`
 - `POST /admin/bots/:friendCode/cabinet/bind-qr`
 - `/admin/worker-logs*`

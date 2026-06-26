@@ -23,7 +23,6 @@ import { JobTempCacheService } from '../cache/temp-cache.service';
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
 import { BotFriendSnapshotService } from '../../bots/services/bot-friend-snapshot.service';
 import { BotStatusService } from '../../bots/services/bot-status.service';
-import { SystemSettingsService } from '../../system-settings/system-settings.service';
 import { AUTO_UPDATE_BACKOFF_POLICY } from '../../auto-update/auto-update-backoff';
 import type {
   JobPatchBody,
@@ -147,7 +146,6 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     private readonly botFriendSnapshot: BotFriendSnapshotService,
     @Inject(forwardRef(() => BotStatusService))
     private readonly botStatus: BotStatusService,
-    private readonly systemSettings: SystemSettingsService,
     config: ConfigService,
   ) {
     this.dxnetQueue = new Queue<DxnetWorkerJobData>(DXNET_WORKER_QUEUE_NAME, {
@@ -463,7 +461,7 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     //     friendship is already expected; keep the extra addRival best-effort.
     const isScoreUpdateJob =
       resolvedJobType === 'update_score' && !input.skipUpdateScore;
-    // When an automatic update explicitly enables cabinet-only mode AND the
+    // Cabinet-only mode is always enabled for automatic updates. When the
     // cabinet fast-path successfully attaches cabinetScoreMap for a user with
     // cabinetUserId, we skip worker dispatch entirely: the job is created and
     // then immediately patched to `completed` with result={}.
@@ -479,21 +477,7 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
           user as { cabinetUserId?: number | null } | null
         )?.cabinetUserId;
         if (userCabinetUid != null) {
-          // Cabinet-only mode is only allowed for automatic updates. Manual
-          // user/admin jobs still pick a bot, addRival, and dispatch to dxnet.
-          let cabinetOnlyMode = false;
           if (allowCabinetOnlyShortCircuit) {
-            try {
-              cabinetOnlyMode = (await this.systemSettings.get())
-                .cabinetOnlyMode;
-            } catch (err) {
-              this.logger.warn(
-                `system-settings lookup failed; falling back to bot-based flow: ${err instanceof Error ? err.message : err}`,
-              );
-            }
-          }
-
-          if (allowCabinetOnlyShortCircuit && cabinetOnlyMode) {
             try {
               let music = input.cabinetMusic ?? null;
               if (!music) {

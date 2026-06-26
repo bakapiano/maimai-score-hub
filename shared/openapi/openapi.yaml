@@ -2492,48 +2492,6 @@ paths:
       responses:
         "201":
           description: "201"
-  /admin/settings:
-    get:
-      tags: *a7
-      parameters: []
-      operationId: admin.getSystemSettings
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  cabinetOnlyMode:
-                    type: boolean
-                required:
-                  - cabinetOnlyMode
-    patch:
-      tags: *a7
-      parameters: []
-      operationId: admin.updateSystemSettings
-      requestBody:
-        description: Body
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                cabinetOnlyMode:
-                  type: boolean
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  cabinetOnlyMode:
-                    type: boolean
-                required:
-                  - cabinetOnlyMode
   /catalog/covers/{songId}:
     get:
       tags: &a8

@@ -1,14 +1,11 @@
 import { Module } from '@nestjs/common';
 
-import { AdminAutoUpdatesController } from './admin/admin-auto-updates.controller';
 import { AdminBotsController } from './admin/admin-bots.controller';
 import { AdminCatalogController } from './admin/admin-catalog.controller';
 import { AdminDashboardController } from './admin/admin-dashboard.controller';
 import { AdminDxnetJobsController } from './admin/admin-dxnet-jobs.controller';
 import { SharedSecretGuard } from '../common/guards/shared-secret.guard';
 import { AdminModule } from '../modules/admin/admin.module';
-import { AdminSdgbController } from './admin/admin-sdgb.controller';
-import { AdminSettingsController } from './admin/admin-settings.controller';
 import { AdminUsersController } from './admin/admin-users.controller';
 import { AdminWorkerLogsController } from './admin/admin-worker-logs.controller';
 import { AuthController } from './auth/auth.controller';
@@ -28,7 +25,6 @@ import { PublicStatisticsController } from './public/public-statistics.controlle
 import { ScoreExportModule } from '../modules/score-export/score-export.module';
 import { SdgbWorkerModule } from '../modules/sdgb-worker/sdgb-worker.module';
 import { SyncModule } from '../modules/sync/sync.module';
-import { SystemSettingsModule } from '../modules/system-settings/system-settings.module';
 import { UsersModule } from '../modules/users/users.module';
 import { WorkerBotStatusController } from './workers/worker-bots.controller';
 import { WorkerDxnetApiLogController } from './workers/worker-dxnet-api-log.controller';
@@ -50,7 +46,6 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
     ScoreExportModule,
     SdgbWorkerModule,
     SyncModule,
-    SystemSettingsModule,
     UsersModule,
     WorkerLogsModule,
   ],
@@ -63,13 +58,10 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
     MusicCatalogController,
     CoverCatalogController,
     PublicStatisticsController,
-    AdminAutoUpdatesController,
     AdminBotsController,
     AdminCatalogController,
     AdminDashboardController,
     AdminDxnetJobsController,
-    AdminSdgbController,
-    AdminSettingsController,
     AdminUsersController,
     AdminWorkerLogsController,
     WorkerBotStatusController,

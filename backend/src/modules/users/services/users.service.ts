@@ -393,9 +393,9 @@ export class UsersService {
    * so callers can log them.
    *
    * Atomicity: uses findOneAndUpdate with $inc so the read-modify-write
-   * of failureCount can't race against a concurrent
-   * resetAutoUpdateBackoff (admin manual trigger, successful job
-   * completion). We then compute backoffUntil from the post-increment
+   * of failureCount can't race against a concurrent successful job
+   * completion that calls resetAutoUpdateBackoff. We then compute
+   * backoffUntil from the post-increment
    * count returned by findOneAndUpdate and write it in a second op.
    *
    * Why two ops? Mongo aggregation-pipeline updates could do this in
@@ -408,8 +408,8 @@ export class UsersService {
    * The cron sweep then reads count=0, backoffUntil=future and skips
    * the user once — next tick (5min later) it'll see backoffUntil
    * still future and skip again, until the window expires. Total
-   * impact: at most one extra skipped sweep after a manual reset, no
-   * correctness loss. Acceptable.
+   * impact: at most one extra skipped sweep after a success reset, no
+   * correctness loss.
    */
   async recordAutoUpdateFailure(
     id: string,
@@ -443,10 +443,7 @@ export class UsersService {
 
   /**
    * Clear backoff state. Called by JobService.patch on successful
-   * update_score completion (alongside the lastScoreHash promote)
-   * and by AutoUpdateScheduler.triggerByFriendCode (admin manual
-   * trigger should put the user back on a fresh cadence regardless of
-   * past failures).
+   * update_score completion alongside the lastScoreHash promote.
    */
   async resetAutoUpdateBackoff(id: string): Promise<void> {
     if (!isValidObjectId(id)) return;

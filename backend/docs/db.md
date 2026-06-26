@@ -23,7 +23,6 @@
 | `BotStatusEntity`         | `bot_statuses`                             | admin       | 永久      | DXNet bot 可用性和好友数                 |
 | `BotFriendSnapshotEntity` | `bot_friend_snapshots`                     | admin       | 30 天 TTL | bot 好友列表快照                         |
 | `NotifyStateEntity`       | `notify_state`                             | admin       | 永久      | 多实例通知去重状态                       |
-| `SystemSettingsEntity`    | `system_settings`                          | admin       | 永久      | 全局系统配置                             |
 | `AutoUpdateRunEntity`     | `auto_update_runs`                         | auto-update | 30 天 TTL | 自动更新 cron 每轮执行记录               |
 | `SdgbJobEntity`           | `sdgb_jobs`                                | sdgb-worker | 1 天 TTL  | sdgb-worker 机台协议任务                 |
 
@@ -373,19 +372,6 @@ type BotFriendSnapshotFriend = {
 
 - `key`：唯一索引。
 
-### `SystemSettingsEntity`
-
-| 字段              | 类型      | 约束 / 默认值                       | 说明                       |
-| ----------------- | --------- | ----------------------------------- | -------------------------- |
-| `key`             | `string`  | required, unique, default `default` | 配置键                     |
-| `cabinetOnlyMode` | `boolean` | required, default `false`           | 是否启用 cabinet-only 模式 |
-| `createdAt`       | `Date`    | timestamps                          | 创建时间                   |
-| `updatedAt`       | `Date`    | timestamps                          | 更新时间                   |
-
-索引：
-
-- `key`：唯一索引。
-
 ## Auto Update
 
 来源：`backend/src/modules/auto-update/auto-update-run.schema.ts`
@@ -471,6 +457,5 @@ type SdgbJobResult =
 | `BotStatusDocument`         | `BotStatusEntity`         |
 | `BotFriendSnapshotDocument` | `BotFriendSnapshotEntity` |
 | `NotifyStateDocument`       | `NotifyStateEntity`       |
-| `SystemSettingsDocument`    | `SystemSettingsEntity`    |
 | `AutoUpdateRunDocument`     | `AutoUpdateRunEntity`     |
 | `SdgbJobDocument`           | `SdgbJobEntity`           |
