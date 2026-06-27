@@ -8,7 +8,7 @@
 - Swagger UI：`/api/v1/swagger`，加载 `shared/openapi/openapi.yaml`。注意该 OpenAPI 文件由 shared ts-rest contracts 生成，不覆盖所有 controller-only 接口。
 - CORS：`origin: true`。
 - 请求体大小：JSON 和 urlencoded 均为 `100mb`。
-- 业务端点数量：73 个，不含 Swagger 静态资源。
+- 业务端点数量：64 个，含 `/health`，不含 Swagger 静态资源。
 
 ## 路由分层
 
@@ -33,15 +33,16 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 ## 通用与登录
 
-| 方法 | 路径                                 | 认证   | 入参                                                                                                      | 说明                                                                                                                                       |
-| ---- | ------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| GET  | `/health`                            | Public | -                                                                                                         | 健康检查，返回 `{ status: "ok" }`。                                                                                                        |
-| GET  | `/statistics`                        | Public | -                                                                                                         | 通用公开统计。当前返回 `{ dxnetJobs }`，包含最近 DXNet job 总数、成功数、失败数、成功率、平均耗时。                                        |
+| 方法 | 路径                                 | 认证   | 入参                                                                      | 说明                                                                                                                                       |
+| ---- | ------------------------------------ | ------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET  | `/health`                            | Public | -                                                                         | 健康检查，返回 `{ status: "ok" }`。                                                                                                        |
+| GET  | `/statistics`                        | Public | -                                                                         | 通用公开统计。当前返回 `{ dxnetJobs }`，包含最近 DXNet job 总数、成功数、失败数、成功率、平均耗时。                                        |
 | POST | `/auth/login-requests`               | Public | body: `friendCode`, `method: "bot_sends_request" \| "user_sends_request"` | 创建好友请求登录 job。`SKIP_AUTH=true` 时直接返回 token。                                                                                  |
-| GET  | `/auth/login-requests/:jobId`        | Public | path: `jobId`                                                                                             | 查询登录 job 状态；`completed` 或 `accept_friend_request` 进入 `accept_request` 后返回 token、user。                                        |
-| POST | `/auth/login-requests/:jobId/verify` | Public | path: `jobId`                                                                                             | 唤醒或确认好友请求登录 job，返回 `{ job }`。                                                                                               |
-| POST | `/auth/qr-login`                     | Public | JSON body: `qrCode?`，或 multipart field: `image`，也可同时带 `qrCode`                                    | 机台二维码登录。已绑定用户走 fast path 返回 token/user；新用户返回 `{ kind: "async", attemptId }`。二维码过期时返回 `code: "qr_expired"`。 |
-| GET  | `/auth/qr-login/:attemptId`          | Public | path: `attemptId`                                                                                         | 轮询二维码登录慢路径。状态为 `pending`、`adding_rival`、`waiting_snapshot`、`matched` 或 `failed`；成功时带 token/user。                   |
+| GET  | `/auth/login-requests/:jobId`        | Public | path: `jobId`                                                             | 查询登录 job 状态；`completed` 或 `accept_friend_request` 进入 `accept_request` 后返回 token、user。                                       |
+| POST | `/auth/login-requests/:jobId/verify` | Public | path: `jobId`                                                             | 唤醒或确认好友请求登录 job，返回 `{ job }`。                                                                                               |
+| POST | `/auth/qr-login`                     | Public | JSON body: `qrCode?`，或 multipart field: `image`，也可同时带 `qrCode`    | 机台二维码登录。已绑定用户走 fast path 返回 token/user；新用户返回 `{ kind: "async", attemptId }`。二维码过期时返回 `code: "qr_expired"`。 |
+| GET  | `/auth/qr-login/:attemptId`          | Public | path: `attemptId`                                                         | 轮询二维码登录慢路径。状态为 `pending`、`adding_rival`、`waiting_snapshot`、`matched` 或 `failed`；成功时带 token/user。                   |
+| POST | `/auth/password-login`               | Public | body: `friendCode` 或 `username`，加 `password`                           | 密码登录。只有已设置密码的既有用户可用，成功返回 token/user。                                                                              |
 
 ## 当前用户
 
@@ -51,6 +52,7 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | ------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | GET    | `/me`                           | -                                                                                                             | 返回当前用户资料。不会暴露 import token 或原始 `cabinetUserId`，只返回 `has*` 布尔标记。               |
 | PATCH  | `/me`                           | body: `divingFishImportToken?`, `lxnsImportToken?`, `autoExportDivingFish?`, `autoExportLxns?`, `autoUpdate?` | 更新导入 token、自动导出开关和自动更新开关。开启自动更新前必须已绑定机台二维码；返回脱敏后的用户资料。 |
+| PUT    | `/me/password`                  | body: `username?`, `currentPassword?`, `newPassword?`                                                         | 已登录用户设置/修改用户名和密码。已有密码时需要 `currentPassword`。                                    |
 | POST   | `/me/prober-tokens/diving-fish` | body: `username`, `password`                                                                                  | 用 Diving Fish 账号密码一次性获取 import token；用户名密码不保存。                                     |
 | PUT    | `/me/cabinet`                   | JSON body: `qrCode?`，或 multipart field: `image`                                                             | 绑定机台 `cabinetUserId`。要求账号尚未绑定，并且已完成过成绩同步；匹配失败返回 409。                   |
 | DELETE | `/me/cabinet`                   | -                                                                                                             | 解绑机台 userId，并关闭自动更新。                                                                      |
@@ -75,13 +77,13 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 以下接口均需要 User 认证。
 
-| 方法 | 路径                             | 入参                                                                 | 说明                                                                                                 |
-| ---- | -------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| POST | `/me/dxnet-jobs`                 | body: `jobType? = "update_score" \| "send_friend_request"`, `friendshipJobId?` | 为当前用户创建成绩更新或好友关系 job；好友码从 JWT 中读取。创建 `update_score` 时若未确认好友关系会返回 `code: "needs_friendship"`。 |
-| GET  | `/me/dxnet-jobs/friendship`      | -                                                                    | 基于 Bot 好友列表快照判断当前用户是否已和可用 Bot 成为好友，返回推荐 Bot。                           |
-| GET  | `/me/dxnet-jobs/active`          | -                                                                    | 查询当前用户正在排队或处理中的成绩更新相关 job，返回 `{ job }`。                                     |
-| GET  | `/me/dxnet-jobs/:jobId`          | path: `jobId`                                                        | 按 id 查询当前用户自己的 job 详情。                                                                  |
-| POST | `/me/dxnet-jobs/:jobId/verify`   | path: `jobId`                                                        | 用户声明已完成外部动作，请后端立即验证当前用户自己的 job，返回 `{ job }`。                           |
+| 方法 | 路径                           | 入参                                                                           | 说明                                                                                                                                 |
+| ---- | ------------------------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| POST | `/me/dxnet-jobs`               | body: `jobType? = "update_score" \| "send_friend_request"`, `friendshipJobId?` | 为当前用户创建成绩更新或好友关系 job；好友码从 JWT 中读取。创建 `update_score` 时若未确认好友关系会返回 `code: "needs_friendship"`。 |
+| GET  | `/me/dxnet-jobs/friendship`    | -                                                                              | 基于 Bot 好友列表快照判断当前用户是否已和可用 Bot 成为好友，返回推荐 Bot。                                                           |
+| GET  | `/me/dxnet-jobs/active`        | -                                                                              | 查询当前用户正在排队或处理中的成绩更新相关 job，返回 `{ job }`。                                                                     |
+| GET  | `/me/dxnet-jobs/:jobId`        | path: `jobId`                                                                  | 按 id 查询当前用户自己的 job 详情。                                                                                                  |
+| POST | `/me/dxnet-jobs/:jobId/verify` | path: `jobId`                                                                  | 用户声明已完成外部动作，请后端立即验证当前用户自己的 job，返回 `{ job }`。                                                           |
 
 ## 曲库与封面
 
@@ -96,23 +98,24 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 ### DXNet Worker
 
-| 方法  | 路径                                                         | 入参                                                                                                                                                 | 说明                                                                     |
-| ----- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| GET   | `/workers/dxnet/bots/:botUserFriendCode/active-friend-codes` | path: `botUserFriendCode`                                                                                                                            | 查询指定 bot 当前活跃 job 覆盖的好友码列表。                             |
-| GET   | `/workers/dxnet/jobs/:jobId`                                 | path: `jobId`                                                                                                                                        | worker 按 id 获取 job。                                                  |
-| PATCH | `/workers/dxnet/jobs/:jobId`                                 | body: `status?`, `stage?`, `result?`, `profile?`, `error?`, `executing?`, `runAt?`, `scoreProgress?`, `addCompletedDiff?`, `updateScoreDuration?` 等 | worker 更新 job 状态、阶段、进度、结果或错误。                           |
-| POST  | `/workers/dxnet/users/activity`                              | body: `friendCodes: string[]`                                                                                                                        | 批量查询用户最近活跃时间，返回 `{ friendCode, lastActiveAt }[]`。        |
-| POST  | `/workers/dxnet/users/existence`                             | body: `friendCodes: string[]`                                                                                                                        | 批量查询已存在用户，返回 `{ existingFriendCodes }`。                     |
-| GET   | `/workers/dxnet/jobs/:jobId/cache/:diff/:type`               | path: `jobId`, `diff`, `type`                                                                                                                        | 读取 `update_score` 临时缓存的 FriendVS 解析结果。缺失返回 400。         |
-| PUT   | `/workers/dxnet/jobs/:jobId/cache/:diff/:type`               | body: `songs: FriendVsSong[]`                                                                                                                        | 写入临时缓存，返回 `{ success: true }`。                                 |
-| POST  | `/workers/dxnet/jobs/:jobId/api-logs`                        | body: `logs: { url, method, statusCode, responseBody? }[]`                                                                                           | worker 上报某 job 的外部 API 调用日志。                                  |
+| 方法  | 路径                                                         | 入参                                                                                                                                                 | 说明                                                                                                      |
+| ----- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| GET   | `/workers/dxnet/bots/:botUserFriendCode/active-friend-codes` | path: `botUserFriendCode`                                                                                                                            | 查询指定 bot 当前活跃 job 覆盖的好友码列表。                                                              |
+| GET   | `/workers/dxnet/jobs/:jobId`                                 | path: `jobId`                                                                                                                                        | worker 按 id 获取 job。                                                                                   |
+| PATCH | `/workers/dxnet/jobs/:jobId`                                 | body: `status?`, `stage?`, `result?`, `profile?`, `error?`, `executing?`, `runAt?`, `scoreProgress?`, `addCompletedDiff?`, `updateScoreDuration?` 等 | worker 更新 job 状态、阶段、进度、结果或错误。`get_user_recent_event` 完成后后端会把 events 合并进 sync。 |
+| POST  | `/workers/dxnet/users/activity`                              | body: `friendCodes: string[]`                                                                                                                        | 批量查询用户最近活跃时间，返回 `{ friendCode, lastActiveAt }[]`。                                         |
+| POST  | `/workers/dxnet/users/existence`                             | body: `friendCodes: string[]`                                                                                                                        | 批量查询已存在用户，返回 `{ existingFriendCodes }`。                                                      |
+| GET   | `/workers/dxnet/jobs/:jobId/cache/:diff/:type`               | path: `jobId`, `diff`, `type`                                                                                                                        | 读取 `update_score` 临时缓存的 FriendVS 解析结果。缺失返回 400。                                          |
+| PUT   | `/workers/dxnet/jobs/:jobId/cache/:diff/:type`               | body: `songs: FriendVsSong[]`                                                                                                                        | 写入临时缓存，返回 `{ success: true }`。                                                                  |
+| POST  | `/workers/dxnet/jobs/:jobId/api-logs`                        | body: `logs: { url, method, statusCode, responseBody? }[]`                                                                                           | worker 上报某 job 的外部 API 调用日志。                                                                   |
 
 ### SDGB Worker
 
-| 方法  | 路径                        | 入参                                 | 说明                                                                              |
-| ----- | --------------------------- | ------------------------------------ | --------------------------------------------------------------------------------- |
-| GET   | `/workers/sdgb/jobs/:jobId` | path: `jobId`                        | 查询 sdgb job 详情。                                                              |
-| PATCH | `/workers/sdgb/jobs/:jobId` | body: `status?`, `result?`, `error?` | sdgb-worker 回写 job 状态、结果或错误。                                           |
+| 方法  | 路径                           | 入参                                 | 说明                                          |
+| ----- | ------------------------------ | ------------------------------------ | --------------------------------------------- |
+| POST  | `/workers/sdgb/jobs/heartbeat` | body: `workerId`, `claimedDelta?`    | BullMQ 版 sdgb-worker 上报心跳和领取计数。    |
+| GET   | `/workers/sdgb/jobs/:jobId`    | path: `jobId`                        | BullMQ sdgb-worker 按 id 查询 sdgb job 详情。 |
+| PATCH | `/workers/sdgb/jobs/:jobId`    | body: `status?`, `result?`, `error?` | sdgb-worker 回写 job 状态、结果或错误。       |
 
 ### Worker 日志与 Bot 心跳
 
@@ -150,14 +153,12 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 ### 曲库与封面管理
 
-| 方法 | 路径                                      | 入参                                 | 说明                                           |
-| ---- | ----------------------------------------- | ------------------------------------ | ---------------------------------------------- |
-| POST | `/admin/catalog/covers/sync`              | -                                    | 增量同步封面，返回 `{ ok: true, ...result }`。 |
-| POST | `/admin/catalog/covers/force-sync`        | -                                    | 强制同步封面，返回 `{ ok: true, ...result }`。 |
-| POST | `/admin/catalog/covers/backfill-variants` | -                                    | 补齐封面变体，返回 `{ ok: true, ...result }`。 |
-| POST | `/admin/catalog/music/sync`               | -                                    | 同步曲库数据，返回 `{ ok: true, ...result }`。 |
-| GET  | `/admin/catalog/music/source`             | -                                    | 查询曲库数据源，返回 `{ source }`。            |
-| PUT  | `/admin/catalog/music/source`             | body: `source = diving-fish \| lxns` | 设置曲库数据源，返回 `{ ok: true, source }`。  |
+| 方法 | 路径                                      | 入参 | 说明                                           |
+| ---- | ----------------------------------------- | ---- | ---------------------------------------------- |
+| POST | `/admin/catalog/covers/sync`              | -    | 增量同步封面，返回 `{ ok: true, ...result }`。 |
+| POST | `/admin/catalog/covers/force-sync`        | -    | 强制同步封面，返回 `{ ok: true, ...result }`。 |
+| POST | `/admin/catalog/covers/backfill-variants` | -    | 补齐封面变体，返回 `{ ok: true, ...result }`。 |
+| POST | `/admin/catalog/music/sync`               | -    | 同步曲库数据，返回 `{ ok: true, ...result }`。 |
 
 ### Bot 管理
 
@@ -179,4 +180,5 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 - `/admin/worker-logs*`
 - `POST /workers/logs/:kind/batches`
 - `GET /workers/dxnet/jobs/:jobId`
+- `POST /workers/sdgb/jobs/heartbeat`
 - `POST /auth/qr-login` 的 multipart `image` 上传形态

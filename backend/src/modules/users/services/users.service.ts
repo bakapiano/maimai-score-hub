@@ -147,7 +147,6 @@ export class UsersService {
       autoExportLxns?: boolean;
       cabinetUserId?: number | null;
       autoUpdate?: boolean;
-      lastScoreHash?: string | null;
     },
   ) {
     if (!isValidObjectId(id)) {
@@ -181,10 +180,6 @@ export class UsersService {
     if ('autoUpdate' in input) {
       updateDoc.autoUpdate = !!input.autoUpdate;
     }
-    if ('lastScoreHash' in input) {
-      updateDoc.lastScoreHash = input.lastScoreHash ?? null;
-    }
-
     const updated = await this.userModel.findByIdAndUpdate(id, updateDoc, {
       new: true,
     });
@@ -460,166 +455,5 @@ export class UsersService {
       autoUpdate: true,
       cabinetUserId: { $ne: null },
     });
-  }
-
-  /**
-   * 写入最新观察到的成绩 hash。无论触发出来的 job 是否成功都会更新，
-   * 因为我们要保证下一次扫到相同 hash 时不再重复触发。
-   */
-  async setLastScoreHash(id: string, hash: string): Promise<void> {
-    if (!isValidObjectId(id)) return;
-    await this.userModel.updateOne(
-      { _id: id },
-      { $set: { lastScoreHash: hash } },
-    );
-  }
-
-  /**
-   * Conditional CAS variant of setLastScoreHash, used by the auto-update
-   * sweep to settle a per-user race between multiple backend instances.
-   *
-   * Returns true only when the user document still had `expected` as its
-   * lastScoreHash (so we successfully "won" the hash flip). When false,
-   * another instance already observed and recorded this transition — the
-   * caller should NOT trigger a duplicate update job.
-   */
-  async tryAdvanceLastScoreHash(
-    id: string,
-    expected: string | null,
-    next: string,
-  ): Promise<boolean> {
-    if (!isValidObjectId(id)) return false;
-    const filter: Record<string, unknown> = { _id: id };
-    // Mongo treats `field: null` as matching documents where the field is
-    // null OR missing, which is what we want for first-time runs.
-    filter.lastScoreHash = expected;
-    const res = await this.userModel.updateOne(filter, {
-      $set: { lastScoreHash: next },
-    });
-    return res.modifiedCount === 1;
-  }
-
-  /**
-   * Throttle CAS for the auto-update sweep's hash-check phase. The user
-   * document is updated only if `lastHashCheckAt` is null or older than
-   * `now - throttleMs`. Returns true on success (the caller goes on to
-   * actually call sdgb-worker).
-   *
-   * The "winner takes it" semantic is enforced by the atomic updateOne;
-   * multiple backend instances racing on the same user will see exactly
-   * one modifiedCount=1, the rest get 0.
-   */
-  async tryClaimHashCheck(
-    id: string,
-    throttleMs: number,
-    now: Date = new Date(),
-  ): Promise<boolean> {
-    if (!isValidObjectId(id)) return false;
-    const cutoff = new Date(now.getTime() - throttleMs);
-    const res = await this.userModel.updateOne(
-      {
-        _id: id,
-        $or: [{ lastHashCheckAt: null }, { lastHashCheckAt: { $lte: cutoff } }],
-      },
-      { $set: { lastHashCheckAt: now } },
-    );
-    return res.modifiedCount === 1;
-  }
-
-  /**
-   * Throttle CAS for the auto-update sweep's job-creation phase.
-   * Identical contract to tryClaimHashCheck but scoped to job creation.
-   * Combined with an in-flight update_score check, prevents both
-   * back-to-back duplicate jobs and the "create cancels in-flight" foot-gun.
-   */
-  async tryClaimAutoUpdateJob(
-    id: string,
-    throttleMs: number,
-    now: Date = new Date(),
-  ): Promise<boolean> {
-    if (!isValidObjectId(id)) return false;
-    const cutoff = new Date(now.getTime() - throttleMs);
-    const res = await this.userModel.updateOne(
-      {
-        _id: id,
-        $or: [
-          { lastAutoUpdateJobAt: null },
-          { lastAutoUpdateJobAt: { $lte: cutoff } },
-        ],
-      },
-      { $set: { lastAutoUpdateJobAt: now } },
-    );
-    return res.modifiedCount === 1;
-  }
-
-  /**
-   * Record a failed auto-update job and schedule the next attempt via
-   * exponential backoff. Returns the new (failureCount, backoffUntil)
-   * so callers can log them.
-   *
-   * Atomicity: uses findOneAndUpdate with $inc so the read-modify-write
-   * of failureCount can't race against a concurrent successful job
-   * completion that calls resetAutoUpdateBackoff. We then compute
-   * backoffUntil from the post-increment
-   * count returned by findOneAndUpdate and write it in a second op.
-   *
-   * Why two ops? Mongo aggregation-pipeline updates could do this in
-   * one round-trip, but they make the math (Math.pow + Math.min) noisy
-   * and harder to read. The window between the two ops is at most a
-   * few ms; the worst-case interleaving is:
-   *   - Op1 (this fn): $inc count 2→3 returns 3
-   *   - resetAutoUpdateBackoff: count 3→0, backoff→null
-   *   - Op2 (this fn): set backoffUntil = now+2h    ← stale
-   * The cron sweep then reads count=0, backoffUntil=future and skips
-   * the user once — next tick (5min later) it'll see backoffUntil
-   * still future and skip again, until the window expires. Total
-   * impact: at most one extra skipped sweep after a success reset, no
-   * correctness loss.
-   */
-  async recordAutoUpdateFailure(
-    id: string,
-    opts: { baseMs: number; factor: number; capMs: number },
-    now: Date = new Date(),
-  ): Promise<{ failureCount: number; backoffUntil: Date } | null> {
-    if (!isValidObjectId(id)) return null;
-    const updated = await this.userModel.findOneAndUpdate(
-      { _id: id },
-      { $inc: { autoUpdateFailureCount: 1 } },
-      { new: true, projection: { autoUpdateFailureCount: 1 } },
-    );
-    if (!updated) return null;
-    const nextCount = updated.autoUpdateFailureCount ?? 1;
-    const delay = Math.min(
-      opts.capMs,
-      Math.floor(opts.baseMs * Math.pow(opts.factor, nextCount - 1)),
-    );
-    const backoffUntil = new Date(now.getTime() + delay);
-    // Conditional write: only set backoffUntil if the failure count
-    // we see is still ours. If a reset already zeroed it out (count
-    // dropped below nextCount), we MUST NOT clobber the reset's
-    // backoffUntil=null. The filter on autoUpdateFailureCount >= our
-    // value is the guard.
-    await this.userModel.updateOne(
-      { _id: id, autoUpdateFailureCount: { $gte: nextCount } },
-      { $set: { autoUpdateBackoffUntil: backoffUntil } },
-    );
-    return { failureCount: nextCount, backoffUntil };
-  }
-
-  /**
-   * Clear backoff state. Called by JobService.patch on successful
-   * update_score completion alongside the lastScoreHash promote.
-   */
-  async resetAutoUpdateBackoff(id: string): Promise<void> {
-    if (!isValidObjectId(id)) return;
-    await this.userModel.updateOne(
-      { _id: id },
-      {
-        $set: {
-          autoUpdateFailureCount: 0,
-          autoUpdateBackoffUntil: null,
-        },
-      },
-    );
   }
 }

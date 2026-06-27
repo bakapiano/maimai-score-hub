@@ -12,33 +12,32 @@
 
 ## 相关代码入口
 
-| 层 | 文件 | 作用 |
-| --- | --- | --- |
-| 前端 | `frontend/src/pages/SyncPage.tsx` | 查询好友状态、创建 `update_score`、轮询进度 |
-| 前端 API | `frontend/src/api/jobClient.ts` | 调用 `/api/v1/me/dxnet-jobs*` ts-rest 接口 |
-| 合约 | `shared/src/modules/job/job.contract.ts` | 定义用户端、worker 端 job API |
-| 合约 | `shared/src/modules/job/job.schema.ts` | 定义 job status / stage / type / response |
-| 后端入口 | `backend/src/api/me/me-dxnet-jobs.controller.ts` | 当前用户创建、查询、唤醒自己的 DXNet job |
-| 后端服务 | `backend/src/modules/job/services/job.service.ts` | 创建 job、好友关系校验、派发 BullMQ、状态 PATCH、完成后写 sync |
-| Worker | `worker/src/worker/worker.ts` | BullMQ consumer，领取 `jobId` 后拉取 job 并执行 |
-| Worker handler | `worker/src/worker/jobs/handlers/update-score/**` | `update_score` 的实际 Friend VS 抓取与聚合 |
-| 成绩写入 | `backend/src/modules/sync/services/sync.service.ts` | 把 `update_score` result 映射并合并到最新 sync |
+| 层             | 文件                                                | 作用                                                           |
+| -------------- | --------------------------------------------------- | -------------------------------------------------------------- |
+| 前端           | `frontend/src/pages/SyncPage.tsx`                   | 查询好友状态、创建 `update_score`、轮询进度                    |
+| 前端 API       | `frontend/src/api/jobClient.ts`                     | 调用 `/api/v1/me/dxnet-jobs*` ts-rest 接口                     |
+| 合约           | `shared/src/modules/job/job.contract.ts`            | 定义用户端、worker 端 job API                                  |
+| 合约           | `shared/src/modules/job/job.schema.ts`              | 定义 job status / stage / type / response                      |
+| 后端入口       | `backend/src/api/me/me-dxnet-jobs.controller.ts`    | 当前用户创建、查询、唤醒自己的 DXNet job                       |
+| 后端服务       | `backend/src/modules/job/services/job.service.ts`   | 创建 job、好友关系校验、派发 BullMQ、状态 PATCH、完成后写 sync |
+| Worker         | `worker/src/worker/worker.ts`                       | BullMQ consumer，领取 `jobId` 后拉取 job 并执行                |
+| Worker handler | `worker/src/worker/jobs/handlers/update-score/**`   | `update_score` 的实际 Friend VS 抓取与聚合                     |
+| 成绩写入       | `backend/src/modules/sync/services/sync.service.ts` | 把 `update_score` result 映射并合并到最新 sync                 |
 
 ## update_score 数据字段
 
-| 字段 | 含义 |
-| --- | --- |
-| `jobType` | 固定为 `update_score` |
-| `stage` | 固定为 `update_score` |
-| `status` | `queued`、`processing`、`completed`、`failed`、`canceled` |
-| `botUserFriendCode` | 负责抓取这个用户成绩的 Bot 好友码 |
-| `executing` | worker 执行锁；为 `true` 时后端不会再派发 |
-| `runAt` | 下次允许派发时间；`update_score` 正常情况下为 `null` |
-| `scoreProgress` | 成绩抓取阶段的难度进度 |
-| `updateScoreDuration` | worker 抓取耗时 |
-| `sourceScoreHash` | 自动更新 job 使用；非自动更新通常为 `null` |
-| `result` | worker 聚合后的 Friend VS 成绩结果 |
-| `autoExportResult` | 同步后自动导出的结果 |
+| 字段                  | 含义                                                      |
+| --------------------- | --------------------------------------------------------- |
+| `jobType`             | 固定为 `update_score`                                     |
+| `stage`               | 固定为 `update_score`                                     |
+| `status`              | `queued`、`processing`、`completed`、`failed`、`canceled` |
+| `botUserFriendCode`   | 负责抓取这个用户成绩的 Bot 好友码                         |
+| `executing`           | worker 执行锁；为 `true` 时后端不会再派发                 |
+| `runAt`               | 下次允许派发时间；`update_score` 正常情况下为 `null`      |
+| `scoreProgress`       | 成绩抓取阶段的难度进度                                    |
+| `updateScoreDuration` | worker 抓取耗时                                           |
+| `result`              | worker 聚合后的 Friend VS 成绩结果                        |
+| `autoExportResult`    | 同步后自动导出的结果                                      |
 
 ## 创建前置：确认好友关系
 
@@ -186,15 +185,14 @@ Worker PATCH `update_score` 为 `completed` 后，`JobService.patch()` 会做以
 
 ## 与自动更新 update_score 的区别
 
-| 维度 | 非自动更新 `update_score` | 自动更新 `update_score` |
-| --- | --- | --- |
-| 触发方 | 用户点击 `SyncPage` 按钮 | `AutoUpdateSchedulerService` cron |
-| 创建入口 | `POST /api/v1/me/dxnet-jobs` | scheduler 内部调用 `JobService.create()` |
-| 用户条件 | 已登录，有 JWT friendCode | `autoUpdate=true` 且绑定 `cabinetUserId` |
-| hash 检查 | 不做 `lastScoreHash` 比较 | 先 sdgb `getRivalHash`，hash 变化才创建 job |
-| `sourceScoreHash` | 通常为 `null` | 写入本次观察到的 hash |
-| 失败回退 | 返回 `needs_friendship`，由前端先完成好友关系前置流程 | 失败会计入自动更新 backoff |
-| 完成后 hash 推进 | 不更新 `user.lastScoreHash` | 成功后推进 `lastScoreHash` |
+| 维度             | 非自动更新 `update_score`                             | 自动更新 `update_score`                                                  |
+| ---------------- | ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| 触发方           | 用户点击 `SyncPage` 按钮                              | `AutoUpdateSchedulerService` cron                                        |
+| 创建入口         | `POST /api/v1/me/dxnet-jobs`                          | scheduler 内部调用 `JobService.create()`                                 |
+| 用户条件         | 已登录，有 JWT friendCode                             | `autoUpdate=true` 且绑定 `cabinetUserId`                                 |
+| hash 检查        | 不做 hash 比较                                        | Rival-first 自动更新由 `auto_update_probe_states.lastRivalHash` 判断变化 |
+| 失败回退         | 返回 `needs_friendship`，由前端先完成好友关系前置流程 | 失败会计入自动更新 backoff                                               |
+| 完成后 hash 推进 | 不涉及                                                | 成功后推进 `auto_update_probe_states.lastRivalHash`                      |
 
 ## 当前实现注意点
 

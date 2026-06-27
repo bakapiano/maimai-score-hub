@@ -13,7 +13,6 @@ export const UserProfileSchema = z
     autoExportLxns: z.boolean().optional(),
     hasCabinetUserId: z.boolean().optional(),
     autoUpdate: z.boolean().optional(),
-    lastScoreHash: z.string().nullable().optional(),
   })
   .passthrough();
 
@@ -37,13 +36,18 @@ export const UsernameSchema = z
 
 export const AccountPasswordSchema = z.string().min(8).max(72);
 
-export const SetAccountPasswordBodySchema = z.object({
-  username: UsernameSchema.optional(),
-  currentPassword: z.string().min(1).max(72).optional(),
-  newPassword: AccountPasswordSchema.optional(),
-}).refine((body) => body.username !== undefined || body.newPassword !== undefined, {
-  message: "username or newPassword is required",
-});
+export const SetAccountPasswordBodySchema = z
+  .object({
+    username: UsernameSchema.optional(),
+    currentPassword: z.string().min(1).max(72).optional(),
+    newPassword: AccountPasswordSchema.optional(),
+  })
+  .refine(
+    (body) => body.username !== undefined || body.newPassword !== undefined,
+    {
+      message: "username or newPassword is required",
+    },
+  );
 
 export const DivingFishTokenBodySchema = z.object({
   username: z.string().min(1),

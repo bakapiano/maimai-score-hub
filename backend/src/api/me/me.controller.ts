@@ -61,7 +61,6 @@ function toSafeProfile(user: Record<string, unknown>) {
     hasCabinetUserId: cabinetUserId != null,
     hasPassword: !!passwordHash,
     autoUpdate: !!user.autoUpdate,
-    lastScoreHash: (user.lastScoreHash as string | null | undefined) ?? null,
   };
 }
 

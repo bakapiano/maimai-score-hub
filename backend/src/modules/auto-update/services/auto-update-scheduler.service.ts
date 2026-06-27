@@ -354,7 +354,7 @@ export class AutoUpdateSchedulerService
                 },
                 $setOnInsert: {
                   tier: 'cold',
-                  lastRivalHash: u.lastScoreHash ?? null,
+                  lastRivalHash: null,
                   nextRivalProbeAt: initialDue,
                   nextMapProbeAt: initialMapDue,
                   habitMultiplier: 1,

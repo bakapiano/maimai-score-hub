@@ -12,19 +12,20 @@
 
 ## 集合总览
 
-| Entity                    | Collection                                 | 模块        | 保留期    | 用途                                     |
-| ------------------------- | ------------------------------------------ | ----------- | --------- | ---------------------------------------- |
-| `UserEntity`              | Mongoose 隐式集合名，通常为 `userentities` | users       | 永久      | 用户、导入 token、机台绑定、自动更新状态 |
-| `SyncEntity`              | `syncs`                                    | sync        | 永久      | 一次成绩同步结果                         |
-| `MusicEntity`             | `musics`                                   | music       | 永久      | 乐曲与谱面元数据                         |
-| `MusicConfigEntity`       | `music_config`                             | music       | 永久      | 乐曲数据源配置                           |
-| `JobEntity`               | `jobs`                                     | job         | 7 天 TTL  | DXNet worker 任务                        |
-| `QrLoginAttemptEntity`    | `qr_login_attempts`                        | auth        | 1 天 TTL  | QR 登录异步尝试                          |
-| `BotStatusEntity`         | `bot_statuses`                             | admin       | 永久      | DXNet bot 可用性和好友数                 |
-| `BotFriendSnapshotEntity` | `bot_friend_snapshots`                     | admin       | 30 天 TTL | bot 好友列表快照                         |
-| `NotifyStateEntity`       | `notify_state`                             | admin       | 永久      | 多实例通知去重状态                       |
-| `AutoUpdateRunEntity`     | `auto_update_runs`                         | auto-update | 30 天 TTL | 自动更新 cron 每轮执行记录               |
-| `SdgbJobEntity`           | `sdgb_jobs`                                | sdgb-worker | 1 天 TTL  | sdgb-worker 机台协议任务                 |
+| Entity                       | Collection                                 | 模块        | 保留期    | 用途                                               |
+| ---------------------------- | ------------------------------------------ | ----------- | --------- | -------------------------------------------------- |
+| `UserEntity`                 | Mongoose 隐式集合名，通常为 `userentities` | users       | 永久      | 用户、密码登录、导入 token、机台绑定、自动更新开关 |
+| `SyncEntity`                 | `syncs`                                    | sync        | 永久      | 一次成绩同步结果                                   |
+| `MusicEntity`                | `musics`                                   | music       | 永久      | 乐曲与谱面元数据                                   |
+| `JobEntity`                  | `jobs`                                     | job         | 7 天 TTL  | DXNet worker 任务                                  |
+| `QrLoginAttemptEntity`       | `qr_login_attempts`                        | auth        | 1 天 TTL  | QR 登录异步尝试                                    |
+| `BotStatusEntity`            | `bot_statuses`                             | admin       | 永久      | DXNet bot 可用性和好友数                           |
+| `BotFriendSnapshotEntity`    | `bot_friend_snapshots`                     | admin       | 30 天 TTL | bot 好友列表快照                                   |
+| `NotifyStateEntity`          | `notify_state`                             | admin       | 永久      | 多实例通知去重状态                                 |
+| `AutoUpdateRunEntity`        | `auto_update_runs`                         | auto-update | 30 天 TTL | 自动更新 cron 每轮执行记录                         |
+| `AutoUpdateProbeStateEntity` | `auto_update_probe_states`                 | auto-update | 永久      | Rival-first 自动更新用户状态                       |
+| `AutoUpdateTaskEntity`       | `auto_update_tasks`                        | auto-update | 3 天 TTL  | Rival-first 自动更新短期任务日志                   |
+| `SdgbJobEntity`              | `sdgb_jobs`                                | sdgb-worker | 1 天 TTL  | sdgb-worker 机台协议任务                           |
 
 ## Redis Runtime 数据
 
@@ -39,28 +40,26 @@
 
 ## Users
 
-来源：`backend/src/modules/users/user.schema.ts`
+来源：`backend/src/modules/users/schemas/user.schema.ts`
 
 ### `UserEntity`
 
-| 字段                      | 类型                     | 约束 / 默认值                | 说明                                 |
-| ------------------------- | ------------------------ | ---------------------------- | ------------------------------------ |
-| `friendCode`              | `string`                 | required, unique, index      | 用户好友码，主业务标识               |
-| `divingFishImportToken`   | `string \| null`         | default `null`               | Diving Fish 导入 token               |
-| `lxnsImportToken`         | `string \| null`         | default `null`               | LXNS 导入 token                      |
-| `profile`                 | `UserNetProfile \| null` | `Mixed`, default `undefined` | DXNet 用户资料缓存                   |
-| `autoExportDivingFish`    | `boolean`                | default `false`              | 同步后自动导出到 Diving Fish         |
-| `autoExportLxns`          | `boolean`                | default `false`              | 同步后自动导出到 LXNS                |
-| `lastActiveAt`            | `Date \| null`           | default `null`               | 最近活跃时间                         |
-| `cabinetUserId`           | `number \| null`         | default `null`               | 机台侧数字 userId，`null` 表示未绑定 |
-| `autoUpdate`              | `boolean`                | default `false`              | 是否参与自动更新                     |
-| `lastScoreHash`           | `string \| null`         | default `null`               | 上次观测到的机台成绩 hash            |
-| `lastHashCheckAt`         | `Date \| null`           | default `null`               | 上次拉取 hash 的时间                 |
-| `lastAutoUpdateJobAt`     | `Date \| null`           | default `null`               | 上次创建自动更新 job 的时间          |
-| `autoUpdateFailureCount`  | `number`                 | default `0`                  | 自动更新 job 连续失败次数            |
-| `autoUpdateBackoffUntil`  | `Date \| null`           | default `null`               | 自动更新退避截止时间                 |
-| `createdAt`               | `Date`                   | timestamps                   | 创建时间                             |
-| `updatedAt`               | `Date`                   | timestamps                   | 更新时间                             |
+| 字段                    | 类型                     | 约束 / 默认值                | 说明                                     |
+| ----------------------- | ------------------------ | ---------------------------- | ---------------------------------------- |
+| `friendCode`            | `string`                 | required, unique, index      | 用户好友码，主业务标识                   |
+| `username`              | `string \| null`         | default `null`               | 密码登录用户名，唯一 sparse/partial 索引 |
+| `passwordHash`          | `string \| null`         | default `null`, select false | scrypt 密码 hash                         |
+| `passwordUpdatedAt`     | `Date \| null`           | default `null`               | 密码最近更新时间                         |
+| `divingFishImportToken` | `string \| null`         | default `null`               | Diving Fish 导入 token                   |
+| `lxnsImportToken`       | `string \| null`         | default `null`               | LXNS 导入 token                          |
+| `profile`               | `UserNetProfile \| null` | `Mixed`, default `undefined` | DXNet 用户资料缓存                       |
+| `autoExportDivingFish`  | `boolean`                | default `false`              | 同步后自动导出到 Diving Fish             |
+| `autoExportLxns`        | `boolean`                | default `false`              | 同步后自动导出到 LXNS                    |
+| `lastActiveAt`          | `Date \| null`           | default `null`               | 最近活跃时间                             |
+| `cabinetUserId`         | `number \| null`         | default `null`               | 机台侧数字 userId，`null` 表示未绑定     |
+| `autoUpdate`            | `boolean`                | default `false`              | 是否参与自动更新                         |
+| `createdAt`             | `Date`                   | timestamps                   | 创建时间                                 |
+| `updatedAt`             | `Date`                   | timestamps                   | 更新时间                                 |
 
 嵌套类型：
 
@@ -82,6 +81,7 @@ interface UserNetProfile {
 
 - `friendCode`：唯一索引。
 - `{ autoUpdate: 1, cabinetUserId: 1 }`，名称 `auto_update_cabinet`。
+- `username`：唯一 partial index，名称 `username_unique`，仅索引 string。
 - `{ createdAt: -1 }`，名称 `createdAt_desc`。
 
 ## Sync
@@ -130,7 +130,7 @@ type AutoExportResult = {
 
 ## Music
 
-来源：`backend/src/modules/music/music.schema.ts`、`backend/src/modules/music/music-config.schema.ts`
+来源：`backend/src/modules/music/schemas/music.schema.ts`
 
 ### `MusicEntity`
 
@@ -193,68 +193,56 @@ interface SongMetadata {
 
 - `id`：唯一索引。
 
-### `MusicConfigEntity`
-
-| 字段         | 类型                      | 约束 / 默认值                       | 说明       |
-| ------------ | ------------------------- | ----------------------------------- | ---------- |
-| `key`        | `string`                  | required, unique, default `default` | 配置键     |
-| `dataSource` | `'diving-fish' \| 'lxns'` | required, default `diving-fish`     | 乐曲数据源 |
-| `createdAt`  | `Date`                    | timestamps                          | 创建时间   |
-| `updatedAt`  | `Date`                    | timestamps                          | 更新时间   |
-
-索引：
-
-- `key`：唯一索引。
-
 ## DXNet Jobs
 
 来源：`backend/src/modules/job/job.schema.ts`、`backend/src/modules/job/job.types.ts`
 
 ### `JobEntity`
 
-| 字段                         | 类型                                                               | 约束 / 默认值                           | 说明                                 |
-| ---------------------------- | ------------------------------------------------------------------ | --------------------------------------- | ------------------------------------ |
-| `id`                         | `string`                                                           | required, unique, index                 | job id                               |
-| `friendCode`                 | `string`                                                           | required                                | 目标用户好友码                       |
-| `jobType`                    | `JobType`                                                          | required, default `send_friend_request` | job 类型                             |
-| `priority`                   | `number`                                                           | required, default `0`                   | 调度优先级                           |
-| `botUserFriendCode`          | `string \| null`                                                   | default `null`                          | 执行 bot 好友码                      |
-| `friendRequestSentAt`        | `string \| null`                                                   | default `null`                          | 好友请求发送时间                     |
-| `friendRequestWaitStartedAt` | `string \| null`                                                   | default `null`                          | 等待好友请求开始时间                 |
-| `status`                     | `JobStatus`                                                        | required                                | job 状态                             |
-| `stage`                      | `JobStage`                                                         | required                                | 当前阶段                             |
-| `result`                     | `any`                                                              | `Mixed`, default `undefined`            | 执行结果                             |
-| `profile`                    | `UserNetProfile`                                                   | `Mixed`, default `undefined`            | 任务得到的用户资料                   |
-| `error`                      | `string \| null`                                                   | default `null`                          | 错误信息                             |
-| `executing`                  | `boolean`                                                          | required, default `false`               | BullMQ worker 是否正在执行           |
-| `scoreProgress`              | `ScoreProgress \| null`                                            | `Mixed`, default `null`                 | 成绩更新进度                         |
-| `updateScoreDuration`        | `number \| null`                                                   | default `null`                          | `update_score` 耗时                  |
-| `autoExportResult`           | `AutoExportResult \| null`                                         | `Mixed`, default `null`                 | 自动导出结果                         |
-| `sourceScoreHash`            | `string \| null`                                                   | default `null`                          | 自动更新创建 job 时观测到的成绩 hash |
-| `runAt`                      | `Date \| null`                                                     | default `null`                          | 下次允许 BullMQ 投递的时间           |
-| `createdAt`                  | `Date`                                                             | required                                | 创建时间                             |
-| `updatedAt`                  | `Date`                                                             | required                                | 更新时间                             |
+| 字段                         | 类型                              | 约束 / 默认值                           | 说明                                         |
+| ---------------------------- | --------------------------------- | --------------------------------------- | -------------------------------------------- |
+| `id`                         | `string`                          | required, unique, index                 | job id                                       |
+| `friendCode`                 | `string`                          | required                                | 目标用户好友码                               |
+| `jobType`                    | `JobType`                         | required, default `send_friend_request` | job 类型                                     |
+| `priority`                   | `number`                          | required, default `0`                   | 调度优先级                                   |
+| `botUserFriendCode`          | `string \| null`                  | default `null`                          | 执行 bot 好友码                              |
+| `friendRequestSentAt`        | `string \| null`                  | default `null`                          | 好友请求发送时间                             |
+| `friendRequestWaitStartedAt` | `string \| null`                  | default `null`                          | 等待好友请求开始时间                         |
+| `status`                     | `JobStatus`                       | required                                | job 状态                                     |
+| `stage`                      | `JobStage`                        | required                                | 当前阶段                                     |
+| `result`                     | `any`                             | `Mixed`, default `undefined`            | 执行结果                                     |
+| `profile`                    | `UserNetProfile`                  | `Mixed`, default `undefined`            | 任务得到的用户资料                           |
+| `error`                      | `string \| null`                  | default `null`                          | 错误信息                                     |
+| `executing`                  | `boolean`                         | required, default `false`               | BullMQ worker 是否正在执行                   |
+| `scoreProgress`              | `ScoreProgress \| null`           | `Mixed`, default `null`                 | 成绩更新进度                                 |
+| `updateScoreDuration`        | `number \| null`                  | default `null`                          | `update_score` 耗时                          |
+| `autoExportResult`           | `AutoExportResult \| null`        | `Mixed`, default `null`                 | 自动导出结果                                 |
+| `diffsToScrape`              | `number[] \| null`                | default `null`                          | 指定 `update_score` 只抓取的难度列表         |
+| `context`                    | `Record<string, unknown> \| null` | `Mixed`, default `null`                 | 内部上下文，如 FC/FS ambiguous fallback 来源 |
+| `runAt`                      | `Date \| null`                    | default `null`                          | 下次允许 BullMQ 投递的时间                   |
+| `createdAt`                  | `Date`                            | required                                | 创建时间                                     |
+| `updatedAt`                  | `Date`                            | required                                | 更新时间                                     |
 
 枚举和嵌套类型：
 
 ```ts
-type JobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'canceled';
+type JobStatus = "queued" | "processing" | "completed" | "failed" | "canceled";
 
 type JobStage =
-  | 'send_request'
-  | 'wait_acceptance'
-  | 'wait_user_request'
-  | 'accept_request'
-  | 'update_score'
-  | 'get_user_recent_event'
-  | 'get_full_friend_list';
+  | "send_request"
+  | "wait_acceptance"
+  | "wait_user_request"
+  | "accept_request"
+  | "update_score"
+  | "get_user_recent_event"
+  | "get_full_friend_list";
 
 type JobType =
-  | 'send_friend_request'
-  | 'accept_friend_request'
-  | 'update_score'
-  | 'get_user_recent_event'
-  | 'get_full_friend_list';
+  | "send_friend_request"
+  | "accept_friend_request"
+  | "update_score"
+  | "get_user_recent_event"
+  | "get_full_friend_list";
 
 interface ScoreProgress {
   completedDiffs: number[];
@@ -298,11 +286,7 @@ interface ScoreProgress {
 
 ```ts
 type QrLoginStatus =
-  | 'pending'
-  | 'adding_rival'
-  | 'waiting_snapshot'
-  | 'matched'
-  | 'failed';
+  "pending" | "adding_rival" | "waiting_snapshot" | "matched" | "failed";
 ```
 
 索引：
@@ -312,7 +296,7 @@ type QrLoginStatus =
 
 ## Admin
 
-来源：`backend/src/modules/admin/*.schema.ts`
+来源：`backend/src/modules/bots/schemas/*.schema.ts`
 
 ### `BotStatusEntity`
 
@@ -368,7 +352,7 @@ type BotFriendSnapshotFriend = {
 
 ## Auto Update
 
-来源：`backend/src/modules/auto-update/auto-update-run.schema.ts`
+来源：`backend/src/modules/auto-update/schemas/*.schema.ts`
 
 ### `AutoUpdateRunEntity`
 
@@ -379,8 +363,8 @@ type BotFriendSnapshotFriend = {
 | `ranOn`           | `string`                   | default `unknown`       | 赢得本轮 sweep 的实例                    |
 | `status`          | `'running' \| 'completed'` | default `running`       | 执行状态                                 |
 | `totalUsers`      | `number`                   | default `0`             | 本轮候选用户数                           |
-| `triggered`       | `number`                   | default `0`             | 触发更新 job 数                          |
-| `skippedNoChange` | `number`                   | default `0`             | hash 未变化跳过数                        |
+| `triggered`       | `number`                   | default `0`             | 本轮 rival hash 变化并写入 sync 的数量   |
+| `skippedNoChange` | `number`                   | default `0`             | rival/map 未变化跳过数                   |
 | `failed`          | `number`                   | default `0`             | 失败数                                   |
 
 索引：
@@ -388,40 +372,100 @@ type BotFriendSnapshotFriend = {
 - `bucketKey`：唯一索引。
 - `{ triggeredAt: 1 }`：TTL 30 天。
 
+### `AutoUpdateProbeStateEntity`
+
+| 字段                      | 类型                        | 约束 / 默认值            | 说明                                |
+| ------------------------- | --------------------------- | ------------------------ | ----------------------------------- |
+| `friendCode`              | `string`                    | required, unique, index  | 用户好友码                          |
+| `cabinetUserId`           | `number`                    | required, index          | 机台用户 ID                         |
+| `enabled`                 | `boolean`                   | default `true`, index    | 是否仍参与自动更新                  |
+| `tier`                    | `'hot' \| 'warm' \| 'cold'` | default `cold`, index    | 活跃度档位                          |
+| `lastRivalHash`           | `string \| null`            | default `null`           | 最近成功写入 sync 对应的 rival hash |
+| `lastRivalProbeAt`        | `Date \| null`              | default `null`           | 最近 RivalMusic probe 时间          |
+| `nextRivalProbeAt`        | `Date \| null`              | default `null`, index    | 下一次 RivalMusic probe 时间        |
+| `lastScoreChangedAt`      | `Date \| null`              | default `null`           | 最近成绩 hash 变化时间              |
+| `mapFingerprint`          | `string \| null`            | default `null`           | 最近 Map fingerprint                |
+| `mapDistanceSum`          | `number \| null`            | default `null`           | 最近 Map distance 总和              |
+| `lastMapProbeAt`          | `Date \| null`              | default `null`           | 最近 Map auxiliary 时间             |
+| `lastMapDeltaAt`          | `Date \| null`              | default `null`           | 最近 Map 变化时间                   |
+| `nextMapProbeAt`          | `Date \| null`              | default `null`, index    | 下一次 Map auxiliary 时间           |
+| `lastRecentEventAt`       | `Date \| null`              | default `null`           | 最近 FC/FS enrichment 时间          |
+| `nextRecentEventAt`       | `Date \| null`              | default `null`, index    | 下一次允许 recent event 时间        |
+| `rivalErrorCount`         | `number`                    | default `0`              | Rival probe 连续错误数              |
+| `mapErrorCount`           | `number`                    | default `0`              | Map auxiliary 连续错误数            |
+| `recentErrorCount`        | `number`                    | default `0`              | Recent event 连续错误数             |
+| `backoffUntil`            | `Date \| null`              | default `null`, index    | 主链路退避截止时间                  |
+| `habitMultiplier`         | `number`                    | default `1`              | Phase 2 用户习惯倍率预留            |
+| `loadMultiplier`          | `number`                    | default `1`              | 负载倍率预留                        |
+| `schedulerVersion`        | `string`                    | default `rival-first-v1` | 调度策略版本                        |
+| `createdAt` / `updatedAt` | `Date`                      | timestamps               | 创建/更新时间                       |
+
+索引：
+
+- `friendCode`：唯一索引。
+- `cabinetUserId`：单字段索引。
+- `{ enabled: 1, nextRivalProbeAt: 1, tier: 1 }`，名称 `due_rival_probe`。
+- `{ enabled: 1, nextMapProbeAt: 1, tier: 1 }`，名称 `due_map_probe`。
+
+### `AutoUpdateTaskEntity`
+
+| 字段                      | 类型                                                          | 约束 / 默认值           | 说明                                                    |
+| ------------------------- | ------------------------------------------------------------- | ----------------------- | ------------------------------------------------------- |
+| `id`                      | `string`                                                      | required, unique, index | task id                                                 |
+| `type`                    | `rival_score_probe \| map_auxiliary_probe \| fcfs_enrichment` | required, index         | 任务类型                                                |
+| `friendCode`              | `string`                                                      | required, index         | 用户好友码                                              |
+| `cabinetUserId`           | `number`                                                      | required, index         | 机台用户 ID                                             |
+| `status`                  | `queued \| processing \| completed \| failed \| canceled`     | required, index         | 状态；当前 Phase 1 主要使用 processing/completed/failed |
+| `priority`                | `number`                                                      | default `0`             | 优先级记录                                              |
+| `runAt`                   | `Date \| null`                                                | default `null`, index   | 预留执行时间                                            |
+| `attempts`                | `number`                                                      | default `0`             | 尝试次数                                                |
+| `lastError`               | `string \| null`                                              | default `null`          | 最近错误                                                |
+| `metrics`                 | `Record<string, unknown> \| null`                             | `Mixed`, default `null` | 耗时、返回条数、命中数等轻量元信息                      |
+| `createdAt` / `updatedAt` | `Date`                                                        | timestamps              | 创建/更新时间                                           |
+
+索引：
+
+- `id`：唯一索引。
+- `type`、`friendCode`、`cabinetUserId`、`status`、`runAt`：单字段索引。
+- `{ type: 1, status: 1, runAt: 1 }`，名称 `type_status_due`。
+- `{ createdAt: 1 }`：TTL 3 天。
+
 ## SDGB Worker
 
 来源：`backend/src/modules/sdgb-worker/*.schema.ts`
 
 ### `SdgbJobEntity`
 
-| 字段           | 类型                              | 约束 / 默认值           | 说明                  |
-| -------------- | --------------------------------- | ----------------------- | --------------------- |
-| `id`           | `string`                          | required, unique, index | sdgb job id           |
-| `jobType`      | `SdgbJobType`                     | required, index         | 机台协议任务类型      |
-| `status`       | `SdgbJobStatus`                   | required, index         | job 状态              |
-| `payload`      | `Record<string, unknown>`         | `Mixed`, required       | job 输入              |
-| `result`       | `Record<string, unknown> \| null` | `Mixed`, default `null` | job 结果              |
-| `error`        | `string \| null`                  | default `null`          | 错误信息              |
-| `executing`    | `boolean`                         | default `false`         | worker 是否正在执行   |
-| `claimedAt`    | `Date \| null`                    | default `null`          | 开始执行时间          |
-| `requesterTag` | `string \| null`                  | default `null`, index   | 生产者自定义追踪 tag  |
-| `createdAt`    | `Date`                            | timestamps              | 创建时间              |
-| `updatedAt`    | `Date`                            | timestamps              | 更新时间              |
+| 字段           | 类型                              | 约束 / 默认值           | 说明                 |
+| -------------- | --------------------------------- | ----------------------- | -------------------- |
+| `id`           | `string`                          | required, unique, index | sdgb job id          |
+| `jobType`      | `SdgbJobType`                     | required, index         | 机台协议任务类型     |
+| `status`       | `SdgbJobStatus`                   | required, index         | job 状态             |
+| `payload`      | `Record<string, unknown>`         | `Mixed`, required       | job 输入             |
+| `result`       | `Record<string, unknown> \| null` | `Mixed`, default `null` | job 结果             |
+| `error`        | `string \| null`                  | default `null`          | 错误信息             |
+| `executing`    | `boolean`                         | default `false`         | worker 是否正在执行  |
+| `claimedAt`    | `Date \| null`                    | default `null`          | 开始执行时间         |
+| `requesterTag` | `string \| null`                  | default `null`, index   | 生产者自定义追踪 tag |
+| `createdAt`    | `Date`                            | timestamps              | 创建时间             |
+| `updatedAt`    | `Date`                            | timestamps              | 更新时间             |
 
 枚举和 payload/result 约定：
 
 ```ts
-type SdgbJobType = 'scan_qr' | 'get_rival_hash' | 'add_rival';
-type SdgbJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
+type SdgbJobType = "scan_qr" | "get_rival_hash" | "get_user_map" | "add_rival";
+type SdgbJobStatus = "queued" | "processing" | "completed" | "failed";
 
 type SdgbJobPayload =
   | { qrCode: string; callerUid?: number }
   | { cabinetUserId: number; callerUid?: number }
+  | { cabinetUserId: number }
   | { botCabinetUserId: number; targetCabinetUserId: number };
 
 type SdgbJobResult =
   | { cabinetUserId: number; music: unknown[]; hash: string }
   | { hash: string; music: unknown[] }
+  | { maps: unknown[] }
   | { returnCode1: number; returnCode2: number };
 ```
 
@@ -445,7 +489,6 @@ type SdgbJobResult =
 | `UserDocument`              | `UserEntity`              |
 | `SyncDocument`              | `SyncEntity`              |
 | `MusicDocument`             | `MusicEntity`             |
-| `MusicConfigDocument`       | `MusicConfigEntity`       |
 | `JobDocument`               | `JobEntity`               |
 | `QrLoginAttemptDocument`    | `QrLoginAttemptEntity`    |
 | `BotStatusDocument`         | `BotStatusEntity`         |

@@ -539,9 +539,6 @@ paths:
                     type: boolean
                   autoUpdate:
                     type: boolean
-                  lastScoreHash:
-                    type: string
-                    nullable: true
                 required:
                   - id
                   - friendCode
@@ -600,9 +597,6 @@ paths:
                     type: boolean
                   autoUpdate:
                     type: boolean
-                  lastScoreHash:
-                    type: string
-                    nullable: true
                 required:
                   - id
                   - friendCode
@@ -670,9 +664,6 @@ paths:
                     type: boolean
                   autoUpdate:
                     type: boolean
-                  lastScoreHash:
-                    type: string
-                    nullable: true
                 required:
                   - id
                   - friendCode

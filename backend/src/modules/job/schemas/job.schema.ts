@@ -58,16 +58,6 @@ export class JobEntity {
     lxns?: { status: string; message?: string } | null;
   } | null;
 
-  /**
-   * Score hash observed by the auto-update sweep at the moment this job
-   * was created. Set ONLY for jobType=`update_score` jobs created by
-   * AutoUpdateScheduler. When the job completes successfully, JobService
-   * uses this to advance the user's `lastScoreHash` — that way a failed
-   * job doesn't burn the hash transition the next sweep should retry.
-   */
-  @Prop({ type: String, default: null })
-  sourceScoreHash!: string | null;
-
   @Prop({ type: [Number], default: null })
   diffsToScrape!: number[] | null;
 
