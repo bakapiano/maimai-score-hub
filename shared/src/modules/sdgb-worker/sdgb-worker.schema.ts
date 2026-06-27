@@ -12,11 +12,21 @@ export const MusicEntrySchema = z.object({
   length: z.number().int().optional(),
 });
 
+export const UserMapEntrySchema = z.object({
+  mapId: z.number().int(),
+  distance: z.number().int().nonnegative(),
+  isLock: z.boolean().optional(),
+  isClear: z.boolean().optional(),
+  isComplete: z.boolean().optional(),
+  unlockFlag: z.number().int().optional(),
+});
+
 // ───────────────────────── job-type union ─────────────────────────
 
 export const SdgbJobTypeSchema = z.enum([
   "scan_qr",
   "get_rival_hash",
+  "get_user_map",
   "add_rival",
 ]);
 
@@ -35,6 +45,9 @@ export const ScanQrPayloadSchema = z.object({
 export const GetRivalHashPayloadSchema = z.object({
   cabinetUserId: z.number().int().positive(),
   callerUid: z.number().int().positive().optional(),
+});
+export const GetUserMapPayloadSchema = z.object({
+  cabinetUserId: z.number().int().positive(),
 });
 export const AddRivalPayloadSchema = z.object({
   botCabinetUserId: z.number().int().positive(),
@@ -55,6 +68,9 @@ export const ScanQrResultSchema = z.object({
 export const GetRivalHashResultSchema = z.object({
   hash: z.string(),
   music: z.array(MusicEntrySchema),
+});
+export const GetUserMapResultSchema = z.object({
+  maps: z.array(UserMapEntrySchema),
 });
 export const AddRivalResultSchema = z.object({
   returnCode1: z.number().int(),
@@ -91,9 +107,12 @@ export type SdgbJobResponse = z.infer<typeof SdgbJobResponseSchema>;
 export type SdgbJobPatchBody = z.infer<typeof SdgbJobPatchBodySchema>;
 export type SdgbWorkerMusicEntry = z.infer<typeof MusicEntrySchema>;
 export type SdgbWorkerMusicDetail = z.infer<typeof MusicDetailSchema>;
+export type SdgbWorkerUserMapEntry = z.infer<typeof UserMapEntrySchema>;
 export type ScanQrPayload = z.infer<typeof ScanQrPayloadSchema>;
 export type GetRivalHashPayload = z.infer<typeof GetRivalHashPayloadSchema>;
+export type GetUserMapPayload = z.infer<typeof GetUserMapPayloadSchema>;
 export type AddRivalPayload = z.infer<typeof AddRivalPayloadSchema>;
 export type ScanQrResult = z.infer<typeof ScanQrResultSchema>;
 export type GetRivalHashResult = z.infer<typeof GetRivalHashResultSchema>;
+export type GetUserMapResult = z.infer<typeof GetUserMapResultSchema>;
 export type AddRivalResult = z.infer<typeof AddRivalResultSchema>;

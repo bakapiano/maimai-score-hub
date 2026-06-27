@@ -90,6 +90,8 @@ function toJobResponse(job: JobEntity): JobResponse {
     profile: job.profile,
     scoreProgress: job.scoreProgress ?? null,
     updateScoreDuration: job.updateScoreDuration ?? null,
+    diffsToScrape: job.diffsToScrape ?? null,
+    context: job.context ?? null,
     autoExportResult: job.autoExportResult ?? null,
     runAt: job.runAt?.toISOString() ?? null,
     error: job.error ?? null,
@@ -396,6 +398,8 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
      * `user.lastScoreHash` only after this job completes successfully.
      */
     sourceScoreHash?: string | null;
+    diffsToScrape?: number[] | null;
+    context?: Record<string, unknown> | null;
     cancelActiveJobs?: boolean;
   }) {
     const id = randomUUID();
@@ -559,6 +563,8 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
       error: null,
       result: undefined,
       sourceScoreHash: input.sourceScoreHash ?? null,
+      diffsToScrape: input.diffsToScrape ?? null,
+      context: input.context ?? null,
       runAt: null,
       createdAt: now,
       updatedAt: now,
@@ -798,6 +804,50 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
             `Auto-export failed for job ${jobId}: ${err?.message}`,
           );
         });
+      }
+    }
+
+    if (
+      updated.status === 'completed' &&
+      updated.jobType === 'get_user_recent_event' &&
+      updated.result
+    ) {
+      const events = (updated.result as { events?: unknown }).events;
+      if (Array.isArray(events)) {
+        const context = updated.context ?? null;
+        const sinceRaw =
+          typeof context?.recentEventSince === 'string'
+            ? context.recentEventSince
+            : null;
+        const since = sinceRaw ? new Date(sinceRaw) : null;
+        const mergeResult = await this.syncService.mergeRecentEvents({
+          friendCode: updated.friendCode,
+          sourceId: jobId,
+          events,
+          since: since && !Number.isNaN(since.getTime()) ? since : null,
+        });
+        if (
+          context?.autoUpdateFcfs === true &&
+          mergeResult.ambiguousDiffs.length > 0 &&
+          updated.botUserFriendCode
+        ) {
+          const fallback = await this.create({
+            friendCode: updated.friendCode,
+            jobType: 'update_score',
+            botUserFriendCode: updated.botUserFriendCode,
+            friendshipReady: true,
+            diffsToScrape: mergeResult.ambiguousDiffs,
+            cancelActiveJobs: false,
+            context: {
+              source: 'fcfs_ambiguous_recent_event',
+              recentEventJobId: jobId,
+              ambiguousDiffs: mergeResult.ambiguousDiffs,
+            },
+          });
+          this.logger.log(
+            `Scheduled ambiguous FC/FS fallback update_score job ${fallback.jobId} for fc=${updated.friendCode} diffs=[${mergeResult.ambiguousDiffs.join(',')}]`,
+          );
+        }
       }
     }
 

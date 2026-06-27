@@ -59,10 +59,8 @@ export class UsersService {
     const ok = await this.verifyPassword(password, doc.passwordHash);
     if (!ok) return null;
 
-    const { passwordHash: _passwordHash, ...user } = doc.toObject() as Record<
-      string,
-      unknown
-    >;
+    const { passwordHash: _passwordHash, ...user } =
+      doc.toObject() as unknown as Record<string, unknown>;
     return user;
   }
 

@@ -21,6 +21,7 @@ import { uploadRecords as uploadDivingFishRecords } from '../../../common/prober
 import { convertSyncScoresToLxnsPayload } from '../../../common/prober/lxns/converter';
 import { uploadLxnsScores } from '../../../common/prober/lxns/client';
 import { ProberExportMapService } from './prober-export-map.service';
+import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
 
 type JobLike = {
   id: string;
@@ -34,6 +35,30 @@ type MusicRow = MusicEntity & {
 };
 
 type ScoreSnapshot = SyncScore;
+type MusicCache = {
+  at: number;
+  rows: MusicRow[];
+  byId: Map<string, MusicRow>;
+  byTitleKey: Map<string, MusicRow>;
+  byTitle: Map<string, MusicRow[]>;
+};
+
+type RecentFcFsEvent = {
+  time?: unknown;
+  songName?: unknown;
+  difficulty?: unknown;
+  fc?: unknown;
+  fs?: unknown;
+};
+
+const DIFFICULTY_TO_CHART_INDEX: Record<string, number> = {
+  basic: 0,
+  advanced: 1,
+  expert: 2,
+  master: 3,
+  remaster: 4,
+  utage: 10,
+};
 
 // Rank tables for FC / FS — higher index = better. null is below
 // everything. Used by mergeScoreKeepBest so re-attempts that didn't
@@ -62,6 +87,16 @@ function pickHigherNumeric(a: string | null, b: string | null): string | null {
   return numScore(b) > numScore(a) ? b : a;
 }
 
+function parseRecentEventTime(value: string): Date | null {
+  const match = /^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})$/.exec(
+    value.trim(),
+  );
+  if (!match) return null;
+  const [, year, month, day, hour, minute] = match;
+  const parsed = new Date(`${year}-${month}-${day}T${hour}:${minute}:00+08:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 /**
  * Merge two score snapshots for the same (musicId, chartIndex), keeping
  * the better of each per-attempt field. Identity fields (musicId, cid,
@@ -84,6 +119,7 @@ function mergeScoreKeepBest(
 @Injectable()
 export class SyncService {
   private readonly logger = new Logger(SyncService.name);
+  private musicCache: MusicCache | null = null;
 
   constructor(
     @InjectModel(SyncEntity.name)
@@ -118,23 +154,8 @@ export class SyncService {
       .findOne({ friendCode: job.friendCode })
       .sort({ createdAt: -1 })
       .lean();
-    const merged = new Map<string, ScoreSnapshot>();
-    if (previous && Array.isArray(previous.scores)) {
-      for (const s of previous.scores as ScoreSnapshot[]) {
-        merged.set(`${s.musicId}::${s.chartIndex}`, s);
-      }
-    }
-    for (const s of newScores) {
-      const key = `${s.musicId}::${s.chartIndex}`;
-      const old = merged.get(key);
-      merged.set(key, old ? mergeScoreKeepBest(old, s) : s);
-    }
-    const scores = [...merged.values()];
-
-    // Delete previous syncs for this friendCode (keep only the latest)
-    await this.syncModel.deleteMany({ friendCode: job.friendCode });
-
-    const sync = await this.syncModel.create({
+    const scores = this.mergeWithPrevious(previous?.scores, newScores);
+    const sync = await this.replaceLatestSync({
       id: syncId,
       jobId: job.id,
       friendCode: job.friendCode,
@@ -142,6 +163,158 @@ export class SyncService {
     });
 
     return sync.toObject();
+  }
+
+  async createFromRivalMusic(input: {
+    friendCode: string;
+    sourceId: string;
+    music: SdgbWorkerMusicEntry[];
+  }) {
+    const syncId = randomUUID();
+    const newScores = await this.mapRivalMusicToScores(input.music);
+    if (!newScores.length) {
+      this.logger.warn(
+        `No scores mapped for rival source ${input.sourceId}; skipping sync write.`,
+      );
+      return null;
+    }
+
+    const previous = await this.syncModel
+      .findOne({ friendCode: input.friendCode })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const merged = this.mergeWithPrevious(previous?.scores, newScores);
+    const sync = await this.replaceLatestSync({
+      id: syncId,
+      jobId: input.sourceId,
+      friendCode: input.friendCode,
+      scores: merged,
+    });
+
+    return sync.toObject();
+  }
+
+  async mergeRecentEvents(input: {
+    friendCode: string;
+    sourceId: string;
+    events: RecentFcFsEvent[];
+    since?: Date | null;
+  }): Promise<{
+    eventCount: number;
+    matchedCount: number;
+    ambiguousCount: number;
+    ambiguousDiffs: number[];
+    updatedCount: number;
+    syncId: string | null;
+  }> {
+    const events = this.filterRecentEventsSince(input.events, input.since);
+    const previous = await this.syncModel
+      .findOne({ friendCode: input.friendCode })
+      .sort({ createdAt: -1 })
+      .lean();
+    const previousScores: ScoreSnapshot[] = Array.isArray(previous?.scores)
+      ? [...(previous.scores as ScoreSnapshot[])]
+      : [];
+    if (!previousScores.length) {
+      return {
+        eventCount: input.events.length,
+        matchedCount: 0,
+        ambiguousCount: 0,
+        ambiguousDiffs: [],
+        updatedCount: 0,
+        syncId: null,
+      };
+    }
+
+    const { byTitle } = await this.getMusicCache();
+    let matchedCount = 0;
+    let ambiguousCount = 0;
+    let updatedCount = 0;
+    const ambiguousDiffs = new Set<number>();
+    for (const event of events) {
+      const songName =
+        typeof event.songName === 'string' ? event.songName.trim() : '';
+      const difficulty =
+        typeof event.difficulty === 'string'
+          ? event.difficulty.toLowerCase()
+          : '';
+      const chartIndex = DIFFICULTY_TO_CHART_INDEX[difficulty];
+      if (!songName || chartIndex === undefined) continue;
+
+      const candidates = byTitle.get(songName) ?? [];
+      const candidateIds = new Set(candidates.map((m) => m.id));
+      if (!candidateIds.size) continue;
+
+      const matches = previousScores.filter(
+        (score) =>
+          score.chartIndex === chartIndex && candidateIds.has(score.musicId),
+      );
+      if (matches.length > 1) {
+        ambiguousCount++;
+        ambiguousDiffs.add(chartIndex);
+        continue;
+      }
+      const score = matches[0];
+      if (!score) continue;
+
+      matchedCount++;
+      const nextFc =
+        typeof event.fc === 'string'
+          ? pickHigher(FC_RANK, score.fc, event.fc)
+          : score.fc;
+      const nextFs =
+        typeof event.fs === 'string'
+          ? pickHigher(FS_RANK, score.fs, event.fs)
+          : score.fs;
+      if (nextFc !== score.fc || nextFs !== score.fs) {
+        score.fc = nextFc;
+        score.fs = nextFs;
+        updatedCount++;
+      }
+    }
+
+    if (updatedCount === 0) {
+      return {
+        eventCount: events.length,
+        matchedCount,
+        ambiguousCount,
+        ambiguousDiffs: [...ambiguousDiffs].sort((a, b) => a - b),
+        updatedCount,
+        syncId: previous?.id ?? null,
+      };
+    }
+
+    const syncId = randomUUID();
+    const sync = await this.replaceLatestSync({
+      id: syncId,
+      jobId: input.sourceId,
+      friendCode: input.friendCode,
+      scores: previousScores,
+    });
+
+    return {
+      eventCount: events.length,
+      matchedCount,
+      ambiguousCount,
+      ambiguousDiffs: [...ambiguousDiffs].sort((a, b) => a - b),
+      updatedCount,
+      syncId: (sync.toObject() as SyncEntity).id,
+    };
+  }
+
+  private filterRecentEventsSince(
+    events: RecentFcFsEvent[],
+    since: Date | null | undefined,
+  ): RecentFcFsEvent[] {
+    if (!since) return events;
+    return events.filter((event) => {
+      const parsed =
+        typeof event.time === 'string'
+          ? parseRecentEventTime(event.time)
+          : null;
+      return parsed ? parsed.getTime() > since.getTime() : false;
+    });
   }
 
   async getLatestWithScores(friendCode: string) {
@@ -183,15 +356,61 @@ export class SyncService {
     await this.syncModel.updateOne({ jobId }, { $set: { autoExportResult } });
   }
 
+  private mergeWithPrevious(
+    previousScores: SyncScore[] | undefined,
+    newScores: ScoreSnapshot[],
+  ): ScoreSnapshot[] {
+    const merged = new Map<string, ScoreSnapshot>();
+    if (Array.isArray(previousScores)) {
+      for (const s of previousScores as ScoreSnapshot[]) {
+        merged.set(`${s.musicId}::${s.chartIndex}`, s);
+      }
+    }
+    for (const s of newScores) {
+      const key = `${s.musicId}::${s.chartIndex}`;
+      const old = merged.get(key);
+      merged.set(key, old ? mergeScoreKeepBest(old, s) : s);
+    }
+    return [...merged.values()];
+  }
+
+  private async replaceLatestSync(input: {
+    id: string;
+    jobId: string;
+    friendCode: string;
+    scores: ScoreSnapshot[];
+  }) {
+    await this.syncModel.deleteMany({ friendCode: input.friendCode });
+    return this.syncModel.create(input);
+  }
+
+  private async getMusicCache(): Promise<MusicCache> {
+    const now = Date.now();
+    if (this.musicCache && now - this.musicCache.at < 5 * 60 * 1000) {
+      return this.musicCache;
+    }
+
+    const rows = (await this.musicModel.find().lean()) as MusicRow[];
+    const byId = new Map<string, MusicRow>();
+    const byTitleKey = new Map<string, MusicRow>();
+    const byTitle = new Map<string, MusicRow[]>();
+    for (const m of rows) {
+      byId.set(String(m.id), m);
+      const categoryKey = m.category ?? '';
+      byTitleKey.set(`${categoryKey}::${m.title}::${m.type}`, m);
+      const titleRows = byTitle.get(m.title) ?? [];
+      titleRows.push(m);
+      byTitle.set(m.title, titleRows);
+    }
+
+    this.musicCache = { at: now, rows, byId, byTitleKey, byTitle };
+    return this.musicCache;
+  }
+
   private async mapResultToScores(result: any): Promise<ScoreSnapshot[]> {
     if (!result || typeof result !== 'object') return [];
 
-    const musics = (await this.musicModel.find().lean()) as MusicRow[];
-    const musicMap = new Map<string, MusicRow>();
-    for (const m of musics) {
-      const categoryKey = m.category ?? '';
-      musicMap.set(`${categoryKey}::${m.title}::${m.type}`, m);
-    }
+    const { byTitleKey: musicMap } = await this.getMusicCache();
 
     const scores: ScoreSnapshot[] = [];
 
@@ -282,6 +501,53 @@ export class SyncService {
             });
           }
         }
+      }
+    }
+
+    return scores;
+  }
+
+  private async mapRivalMusicToScores(
+    rivalMusic: SdgbWorkerMusicEntry[],
+  ): Promise<ScoreSnapshot[]> {
+    if (!Array.isArray(rivalMusic) || !rivalMusic.length) return [];
+
+    const { byId: musicMap } = await this.getMusicCache();
+    const scores: ScoreSnapshot[] = [];
+
+    for (const entry of rivalMusic) {
+      const music = musicMap.get(String(entry.musicId));
+      if (!music) continue;
+
+      for (const detail of entry.userRivalMusicDetailList ?? []) {
+        const chartIndex = detail.level;
+        const chart = Array.isArray(music.charts)
+          ? (music.charts[chartIndex === 10 ? 0 : chartIndex] as
+              | ChartPayload
+              | undefined)
+          : undefined;
+        if (!chart || chart.cid === undefined || chart.cid === null) continue;
+
+        const score = (detail.achievement / 10000).toFixed(4) + '%';
+        const achievement = normalizeAchievement(score);
+        const musicDetailLevel = chart.detailLevel ?? null;
+        const rating =
+          musicDetailLevel !== null && achievement !== null
+            ? getRating(musicDetailLevel, achievement)
+            : null;
+
+        scores.push({
+          musicId: music.id,
+          cid: music.id + '_' + (chartIndex === 10 ? 0 : chartIndex),
+          chartIndex,
+          type: music.type ?? '',
+          dxScore: String(detail.deluxscoreMax),
+          score,
+          fs: null,
+          fc: null,
+          rating,
+          isNew: music.isNew ?? null,
+        });
       }
     }
 

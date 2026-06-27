@@ -6,65 +6,77 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import type { Model } from 'mongoose';
+import { createHash, randomUUID } from 'crypto';
 import { CronJob } from 'cron';
+import type { Model } from 'mongoose';
+import type { SdgbWorkerUserMapEntry } from '@maimai-score-hub/shared';
 
-import { UsersService } from '../../users/services/users.service';
-import { JobService } from '../../job/services/job.service';
-import { JobEntity } from '../../job/schemas/job.schema';
 import { BotStatusService } from '../../bots/services/bot-status.service';
+import { JobService } from '../../job/services/job.service';
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
 import { SyncService } from '../../sync/services/sync.service';
+import { UsersService } from '../../users/services/users.service';
+import { AUTO_UPDATE_BACKOFF_POLICY } from '../auto-update-backoff';
+import {
+  AutoUpdateProbeStateEntity,
+  type AutoUpdateTier,
+} from '../schemas/auto-update-probe-state.schema';
 import { AutoUpdateRunEntity } from '../schemas/auto-update-run.schema';
+import { AutoUpdateTaskEntity } from '../schemas/auto-update-task.schema';
 
-/** Per-user throttle for the sdgb hash-check call. */
-const HASH_CHECK_THROTTLE_MS = 15 * 60 * 1000;
-/** Per-user throttle for the dxnet update_score job creation. */
-const AUTO_UPDATE_JOB_THROTTLE_MS = 30 * 60 * 1000;
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+const SCHEDULER_VERSION = 'rival-first-v1';
 
-/**
- * Exponential backoff for users whose update_score jobs keep
- * failing. Reset to 0 on a successful job.
- *
- * Why bother? Without backoff a persistently failing user (cookie
- * died, bot got banned, cabinet refused) keeps consuming a bot slot
- * every AUTO_UPDATE_JOB_THROTTLE_MS forever, drowning out healthy
- * users in the same bot's queue.
- *
- * Concrete numbers live in ./auto-update-backoff.ts so JobService
- * can share them without importing the scheduler module.
- */
+function getPositiveInt(config: ConfigService, key: string, fallback: number) {
+  const raw = config.get<string | number>(key);
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
 
-/**
- * Polls every AUTO_UPDATE_CRON tick (default: every 5 minutes) and, for
- * each user that has cabinetUserId bound + autoUpdate=true:
- *
- *   0. If the user already has an in-flight update_score job, skip
- *      (we never want two competing jobs for the same user — the second
- *      one would cancel the first via JobService.create's "cancel older"
- *      rule).
- *   1. Try to claim a hash-check slot (CAS on user.lastHashCheckAt; at
- *      most once per HASH_CHECK_THROTTLE_MS).
- *   2. Ask sdgb-worker for the user's current rival-music hash.
- *   3. If the hash is unchanged from `lastScoreHash`, skip.
- *   4. Try to claim a job-creation slot (CAS on user.lastAutoUpdateJobAt;
- *      at most once per AUTO_UPDATE_JOB_THROTTLE_MS).
- *   5. Create an `update_score` job carrying the observed hash as
- *      `sourceScoreHash`. JobService promotes the hash to
- *      user.lastScoreHash ONLY after the job completes successfully.
- *
- * The "promote on success" rule means a failed/canceled job leaves the
- * stored hash alone, so the next sweep retries the same diff.
- */
+function maxDate(...dates: Array<Date | null | undefined>): Date | null {
+  const valid = dates.filter((d): d is Date => d instanceof Date);
+  if (!valid.length) return null;
+  return new Date(Math.max(...valid.map((d) => d.getTime())));
+}
+
+function countDetails(music: Array<{ userRivalMusicDetailList?: unknown[] }>) {
+  return music.reduce(
+    (sum, item) => sum + (item.userRivalMusicDetailList?.length ?? 0),
+    0,
+  );
+}
+
+function deterministicOffsetMs(key: string, moduloMs: number): number {
+  const digest = createHash('sha256').update(key).digest();
+  const value = digest.readUInt32BE(0);
+  return value % Math.max(1, moduloMs);
+}
+
 @Injectable()
 export class AutoUpdateSchedulerService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new Logger(AutoUpdateSchedulerService.name);
+  private readonly cronExpr: string;
+  private readonly hotIntervalMs: number;
+  private readonly warmIntervalMs: number;
+  private readonly coldIntervalMs: number;
+  private readonly hotSessionMs: number;
+  private readonly warmMaxIdleMs: number;
+  private readonly batchLimit: number;
+  private readonly mapBatchLimit: number;
+  private readonly concurrency: number;
+  private readonly mapConcurrency: number;
+  private readonly rivalTimeoutMs: number;
+  private readonly mapTimeoutMs: number;
+  private readonly recentEventCooldownMs: number;
+  private readonly mapHotIntervalMs: number;
+  private readonly mapWarmIntervalMs: number;
+  private readonly mapColdIntervalMs: number;
   private cron: CronJob | null = null;
   private running = false;
-
-  private readonly cronExpr: string;
 
   constructor(
     private readonly users: UsersService,
@@ -72,21 +84,96 @@ export class AutoUpdateSchedulerService
     private readonly botStatus: BotStatusService,
     private readonly sdgb: SdgbJobDispatcher,
     private readonly syncService: SyncService,
-    @InjectModel(JobEntity.name)
-    private readonly jobsModel: Model<JobEntity>,
+    @InjectModel(AutoUpdateProbeStateEntity.name)
+    private readonly stateModel: Model<AutoUpdateProbeStateEntity>,
+    @InjectModel(AutoUpdateTaskEntity.name)
+    private readonly taskModel: Model<AutoUpdateTaskEntity>,
     @InjectModel(AutoUpdateRunEntity.name)
     private readonly runsModel: Model<AutoUpdateRunEntity>,
     config: ConfigService,
   ) {
-    this.cronExpr = config.get<string>('AUTO_UPDATE_CRON', '*/5 * * * *');
+    this.cronExpr = config.get<string>('AUTO_UPDATE_CRON', '*/1 * * * *');
+    this.hotIntervalMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_HOT_INTERVAL_MS',
+      10 * MINUTE,
+    );
+    this.warmIntervalMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_WARM_INTERVAL_MS',
+      30 * MINUTE,
+    );
+    this.coldIntervalMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_COLD_INTERVAL_MS',
+      HOUR,
+    );
+    this.hotSessionMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_HOT_SESSION_MS',
+      90 * MINUTE,
+    );
+    this.warmMaxIdleMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_WARM_MAX_IDLE_MS',
+      7 * DAY,
+    );
+    this.batchLimit = getPositiveInt(
+      config,
+      'AUTO_UPDATE_RIVAL_BATCH_LIMIT',
+      480,
+    );
+    this.mapBatchLimit = getPositiveInt(
+      config,
+      'AUTO_UPDATE_MAP_BATCH_LIMIT',
+      120,
+    );
+    this.concurrency = getPositiveInt(
+      config,
+      'AUTO_UPDATE_RIVAL_CONCURRENCY',
+      4,
+    );
+    this.mapConcurrency = getPositiveInt(
+      config,
+      'AUTO_UPDATE_MAP_CONCURRENCY',
+      2,
+    );
+    this.rivalTimeoutMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_RIVAL_TIMEOUT_MS',
+      120_000,
+    );
+    this.mapTimeoutMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_MAP_TIMEOUT_MS',
+      60_000,
+    );
+    this.recentEventCooldownMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS',
+      30 * MINUTE,
+    );
+    this.mapHotIntervalMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_MAP_HOT_INTERVAL_MS',
+      30 * MINUTE,
+    );
+    this.mapWarmIntervalMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_MAP_WARM_INTERVAL_MS',
+      HOUR,
+    );
+    this.mapColdIntervalMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_MAP_COLD_INTERVAL_MS',
+      HOUR,
+    );
   }
 
   onModuleInit() {
     this.cron = new CronJob(
       this.cronExpr,
       () => {
-        // Cron-fired sweeps must claim the bucket so that multiple backend
-        // instances do not all run the same sweep at the same tick.
         this.runSweepClaimed().catch((err) =>
           this.logger.error('Auto-update cron sweep failed', err),
         );
@@ -94,7 +181,9 @@ export class AutoUpdateSchedulerService
       null,
       true,
     );
-    this.logger.log(`Auto-update scheduler started (cron=${this.cronExpr})`);
+    this.logger.log(
+      `Rival-first auto-update scheduler started (cron=${this.cronExpr})`,
+    );
   }
 
   onModuleDestroy() {
@@ -102,32 +191,18 @@ export class AutoUpdateSchedulerService
     this.cron = null;
   }
 
-  /**
-   * Compute the bucket key for the cron tick that JUST fired (or, for
-   * out-of-cron callers, the closest preceding tick). We use the CronJob's
-   * own `lastDate()` when available so the key is exactly aligned with the
-   * cron expression — no separate rounding logic to drift out of sync.
-   */
   private currentBucketKey(): string {
     const last = this.cron?.lastDate();
     const ref = last instanceof Date ? last : new Date();
-    // ISO minute precision in UTC. Using UTC avoids two instances in
-    // different timezones disagreeing on the bucket.
     return ref.toISOString().slice(0, 16);
   }
 
-  /**
-   * Cron-driven entrypoint. Tries to claim the current bucket; if some
-   * other instance already won, returns null without doing any work.
-   */
-  private async runSweepClaimed(): Promise<ReturnType<
-    AutoUpdateSchedulerService['runSweep']
+  private async runSweepClaimed(): Promise<Awaited<
+    ReturnType<AutoUpdateSchedulerService['runSweep']>
   > | null> {
     const bucketKey = this.currentBucketKey();
     let won = false;
     try {
-      // Atomic upsert + returnDocument: 'before' — same trick
-      // the former nightly sweep used.
       const previous = await this.runsModel.findOneAndUpdate(
         { bucketKey },
         {
@@ -146,8 +221,6 @@ export class AutoUpdateSchedulerService
       );
       won = previous === null;
     } catch (err) {
-      // Duplicate-key race: another instance got the doc inserted between
-      // our findOne (which returned null) and our upsert. Treat as "lost".
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('E11000')) {
         won = false;
@@ -156,14 +229,8 @@ export class AutoUpdateSchedulerService
       }
     }
 
-    if (!won) {
-      this.logger.debug?.(
-        `auto-update bucket=${bucketKey} already claimed by another instance, skipping`,
-      );
-      return null;
-    }
+    if (!won) return null;
 
-    this.logger.log(`auto-update bucket=${bucketKey} claimed, running sweep`);
     const summary = await this.runSweep();
     await this.runsModel
       .updateOne(
@@ -184,10 +251,6 @@ export class AutoUpdateSchedulerService
     return summary;
   }
 
-  /**
-   * Manual / test entrypoint. Returns a summary of the sweep so the admin
-   * controller (or jest tests) can assert the per-user behaviour.
-   */
   async runSweep(): Promise<{
     totalUsers: number;
     triggered: number;
@@ -210,184 +273,662 @@ export class AutoUpdateSchedulerService
         entries: [],
       };
     }
+
     this.running = true;
     try {
-      const users = await this.users.getAutoUpdateUsers();
-      let triggered = 0;
-      let skippedNoChange = 0;
-      let failed = 0;
-      const entries: Array<{
-        friendCode: string;
-        cabinetUserId: number;
-        action: 'triggered' | 'skipped' | 'failed';
-        message?: string;
-      }> = [];
+      const now = new Date();
+      await this.syncEnabledStates(now);
+      const due = await this.stateModel
+        .find({
+          enabled: true,
+          nextRivalProbeAt: { $lte: now },
+          $or: [{ backoffUntil: null }, { backoffUntil: { $lte: now } }],
+        })
+        .sort({ nextRivalProbeAt: 1 })
+        .limit(this.batchLimit)
+        .lean<AutoUpdateProbeStateEntity[]>()
+        .exec();
 
-      // One-shot lookup of every friendCode that already has a queued or
-      // processing update_score job. We never want to fire a second
-      // one for the same user — JobService.create cancels older jobs of
-      // the same friendCode, which would waste the work in flight.
-      const inflightRows = await this.jobsModel.aggregate<{ _id: string }>([
-        {
-          $match: {
-            jobType: 'update_score',
-            status: { $in: ['queued', 'processing'] },
-          },
-        },
-        { $group: { _id: '$friendCode' } },
-      ]);
-      const inflightFc = new Set(inflightRows.map((r) => r._id));
+      const results = await this.runDueStates(due);
+      const mapDue = await this.stateModel
+        .find({
+          enabled: true,
+          nextMapProbeAt: { $lte: now },
+          $or: [{ backoffUntil: null }, { backoffUntil: { $lte: now } }],
+        })
+        .sort({ nextMapProbeAt: 1 })
+        .limit(this.mapBatchLimit)
+        .lean<AutoUpdateProbeStateEntity[]>()
+        .exec();
+      const mapResults = await this.runDueMapStates(mapDue);
 
-      for (const u of users) {
-        const cabinetUserId = u.cabinetUserId;
-        if (cabinetUserId == null) continue;
-
-        // (0a) Backoff: if a previous update_score job failed,
-        // user.autoUpdateBackoffUntil is set to a future time. Skip
-        // until the window expires. The window grows exponentially
-        // with consecutive failures (see AUTO_UPDATE_BACKOFF_POLICY).
-        // Reset happens in JobService.patch on successful completion.
-        const backoffUntil = (u as { autoUpdateBackoffUntil?: Date | null })
-          .autoUpdateBackoffUntil;
-        if (backoffUntil && backoffUntil.getTime() > Date.now()) {
-          skippedNoChange++;
-          const remainMin = Math.ceil(
-            (backoffUntil.getTime() - Date.now()) / 60_000,
-          );
-          entries.push({
-            friendCode: u.friendCode,
-            cabinetUserId,
-            action: 'skipped',
-            message: `backoff (${(u as { autoUpdateFailureCount?: number }).autoUpdateFailureCount ?? '?'} fails, ${remainMin}m remaining)`,
-          });
-          continue;
-        }
-
-        // (0b) skip users whose previous job hasn't finished — checking the
-        // hash again here would just produce noise.
-        if (inflightFc.has(u.friendCode)) {
-          skippedNoChange++;
-          entries.push({
-            friendCode: u.friendCode,
-            cabinetUserId,
-            action: 'skipped',
-            message: 'update_score job still in flight',
-          });
-          continue;
-        }
-
-        // (1) hash-check throttle: at most one sdgb call per user per
-        // HASH_CHECK_THROTTLE_MS, even across backend instances.
-        const claimedCheck = await this.users.tryClaimHashCheck(
-          String(u._id),
-          HASH_CHECK_THROTTLE_MS,
-        );
-        if (!claimedCheck) {
-          skippedNoChange++;
-          entries.push({
-            friendCode: u.friendCode,
-            cabinetUserId,
-            action: 'skipped',
-            message: 'hash check throttled',
-          });
-          continue;
-        }
-
-        try {
-          const { hash } = await this.sdgb.getRivalHash(
-            { cabinetUserId },
-            { tag: `auto-hash:${u.friendCode}`, timeoutMs: 120_000 },
-          );
-          if (hash === u.lastScoreHash) {
-            skippedNoChange++;
-            entries.push({
-              friendCode: u.friendCode,
-              cabinetUserId,
-              action: 'skipped',
-              message: 'hash unchanged',
-            });
-            continue;
-          }
-
-          // (3) job-creation throttle: at most one update_score job
-          // per AUTO_UPDATE_JOB_THROTTLE_MS. Combined with the in-flight
-          // check above, this stops a long-running job from ever being
-          // shadowed by a fresh one once the throttle window expires.
-          const claimedJob = await this.users.tryClaimAutoUpdateJob(
-            String(u._id),
-            AUTO_UPDATE_JOB_THROTTLE_MS,
-          );
-          if (!claimedJob) {
-            skippedNoChange++;
-            entries.push({
-              friendCode: u.friendCode,
-              cabinetUserId,
-              action: 'skipped',
-              message: 'auto-update job throttled',
-            });
-            continue;
-          }
-
-          // (5) create an update_score job; sourceScoreHash piggybacks on the
-          // job and is promoted to user.lastScoreHash by JobService.patch ONLY
-          // after the job completes successfully.
-          await this.triggerUpdateForUser(u.friendCode, hash);
-          triggered++;
-          entries.push({
-            friendCode: u.friendCode,
-            cabinetUserId,
-            action: 'triggered',
-          });
-        } catch (err) {
-          failed++;
-          const msg = err instanceof Error ? err.message : String(err);
-          this.logger.warn(
-            `auto-update fc=${u.friendCode} cabinetUid=${cabinetUserId} failed: ${msg}`,
-          );
-          entries.push({
-            friendCode: u.friendCode,
-            cabinetUserId,
-            action: 'failed',
-            message: msg,
-          });
-        }
-      }
+      const triggered = results.filter((r) => r.action === 'triggered').length;
+      const skippedNoChange =
+        results.filter((r) => r.action === 'skipped').length +
+        mapResults.filter((r) => r.action === 'skipped').length;
+      const failed =
+        results.filter((r) => r.action === 'failed').length +
+        mapResults.filter((r) => r.action === 'failed').length;
 
       this.logger.log(
-        `auto-update sweep done: ${triggered} triggered, ${skippedNoChange} skipped, ${failed} failed (of ${users.length} users)`,
+        `rival-first auto-update sweep done: ${triggered} changed, ${skippedNoChange} unchanged, ${failed} failed (rivalDue=${due.length}, mapDue=${mapDue.length})`,
       );
+
       return {
-        totalUsers: users.length,
+        totalUsers: due.length + mapDue.length,
         triggered,
         skippedNoChange,
         failed,
-        entries,
+        entries: [...results, ...mapResults],
       };
     } finally {
       this.running = false;
     }
   }
 
-  private async triggerUpdateForUser(
-    friendCode: string,
-    sourceScoreHash: string | null,
-  ): Promise<void> {
-    const bot = await this.botStatus.pickAvailableCabinetBot();
-    if (!bot) {
-      throw new Error(
-        '没有可用的、配置了 cabinetUserId 的 bot — 请先在 admin 页面配置',
+  private async syncEnabledStates(now: Date): Promise<void> {
+    const users = await this.users.getAutoUpdateUsers();
+    const activeFriendCodes = users.map((u) => u.friendCode);
+    if (users.length) {
+      await this.stateModel.bulkWrite(
+        users.map((u) => {
+          const initialDue = new Date(
+            now.getTime() +
+              deterministicOffsetMs(u.friendCode, this.coldIntervalMs),
+          );
+          const initialMapDue = new Date(
+            now.getTime() +
+              deterministicOffsetMs(
+                `map:${u.friendCode}`,
+                this.mapColdIntervalMs,
+              ),
+          );
+          return {
+            updateOne: {
+              filter: { friendCode: u.friendCode },
+              update: {
+                $set: {
+                  cabinetUserId: u.cabinetUserId!,
+                  enabled: true,
+                  schedulerVersion: SCHEDULER_VERSION,
+                },
+                $setOnInsert: {
+                  tier: 'cold',
+                  lastRivalHash: u.lastScoreHash ?? null,
+                  nextRivalProbeAt: initialDue,
+                  nextMapProbeAt: initialMapDue,
+                  habitMultiplier: 1,
+                  loadMultiplier: 1,
+                  rivalErrorCount: 0,
+                  mapErrorCount: 0,
+                  recentErrorCount: 0,
+                  backoffUntil: null,
+                },
+              },
+              upsert: true,
+            },
+          };
+        }),
+        { ordered: false },
       );
     }
 
-    const { jobId } = await this.jobs.create({
-      friendCode,
-      jobType: 'update_score',
-      botUserFriendCode: bot.friendCode,
-      sourceScoreHash,
+    await this.stateModel.updateMany(
+      activeFriendCodes.length
+        ? { friendCode: { $nin: activeFriendCodes }, enabled: true }
+        : { enabled: true },
+      { $set: { enabled: false } },
+    );
+  }
+
+  private async runDueStates(states: AutoUpdateProbeStateEntity[]): Promise<
+    Array<{
+      friendCode: string;
+      cabinetUserId: number;
+      action: 'triggered' | 'skipped' | 'failed';
+      message?: string;
+    }>
+  > {
+    const results: Array<{
+      friendCode: string;
+      cabinetUserId: number;
+      action: 'triggered' | 'skipped' | 'failed';
+      message?: string;
+    }> = new Array(states.length);
+    let next = 0;
+    const workers = new Array(Math.min(this.concurrency, states.length))
+      .fill(null)
+      .map(async () => {
+        while (next < states.length) {
+          const index = next++;
+          results[index] = await this.processRivalProbe(states[index]);
+        }
+      });
+    await Promise.all(workers);
+    return results;
+  }
+
+  private async runDueMapStates(states: AutoUpdateProbeStateEntity[]): Promise<
+    Array<{
+      friendCode: string;
+      cabinetUserId: number;
+      action: 'triggered' | 'skipped' | 'failed';
+      message?: string;
+    }>
+  > {
+    const results: Array<{
+      friendCode: string;
+      cabinetUserId: number;
+      action: 'triggered' | 'skipped' | 'failed';
+      message?: string;
+    }> = new Array(states.length);
+    let next = 0;
+    const workers = new Array(Math.min(this.mapConcurrency, states.length))
+      .fill(null)
+      .map(async () => {
+        while (next < states.length) {
+          const index = next++;
+          results[index] = await this.processMapProbe(states[index]);
+        }
+      });
+    await Promise.all(workers);
+    return results;
+  }
+
+  private async processRivalProbe(state: AutoUpdateProbeStateEntity): Promise<{
+    friendCode: string;
+    cabinetUserId: number;
+    action: 'triggered' | 'skipped' | 'failed';
+    message?: string;
+  }> {
+    const taskId = randomUUID();
+    const startedAt = Date.now();
+    await this.taskModel.create({
+      id: taskId,
+      type: 'rival_score_probe',
+      friendCode: state.friendCode,
+      cabinetUserId: state.cabinetUserId,
+      status: 'processing',
+      priority: this.priorityForTier(state.tier),
+      runAt: new Date(),
+      attempts: 1,
+      lastError: null,
+      metrics: null,
     });
 
-    this.logger.log(
-      `auto-update job created fc=${friendCode} bot=${bot.friendCode} jobId=${jobId} sourceHash=${sourceScoreHash?.slice(0, 8) ?? '-'}`,
+    try {
+      const { hash, music } = await this.sdgb.getRivalHash(
+        { cabinetUserId: state.cabinetUserId },
+        {
+          tag: `auto-rival:${state.friendCode}`,
+          timeoutMs: this.rivalTimeoutMs,
+        },
+      );
+      const now = new Date();
+      const durationMs = Date.now() - startedAt;
+      const hashChanged = hash !== state.lastRivalHash;
+      const musicCount = music.length;
+      const detailCount = countDetails(music);
+
+      if (hashChanged) {
+        const sync = await this.syncService.createFromRivalMusic({
+          friendCode: state.friendCode,
+          sourceId: taskId,
+          music,
+        });
+        if (!sync) {
+          throw new Error('rival music returned no mappable scores');
+        }
+
+        await this.stateModel.updateOne(
+          { friendCode: state.friendCode },
+          {
+            $set: {
+              tier: 'hot',
+              lastRivalHash: hash,
+              lastRivalProbeAt: now,
+              lastScoreChangedAt: now,
+              nextRivalProbeAt: this.nextProbeAt('hot', now, state),
+              rivalErrorCount: 0,
+              backoffUntil: null,
+              schedulerVersion: SCHEDULER_VERSION,
+            },
+          },
+        );
+        await this.completeTask(taskId, {
+          durationMs,
+          hashChanged,
+          musicCount,
+          detailCount,
+          scoreCount: Array.isArray(sync.scores) ? sync.scores.length : null,
+        });
+        await this.maybeEnqueueFcfs(state, 'rival_hash_changed', now).catch(
+          (err) =>
+            this.logger.warn(
+              `failed to enqueue fcfs enrichment fc=${state.friendCode}: ${
+                err instanceof Error ? err.message : err
+              }`,
+            ),
+        );
+        return {
+          friendCode: state.friendCode,
+          cabinetUserId: state.cabinetUserId,
+          action: 'triggered',
+          message: `hash changed, merged ${Array.isArray(sync.scores) ? sync.scores.length : '?'} scores`,
+        };
+      }
+
+      const nextTier = this.decayTier(state, now);
+      await this.stateModel.updateOne(
+        { friendCode: state.friendCode },
+        {
+          $set: {
+            tier: nextTier,
+            lastRivalProbeAt: now,
+            nextRivalProbeAt: this.nextProbeAt(nextTier, now, state),
+            rivalErrorCount: 0,
+            backoffUntil: null,
+            schedulerVersion: SCHEDULER_VERSION,
+          },
+        },
+      );
+      await this.completeTask(taskId, {
+        durationMs,
+        hashChanged,
+        musicCount,
+        detailCount,
+      });
+      return {
+        friendCode: state.friendCode,
+        cabinetUserId: state.cabinetUserId,
+        action: 'skipped',
+        message: 'hash unchanged',
+      };
+    } catch (err) {
+      const now = new Date();
+      const msg = err instanceof Error ? err.message : String(err);
+      const failureCount = (state.rivalErrorCount ?? 0) + 1;
+      const backoffUntil = new Date(
+        now.getTime() + this.backoffDelayMs(failureCount),
+      );
+      await Promise.all([
+        this.stateModel.updateOne(
+          { friendCode: state.friendCode },
+          {
+            $set: {
+              rivalErrorCount: failureCount,
+              backoffUntil,
+              nextRivalProbeAt: backoffUntil,
+              lastRivalProbeAt: now,
+              schedulerVersion: SCHEDULER_VERSION,
+            },
+          },
+        ),
+        this.taskModel.updateOne(
+          { id: taskId },
+          {
+            $set: {
+              status: 'failed',
+              lastError: msg,
+              updatedAt: now,
+              metrics: { durationMs: Date.now() - startedAt },
+            },
+          },
+        ),
+      ]);
+      this.logger.warn(
+        `rival-first auto-update failed fc=${state.friendCode}: ${msg}`,
+      );
+      return {
+        friendCode: state.friendCode,
+        cabinetUserId: state.cabinetUserId,
+        action: 'failed',
+        message: msg,
+      };
+    }
+  }
+
+  private async completeTask(
+    taskId: string,
+    metrics: Record<string, unknown>,
+  ): Promise<void> {
+    await this.taskModel.updateOne(
+      { id: taskId },
+      {
+        $set: {
+          status: 'completed',
+          metrics,
+          lastError: null,
+          updatedAt: new Date(),
+        },
+      },
+    );
+  }
+
+  private async processMapProbe(state: AutoUpdateProbeStateEntity): Promise<{
+    friendCode: string;
+    cabinetUserId: number;
+    action: 'triggered' | 'skipped' | 'failed';
+    message?: string;
+  }> {
+    const taskId = randomUUID();
+    const startedAt = Date.now();
+    await this.taskModel.create({
+      id: taskId,
+      type: 'map_auxiliary_probe',
+      friendCode: state.friendCode,
+      cabinetUserId: state.cabinetUserId,
+      status: 'processing',
+      priority: this.priorityForTier(state.tier),
+      runAt: new Date(),
+      attempts: 1,
+      lastError: null,
+      metrics: null,
+    });
+
+    try {
+      const { maps } = await this.sdgb.getUserMap(
+        { cabinetUserId: state.cabinetUserId },
+        { tag: `auto-map:${state.friendCode}`, timeoutMs: this.mapTimeoutMs },
+      );
+      const now = new Date();
+      const fingerprint = this.mapFingerprint(maps);
+      const changed =
+        state.mapFingerprint != null &&
+        state.mapFingerprint !== fingerprint.mapFingerprint;
+      const nextTier: AutoUpdateTier = changed
+        ? 'hot'
+        : this.decayTier(state, now);
+      const set: Record<string, unknown> = {
+        tier: nextTier,
+        mapFingerprint: fingerprint.mapFingerprint,
+        mapDistanceSum: fingerprint.mapDistanceSum,
+        lastMapProbeAt: now,
+        nextMapProbeAt: this.nextMapProbeAt(nextTier, now, state),
+        mapErrorCount: 0,
+        backoffUntil: null,
+        schedulerVersion: SCHEDULER_VERSION,
+      };
+
+      if (changed) {
+        set.lastMapDeltaAt = now;
+        if (this.shouldProbeRivalNow(state, now)) {
+          set.nextRivalProbeAt = now;
+        }
+      }
+
+      await this.stateModel.updateOne(
+        { friendCode: state.friendCode },
+        { $set: set },
+      );
+      await this.completeTask(taskId, {
+        durationMs: Date.now() - startedAt,
+        changed,
+        rowCount: fingerprint.rowCount,
+        mapDistanceSum: fingerprint.mapDistanceSum,
+      });
+
+      if (changed) {
+        await this.maybeEnqueueFcfs(state, 'map_delta', now).catch((err) =>
+          this.logger.warn(
+            `failed to enqueue map-triggered fcfs fc=${state.friendCode}: ${
+              err instanceof Error ? err.message : err
+            }`,
+          ),
+        );
+      }
+
+      return {
+        friendCode: state.friendCode,
+        cabinetUserId: state.cabinetUserId,
+        action: 'skipped',
+        message: changed ? 'map changed' : 'map unchanged',
+      };
+    } catch (err) {
+      const now = new Date();
+      const msg = err instanceof Error ? err.message : String(err);
+      const failureCount = (state.mapErrorCount ?? 0) + 1;
+      const backoffUntil = new Date(
+        now.getTime() + Math.min(HOUR, 5 * MINUTE * failureCount),
+      );
+      await Promise.all([
+        this.stateModel.updateOne(
+          { friendCode: state.friendCode },
+          {
+            $set: {
+              mapErrorCount: failureCount,
+              nextMapProbeAt: backoffUntil,
+              schedulerVersion: SCHEDULER_VERSION,
+            },
+          },
+        ),
+        this.taskModel.updateOne(
+          { id: taskId },
+          {
+            $set: {
+              status: 'failed',
+              lastError: msg,
+              updatedAt: now,
+              metrics: { durationMs: Date.now() - startedAt },
+            },
+          },
+        ),
+      ]);
+      return {
+        friendCode: state.friendCode,
+        cabinetUserId: state.cabinetUserId,
+        action: 'failed',
+        message: msg,
+      };
+    }
+  }
+
+  private async maybeEnqueueFcfs(
+    state: AutoUpdateProbeStateEntity,
+    reason: 'rival_hash_changed' | 'map_delta' | 'manual',
+    now: Date,
+  ): Promise<void> {
+    if (state.nextRecentEventAt && state.nextRecentEventAt > now) return;
+
+    const taskId = randomUUID();
+    await this.taskModel.create({
+      id: taskId,
+      type: 'fcfs_enrichment',
+      friendCode: state.friendCode,
+      cabinetUserId: state.cabinetUserId,
+      status: 'processing',
+      priority: this.priorityForTier('hot'),
+      runAt: now,
+      attempts: 1,
+      lastError: null,
+      metrics: { reason },
+    });
+
+    try {
+      const bot = await this.botStatus.pickAvailableCabinetBot();
+      if (!bot) {
+        throw new Error('no available cabinet bot for fcfs enrichment');
+      }
+
+      const addRival = await this.sdgb.addRival(
+        {
+          botCabinetUserId: bot.cabinetUserId,
+          targetCabinetUserId: state.cabinetUserId,
+        },
+        { tag: `auto-fcfs-add:${state.friendCode}`, timeoutMs: 120_000 },
+      );
+      const { jobId } = await this.jobs.create({
+        friendCode: state.friendCode,
+        jobType: 'get_user_recent_event',
+        botUserFriendCode: bot.friendCode,
+        cancelActiveJobs: false,
+        context: {
+          autoUpdateFcfs: true,
+          reason,
+          recentEventSince: state.lastRecentEventAt?.toISOString() ?? null,
+        },
+      });
+      const nextRecentEventAt = new Date(
+        now.getTime() + this.recentEventCooldownMs,
+      );
+      await Promise.all([
+        this.stateModel.updateOne(
+          { friendCode: state.friendCode },
+          {
+            $set: {
+              lastRecentEventAt: now,
+              nextRecentEventAt,
+              recentErrorCount: 0,
+              schedulerVersion: SCHEDULER_VERSION,
+            },
+          },
+        ),
+        this.taskModel.updateOne(
+          { id: taskId },
+          {
+            $set: {
+              status: 'completed',
+              updatedAt: new Date(),
+              metrics: {
+                reason,
+                dxnetJobId: jobId,
+                botFriendCode: bot.friendCode,
+                addRival,
+              },
+            },
+          },
+        ),
+      ]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const failureCount = (state.recentErrorCount ?? 0) + 1;
+      await Promise.all([
+        this.stateModel.updateOne(
+          { friendCode: state.friendCode },
+          {
+            $set: {
+              recentErrorCount: failureCount,
+              nextRecentEventAt: new Date(
+                now.getTime() + Math.min(6 * HOUR, 30 * MINUTE * failureCount),
+              ),
+            },
+          },
+        ),
+        this.taskModel.updateOne(
+          { id: taskId },
+          {
+            $set: {
+              status: 'failed',
+              lastError: msg,
+              updatedAt: new Date(),
+            },
+          },
+        ),
+      ]);
+      throw err;
+    }
+  }
+
+  private priorityForTier(tier: AutoUpdateTier): number {
+    if (tier === 'hot') return 30;
+    if (tier === 'warm') return 10;
+    return 0;
+  }
+
+  private intervalForTier(tier: AutoUpdateTier): number {
+    if (tier === 'hot') return this.hotIntervalMs;
+    if (tier === 'warm') return this.warmIntervalMs;
+    return this.coldIntervalMs;
+  }
+
+  private mapIntervalForTier(tier: AutoUpdateTier): number {
+    if (tier === 'hot') return this.mapHotIntervalMs;
+    if (tier === 'warm') return this.mapWarmIntervalMs;
+    return this.mapColdIntervalMs;
+  }
+
+  private nextProbeAt(
+    tier: AutoUpdateTier,
+    now: Date,
+    state: AutoUpdateProbeStateEntity,
+  ): Date {
+    const base = this.intervalForTier(tier);
+    const habitMultiplier = Number.isFinite(state.habitMultiplier)
+      ? state.habitMultiplier
+      : 1;
+    const loadMultiplier = Number.isFinite(state.loadMultiplier)
+      ? state.loadMultiplier
+      : 1;
+    const ms = Math.max(
+      MINUTE,
+      Math.floor(base * habitMultiplier * loadMultiplier),
+    );
+    return new Date(now.getTime() + ms);
+  }
+
+  private nextMapProbeAt(
+    tier: AutoUpdateTier,
+    now: Date,
+    state: AutoUpdateProbeStateEntity,
+  ): Date {
+    const base = this.mapIntervalForTier(tier);
+    const loadMultiplier = Number.isFinite(state.loadMultiplier)
+      ? state.loadMultiplier
+      : 1;
+    return new Date(
+      now.getTime() + Math.max(MINUTE, Math.floor(base * loadMultiplier)),
+    );
+  }
+
+  private shouldProbeRivalNow(
+    state: AutoUpdateProbeStateEntity,
+    now: Date,
+  ): boolean {
+    if (!state.lastRivalProbeAt) return true;
+    return (
+      now.getTime() - state.lastRivalProbeAt.getTime() >=
+      this.intervalForTier(state.tier)
+    );
+  }
+
+  private mapFingerprint(maps: SdgbWorkerUserMapEntry[]): {
+    mapFingerprint: string;
+    mapDistanceSum: number;
+    rowCount: number;
+  } {
+    const pairs = maps
+      .filter((m) => Number.isFinite(m.mapId) && Number.isFinite(m.distance))
+      .map((m) => [m.mapId, m.distance] as const)
+      .sort((a, b) => a[0] - b[0]);
+    const stable = pairs
+      .map(([mapId, distance]) => `${mapId}:${distance}`)
+      .join('|');
+    return {
+      mapFingerprint: createHash('sha256').update(stable).digest('hex'),
+      mapDistanceSum: pairs.reduce((sum, [, distance]) => sum + distance, 0),
+      rowCount: pairs.length,
+    };
+  }
+
+  private decayTier(
+    state: AutoUpdateProbeStateEntity,
+    now: Date,
+  ): AutoUpdateTier {
+    const lastSignal = maxDate(state.lastScoreChangedAt, state.lastMapDeltaAt);
+    if (!lastSignal) return 'cold';
+    const idleMs = now.getTime() - lastSignal.getTime();
+    if (state.tier === 'hot' && idleMs <= this.hotSessionMs) return 'hot';
+    if (idleMs <= this.warmMaxIdleMs) return 'warm';
+    return 'cold';
+  }
+
+  private backoffDelayMs(failureCount: number): number {
+    return Math.min(
+      AUTO_UPDATE_BACKOFF_POLICY.capMs,
+      Math.floor(
+        AUTO_UPDATE_BACKOFF_POLICY.baseMs *
+          Math.pow(AUTO_UPDATE_BACKOFF_POLICY.factor, failureCount - 1),
+      ),
     );
   }
 }

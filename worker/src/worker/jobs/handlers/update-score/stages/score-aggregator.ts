@@ -17,6 +17,8 @@ interface ScoreFetchOptions {
   jobId?: string;
   /** 并发数 */
   concurrency?: number;
+  /** 指定要抓取的难度；为空则抓取默认全部难度 */
+  difficulties?: readonly number[];
   /** 难度完成回调（每完成一个难度的两种类型时调用） */
   onDiffCompleted?: (diff: number) => Promise<void>;
 }
@@ -41,6 +43,7 @@ export class ScoreAggregator {
     const {
       jobId,
       concurrency = WORKER_DEFAULTS.friendVSConcurrency,
+      difficulties = DIFFICULTIES,
       onDiffCompleted,
     } = options;
 
@@ -67,7 +70,10 @@ export class ScoreAggregator {
         jobId,
       });
 
-    const mergeSongs = (a: FriendVsSong[], b: FriendVsSong[]): FriendVsSong[] => {
+    const mergeSongs = (
+      a: FriendVsSong[],
+      b: FriendVsSong[],
+    ): FriendVsSong[] => {
       const seen = new Set<string>();
       const out: FriendVsSong[] = [];
       for (const s of [...a, ...b]) {
@@ -79,18 +85,20 @@ export class ScoreAggregator {
       return out;
     };
 
-    const buildTask = (scoreType: 1 | 2, diff: number) => async (): Promise<ParsedScoreResult> => {
-      const [winSongs, loseSongs] = await Promise.all([
-        fetchOneSide(scoreType, diff, "win"),
-        fetchOneSide(scoreType, diff, "lose"),
-      ]);
-      const songs = mergeSongs(winSongs, loseSongs);
-      const parsed = { diff, type: scoreType, songs };
-      await notifyDiffCompleted(diff);
-      return parsed;
-    };
+    const buildTask =
+      (scoreType: 1 | 2, diff: number) =>
+      async (): Promise<ParsedScoreResult> => {
+        const [winSongs, loseSongs] = await Promise.all([
+          fetchOneSide(scoreType, diff, "win"),
+          fetchOneSide(scoreType, diff, "lose"),
+        ]);
+        const songs = mergeSongs(winSongs, loseSongs);
+        const parsed = { diff, type: scoreType, songs };
+        await notifyDiffCompleted(diff);
+        return parsed;
+      };
 
-    for (const diff of DIFFICULTIES) {
+    for (const diff of difficulties) {
       tasks.push(buildTask(1, diff));
       tasks.push(buildTask(2, diff));
     }

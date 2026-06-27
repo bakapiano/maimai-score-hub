@@ -1,12 +1,24 @@
 import type { JobExecutionContext } from "../../index.ts";
-import { DIFFICULTIES } from "../../../../../common/maimai/constants.ts";
 import { ScoreAggregator } from "./score-aggregator.ts";
+
+const DEFAULT_DIFFICULTIES = [0, 1, 2, 3, 4, 10] as const;
+
+function getDifficulties(ctx: JobExecutionContext): readonly number[] {
+  const diffs = ctx.job.diffsToScrape;
+  if (!Array.isArray(diffs) || diffs.length === 0) {
+    return DEFAULT_DIFFICULTIES;
+  }
+  return [...new Set(diffs.filter((d) => Number.isInteger(d)))].sort(
+    (a, b) => a - b,
+  );
+}
 
 export async function updateScore(ctx: JobExecutionContext): Promise<void> {
   console.log(`[JobHandler] Job ${ctx.job.id}: Updating scores...`);
   const updateScoreStartTime = Date.now();
 
-  const totalDiffs = DIFFICULTIES.length;
+  const difficulties = getDifficulties(ctx);
+  const totalDiffs = difficulties.length;
   let completedCount = 0;
 
   await ctx.applyPatch({
@@ -14,12 +26,15 @@ export async function updateScore(ctx: JobExecutionContext): Promise<void> {
     updatedAt: new Date(),
   });
 
-  console.log(`[JobHandler] Job ${ctx.job.id}: Fetching scores for all diffs...`);
+  console.log(
+    `[JobHandler] Job ${ctx.job.id}: Fetching scores for diffs [${difficulties.join(",")}]...`,
+  );
   const scoreAggregator = new ScoreAggregator(ctx.client);
   const aggregated = await scoreAggregator.fetchAndAggregate(
     ctx.job.friendCode,
     {
       jobId: ctx.job.id,
+      difficulties,
       onDiffCompleted: async (diff: number) => {
         completedCount++;
         console.log(

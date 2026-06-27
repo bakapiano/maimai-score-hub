@@ -60,6 +60,8 @@ export const JobResponseSchema = z.object({
   executing: z.boolean().optional(),
   scoreProgress: ScoreProgressSchema.nullable().optional(),
   updateScoreDuration: z.number().nullable().optional(),
+  diffsToScrape: z.array(z.number().int()).nullable().optional(),
+  context: z.record(z.unknown()).nullable().optional(),
   autoExportResult: AutoExportResultSchema,
   runAt: z.string().nullable().optional(),
   createdAt: z.string(),

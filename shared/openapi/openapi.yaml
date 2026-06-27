@@ -163,6 +163,15 @@ paths:
                       updateScoreDuration:
                         type: number
                         nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
+                      context:
+                        type: object
+                        additionalProperties: {}
+                        nullable: true
                       autoExportResult:
                         type: object
                         properties:
@@ -320,6 +329,15 @@ paths:
                         nullable: true
                       updateScoreDuration:
                         type: number
+                        nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
+                      context:
+                        type: object
+                        additionalProperties: {}
                         nullable: true
                       autoExportResult:
                         type: object
@@ -962,6 +980,15 @@ paths:
                       updateScoreDuration:
                         type: number
                         nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
+                      context:
+                        type: object
+                        additionalProperties: {}
+                        nullable: true
                       autoExportResult:
                         type: object
                         properties:
@@ -1112,6 +1139,15 @@ paths:
                   updateScoreDuration:
                     type: number
                     nullable: true
+                  diffsToScrape:
+                    type: array
+                    items:
+                      type: integer
+                    nullable: true
+                  context:
+                    type: object
+                    additionalProperties: {}
+                    nullable: true
                   autoExportResult:
                     type: object
                     properties:
@@ -1238,6 +1274,15 @@ paths:
                         nullable: true
                       updateScoreDuration:
                         type: number
+                        nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
+                      context:
+                        type: object
+                        additionalProperties: {}
                         nullable: true
                       autoExportResult:
                         type: object
@@ -1420,6 +1465,15 @@ paths:
                       updateScoreDuration:
                         type: number
                         nullable: true
+                      diffsToScrape:
+                        type: array
+                        items:
+                          type: integer
+                        nullable: true
+                      context:
+                        type: object
+                        additionalProperties: {}
+                        nullable: true
                       autoExportResult:
                         type: object
                         properties:
@@ -1545,6 +1599,15 @@ paths:
                     nullable: true
                   updateScoreDuration:
                     type: number
+                    nullable: true
+                  diffsToScrape:
+                    type: array
+                    items:
+                      type: integer
+                    nullable: true
+                  context:
+                    type: object
+                    additionalProperties: {}
                     nullable: true
                   autoExportResult:
                     type: object
@@ -1738,6 +1801,15 @@ paths:
                     nullable: true
                   updateScoreDuration:
                     type: number
+                    nullable: true
+                  diffsToScrape:
+                    type: array
+                    items:
+                      type: integer
+                    nullable: true
+                  context:
+                    type: object
+                    additionalProperties: {}
                     nullable: true
                   autoExportResult:
                     type: object
@@ -2552,6 +2624,7 @@ paths:
                     enum:
                       - scan_qr
                       - get_rival_hash
+                      - get_user_map
                       - add_rival
                   status:
                     type: string
@@ -2633,6 +2706,7 @@ paths:
                     enum:
                       - scan_qr
                       - get_rival_hash
+                      - get_user_map
                       - add_rival
                   status:
                     type: string

@@ -2,7 +2,11 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import type { HydratedDocument } from 'mongoose';
 import { Schema as MongooseSchema } from 'mongoose';
 
-export type SdgbJobType = 'scan_qr' | 'get_rival_hash' | 'add_rival';
+export type SdgbJobType =
+  | 'scan_qr'
+  | 'get_rival_hash'
+  | 'get_user_map'
+  | 'add_rival';
 export type SdgbJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 
 /**
@@ -26,6 +30,7 @@ export class SdgbJobEntity {
    * Payload schema (per jobType):
    *   scan_qr:        { qrCode: string, callerUid?: number }
    *   get_rival_hash: { cabinetUserId: number, callerUid?: number }
+   *   get_user_map:   { cabinetUserId: number }
    *   add_rival:      { botCabinetUserId: number, targetCabinetUserId: number }
    */
   @Prop({ type: MongooseSchema.Types.Mixed, required: true })
@@ -35,6 +40,7 @@ export class SdgbJobEntity {
    * Result schema (per jobType):
    *   scan_qr:        { cabinetUserId: number, music: MusicEntry[], hash: string }
    *   get_rival_hash: { hash: string, music: MusicEntry[] }
+   *   get_user_map:   { maps: UserMapEntry[] }
    *   add_rival:      { returnCode1: number, returnCode2: number }
    */
   @Prop({ type: MongooseSchema.Types.Mixed, default: null })

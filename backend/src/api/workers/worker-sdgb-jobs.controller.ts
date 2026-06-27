@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import {
   SdgbJobPatchBodySchema,
   type SdgbJobPatchBody,
@@ -20,6 +28,23 @@ import { SdgbJobService } from '../../modules/sdgb-worker/services/sdgb-job.serv
 @UseGuards(SharedSecretGuard)
 export class WorkerSdgbJobsController {
   constructor(private readonly jobs: SdgbJobService) {}
+
+  @Post('heartbeat')
+  async heartbeat(
+    @Body() body: { workerId?: unknown; claimedDelta?: unknown },
+  ) {
+    const workerId =
+      typeof body.workerId === 'string' && body.workerId.trim()
+        ? body.workerId.trim()
+        : 'unknown';
+    const claimedDelta =
+      typeof body.claimedDelta === 'number' &&
+      Number.isFinite(body.claimedDelta)
+        ? Math.max(0, Math.floor(body.claimedDelta))
+        : 0;
+    await this.jobs.reportWorkerStatus(workerId, claimedDelta);
+    return { ok: true };
+  }
 
   @Get(':jobId')
   async get(@Param('jobId') jobId: string) {

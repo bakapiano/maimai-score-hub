@@ -31,6 +31,7 @@ const RECENT_JOB_LIMIT = 20;
 const SDGB_JOB_TYPES: SdgbJobType[] = [
   'scan_qr',
   'get_rival_hash',
+  'get_user_map',
   'add_rival',
 ];
 
@@ -375,6 +376,14 @@ export class SdgbJobService implements OnModuleDestroy {
     );
     if (!doc) throw new NotFoundException('Sdgb job not found');
     return toView(doc.toObject() as SdgbJobEntity);
+  }
+
+  async reportWorkerStatus(
+    workerId: string,
+    claimedDelta = 0,
+    seenAt: Date = new Date(),
+  ): Promise<void> {
+    await this.touchWorkerStatus(workerId, seenAt, claimedDelta);
   }
 
   /**

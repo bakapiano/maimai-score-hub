@@ -6,6 +6,8 @@ import type {
   AddRivalResult,
   GetRivalHashPayload,
   GetRivalHashResult,
+  GetUserMapPayload,
+  GetUserMapResult,
   ScanQrPayload,
   ScanQrResult,
 } from '@maimai-score-hub/shared';
@@ -34,6 +36,13 @@ export class SdgbJobDispatcher {
     return this.run<GetRivalHashResult>('get_rival_hash', payload, opts);
   }
 
+  async getUserMap(
+    payload: GetUserMapPayload,
+    opts?: { timeoutMs?: number; tag?: string },
+  ): Promise<GetUserMapResult> {
+    return this.run<GetUserMapResult>('get_user_map', payload, opts);
+  }
+
   async addRival(
     payload: AddRivalPayload,
     opts?: { timeoutMs?: number; tag?: string },
@@ -42,7 +51,7 @@ export class SdgbJobDispatcher {
   }
 
   private async run<T>(
-    jobType: 'scan_qr' | 'get_rival_hash' | 'add_rival',
+    jobType: 'scan_qr' | 'get_rival_hash' | 'get_user_map' | 'add_rival',
     payload: Record<string, unknown>,
     opts?: { timeoutMs?: number; tag?: string },
   ): Promise<T> {

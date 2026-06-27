@@ -68,6 +68,12 @@ export class JobEntity {
   @Prop({ type: String, default: null })
   sourceScoreHash!: string | null;
 
+  @Prop({ type: [Number], default: null })
+  diffsToScrape!: number[] | null;
+
+  @Prop({ type: MongooseSchema.Types.Mixed, default: null })
+  context!: Record<string, unknown> | null;
+
   /**
    * Next time this job may be delivered by BullMQ. Null means immediately
    * dispatchable. Used for waiting/cooldown stages so updatedAt stays a real

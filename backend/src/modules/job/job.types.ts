@@ -70,6 +70,8 @@ export interface JobResponse {
   executing?: boolean;
   scoreProgress?: ScoreProgress | null;
   updateScoreDuration?: number | null;
+  diffsToScrape?: number[] | null;
+  context?: Record<string, unknown> | null;
   autoExportResult?: {
     divingFish?: { status: string; message?: string } | null;
     lxns?: { status: string; message?: string } | null;

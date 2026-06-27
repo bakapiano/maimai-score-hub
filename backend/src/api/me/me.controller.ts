@@ -83,7 +83,7 @@ export class MeController {
     }
     const user = await this.users.getByIdWithPasswordHash(userId);
     // Never expose actual tokens, passwordHash, or raw cabinetUserId.
-    return toSafeProfile(user as Record<string, unknown>);
+    return toSafeProfile(user as unknown as Record<string, unknown>);
   }
 
   @Patch()
@@ -123,7 +123,7 @@ export class MeController {
 
     await this.users.update(userId, updateInput);
     const updated = await this.users.getByIdWithPasswordHash(userId);
-    return toSafeProfile(updated as Record<string, unknown>);
+    return toSafeProfile(updated as unknown as Record<string, unknown>);
   }
 
   @Put('password')
@@ -139,7 +139,7 @@ export class MeController {
     }
 
     const updated = await this.users.setAccountPassword(userId, body);
-    return toSafeProfile(updated as Record<string, unknown>);
+    return toSafeProfile(updated as unknown as Record<string, unknown>);
   }
 
   /**
