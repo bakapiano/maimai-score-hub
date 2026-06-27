@@ -85,8 +85,18 @@ export class AuthService {
   async checkStatus(jobId: string) {
     const job = await this.jobs.get(jobId);
     const status = job.status;
+    if (
+      job.jobType !== 'accept_friend_request' &&
+      job.jobType !== 'send_friend_request'
+    ) {
+      throw new BadRequestException('Not a login request job');
+    }
 
-    if (status === 'completed') {
+    const verified =
+      status === 'completed' ||
+      (job.jobType === 'accept_friend_request' && job.stage === 'accept_request');
+
+    if (verified) {
       const user = await this.users.findByFriendCode(job.friendCode);
       if (!user) {
         throw new NotFoundException('User not found for job');

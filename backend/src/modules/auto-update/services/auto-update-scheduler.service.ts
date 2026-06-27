@@ -16,7 +16,6 @@ import { BotStatusService } from '../../bots/services/bot-status.service';
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
 import { SyncService } from '../../sync/services/sync.service';
 import { AutoUpdateRunEntity } from '../schemas/auto-update-run.schema';
-import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
 
 /** Per-user throttle for the sdgb hash-check call. */
 const HASH_CHECK_THROTTLE_MS = 15 * 60 * 1000;
@@ -51,9 +50,8 @@ const AUTO_UPDATE_JOB_THROTTLE_MS = 30 * 60 * 1000;
  *   4. Try to claim a job-creation slot (CAS on user.lastAutoUpdateJobAt;
  *      at most once per AUTO_UPDATE_JOB_THROTTLE_MS).
  *   5. Create an `update_score` job carrying the observed hash as
- *      `sourceScoreHash`. JobService completes cabinet-only jobs from
- *      the cabinet score map and promotes the hash to user.lastScoreHash
- *      ONLY after the job completes successfully.
+ *      `sourceScoreHash`. JobService promotes the hash to
+ *      user.lastScoreHash ONLY after the job completes successfully.
  *
  * The "promote on success" rule means a failed/canceled job leaves the
  * stored hash alone, so the next sweep retries the same diff.
@@ -296,10 +294,7 @@ export class AutoUpdateSchedulerService
         }
 
         try {
-          // sdgb 既给 hash 又给完整 music — 一次调用拿两份。
-          // music 让我们能：(a) 砍掉一半 friend-VS 请求（dxScore + achievement
-          // 直接从 cabinet 取）；(b) 跟上次 sync 对比，只爬变化的难度。
-          const { hash, music } = await this.sdgb.getRivalHash(
+          const { hash } = await this.sdgb.getRivalHash(
             { cabinetUserId },
             { tag: `auto-hash:${u.friendCode}`, timeoutMs: 120_000 },
           );
@@ -333,10 +328,10 @@ export class AutoUpdateSchedulerService
             continue;
           }
 
-          // (5) create a cabinet-only update job; sourceScoreHash piggybacks
-          // on the job and is promoted to user.lastScoreHash by
-          // JobService.patch ONLY after the job completes successfully.
-          await this.triggerUpdateForUser(u.friendCode, hash, music);
+          // (5) create an update_score job; sourceScoreHash piggybacks on the
+          // job and is promoted to user.lastScoreHash by JobService.patch ONLY
+          // after the job completes successfully.
+          await this.triggerUpdateForUser(u.friendCode, hash);
           triggered++;
           entries.push({
             friendCode: u.friendCode,
@@ -373,15 +368,9 @@ export class AutoUpdateSchedulerService
     }
   }
 
-  /**
-   * Create an update_score job. Cabinet-only mode is fixed on, so JobService
-   * will complete the job from the cabinet score map when possible; the
-   * preselected bot is only retained for worker fallback.
-   */
   private async triggerUpdateForUser(
     friendCode: string,
     sourceScoreHash: string | null,
-    cabinetMusic: SdgbWorkerMusicEntry[],
   ): Promise<void> {
     const bot = await this.botStatus.pickAvailableCabinetBot();
     if (!bot) {
@@ -390,21 +379,11 @@ export class AutoUpdateSchedulerService
       );
     }
 
-    // We just made a getRivalHash call (the hash check) and got the
-    // music back. Pass it straight through to JobService.create —
-    // JobService is the central place that derives cabinetScoreMap +
-    // diffsToScrape (and admin trigger / immediate path use the same
-    // logic). Without this transit JobService would make a redundant
-    // sdgb call.
     const { jobId } = await this.jobs.create({
       friendCode,
-      skipUpdateScore: false,
       jobType: 'update_score',
       botUserFriendCode: bot.friendCode,
-      isAuthenticated: true,
       sourceScoreHash,
-      cabinetMusic,
-      allowCabinetOnlyShortCircuit: true,
     });
 
     this.logger.log(

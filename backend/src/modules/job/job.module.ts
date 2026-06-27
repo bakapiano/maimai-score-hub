@@ -1,5 +1,4 @@
 import { JobEntity, JobSchema } from './schemas/job.schema';
-import { MusicEntity, MusicSchema } from '../music/schemas/music.schema';
 import { Module, forwardRef } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
@@ -14,10 +13,7 @@ import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([
-      { name: JobEntity.name, schema: JobSchema },
-      { name: MusicEntity.name, schema: MusicSchema },
-    ]),
+    MongooseModule.forFeature([{ name: JobEntity.name, schema: JobSchema }]),
     SdgbWorkerModule,
     BotsModule,
     forwardRef(() => SyncModule),

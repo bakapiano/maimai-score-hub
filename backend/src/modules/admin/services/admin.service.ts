@@ -33,8 +33,8 @@ export interface JobStatsWithDuration extends JobStatsTimeRange {
 }
 
 export interface JobStats {
-  skipUpdateScore: JobStatsTimeRange[];
-  withUpdateScore: JobStatsWithDuration[];
+  nonScoreUpdate: JobStatsTimeRange[];
+  scoreUpdate: JobStatsWithDuration[];
 }
 
 type JobStatsRangeKey = 'oneHour' | 'oneDay' | 'sevenDays';
@@ -62,8 +62,8 @@ export interface JobTrendPoint {
 }
 
 export interface JobTrend {
-  skipUpdateScore: JobTrendPoint[];
-  withUpdateScore: JobTrendPoint[];
+  nonScoreUpdate: JobTrendPoint[];
+  scoreUpdate: JobTrendPoint[];
 }
 
 export interface JobErrorStatsItem {
@@ -79,7 +79,7 @@ export interface JobErrorStats {
 export interface ActiveJob {
   id: string;
   friendCode: string;
-  skipUpdateScore: boolean;
+  jobType: string;
   botUserFriendCode: string | null;
   status: string;
   stage: string;
@@ -99,7 +99,7 @@ export interface ActiveJobsStats {
 export interface SearchJobResult {
   id: string;
   friendCode: string;
-  skipUpdateScore: boolean;
+  jobType: string;
   botUserFriendCode: string | null;
   status: string;
   stage: string;
@@ -209,7 +209,7 @@ export class AdminService {
       jobs: jobs.map((job) => ({
         id: job.id,
         friendCode: job.friendCode,
-        skipUpdateScore: job.skipUpdateScore,
+        jobType: job.jobType,
         botUserFriendCode: job.botUserFriendCode ?? null,
         status: job.status,
         stage: job.stage,
@@ -245,32 +245,32 @@ export class AdminService {
   }
 
   private async computeJobStats(now: number): Promise<JobStats> {
-    const [skipRow, withRow] = await Promise.all([
-      this.aggregateJobStats(true, false, now),
-      this.aggregateJobStats(false, true, now),
+    const [nonScoreRow, scoreRow] = await Promise.all([
+      this.aggregateJobStats('non-score', false, now),
+      this.aggregateJobStats('score', true, now),
     ]);
 
     return {
-      skipUpdateScore: JOB_STATS_RANGES.map((range) =>
-        this.toJobStatsTimeRange(skipRow, range.key, range.label),
+      nonScoreUpdate: JOB_STATS_RANGES.map((range) =>
+        this.toJobStatsTimeRange(nonScoreRow, range.key, range.label),
       ),
-      withUpdateScore: JOB_STATS_RANGES.map((range) => ({
-        ...this.toJobStatsTimeRange(withRow, range.key, range.label),
-        avgDuration: this.roundNullable(withRow[`${range.key}AvgDuration`]),
+      scoreUpdate: JOB_STATS_RANGES.map((range) => ({
+        ...this.toJobStatsTimeRange(scoreRow, range.key, range.label),
+        avgDuration: this.roundNullable(scoreRow[`${range.key}AvgDuration`]),
         minDuration:
-          this.numberValue(withRow[`${range.key}DurationCount`]) > 0
-            ? this.roundNullable(withRow[`${range.key}MinDuration`])
+          this.numberValue(scoreRow[`${range.key}DurationCount`]) > 0
+            ? this.roundNullable(scoreRow[`${range.key}MinDuration`])
             : null,
         maxDuration:
-          this.numberValue(withRow[`${range.key}DurationCount`]) > 0
-            ? this.roundNullable(withRow[`${range.key}MaxDuration`])
+          this.numberValue(scoreRow[`${range.key}DurationCount`]) > 0
+            ? this.roundNullable(scoreRow[`${range.key}MaxDuration`])
             : null,
       })),
     };
   }
 
   private async aggregateJobStats(
-    skipUpdateScore: boolean,
+    kind: 'score' | 'non-score',
     includeDuration: boolean,
     now: number,
   ): Promise<JobStatsAggregateRow> {
@@ -330,7 +330,7 @@ export class AdminService {
     const pipeline: PipelineStage[] = [
       {
         $match: {
-          skipUpdateScore,
+          jobType: kind === 'score' ? 'update_score' : { $ne: 'update_score' },
           status: { $in: ['completed', 'failed'] },
           createdAt: { $gte: sevenDaysAgo },
         },
@@ -427,12 +427,12 @@ export class AdminService {
     };
 
     const buildTrendForType = async (
-      skipUpdateScore: boolean,
+      kind: 'score' | 'non-score',
     ): Promise<JobTrendPoint[]> => {
       const pipeline = [
         {
           $match: {
-            skipUpdateScore,
+            jobType: kind === 'score' ? 'update_score' : { $ne: 'update_score' },
             createdAt: { $gte: startTime },
           },
         },
@@ -506,14 +506,14 @@ export class AdminService {
       });
     };
 
-    const [skipUpdateScore, withUpdateScore] = await Promise.all([
-      buildTrendForType(true),
-      buildTrendForType(false),
+    const [nonScoreUpdate, scoreUpdate] = await Promise.all([
+      buildTrendForType('non-score'),
+      buildTrendForType('score'),
     ]);
 
     return {
-      skipUpdateScore,
-      withUpdateScore,
+      nonScoreUpdate,
+      scoreUpdate,
     };
   }
 
@@ -616,7 +616,7 @@ export class AdminService {
         return {
           id: job.id,
           friendCode: job.friendCode,
-          skipUpdateScore: job.skipUpdateScore,
+          jobType: job.jobType,
           botUserFriendCode: job.botUserFriendCode ?? null,
           status: job.status,
           stage: job.stage,
@@ -644,8 +644,6 @@ export class AdminService {
    *   - "now" snapshot: queued + processing counts, per-bot inflight,
    *     active auto-update user count
    *   - capacity estimate: throughput vs current load
-   *   - cabinet-optimization hit rate: % of recent update_score jobs
-   *     that received a cabinetScoreMap; avg friend-VS request count saved
    */
   async getAutoUpdateMetrics(window: '24h' | '7d') {
     const now = Date.now();
@@ -810,54 +808,15 @@ export class AdminService {
         this.userModel.countDocuments({ autoUpdate: true }),
       ]);
 
-    // ---- (6) cabinet optimization hit rate (last 200 update_score jobs) ----
-    const recentUpdateScoreJobs = await this.jobModel
-      .find({ jobType: 'update_score' })
-      .sort({ createdAt: -1 })
-      .limit(200)
-      .select({ cabinetScoreMap: 1, diffsToScrape: 1, createdAt: 1 })
-      .lean()
-      .exec();
-    let withCabinet = 0;
-    let withDiffsToScrape = 0;
-    let totalDiffsScraped = 0;
-    let diffsToScrapeCount = 0;
-    for (const j of recentUpdateScoreJobs) {
-      const csm = (j as { cabinetScoreMap?: unknown }).cabinetScoreMap;
-      const dts = (j as { diffsToScrape?: number[] | null }).diffsToScrape;
-      if (csm && Object.keys(csm as Record<string, unknown>).length > 0) {
-        withCabinet++;
-      }
-      if (Array.isArray(dts) && dts.length > 0) {
-        withDiffsToScrape++;
-        totalDiffsScraped += dts.length;
-        diffsToScrapeCount++;
-      }
-    }
-    const cabinetHitRate = recentUpdateScoreJobs.length
-      ? Math.round((withCabinet / recentUpdateScoreJobs.length) * 1000) / 10
-      : 0;
-    const diffSkipHitRate = recentUpdateScoreJobs.length
-      ? Math.round(
-          (withDiffsToScrape / recentUpdateScoreJobs.length) * 1000,
-        ) / 10
-      : 0;
-    const avgDiffsScraped = diffsToScrapeCount
-      ? Math.round((totalDiffsScraped / diffsToScrapeCount) * 10) / 10
-      : null;
-
-    // ---- (7) capacity estimate ----
+    // ---- (6) capacity estimate ----
     // Active cabinet-bound bots (the only ones that take auto-update jobs).
     const activeCabinetBots = await this.botStatusModel.countDocuments({
       available: true,
       cabinetUserId: { $ne: null },
     });
-    // Per-bot throughput rough estimate: 60s/2.5s spacing = 24 req/min;
-    // a typical update_score job under cabinet path needs ~16 req
-    // (8 diffs × 2 sides for scoreType=2 only). Without cabinet (rare
-    // now): ~32 req. Assume cabinet hit rate from recent.
-    const reqsPerJob =
-      16 * (1 - cabinetHitRate / 100) + 8 * (cabinetHitRate / 100);
+    // Per-bot throughput rough estimate: 60s/2.5s spacing = 24 req/min.
+    // Full update_score scrapes 6 diffs × 2 score types × 2 sides.
+    const reqsPerJob = 24;
     const reqsPerMinPerBot = 24;
     const jobsPerMin =
       (activeCabinetBots * reqsPerMinPerBot) / Math.max(reqsPerJob, 1);
@@ -909,18 +868,10 @@ export class AdminService {
         })),
         activeCabinetBots,
       },
-      optimization: {
-        sampleSize: recentUpdateScoreJobs.length,
-        cabinetHitRate, // %
-        diffSkipHitRate, // %
-        avgDiffsScraped, // when diffsToScrape used, average size
-        // estimated friend-VS reqs per job under current optimization
-        // (16 = full no-cabinet, 8 = cabinet path, 2 per scraped diff)
-        estimatedReqsPerJob: Math.round(reqsPerJob * 10) / 10,
-      },
       capacity: {
         activeCabinetBots,
         reqsPerMinPerBot,
+        estimatedReqsPerJob: reqsPerJob,
         estimatedJobsPerMin: Math.round(jobsPerMin * 10) / 10,
         estimatedJobsPerSweep: Math.round(jobsPerSweep * 10) / 10,
         triggerRatePerUserPerSweep:

@@ -19,9 +19,6 @@ export class JobEntity {
   @Prop({ required: true, type: Number, default: 0 })
   priority!: number;
 
-  @Prop({ required: true, default: false })
-  skipUpdateScore!: boolean;
-
   @Prop({ type: String, default: null })
   botUserFriendCode!: string | null;
 
@@ -61,9 +58,6 @@ export class JobEntity {
     lxns?: { status: string; message?: string } | null;
   } | null;
 
-  @Prop({ required: true, default: false })
-  isAuthenticated!: boolean;
-
   /**
    * Score hash observed by the auto-update sweep at the moment this job
    * was created. Set ONLY for jobType=`update_score` jobs created by
@@ -73,27 +67,6 @@ export class JobEntity {
    */
   @Prop({ type: String, default: null })
   sourceScoreHash!: string | null;
-
-  /**
-   * Cabinet-derived score data captured at job creation time. Worker
-   * uses this to skip half the friend-VS requests (achievement +
-   * dxScore are authoritative from cabinet; only fc/fs need scraping).
-   * Shape: { "<musicId>_<chartIndex>": { achievement, dxScore } }.
-   * Only populated for update_score jobs from AutoUpdateScheduler.
-   */
-  @Prop({ type: MongooseSchema.Types.Mixed, default: null })
-  cabinetScoreMap!: Record<
-    string,
-    { achievement: number; dxScore: number }
-  > | null;
-
-  /**
-   * Subset of difficulties to scrape via friend-VS. When set, worker
-   * only fetches these (typical: only diffs whose cabinet scores
-   * changed since last sync). When null, worker uses its default set.
-   */
-  @Prop({ type: [Number], default: null })
-  diffsToScrape!: number[] | null;
 
   /**
    * Next time this job may be delivered by BullMQ. Null means immediately
@@ -118,9 +91,8 @@ JobSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7 * 24 * 60 * 60 });
 
 // Hot-path indexes. Before these, the `jobs` collection only had
 // _id / id / createdAt (TTL), and every dispatch sweep + stale-lock release
-// + pickAvailableCabinetBot bot-load aggregation did a full COLLSCAN.
-// With cabinet-only mode driving request volume up, this overloaded
-// mongo (169% CPU) on 2026-05-29.
+// + pickAvailableCabinetBot bot-load aggregation did a full COLLSCAN, which
+// overloaded mongo (169% CPU) on 2026-05-29.
 JobSchema.index(
   { status: 1, botUserFriendCode: 1, executing: 1 },
   { name: 'hot_claim' },
@@ -142,14 +114,6 @@ JobSchema.index(
   { name: 'hot_claim_priority' },
 );
 JobSchema.index({ botUserFriendCode: 1, status: 1 }, { name: 'bot_status' });
-JobSchema.index(
-  { skipUpdateScore: 1, status: 1, createdAt: 1 },
-  { name: 'admin_stats_status_createdAt' },
-);
-JobSchema.index(
-  { skipUpdateScore: 1, status: 1, updateScoreDuration: 1, createdAt: 1 },
-  { name: 'admin_stats_duration' },
-);
 JobSchema.index(
   { jobType: 1, friendCode: 1, createdAt: -1 },
   { name: 'latest_by_type_friend' },

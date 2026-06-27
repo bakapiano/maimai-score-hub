@@ -110,8 +110,6 @@ paths:
                           - get_full_friend_list
                       priority:
                         type: integer
-                      skipUpdateScore:
-                        type: boolean
                       botUserFriendCode:
                         type: string
                         nullable: true
@@ -189,26 +187,6 @@ paths:
                               - status
                             nullable: true
                         nullable: true
-                      isAuthenticated:
-                        type: boolean
-                      cabinetScoreMap:
-                        type: object
-                        additionalProperties:
-                          type: object
-                          properties:
-                            achievement:
-                              type: number
-                            dxScore:
-                              type: number
-                          required:
-                            - achievement
-                            - dxScore
-                        nullable: true
-                      diffsToScrape:
-                        type: array
-                        items:
-                          type: integer
-                        nullable: true
                       runAt:
                         type: string
                         nullable: true
@@ -220,7 +198,6 @@ paths:
                       - id
                       - friendCode
                       - jobType
-                      - skipUpdateScore
                       - status
                       - stage
                       - createdAt
@@ -291,8 +268,6 @@ paths:
                           - get_full_friend_list
                       priority:
                         type: integer
-                      skipUpdateScore:
-                        type: boolean
                       botUserFriendCode:
                         type: string
                         nullable: true
@@ -370,26 +345,6 @@ paths:
                               - status
                             nullable: true
                         nullable: true
-                      isAuthenticated:
-                        type: boolean
-                      cabinetScoreMap:
-                        type: object
-                        additionalProperties:
-                          type: object
-                          properties:
-                            achievement:
-                              type: number
-                            dxScore:
-                              type: number
-                          required:
-                            - achievement
-                            - dxScore
-                        nullable: true
-                      diffsToScrape:
-                        type: array
-                        items:
-                          type: integer
-                        nullable: true
                       runAt:
                         type: string
                         nullable: true
@@ -401,7 +356,6 @@ paths:
                       - id
                       - friendCode
                       - jobType
-                      - skipUpdateScore
                       - status
                       - stage
                       - createdAt
@@ -920,9 +874,14 @@ paths:
             schema:
               type: object
               properties:
-                skipUpdateScore:
-                  default: false
-                  type: boolean
+                jobType:
+                  default: update_score
+                  type: string
+                  enum:
+                    - update_score
+                    - send_friend_request
+                friendshipJobId:
+                  type: string
       responses:
         "201":
           description: "201"
@@ -950,8 +909,6 @@ paths:
                           - get_full_friend_list
                       priority:
                         type: integer
-                      skipUpdateScore:
-                        type: boolean
                       botUserFriendCode:
                         type: string
                         nullable: true
@@ -1029,26 +986,6 @@ paths:
                               - status
                             nullable: true
                         nullable: true
-                      isAuthenticated:
-                        type: boolean
-                      cabinetScoreMap:
-                        type: object
-                        additionalProperties:
-                          type: object
-                          properties:
-                            achievement:
-                              type: number
-                            dxScore:
-                              type: number
-                          required:
-                            - achievement
-                            - dxScore
-                        nullable: true
-                      diffsToScrape:
-                        type: array
-                        items:
-                          type: integer
-                        nullable: true
                       runAt:
                         type: string
                         nullable: true
@@ -1060,7 +997,6 @@ paths:
                       - id
                       - friendCode
                       - jobType
-                      - skipUpdateScore
                       - status
                       - stage
                       - createdAt
@@ -1068,6 +1004,24 @@ paths:
                 required:
                   - jobId
                   - job
+        "400":
+          description: "400"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    oneOf:
+                      - type: string
+                      - type: array
+                        items:
+                          type: string
+                  recommendedBotFriendCode:
+                    type: string
+                    nullable: true
   /me/dxnet-jobs/{jobId}:
     get:
       tags: *a5
@@ -1105,8 +1059,6 @@ paths:
                       - get_full_friend_list
                   priority:
                     type: integer
-                  skipUpdateScore:
-                    type: boolean
                   botUserFriendCode:
                     type: string
                     nullable: true
@@ -1184,26 +1136,6 @@ paths:
                           - status
                         nullable: true
                     nullable: true
-                  isAuthenticated:
-                    type: boolean
-                  cabinetScoreMap:
-                    type: object
-                    additionalProperties:
-                      type: object
-                      properties:
-                        achievement:
-                          type: number
-                        dxScore:
-                          type: number
-                      required:
-                        - achievement
-                        - dxScore
-                    nullable: true
-                  diffsToScrape:
-                    type: array
-                    items:
-                      type: integer
-                    nullable: true
                   runAt:
                     type: string
                     nullable: true
@@ -1215,7 +1147,6 @@ paths:
                   - id
                   - friendCode
                   - jobType
-                  - skipUpdateScore
                   - status
                   - stage
                   - createdAt
@@ -1255,8 +1186,6 @@ paths:
                           - get_full_friend_list
                       priority:
                         type: integer
-                      skipUpdateScore:
-                        type: boolean
                       botUserFriendCode:
                         type: string
                         nullable: true
@@ -1334,26 +1263,6 @@ paths:
                               - status
                             nullable: true
                         nullable: true
-                      isAuthenticated:
-                        type: boolean
-                      cabinetScoreMap:
-                        type: object
-                        additionalProperties:
-                          type: object
-                          properties:
-                            achievement:
-                              type: number
-                            dxScore:
-                              type: number
-                          required:
-                            - achievement
-                            - dxScore
-                        nullable: true
-                      diffsToScrape:
-                        type: array
-                        items:
-                          type: integer
-                        nullable: true
                       runAt:
                         type: string
                         nullable: true
@@ -1365,7 +1274,6 @@ paths:
                       - id
                       - friendCode
                       - jobType
-                      - skipUpdateScore
                       - status
                       - stage
                       - createdAt
@@ -1373,6 +1281,47 @@ paths:
                     nullable: true
                 required:
                   - job
+  /me/dxnet-jobs/friendship:
+    get:
+      tags: *a5
+      parameters:
+        - name: authorization
+          in: header
+          required: true
+          schema:
+            type: string
+      operationId: job.getFriendshipStatus
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isFriend:
+                    type: boolean
+                  botFriendCode:
+                    type: string
+                    nullable: true
+                  recommendedBotFriendCode:
+                    type: string
+                    nullable: true
+                  availableBotCount:
+                    type: integer
+                    minimum: 0
+                  friendsUpdatedAt:
+                    type: string
+                    nullable: true
+                  checkedAt:
+                    type: string
+                required:
+                  - isFriend
+                  - botFriendCode
+                  - recommendedBotFriendCode
+                  - availableBotCount
+                  - friendsUpdatedAt
+                  - checkedAt
   /me/dxnet-jobs/{jobId}/verify:
     post:
       tags: *a5
@@ -1418,8 +1367,6 @@ paths:
                           - get_full_friend_list
                       priority:
                         type: integer
-                      skipUpdateScore:
-                        type: boolean
                       botUserFriendCode:
                         type: string
                         nullable: true
@@ -1497,26 +1444,6 @@ paths:
                               - status
                             nullable: true
                         nullable: true
-                      isAuthenticated:
-                        type: boolean
-                      cabinetScoreMap:
-                        type: object
-                        additionalProperties:
-                          type: object
-                          properties:
-                            achievement:
-                              type: number
-                            dxScore:
-                              type: number
-                          required:
-                            - achievement
-                            - dxScore
-                        nullable: true
-                      diffsToScrape:
-                        type: array
-                        items:
-                          type: integer
-                        nullable: true
                       runAt:
                         type: string
                         nullable: true
@@ -1528,7 +1455,6 @@ paths:
                       - id
                       - friendCode
                       - jobType
-                      - skipUpdateScore
                       - status
                       - stage
                       - createdAt
@@ -1567,8 +1493,6 @@ paths:
                       - get_full_friend_list
                   priority:
                     type: integer
-                  skipUpdateScore:
-                    type: boolean
                   botUserFriendCode:
                     type: string
                     nullable: true
@@ -1646,26 +1570,6 @@ paths:
                           - status
                         nullable: true
                     nullable: true
-                  isAuthenticated:
-                    type: boolean
-                  cabinetScoreMap:
-                    type: object
-                    additionalProperties:
-                      type: object
-                      properties:
-                        achievement:
-                          type: number
-                        dxScore:
-                          type: number
-                      required:
-                        - achievement
-                        - dxScore
-                    nullable: true
-                  diffsToScrape:
-                    type: array
-                    items:
-                      type: integer
-                    nullable: true
                   runAt:
                     type: string
                     nullable: true
@@ -1677,7 +1581,6 @@ paths:
                   - id
                   - friendCode
                   - jobType
-                  - skipUpdateScore
                   - status
                   - stage
                   - createdAt
@@ -1783,8 +1686,6 @@ paths:
                       - get_full_friend_list
                   priority:
                     type: integer
-                  skipUpdateScore:
-                    type: boolean
                   botUserFriendCode:
                     type: string
                     nullable: true
@@ -1862,26 +1763,6 @@ paths:
                           - status
                         nullable: true
                     nullable: true
-                  isAuthenticated:
-                    type: boolean
-                  cabinetScoreMap:
-                    type: object
-                    additionalProperties:
-                      type: object
-                      properties:
-                        achievement:
-                          type: number
-                        dxScore:
-                          type: number
-                      required:
-                        - achievement
-                        - dxScore
-                    nullable: true
-                  diffsToScrape:
-                    type: array
-                    items:
-                      type: integer
-                    nullable: true
                   runAt:
                     type: string
                     nullable: true
@@ -1893,7 +1774,6 @@ paths:
                   - id
                   - friendCode
                   - jobType
-                  - skipUpdateScore
                   - status
                   - stage
                   - createdAt

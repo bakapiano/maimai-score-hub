@@ -218,7 +218,6 @@ interface SongMetadata {
 | `friendCode`                 | `string`                                                           | required                                | 目标用户好友码                       |
 | `jobType`                    | `JobType`                                                          | required, default `send_friend_request` | job 类型                             |
 | `priority`                   | `number`                                                           | required, default `0`                   | 调度优先级                           |
-| `skipUpdateScore`            | `boolean`                                                          | required, default `false`               | 是否跳过更新成绩                     |
 | `botUserFriendCode`          | `string \| null`                                                   | default `null`                          | 执行 bot 好友码                      |
 | `friendRequestSentAt`        | `string \| null`                                                   | default `null`                          | 好友请求发送时间                     |
 | `friendRequestWaitStartedAt` | `string \| null`                                                   | default `null`                          | 等待好友请求开始时间                 |
@@ -231,10 +230,7 @@ interface SongMetadata {
 | `scoreProgress`              | `ScoreProgress \| null`                                            | `Mixed`, default `null`                 | 成绩更新进度                         |
 | `updateScoreDuration`        | `number \| null`                                                   | default `null`                          | `update_score` 耗时                  |
 | `autoExportResult`           | `AutoExportResult \| null`                                         | `Mixed`, default `null`                 | 自动导出结果                         |
-| `isAuthenticated`            | `boolean`                                                          | required, default `false`               | 是否已认证                           |
 | `sourceScoreHash`            | `string \| null`                                                   | default `null`                          | 自动更新创建 job 时观测到的成绩 hash |
-| `cabinetScoreMap`            | `Record<string, { achievement: number; dxScore: number }> \| null` | `Mixed`, default `null`                 | 自动更新从机台侧拿到的成绩 map       |
-| `diffsToScrape`              | `number[] \| null`                                                 | default `null`                          | 限定 worker 抓取的难度               |
 | `runAt`                      | `Date \| null`                                                     | default `null`                          | 下次允许 BullMQ 投递的时间           |
 | `createdAt`                  | `Date`                                                             | required                                | 创建时间                             |
 | `updatedAt`                  | `Date`                                                             | required                                | 更新时间                             |
@@ -275,8 +271,6 @@ interface ScoreProgress {
 - `{ status: 1, botUserFriendCode: 1, executing: 1, runAt: 1 }`，名称 `hot_claim_due`。
 - `{ status: 1, botUserFriendCode: 1, executing: 1, runAt: 1, priority: -1, updatedAt: 1 }`，名称 `hot_claim_priority`。
 - `{ botUserFriendCode: 1, status: 1 }`，名称 `bot_status`。
-- `{ skipUpdateScore: 1, status: 1, createdAt: 1 }`，名称 `admin_stats_status_createdAt`。
-- `{ skipUpdateScore: 1, status: 1, updateScoreDuration: 1, createdAt: 1 }`，名称 `admin_stats_duration`。
 - `{ jobType: 1, friendCode: 1, createdAt: -1 }`，名称 `latest_by_type_friend`。
 - `{ status: 1, createdAt: -1 }`，名称 `status_createdAt_desc`。
 

@@ -6,27 +6,6 @@ type RetrySendResult =
   | { kind: "sent" }
   | { kind: "not-found" };
 
-async function completeIfAuthenticatedAlreadyFriend(
-  ctx: JobExecutionContext,
-): Promise<boolean> {
-  if (!ctx.job.isAuthenticated) {
-    return false;
-  }
-
-  const alreadyFriend = await ctx.client.friends.isFriendBySearchPage(
-    ctx.job.friendCode,
-  );
-  if (!alreadyFriend) {
-    return false;
-  }
-
-  console.log(
-    `[JobHandler] Job ${ctx.job.id}: Authenticated job - already friends, skipping send_request`,
-  );
-  await ctx.completeJob();
-  return true;
-}
-
 async function sendAndVerifyRecentRequest(
   ctx: JobExecutionContext,
 ): Promise<boolean> {
@@ -85,10 +64,6 @@ async function retrySendAndVerifyRequest(
 
 export async function sendRequest(ctx: JobExecutionContext): Promise<void> {
   console.log(`[JobHandler] Job ${ctx.job.id}: Sending friend request...`);
-
-  if (await completeIfAuthenticatedAlreadyFriend(ctx)) {
-    return;
-  }
 
   let requestSent = await sendAndVerifyRecentRequest(ctx);
 

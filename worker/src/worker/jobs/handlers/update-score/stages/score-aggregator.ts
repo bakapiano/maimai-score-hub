@@ -19,18 +19,6 @@ interface ScoreFetchOptions {
   concurrency?: number;
   /** 难度完成回调（每完成一个难度的两种类型时调用） */
   onDiffCompleted?: (diff: number) => Promise<void>;
-  /**
-   * 要爬取的难度列表。默认跳过 BASIC(0) / ADVANCED(1) / 宴会场(10)，
-   * 仅当用户显式触发"同步全部"时才传入完整 DIFFICULTIES。
-   */
-  diffs?: readonly number[];
-  /**
-   * 当 backend 已经从 sdgb 拿到了 cabinet 上的 dxScore + achievement
-   * 时，friend-VS 的 scoreType=1 (dxScore) 页就可以省掉 — 我们只需要
-   * scoreType=2 那一遍来拿 fc/fs（cabinet 不提供）。score 字段会被
-   * backend 在 sync.service 用 cabinet 数据覆盖。
-   */
-  skipDxScoreFetch?: boolean;
 }
 
 /**
@@ -54,19 +42,14 @@ export class ScoreAggregator {
       jobId,
       concurrency = WORKER_DEFAULTS.friendVSConcurrency,
       onDiffCompleted,
-      diffs = DIFFICULTIES,
-      skipDxScoreFetch = false,
     } = options;
 
-    // 跟踪每个难度的完成状态。skipDxScoreFetch=true 时每 diff 只跑 1 次
-    // (scoreType=2)，false 时跑 2 次 (1 + 2)。
-    const expectedTypesPerDiff = skipDxScoreFetch ? 1 : 2;
     const diffCompletionCount = new Map<number, number>();
     const notifyDiffCompleted = async (diff: number) => {
       if (!onDiffCompleted) return;
       const count = (diffCompletionCount.get(diff) ?? 0) + 1;
       diffCompletionCount.set(diff, count);
-      if (count >= expectedTypesPerDiff) {
+      if (count >= 2) {
         await onDiffCompleted(diff);
       }
     };
@@ -107,12 +90,8 @@ export class ScoreAggregator {
       return parsed;
     };
 
-    for (const diff of diffs) {
-      // skipDxScoreFetch=true 时，scoreType=1 (dxScore) 那一遍由 backend
-      // 用 sdgb cabinet data 填，worker 只需要 scoreType=2 拿 fc/fs。
-      if (!skipDxScoreFetch) {
-        tasks.push(buildTask(1, diff));
-      }
+    for (const diff of DIFFICULTIES) {
+      tasks.push(buildTask(1, diff));
       tasks.push(buildTask(2, diff));
     }
 

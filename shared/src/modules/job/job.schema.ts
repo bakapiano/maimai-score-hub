@@ -50,7 +50,6 @@ export const JobResponseSchema = z.object({
   friendCode: z.string(),
   jobType: JobTypeSchema,
   priority: z.number().int().optional(),
-  skipUpdateScore: z.boolean(),
   botUserFriendCode: z.string().nullable().optional(),
   friendRequestSentAt: z.string().nullable().optional(),
   friendRequestWaitStartedAt: z.string().nullable().optional(),
@@ -62,19 +61,22 @@ export const JobResponseSchema = z.object({
   scoreProgress: ScoreProgressSchema.nullable().optional(),
   updateScoreDuration: z.number().nullable().optional(),
   autoExportResult: AutoExportResultSchema,
-  isAuthenticated: z.boolean().optional(),
-  cabinetScoreMap: z
-    .record(z.object({ achievement: z.number(), dxScore: z.number() }))
-    .nullable()
-    .optional(),
-  diffsToScrape: z.array(z.number().int()).nullable().optional(),
   runAt: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 
 export const JobCreateBodySchema = z.object({
-  skipUpdateScore: z.boolean().optional().default(false),
+  jobType: z
+    .enum(["update_score", "send_friend_request"])
+    .optional()
+    .default("update_score"),
+  /**
+   * Optional proof from a just-completed send_friend_request job. This lets the
+   * frontend immediately start update_score even before the next bot friend
+   * snapshot heartbeat lands.
+   */
+  friendshipJobId: z.string().optional(),
 });
 
 export const JobCreateResponseSchema = z.object({
@@ -84,6 +86,15 @@ export const JobCreateResponseSchema = z.object({
 
 export const JobByFriendCodeActiveResponseSchema = z.object({
   job: JobResponseSchema.nullable(),
+});
+
+export const JobFriendshipStatusResponseSchema = z.object({
+  isFriend: z.boolean(),
+  botFriendCode: z.string().nullable(),
+  recommendedBotFriendCode: z.string().nullable(),
+  availableBotCount: z.number().int().nonnegative(),
+  friendsUpdatedAt: z.string().nullable(),
+  checkedAt: z.string(),
 });
 
 export const JobVerifyResponseSchema = z.object({
@@ -122,6 +133,9 @@ export type ScoreProgress = z.infer<typeof ScoreProgressSchema>;
 export type JobResponse = z.infer<typeof JobResponseSchema>;
 export type JobCreateBody = z.infer<typeof JobCreateBodySchema>;
 export type JobCreateResponse = z.infer<typeof JobCreateResponseSchema>;
+export type JobFriendshipStatusResponse = z.infer<
+  typeof JobFriendshipStatusResponseSchema
+>;
 export type JobVerifyResponse = z.infer<typeof JobVerifyResponseSchema>;
 export type JobPatchBody = z.infer<typeof JobPatchBodySchema>;
 export type JobRecentStats = z.infer<typeof JobRecentStatsSchema>;

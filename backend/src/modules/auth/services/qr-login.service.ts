@@ -226,7 +226,6 @@ export class QrLoginService {
       friendCode: bot.friendCode,
       jobType: 'get_full_friend_list',
       botUserFriendCode: bot.friendCode,
-      skipUpdateScore: true,
       cancelActiveJobs: false,
     });
     this.logger.log(

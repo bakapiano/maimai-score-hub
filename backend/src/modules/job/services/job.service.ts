@@ -14,11 +14,9 @@ import type { Model } from 'mongoose';
 import { randomUUID } from 'crypto';
 import { Queue } from 'bullmq';
 import { Interval } from '@nestjs/schedule';
-import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
 
 import { SyncService } from '../../sync/services/sync.service';
 import { UsersService } from '../../users/services/users.service';
-import { MusicEntity } from '../../music/schemas/music.schema';
 import { JobTempCacheService } from '../cache/temp-cache.service';
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
 import { BotFriendSnapshotService } from '../../bots/services/bot-friend-snapshot.service';
@@ -70,6 +68,8 @@ const DISPATCH_SWEEP_INTERVAL_MS = Number(
   process.env.DXNET_DISPATCH_SWEEP_INTERVAL_MS ?? 30_000,
 );
 
+const FRIENDSHIP_PROOF_MAX_AGE_MS = 10 * 60 * 1000;
+
 // [TODO] Change this to 1min
 // const MIN_CREATE_INTERVAL_MS = Number(
 //   process.env.MIN_CREATE_INTERVAL_MS ?? 1000 * 60,
@@ -81,7 +81,6 @@ function toJobResponse(job: JobEntity): JobResponse {
     friendCode: job.friendCode,
     jobType: job.jobType ?? 'send_friend_request',
     priority: job.priority ?? getJobTypePriority(job.jobType),
-    skipUpdateScore: job.skipUpdateScore,
     botUserFriendCode: job.botUserFriendCode ?? null,
     friendRequestSentAt: job.friendRequestSentAt ?? null,
     friendRequestWaitStartedAt: job.friendRequestWaitStartedAt ?? null,
@@ -92,9 +91,6 @@ function toJobResponse(job: JobEntity): JobResponse {
     scoreProgress: job.scoreProgress ?? null,
     updateScoreDuration: job.updateScoreDuration ?? null,
     autoExportResult: job.autoExportResult ?? null,
-    isAuthenticated: job.isAuthenticated ?? false,
-    cabinetScoreMap: job.cabinetScoreMap ?? null,
-    diffsToScrape: job.diffsToScrape ?? null,
     runAt: job.runAt?.toISOString() ?? null,
     error: job.error ?? null,
     executing: job.executing,
@@ -138,8 +134,6 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @InjectModel(JobEntity.name)
     private readonly jobModel: Model<JobEntity>,
-    @InjectModel(MusicEntity.name)
-    private readonly musicModel: Model<MusicEntity>,
     private readonly syncService: SyncService,
     private readonly tempCacheService: JobTempCacheService,
     @Inject(forwardRef(() => UsersService))
@@ -274,38 +268,6 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     return Math.max(1, 100 - Math.floor(priority));
   }
 
-  /**
-   * Cached set of musicIds we know about (from mongo `musics` collection).
-   * Used by the cabinet diff algorithm to ignore "unknown" musicIds —
-   * cabinet returns ~86 entries for fc=634142510810999 whose musicId
-   * doesn't exist in our music data (probably old/delisted standard
-   * charts not in the diving-fish source). Without this filter, those
-   * unknown IDs are counted as "new charts" → wrongly inflate
-   * diffsToScrape and force the worker to scrape useless friend-VS
-   * pages.
-   *
-   * 5-minute TTL is plenty: musics table only updates from a 6h cron.
-   */
-  private validMusicIdsCache: { ids: Set<string>; at: number } | null = null;
-  private async getValidMusicIds(): Promise<Set<string>> {
-    const now = Date.now();
-    if (
-      this.validMusicIdsCache &&
-      now - this.validMusicIdsCache.at < 5 * 60 * 1000
-    ) {
-      return this.validMusicIdsCache.ids;
-    }
-    const docs = await this.musicModel
-      .find({}, { id: 1, _id: 0 })
-      .lean()
-      .exec();
-    const ids = new Set<string>(
-      docs.map((d) => String((d as { id: string }).id)),
-    );
-    this.validMusicIdsCache = { ids, at: now };
-    return ids;
-  }
-
   private async resolveUpdateScoreFriendship(input: {
     friendCode: string;
     botUserFriendCode: string | null;
@@ -352,12 +314,81 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     return { ready: false, botUserFriendCode: leastLoadedBot };
   }
 
+  private async resolveCompletedFriendshipProof(input: {
+    friendCode: string;
+    friendshipJobId?: string;
+    now: Date;
+  }): Promise<string | null> {
+    if (!input.friendshipJobId) return null;
+
+    const proof = await this.jobModel
+      .findOne({
+        id: input.friendshipJobId,
+        friendCode: input.friendCode,
+        jobType: 'send_friend_request',
+        status: 'completed',
+        botUserFriendCode: { $ne: null },
+      })
+      .lean<JobEntity | null>()
+      .exec();
+
+    if (!proof?.botUserFriendCode) {
+      throw new BadRequestException({
+        code: 'invalid_friendship_proof',
+        message: '好友关系验证任务不存在或尚未完成',
+      });
+    }
+
+    if (
+      input.now.getTime() - new Date(proof.updatedAt).getTime() >
+      FRIENDSHIP_PROOF_MAX_AGE_MS
+    ) {
+      throw new BadRequestException({
+        code: 'invalid_friendship_proof',
+        message: '好友关系验证任务已过期，请重新检查好友状态',
+      });
+    }
+
+    return proof.botUserFriendCode;
+  }
+
+  async getFriendshipStatus(friendCode: string): Promise<{
+    isFriend: boolean;
+    botFriendCode: string | null;
+    recommendedBotFriendCode: string | null;
+    availableBotCount: number;
+    friendsUpdatedAt: string | null;
+    checkedAt: string;
+  }> {
+    const availableBots = (await this.botStatus.getAll())
+      .filter((bot) => bot.available)
+      .sort((a, b) => (a.friendCount ?? 0) - (b.friendCount ?? 0));
+    const availableBotCodes = availableBots.map((bot) => bot.friendCode);
+    const botFriendCode = await this.botFriendSnapshot.findBotHavingFriend(
+      friendCode,
+      availableBotCodes,
+    );
+    const snap = botFriendCode
+      ? await this.botFriendSnapshot.get(botFriendCode)
+      : null;
+    const recommendedBotFriendCode =
+      botFriendCode ?? availableBots[0]?.friendCode ?? null;
+
+    return {
+      isFriend: !!botFriendCode,
+      botFriendCode,
+      recommendedBotFriendCode,
+      availableBotCount: availableBots.length,
+      friendsUpdatedAt: snap?.updatedAt?.toISOString() ?? null,
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
   async create(input: {
     friendCode: string;
-    skipUpdateScore?: boolean;
     jobType?: JobType;
+    friendshipJobId?: string;
     botUserFriendCode?: string | null;
-    isAuthenticated?: boolean;
     friendshipReady?: boolean;
     /**
      * Only meaningful when jobType=`update_score`. Set by
@@ -365,48 +396,11 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
      * `user.lastScoreHash` only after this job completes successfully.
      */
     sourceScoreHash?: string | null;
-    /**
-     * Optional cabinet-derived score data (set by AutoUpdateScheduler when
-     * sdgb getRivalHash returned music in addition to hash). Worker uses
-     * this to skip half the friend-VS requests (achievement + dxScore are
-     * authoritative from cabinet; only fc/fs still need scraping).
-     * Shape: { "<musicId>_<chartIndex>": { achievement, dxScore } }.
-     */
-    cabinetScoreMap?: Record<
-      string,
-      { achievement: number; dxScore: number }
-    > | null;
-    /**
-     * Optional list of difficulties the worker should scrape. When set,
-     * worker only fetches friend-VS for these diffs (typical: only the
-     * diffs whose cabinet scores actually changed since last sync). When
-     * absent, worker uses its default diff list.
-     */
-    diffsToScrape?: number[] | null;
-    /**
-     * Pre-fetched cabinet music from a recent sdgb getRivalHash. When
-     * the caller (e.g. AutoUpdateScheduler.runSweep) just made the
-     * call, it can hand the result here so JobService doesn't make a
-     * redundant sdgb call. Used to derive cabinetScoreMap +
-     * diffsToScrape in one place instead of duplicating logic at every
-     * job-create caller.
-     */
-    cabinetMusic?: SdgbWorkerMusicEntry[] | null;
-    /**
-     * Cabinet-only mode is an auto-update optimization only. Manual
-     * user/admin jobs must still go through addRival + dxnet score update.
-     */
-    allowCabinetOnlyShortCircuit?: boolean;
     cancelActiveJobs?: boolean;
   }) {
     const id = randomUUID();
     const now = new Date();
     let resolvedJobType: JobType = input.jobType ?? 'send_friend_request';
-    input.skipUpdateScore =
-      input.skipUpdateScore ?? resolvedJobType !== 'update_score';
-    const allowCabinetOnlyShortCircuit =
-      resolvedJobType === 'update_score' &&
-      input.allowCabinetOnlyShortCircuit === true;
 
     // [TODO] 将这个限流改为 ip 黑名单机制，同一时间对于一个 friend code 的请求如果过于频繁就拒绝
     // const recent = await this.jobModel
@@ -418,6 +412,120 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     //     throw new BadRequestException('请求过于频繁，请等待一分钟过后重试！');
     //   }
     // }
+
+    let resolvedStage: JobStage;
+    if (resolvedJobType === 'update_score') {
+      resolvedStage = 'update_score';
+    } else if (resolvedJobType === 'accept_friend_request') {
+      resolvedStage = 'wait_user_request';
+    } else if (resolvedJobType === 'get_user_recent_event') {
+      resolvedStage = 'get_user_recent_event';
+    } else if (resolvedJobType === 'get_full_friend_list') {
+      resolvedStage = 'get_full_friend_list';
+    } else {
+      resolvedStage = 'send_request';
+    }
+
+    // Cabinet-bound user fast-path: if the user has cabinetUserId, ask
+    // sdgb to addRival on their behalf so update_score can start without
+    // a manual DXNet friend request.
+    //
+    // 调用方（FE / scheduler）传 botUserFriendCode 是可选的：
+    //   - auto-update / login follow-up passes botUserFriendCode and can
+    //     start at update_score.
+    //   - JobController.create（用户点"更新数据"）不传 bot；这里需要自己挑一个
+    //     cabinet-bound bot. If sdgb addRival fails, the caller gets
+    //     needs_friendship and may create an explicit send_friend_request job.
+    //
+    // sdgb 失败处理（用户区分）：
+    //   - manual update_score: await addRival; if sdgb fails, surface
+    //     needs_friendship so the frontend can explicitly run the friendship
+    //     job before retrying update_score.
+    //   - pre-assigned update_score: await addRival before worker dispatch too.
+    if (resolvedJobType === 'update_score' && !input.friendshipReady) {
+      try {
+        const user = await this.usersService.findByFriendCode(input.friendCode);
+        const userCabinetUid = (
+          user as { cabinetUserId?: number | null } | null
+        )?.cabinetUserId;
+        if (userCabinetUid != null) {
+          let botCabinetUid: number | null = null;
+          let botFc: string | null = input.botUserFriendCode ?? null;
+          if (botFc) {
+            const allBots = await this.botStatus.getAll();
+            const bot = allBots.find((b) => b.friendCode === botFc);
+            botCabinetUid = bot?.cabinetUserId ?? null;
+          } else {
+            const picked = await this.botStatus.pickAvailableCabinetBot();
+            if (picked) {
+              botFc = picked.friendCode;
+              botCabinetUid = picked.cabinetUserId ?? null;
+              input.botUserFriendCode = botFc;
+            }
+          }
+
+          if (botCabinetUid != null && botFc) {
+            try {
+              const r = await this.sdgb.addRival(
+                {
+                  botCabinetUserId: botCabinetUid,
+                  targetCabinetUserId: userCabinetUid,
+                },
+                {
+                  tag: `score-update-add:${input.friendCode}`,
+                  timeoutMs: 60_000,
+                },
+              );
+              resolvedStage = 'update_score';
+              input.friendshipReady = true;
+              this.logger.log(
+                `Cabinet fast-path fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
+              );
+            } catch (err) {
+              this.logger.warn(
+                `Cabinet fast-path addRival failed for fc=${input.friendCode}; needs explicit friendship job: ${err instanceof Error ? err.message : err}`,
+              );
+            }
+          }
+        }
+      } catch (err) {
+        // Lookup failure is non-fatal — fall back to original send_request flow.
+        this.logger.warn(
+          `cabinet-bound fast-path lookup failed for ${input.friendCode}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
+    if (resolvedJobType === 'update_score') {
+      const friendship = await this.resolveUpdateScoreFriendship({
+        friendCode: input.friendCode,
+        botUserFriendCode: input.botUserFriendCode ?? null,
+        friendshipReady: input.friendshipReady ?? false,
+      });
+
+      if (friendship.ready) {
+        input.botUserFriendCode = friendship.botUserFriendCode;
+        resolvedStage = 'update_score';
+      } else {
+        const proofBotFriendCode = await this.resolveCompletedFriendshipProof({
+          friendCode: input.friendCode,
+          friendshipJobId: input.friendshipJobId,
+          now,
+        });
+        if (proofBotFriendCode) {
+          input.botUserFriendCode = proofBotFriendCode;
+          resolvedStage = 'update_score';
+        } else {
+          throw new BadRequestException({
+            code: 'needs_friendship',
+            message: '请先让当前账号与可用 Bot 成为好友后再更新成绩',
+            recommendedBotFriendCode: friendship.botUserFriendCode,
+          });
+        }
+      }
+    }
+
+    const priority = getJobTypePriority(resolvedJobType);
 
     if (input.cancelActiveJobs !== false) {
       await this.jobModel.updateMany(
@@ -436,354 +544,11 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const isPreassignedScoreJob =
-      resolvedJobType === 'update_score' && !!input.botUserFriendCode;
-
-    let resolvedStage: JobStage;
-    if (resolvedJobType === 'update_score') {
-      resolvedStage = 'update_score';
-    } else if (resolvedJobType === 'accept_friend_request') {
-      resolvedStage = 'wait_user_request';
-    } else if (resolvedJobType === 'get_user_recent_event') {
-      resolvedStage = 'get_user_recent_event';
-    } else if (resolvedJobType === 'get_full_friend_list') {
-      resolvedStage = 'get_full_friend_list';
-    } else {
-      resolvedStage = 'send_request';
-    }
-
-    // Cabinet-bound user fast-path: if the user has cabinetUserId, ask
-    // sdgb to addRival on their behalf and skip the dxnet
-    // send_request -> wait_acceptance dance entirely.
-    //
-    // 调用方（FE / scheduler）传 botUserFriendCode 是可选的：
-    //   - auto-update / login follow-up passes botUserFriendCode and can
-    //     start at update_score.
-    //   - JobController.create（用户点"更新数据"）不传 bot；这里需要自己挑一个
-    //     cabinet-bound bot. If sdgb addRival fails, fall back to manual
-    //     friend request.
-    //
-    // sdgb 失败处理（用户区分）：
-    //   - manual update_score: await addRival; if sdgb fails, fall back to
-    //     send_request so the user can still complete manually.
-    //   - pre-assigned update_score: addRival has already been handled or
-    //     friendship is already expected; keep the extra addRival best-effort.
-    const isScoreUpdateJob =
-      resolvedJobType === 'update_score' && !input.skipUpdateScore;
-    // Cabinet-only mode is always enabled for automatic updates. When the
-    // cabinet fast-path successfully attaches cabinetScoreMap for a user with
-    // cabinetUserId, we skip worker dispatch entirely: the job is created and
-    // then immediately patched to `completed` with result={}.
-    // SyncService.createFromJob's synthetic-entry branch
-    // (sync.service.ts:311-351) writes the cabinet achievement/dxScore,
-    // mergeScoreKeepBest preserves the previous sync's fc/fs (since synthetic
-    // entries set those to null).
-    let cabinetOnlyShortCircuit = false;
-    if (isScoreUpdateJob && !input.friendshipReady) {
-      try {
-        const user = await this.usersService.findByFriendCode(input.friendCode);
-        const userCabinetUid = (
-          user as { cabinetUserId?: number | null } | null
-        )?.cabinetUserId;
-        if (userCabinetUid != null) {
-          if (allowCabinetOnlyShortCircuit) {
-            try {
-              let music = input.cabinetMusic ?? null;
-              if (!music) {
-                const r = await this.sdgb.getRivalHash(
-                  { cabinetUserId: userCabinetUid },
-                  {
-                    tag: `score-update-music:${input.friendCode}`,
-                    timeoutMs: 60_000,
-                  },
-                );
-                music = r.music;
-              }
-              const cabinetScoreMap: Record<
-                string,
-                { achievement: number; dxScore: number }
-              > = {};
-              for (const m of music ?? []) {
-                for (const d of m.userRivalMusicDetailList ?? []) {
-                  cabinetScoreMap[`${m.musicId}_${d.level}`] = {
-                    achievement: d.achievement,
-                    dxScore: d.deluxscoreMax,
-                  };
-                }
-              }
-              if (Object.keys(cabinetScoreMap).length > 0) {
-                input.cabinetScoreMap = cabinetScoreMap;
-                resolvedStage = 'update_score';
-                cabinetOnlyShortCircuit = true;
-                this.logger.log(
-                  `Cabinet-only auto-update: captured ${Object.keys(cabinetScoreMap).length} entries for fc=${input.friendCode}, no bot needed`,
-                );
-              } else {
-                this.logger.warn(
-                  `Cabinet-only auto-update: cabinetScoreMap empty for fc=${input.friendCode}, will fall back to worker flow`,
-                );
-              }
-            } catch (err) {
-              this.logger.warn(
-                `Cabinet-only auto-update getRivalHash failed for fc=${input.friendCode}; falling back to bot-based flow: ${err instanceof Error ? err.message : err}`,
-              );
-            }
-          }
-
-          // If cabinet-only mode short-circuited, skip the bot-based
-          // addRival + diff calc path below. Otherwise fall through to
-          // the original flow that picks a bot and does addRival.
-          if (!cabinetOnlyShortCircuit) {
-            // Pick the bot — caller-specified or auto-pick.
-            let botCabinetUid: number | null = null;
-            let botFc: string | null = input.botUserFriendCode ?? null;
-            if (botFc) {
-              const allBots = await this.botStatus.getAll();
-              const bot = allBots.find((b) => b.friendCode === botFc);
-              botCabinetUid = bot?.cabinetUserId ?? null;
-            } else {
-              const picked = await this.botStatus.pickAvailableCabinetBot();
-              if (picked) {
-                botFc = picked.friendCode;
-                botCabinetUid = picked.cabinetUserId ?? null;
-                input.botUserFriendCode = botFc;
-              }
-            }
-
-            if (botCabinetUid != null && botFc) {
-              // ── addRival ────────────────────────────────────────
-              // send_friend_request: synchronous, fall back to send_request on
-              // failure so the user can complete via the friend-request
-              // flow instead of staring at a stuck stage=update_score.
-              // update_score: scheduler already addRival'd before
-              // enqueue, this is best-effort backup.
-              let addRivalOk = true;
-              if (!isPreassignedScoreJob) {
-                try {
-                  const r = await this.sdgb.addRival(
-                    {
-                      botCabinetUserId: botCabinetUid,
-                      targetCabinetUserId: userCabinetUid,
-                    },
-                    {
-                      tag: `score-update-add:${input.friendCode}`,
-                      timeoutMs: 60_000,
-                    },
-                  );
-                  resolvedStage = 'update_score';
-                  input.friendshipReady = true;
-                  this.logger.log(
-                    `Cabinet fast-path fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
-                  );
-                } catch (err) {
-                  addRivalOk = false;
-                  this.logger.warn(
-                    `Cabinet fast-path addRival failed for fc=${input.friendCode}; falling back to send_request: ${err instanceof Error ? err.message : err}`,
-                  );
-                }
-              } else {
-                // Pre-assigned score job: stage already update_score.
-                resolvedStage = 'update_score';
-                this.sdgb
-                  .addRival(
-                    {
-                      botCabinetUserId: botCabinetUid,
-                      targetCabinetUserId: userCabinetUid,
-                    },
-                    {
-                      tag: `score-update-add:${input.friendCode}`,
-                      timeoutMs: 60_000,
-                    },
-                  )
-                  .then((r) =>
-                    this.logger.log(
-                      `Cabinet score-update (redundant) fc=${input.friendCode} bot=${botFc} addRival rc=${r.returnCode1}/${r.returnCode2}`,
-                    ),
-                  )
-                  .catch((err) =>
-                    this.logger.warn(
-                      `addRival (redundant) failed: ${err instanceof Error ? err.message : err}`,
-                    ),
-                  );
-              }
-
-              // ── cabinet music + diff calc (all score-update jobs) ──
-              // Capture cabinet's per-chart achievement/dxScore + diff
-              // against last sync to derive cabinetScoreMap +
-              // diffsToScrape. These let the worker skip half the
-              // friend-VS requests and skip unchanged diffs entirely.
-              //
-              // Only attempt if addRival worked (manual path) — if
-              // sdgb is broken there's no point trying again.
-              if (addRivalOk && input.cabinetScoreMap == null) {
-                try {
-                  let music = input.cabinetMusic ?? null;
-                  if (!music) {
-                    // Caller didn't pre-fetch (e.g. manual path,
-                    // admin trigger, scheduler that didn't pass
-                    // music) — make our own sdgb call.
-                    const r = await this.sdgb.getRivalHash(
-                      { cabinetUserId: userCabinetUid },
-                      {
-                        tag: `score-update-music:${input.friendCode}`,
-                        timeoutMs: 60_000,
-                      },
-                    );
-                    music = r.music;
-                  }
-                  const cabinetScoreMap: Record<
-                    string,
-                    { achievement: number; dxScore: number }
-                  > = {};
-                  for (const m of music ?? []) {
-                    for (const d of m.userRivalMusicDetailList ?? []) {
-                      cabinetScoreMap[`${m.musicId}_${d.level}`] = {
-                        achievement: d.achievement,
-                        dxScore: d.deluxscoreMax,
-                      };
-                    }
-                  }
-                  if (Object.keys(cabinetScoreMap).length > 0) {
-                    input.cabinetScoreMap = cabinetScoreMap;
-
-                    // Cabinet-only short-circuit was already evaluated earlier;
-                    // reaching here means this job must continue with worker
-                    // dispatch.
-
-                    // Compute diffsToScrape if caller didn't already.
-                    if (input.diffsToScrape == null) {
-                      try {
-                        // Filter out cabinet entries whose musicId we
-                        // don't have in our music data (e.g. delisted
-                        // standard charts cabinet still returns). Without
-                        // this, every such entry counts as a "new chart"
-                        // and inflates diffsToScrape to cover all diffs,
-                        // which makes the worker scrape useless friend-VS
-                        // pages — exactly the symptom we saw on
-                        // fc=634142510810999 (86 unknown ids → diffs=[0,1,2,3,4]).
-                        const validIds = await this.getValidMusicIds();
-                        const prev = await this.syncService
-                          .getLatestWithScores(input.friendCode)
-                          .catch(() => null);
-                        if (prev && Array.isArray(prev.scores)) {
-                          const prevMap = new Map<
-                            string,
-                            { achievement: number; dxScore: number }
-                          >();
-                          for (const s of prev.scores) {
-                            const ach = s.score
-                              ? Math.round(parseFloat(String(s.score)) * 10000)
-                              : 0;
-                            const dx = s.dxScore
-                              ? parseInt(String(s.dxScore), 10) || 0
-                              : 0;
-                            prevMap.set(`${s.musicId}_${s.chartIndex}`, {
-                              achievement: ach,
-                              dxScore: dx,
-                            });
-                          }
-                          const changedDiffs = new Set<number>();
-                          let skippedUnknown = 0;
-                          for (const [key, cur] of Object.entries(
-                            cabinetScoreMap,
-                          )) {
-                            const lastUnderscore = key.lastIndexOf('_');
-                            const musicId = key.slice(0, lastUnderscore);
-                            if (!validIds.has(musicId)) {
-                              skippedUnknown++;
-                              continue;
-                            }
-                            const before = prevMap.get(key);
-                            if (
-                              !before ||
-                              before.achievement !== cur.achievement ||
-                              before.dxScore !== cur.dxScore
-                            ) {
-                              const lvl = parseInt(
-                                key.slice(lastUnderscore + 1),
-                                10,
-                              );
-                              if (Number.isFinite(lvl)) changedDiffs.add(lvl);
-                            }
-                          }
-                          if (skippedUnknown > 0) {
-                            this.logger.log(
-                              `Cabinet diff fc=${input.friendCode}: skipped ${skippedUnknown} unknown musicIds (not in db)`,
-                            );
-                          }
-                          if (changedDiffs.size > 0) {
-                            input.diffsToScrape = [...changedDiffs].sort(
-                              (a, b) => a - b,
-                            );
-                            this.logger.log(
-                              `Cabinet diff fc=${input.friendCode}: scraping diffs [${input.diffsToScrape.join(',')}] only (cabinet=${Object.keys(cabinetScoreMap).length} entries)`,
-                            );
-                          }
-                        }
-                      } catch (err) {
-                        this.logger.warn(
-                          `diff calc failed for fc=${input.friendCode}, worker will scrape default diffs: ${err instanceof Error ? err.message : err}`,
-                        );
-                      }
-                    }
-
-                    this.logger.log(
-                      `Cabinet music captured for fc=${input.friendCode}: ${Object.keys(cabinetScoreMap).length} entries${
-                        input.diffsToScrape
-                          ? `, diffs=[${input.diffsToScrape.join(',')}]`
-                          : ''
-                      }`,
-                    );
-                  }
-                } catch (err) {
-                  this.logger.warn(
-                    `cabinet music fetch failed for fc=${input.friendCode}, worker will scrape both VS passes: ${err instanceof Error ? err.message : err}`,
-                  );
-                }
-              }
-            }
-          } // end if (!cabinetOnlyShortCircuit)
-        }
-      } catch (err) {
-        // Lookup failure is non-fatal — fall back to original send_request flow.
-        this.logger.warn(
-          `cabinet-bound fast-path lookup failed for ${input.friendCode}: ${err instanceof Error ? err.message : err}`,
-        );
-      }
-    }
-
-    if (
-      resolvedJobType === 'update_score' &&
-      !input.skipUpdateScore &&
-      !cabinetOnlyShortCircuit
-    ) {
-      const friendship = await this.resolveUpdateScoreFriendship({
-        friendCode: input.friendCode,
-        botUserFriendCode: input.botUserFriendCode ?? null,
-        friendshipReady: input.friendshipReady ?? false,
-      });
-
-      if (friendship.ready) {
-        input.botUserFriendCode = friendship.botUserFriendCode;
-        resolvedStage = 'update_score';
-      } else {
-        resolvedJobType = 'send_friend_request';
-        resolvedStage = 'send_request';
-        input.botUserFriendCode = friendship.botUserFriendCode;
-        this.logger.log(
-          `update_score fc=${input.friendCode} is not in reported bot friends; queued send_friend_request first`,
-        );
-      }
-    }
-
-    const priority = getJobTypePriority(resolvedJobType);
-
     const created = await this.jobModel.create({
       id,
       friendCode: input.friendCode,
       jobType: resolvedJobType,
       priority,
-      skipUpdateScore: input.skipUpdateScore,
       botUserFriendCode: input.botUserFriendCode ?? null,
       friendRequestSentAt: null,
       friendRequestWaitStartedAt:
@@ -793,32 +558,11 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
       executing: false,
       error: null,
       result: undefined,
-      isAuthenticated: input.isAuthenticated ?? false,
       sourceScoreHash: input.sourceScoreHash ?? null,
-      cabinetScoreMap: input.cabinetScoreMap ?? null,
-      diffsToScrape: input.diffsToScrape ?? null,
       runAt: null,
       createdAt: now,
       updatedAt: now,
     });
-
-    if (cabinetOnlyShortCircuit) {
-      this.logger.log(
-        `Cabinet-only auto-update: completing job ${id} fc=${input.friendCode} without worker dispatch`,
-      );
-      try {
-        const completed = await this.patch(id, {
-          status: 'completed',
-          stage: 'update_score',
-          result: {},
-        });
-        return { jobId: id, job: completed };
-      } catch (err) {
-        this.logger.error(
-          `Cabinet-only short-circuit patch failed for job ${id}: ${err instanceof Error ? err.message : err}; leaving job for worker fallback`,
-        );
-      }
-    }
 
     const createdEntity = created.toObject() as JobEntity;
     await this.enqueueWorkerJob(createdEntity);
@@ -1029,38 +773,8 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (
-      existing.status !== 'completed' &&
       updated.status === 'completed' &&
-      !updated.skipUpdateScore &&
-      updated.jobType !== 'update_score'
-    ) {
-      const active = await this.jobModel
-        .findOne({
-          id: { $ne: updated.id },
-          friendCode: updated.friendCode,
-          skipUpdateScore: false,
-          status: { $in: ['queued', 'processing'] },
-        })
-        .lean();
-
-      if (!active) {
-        await this.create({
-          friendCode: updated.friendCode,
-          skipUpdateScore: false,
-          jobType: 'update_score',
-          botUserFriendCode: updated.botUserFriendCode ?? undefined,
-          isAuthenticated: true,
-          friendshipReady: true,
-          sourceScoreHash: updated.sourceScoreHash ?? null,
-          cabinetScoreMap: updated.cabinetScoreMap ?? null,
-          diffsToScrape: updated.diffsToScrape ?? null,
-        });
-      }
-    }
-
-    if (
-      updated.status === 'completed' &&
-      !updated.skipUpdateScore &&
+      updated.jobType === 'update_score' &&
       updated.result
     ) {
       await this.syncService.createFromJob(updated.toObject() as JobEntity);
@@ -1087,11 +801,8 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // Auto-update bookkeeping: sourceScoreHash marks jobs launched by
-    // AutoUpdateScheduler. A preceding send_friend_request may fail before
-    // the real update_score exists, so failures/cancellations are handled for
-    // every sourceScoreHash job. Only update_score completion promotes the
-    // hash because only that job has actually scraped scores.
+    // Auto-update bookkeeping: sourceScoreHash marks update_score jobs
+    // launched by AutoUpdateScheduler.
     //
     // - completed: promote sourceScoreHash to user.lastScoreHash AND
     //   clear backoff (failureCount=0, backoffUntil=null). We
@@ -1183,13 +894,13 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 根据 friendCode 获取当前正在执行的任务（queued 或 processing 状态，且 skipUpdateScore 为 false）
+   * 根据 friendCode 获取当前正在执行的成绩更新相关任务。
    */
   async getActiveByFriendCode(friendCode: string): Promise<JobResponse | null> {
     const job = await this.jobModel
       .findOne({
         friendCode,
-        skipUpdateScore: false,
+        jobType: { $in: ['update_score', 'send_friend_request'] },
         status: { $in: ['queued', 'processing'] },
       })
       .sort({ createdAt: -1 });
@@ -1205,7 +916,7 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
     const filter = {
-      skipUpdateScore: false,
+      jobType: 'update_score',
       createdAt: { $gte: oneHourAgo },
     };
 

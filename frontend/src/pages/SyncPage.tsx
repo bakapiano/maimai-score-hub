@@ -18,13 +18,15 @@ import {
 } from "@mantine/core";
 import { IconCloudUpload, IconLogin, IconRefresh } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { JobResponse as JobStatus } from "@maimai-score-hub/shared";
 
 import { syncApi, usersApi } from "../api/appClient";
 import {
+  JobApiError,
   createJob,
   getActiveJobByFriendCode,
+  getFriendshipStatus,
   getJobById,
   verifyJob,
 } from "../api/jobClient";
@@ -269,6 +271,7 @@ export default function SyncPage() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
+  const chainedFriendshipJobIdRef = useRef<string | null>(null);
 
   const totalWaitSeconds = 5 * 60;
   const remainingPercent = Math.min(
@@ -440,6 +443,65 @@ export default function SyncPage() {
     }
   };
 
+  const startUpdateScoreJob = useCallback(
+    async (friendshipJobId?: string) => {
+      if (!token) return;
+      const res = await createJob(
+        {
+          jobType: "update_score",
+          ...(friendshipJobId ? { friendshipJobId } : {}),
+        },
+        token,
+      );
+      setSyncJobId(res.jobId);
+      setSyncStatus(res.job);
+    },
+    [token],
+  );
+
+  const startFriendshipJob = useCallback(async () => {
+    if (!token) return;
+    notifications.show({
+      title: "需要先成为好友",
+      message: "Bot 将先发送好友申请，接受后会自动开始更新成绩",
+      color: "blue",
+    });
+    const res = await createJob({ jobType: "send_friend_request" }, token);
+    setSyncJobId(res.jobId);
+    setSyncStatus(res.job);
+  }, [token]);
+
+  // Start sync
+  const startSync = useCallback(async () => {
+    if (!profile?.friendCode || !token) return;
+
+    setSyncing(true);
+    setSyncError(null);
+    setSyncStatus(null);
+    chainedFriendshipJobIdRef.current = null;
+
+    try {
+      const friendship = await getFriendshipStatus(token);
+      if (friendship.isFriend) {
+        await startUpdateScoreJob();
+      } else {
+        await startFriendshipJob();
+      }
+    } catch (error) {
+      if (error instanceof JobApiError && error.code === "needs_friendship") {
+        try {
+          await startFriendshipJob();
+          return;
+        } catch (fallbackError) {
+          error = fallbackError;
+        }
+      }
+      setSyncing(false);
+      const errorMessage = error instanceof Error ? error.message : "未知错误";
+      setSyncError(`创建同步任务失败: ${errorMessage}`);
+    }
+  }, [profile?.friendCode, token, startFriendshipJob, startUpdateScoreJob]);
+
   // Poll job status
   useEffect(() => {
     if (!syncJobId || !syncing || !token) return;
@@ -454,8 +516,24 @@ export default function SyncPage() {
           job.status === "failed" ||
           job.status === "canceled"
         ) {
-          setSyncing(false);
           if (job.status === "completed") {
+            if (job.jobType === "send_friend_request") {
+              if (chainedFriendshipJobIdRef.current === job.id) {
+                return;
+              }
+              chainedFriendshipJobIdRef.current = job.id;
+              try {
+                await startUpdateScoreJob(job.id);
+              } catch (error) {
+                chainedFriendshipJobIdRef.current = null;
+                setSyncing(false);
+                const errorMessage =
+                  error instanceof Error ? error.message : "未知错误";
+                setSyncError(`创建成绩更新任务失败: ${errorMessage}`);
+              }
+              return;
+            }
+            setSyncing(false);
             loadProfile();
             loadLastSync();
 
@@ -468,6 +546,8 @@ export default function SyncPage() {
                 // ignore
               }
             }, 3000);
+          } else {
+            setSyncing(false);
           }
         }
       } catch {
@@ -477,7 +557,14 @@ export default function SyncPage() {
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [syncJobId, syncing, token, loadProfile, loadLastSync]);
+  }, [
+    syncJobId,
+    syncing,
+    token,
+    loadProfile,
+    loadLastSync,
+    startUpdateScoreJob,
+  ]);
 
   // Handle timeout countdown for wait_acceptance stage
   useEffect(() => {
@@ -500,31 +587,6 @@ export default function SyncPage() {
 
     return () => clearInterval(interval);
   }, [syncStatus?.stage, syncStatus?.friendRequestSentAt]);
-
-  // Start sync
-  const startSync = async () => {
-    if (!profile?.friendCode) return;
-
-    setSyncing(true);
-    setSyncError(null);
-    setSyncStatus(null);
-
-    try {
-      const res = await createJob(
-        {
-          skipUpdateScore: false,
-        },
-        token!,
-      );
-
-      setSyncJobId(res.jobId);
-      setSyncStatus(res.job);
-    } catch (error) {
-      setSyncing(false);
-      const errorMessage = error instanceof Error ? error.message : "未知错误";
-      setSyncError(`创建同步任务失败: ${errorMessage}`);
-    }
-  };
 
   const verifySyncJob = async () => {
     if (!syncJobId || !token) return;

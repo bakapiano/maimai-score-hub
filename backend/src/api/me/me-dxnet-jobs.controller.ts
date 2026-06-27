@@ -40,9 +40,8 @@ export class MeDxnetJobsController {
 
     return this.jobs.create({
       friendCode,
-      skipUpdateScore: body.skipUpdateScore,
-      jobType: 'update_score',
-      isAuthenticated: true,
+      jobType: body.jobType,
+      friendshipJobId: body.friendshipJobId,
     });
   }
 
@@ -54,6 +53,15 @@ export class MeDxnetJobsController {
     }
     const job = await this.jobs.getActiveByFriendCode(friendCode);
     return { job };
+  }
+
+  @Get('friendship')
+  async getFriendshipStatus(@Req() req: AuthedRequest) {
+    const friendCode = req.user?.friendCode;
+    if (!friendCode) {
+      throw new BadRequestException('Missing friendCode in token');
+    }
+    return this.jobs.getFriendshipStatus(friendCode);
   }
 
   @Get(':jobId')

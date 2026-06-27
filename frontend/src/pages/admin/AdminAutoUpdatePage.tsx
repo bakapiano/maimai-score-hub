@@ -57,16 +57,10 @@ type AutoUpdateMetrics = {
     perBotInflight: { friendCode: string; count: number }[];
     activeCabinetBots: number;
   };
-  optimization: {
-    sampleSize: number;
-    cabinetHitRate: number;
-    diffSkipHitRate: number;
-    avgDiffsScraped: number | null;
-    estimatedReqsPerJob: number;
-  };
   capacity: {
     activeCabinetBots: number;
     reqsPerMinPerBot: number;
+    estimatedReqsPerJob: number;
     estimatedJobsPerMin: number;
     estimatedJobsPerSweep: number;
     triggerRatePerUserPerSweep: number;
@@ -299,9 +293,9 @@ export default function AdminAutoUpdatePage() {
         </Grid.Col>
         <Grid.Col span={{ base: 6, md: 3 }}>
           <Kpi
-            label="cabinet 优化命中率"
-            value={`${data.optimization.cabinetHitRate}%`}
-            hint={`平均 ${data.optimization.estimatedReqsPerJob} req/job · diff-skip ${data.optimization.diffSkipHitRate}%`}
+            label="每 job 请求数"
+            value={data.capacity.estimatedReqsPerJob}
+            hint="6 难度 × 2 分数类型 × 胜负页"
           />
         </Grid.Col>
       </Grid>
@@ -414,7 +408,7 @@ export default function AdminAutoUpdatePage() {
               <Text size="sm">
                 {data.capacity.activeCabinetBots} bot ×{" "}
                 {data.capacity.reqsPerMinPerBot} req/min ÷{" "}
-                {data.optimization.estimatedReqsPerJob} req/job ≈{" "}
+                {data.capacity.estimatedReqsPerJob} req/job ≈{" "}
                 <b>{data.capacity.estimatedJobsPerMin} job/min</b>
               </Text>
               <Text size="xs" c="dimmed" mt={4}>
@@ -446,7 +440,7 @@ export default function AdminAutoUpdatePage() {
 
       <Text size="xs" c="dimmed" ta="right">
         生成于 {new Date(data.generatedAt).toLocaleString("zh-CN")} · 自动 30s
-        刷新 · sample {data.optimization.sampleSize} 个最近 update_score job
+        刷新
       </Text>
     </Container>
   );

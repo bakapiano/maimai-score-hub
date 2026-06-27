@@ -7,6 +7,7 @@ import {
   JobByFriendCodeActiveResponseSchema,
   JobCreateBodySchema,
   JobCreateResponseSchema,
+  JobFriendshipStatusResponseSchema,
   JobPatchBodySchema,
   JobResponseSchema,
   JobVerifyResponseSchema,
@@ -25,6 +26,11 @@ export const jobContract = c.router({
     body: JobCreateBodySchema,
     responses: {
       201: JobCreateResponseSchema,
+      400: z.object({
+        code: z.string().optional(),
+        message: z.union([z.string(), z.array(z.string())]).optional(),
+        recommendedBotFriendCode: z.string().nullable().optional(),
+      }),
     },
   },
   getById: {
@@ -42,6 +48,14 @@ export const jobContract = c.router({
     headers: z.object({ authorization: z.string() }),
     responses: {
       200: JobByFriendCodeActiveResponseSchema,
+    },
+  },
+  getFriendshipStatus: {
+    method: "GET",
+    path: "/me/dxnet-jobs/friendship",
+    headers: z.object({ authorization: z.string() }),
+    responses: {
+      200: JobFriendshipStatusResponseSchema,
     },
   },
   verify: {

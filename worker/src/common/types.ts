@@ -70,7 +70,6 @@ export interface Job {
   friendCode: string;
   jobType?: JobType;
   priority?: number;
-  skipUpdateScore?: boolean;
   botUserFriendCode?: string | null;
   friendRequestSentAt?: string | null;
   friendRequestWaitStartedAt?: string | null;
@@ -82,9 +81,6 @@ export interface Job {
   executing?: boolean;
   scoreProgress?: ScoreProgress | null;
   updateScoreDuration?: number | null;
-  isAuthenticated?: boolean;
-  cabinetScoreMap?: Record<string, { achievement: number; dxScore: number }> | null;
-  diffsToScrape?: number[] | null;
   runAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;

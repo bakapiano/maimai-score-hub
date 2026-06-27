@@ -35,8 +35,8 @@ export interface JobStatsWithDuration extends JobStatsTimeRange {
 }
 
 export interface JobStats {
-  skipUpdateScore: JobStatsTimeRange[];
-  withUpdateScore: JobStatsWithDuration[];
+  nonScoreUpdate: JobStatsTimeRange[];
+  scoreUpdate: JobStatsWithDuration[];
 }
 
 export interface JobTrendPoint {
@@ -48,8 +48,8 @@ export interface JobTrendPoint {
 }
 
 export interface JobTrend {
-  skipUpdateScore: JobTrendPoint[];
-  withUpdateScore: JobTrendPoint[];
+  nonScoreUpdate: JobTrendPoint[];
+  scoreUpdate: JobTrendPoint[];
 }
 
 export interface JobErrorStatsItem {
@@ -65,7 +65,7 @@ export interface JobErrorStats {
 export interface ActiveJob {
   id: string;
   friendCode: string;
-  skipUpdateScore: boolean;
+  jobType: string;
   botUserFriendCode: string | null;
   status: string;
   stage: string;
@@ -94,7 +94,7 @@ export interface AdminUser {
 export interface SearchJobResult {
   id: string;
   friendCode: string;
-  skipUpdateScore: boolean;
+  jobType: string;
   botUserFriendCode: string | null;
   status: string;
   stage: string;

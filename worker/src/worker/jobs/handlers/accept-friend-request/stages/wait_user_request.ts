@@ -100,11 +100,11 @@ export async function waitForUserRequest(
       return;
     }
 
-    await ctx.delay(15_000, {
+    await ctx.delay(30_000, {
       stage: "wait_user_request",
     });
     console.log(
-      `[JobHandler] Job ${ctx.job.id}: No valid user request found, delaying runAt by 15s`,
+      `[JobHandler] Job ${ctx.job.id}: No valid user request found, delaying runAt by 30s`,
     );
     return;
   }

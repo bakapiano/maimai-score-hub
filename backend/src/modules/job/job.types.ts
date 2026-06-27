@@ -59,7 +59,6 @@ export interface JobResponse {
   friendCode: string;
   jobType: JobType;
   priority?: number;
-  skipUpdateScore: boolean;
   botUserFriendCode?: string | null;
   friendRequestSentAt?: string | null;
   friendRequestWaitStartedAt?: string | null;
@@ -75,9 +74,6 @@ export interface JobResponse {
     divingFish?: { status: string; message?: string } | null;
     lxns?: { status: string; message?: string } | null;
   } | null;
-  isAuthenticated?: boolean;
-  cabinetScoreMap?: Record<string, { achievement: number; dxScore: number }> | null;
-  diffsToScrape?: number[] | null;
   runAt?: string | null;
   createdAt: string;
   updatedAt: string;

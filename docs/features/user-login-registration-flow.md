@@ -82,8 +82,8 @@ POST /api/v1/auth/login-requests
 
 1. 在 Bot 的待处理好友申请列表中查找来自该用户 `friendCode` 的申请。
 2. 只接受创建登录请求时间之后发来的申请；旧申请会被视为过期并拉黑处理，避免误认历史请求。
-3. 找到有效申请后切换到 `accept_request`。
-4. Bot 接受好友申请，job 标记为 `completed`。
+3. 找到有效申请后切换到 `accept_request`，此时登录验证已经成立，轮询接口可以签发 token。
+4. Bot 继续接受好友申请，成功后 job 标记为 `completed`。
 5. 如果 5 分钟内没有等到有效申请，job 失败。
 
 ### 4. 前端轮询登录任务
@@ -104,9 +104,10 @@ POST /api/v1/auth/login-requests
 
 ### 5. 后端签发 token
 
-`AuthService.checkStatus()` 在以下条件满足时签发 token：
+`AuthService.checkStatus()` 在以下任一条件满足时签发 token：
 
 - 登录 job 已经 `completed`。
+- `accept_friend_request` 登录 job 已进入 `accept_request` 阶段。
 
 签发 payload：
 

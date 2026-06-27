@@ -80,7 +80,7 @@
 - 创建和唤醒 job 时写入 BullMQ；worker 直接消费队列，处理 `runAt` 延迟、释放 stale execution、超时失败由后台 sweep 兜底。
 - 处理 worker PATCH 回写的状态、stage、进度、profile、result、error 和执行标记。
 - job 成功完成后会触发 `SyncService.createFromJob()` 写入同步成绩，并按用户设置执行自动导出。
-- 支持机台绑定用户的 cabinet fast path：通过 sdgb 加 rival、使用 cabinet score map 优化 `update_score`；自动更新固定启用 cabinet-only 短路，直接写入纯机台数据。
+- 支持机台绑定用户的 cabinet fast path：通过 sdgb 加 rival 先建立好友关系，再创建普通 `update_score` job。
 - `JobTempCacheService` 用 Redis 临时缓存 `update_score` 中间 FriendVS 解析结果。
 - `JobApiLogService` 用 Redis 保存 worker 外部 API 调用 metadata，供调试页面查看。
 
@@ -110,8 +110,8 @@
 
 ### `SyncModule`
 
-- 将 DXNet worker 的 job result 或 cabinet score map 转换为 `SyncScore`，写入最新同步快照。
-- 同一用户只保留最新 sync；新成绩会和上一份 sync 合并，避免部分难度抓取时丢失旧成绩。
+- 将 DXNet worker 的 job result 转换为 `SyncScore`，写入最新同步快照。
+- 同一用户只保留最新 sync；新成绩会和上一份 sync 合并，避免单次抓取缺项时丢失旧成绩。
 - 合并策略保留更高的 achievement、dxScore、FC 和 FS，元数据来自最新曲库。
 - 对外提供当前用户最新同步成绩查询。
 - `ProberExportMapService` 缓存 Diving Fish 与 LXNS 的曲目 id 映射，支持在不同曲库来源下导出。

@@ -25,12 +25,8 @@ import { ProberExportMapService } from './prober-export-map.service';
 type JobLike = {
   id: string;
   friendCode: string;
-  skipUpdateScore: boolean;
+  jobType?: string;
   result?: any;
-  cabinetScoreMap?: Record<
-    string,
-    { achievement: number; dxScore: number }
-  > | null;
 };
 
 type MusicRow = MusicEntity & {
@@ -98,14 +94,11 @@ export class SyncService {
   ) {}
 
   async createFromJob(job: JobLike) {
-    if (job.skipUpdateScore) return null;
-    if (!job.result && !job.cabinetScoreMap) return null;
+    if (job.jobType && job.jobType !== 'update_score') return null;
+    if (!job.result) return null;
 
     const syncId = randomUUID();
-    const newScores = await this.mapResultToScores(
-      job.result ?? {},
-      job.cabinetScoreMap ?? null,
-    );
+    const newScores = await this.mapResultToScores(job.result);
     if (!newScores.length) {
       this.logger.warn(
         `No scores mapped for job ${job.id}; skipping sync write.`,
@@ -190,13 +183,7 @@ export class SyncService {
     await this.syncModel.updateOne({ jobId }, { $set: { autoExportResult } });
   }
 
-  private async mapResultToScores(
-    result: any,
-    cabinetScoreMap?: Record<
-      string,
-      { achievement: number; dxScore: number }
-    > | null,
-  ): Promise<ScoreSnapshot[]> {
+  private async mapResultToScores(result: any): Promise<ScoreSnapshot[]> {
     if (!result || typeof result !== 'object') return [];
 
     const musics = (await this.musicModel.find().lean()) as MusicRow[];
@@ -243,16 +230,7 @@ export class SyncService {
 
             const dxScoreFromVS = payload?.dxScore ?? null;
             const scoreFromVS = payload?.score ?? null;
-            // Skip charts that have absolutely no per-attempt data, but
-            // only when we don't have cabinet fallback. (When skipDxScore
-            // mode is on, payload.dxScore is null but the chart is still
-            // worth keeping because cabinet has the dxScore + we just
-            // need the fc/fs from VS.)
-            if (
-              dxScoreFromVS === null &&
-              scoreFromVS === null &&
-              !cabinetScoreMap
-            ) {
+            if (dxScoreFromVS === null && scoreFromVS === null) {
               continue;
             }
 
@@ -283,21 +261,7 @@ export class SyncService {
               continue;
             }
 
-            // Cabinet data takes precedence over friend-VS for
-            // achievement + dxScore (cabinet is authoritative; VS may
-            // be missing dxScore entirely if worker ran in
-            // skipDxScoreFetch mode).
-            const cabinetKey = `${music.id}_${chartIndex}`;
-            const cabinetEntry = cabinetScoreMap?.[cabinetKey];
-            const dxScore = cabinetEntry
-              ? String(cabinetEntry.dxScore)
-              : dxScoreFromVS;
-            const score = cabinetEntry
-              ? // cabinet achievement is int * 10000, e.g. 1003107 → "100.3107%"
-                (cabinetEntry.achievement / 10000).toFixed(4) + '%'
-              : scoreFromVS;
-
-            const achievement = normalizeAchievement(score);
+            const achievement = normalizeAchievement(scoreFromVS);
             const musicDetailLevel = chart.detailLevel ?? null;
             const rating =
               musicDetailLevel !== null && achievement !== null
@@ -309,8 +273,8 @@ export class SyncService {
               cid: music.id + '_' + (chartIndex === 10 ? 0 : chartIndex),
               chartIndex,
               type,
-              dxScore,
-              score,
+              dxScore: dxScoreFromVS,
+              score: scoreFromVS,
               fs: payload?.fs ?? null,
               fc: payload?.fc ?? null,
               rating,
@@ -318,52 +282,6 @@ export class SyncService {
             });
           }
         }
-      }
-    }
-
-    // For (musicId, chartIndex) pairs that exist in cabinetScoreMap but
-    // never appeared in the friend-VS result (because worker's
-    // diffsToScrape skipped that diff entirely), synthesize a score-only
-    // ScoreSnapshot so the cabinet data still flows into sync. fc/fs
-    // stay null; the upstream merge step (mergeScoreKeepBest) keeps any
-    // previous fc/fs from the prior sync.
-    if (cabinetScoreMap) {
-      const seen = new Set(scores.map((s) => `${s.musicId}_${s.chartIndex}`));
-      for (const [key, entry] of Object.entries(cabinetScoreMap)) {
-        if (seen.has(key)) continue;
-        const lastUnderscore = key.lastIndexOf('_');
-        if (lastUnderscore < 0) continue;
-        const musicId = key.slice(0, lastUnderscore);
-        const chartIndex = Number(key.slice(lastUnderscore + 1));
-        if (!Number.isFinite(chartIndex)) continue;
-
-        const music = musics.find((m) => m.id === musicId);
-        if (!music) continue;
-        const chart = Array.isArray(music.charts)
-          ? (music.charts[chartIndex === 10 ? 0 : chartIndex] as
-              | ChartPayload
-              | undefined)
-          : undefined;
-        if (!chart) continue;
-        const score = (entry.achievement / 10000).toFixed(4) + '%';
-        const achievement = normalizeAchievement(score);
-        const musicDetailLevel = chart.detailLevel ?? null;
-        const rating =
-          musicDetailLevel !== null && achievement !== null
-            ? getRating(musicDetailLevel, achievement)
-            : null;
-        scores.push({
-          musicId: music.id,
-          cid: music.id + '_' + (chartIndex === 10 ? 0 : chartIndex),
-          chartIndex,
-          type: music.type ?? '',
-          dxScore: String(entry.dxScore),
-          score,
-          fs: null,
-          fc: null,
-          rating,
-          isNew: music.isNew ?? null,
-        });
       }
     }
 

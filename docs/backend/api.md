@@ -38,7 +38,7 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | GET  | `/health`                            | Public | -                                                                                                         | 健康检查，返回 `{ status: "ok" }`。                                                                                                        |
 | GET  | `/statistics`                        | Public | -                                                                                                         | 通用公开统计。当前返回 `{ dxnetJobs }`，包含最近 DXNet job 总数、成功数、失败数、成功率、平均耗时。                                        |
 | POST | `/auth/login-requests`               | Public | body: `friendCode`, `method: "bot_sends_request" \| "user_sends_request"` | 创建好友请求登录 job。`SKIP_AUTH=true` 时直接返回 token。                                                                                  |
-| GET  | `/auth/login-requests/:jobId`        | Public | path: `jobId`                                                                                             | 查询登录 job 状态；完成后返回 token、user，必要时附带后续同步 job。                                                                        |
+| GET  | `/auth/login-requests/:jobId`        | Public | path: `jobId`                                                                                             | 查询登录 job 状态；`completed` 或 `accept_friend_request` 进入 `accept_request` 后返回 token、user。                                        |
 | POST | `/auth/login-requests/:jobId/verify` | Public | path: `jobId`                                                                                             | 唤醒或确认好友请求登录 job，返回 `{ job }`。                                                                                               |
 | POST | `/auth/qr-login`                     | Public | JSON body: `qrCode?`，或 multipart field: `image`，也可同时带 `qrCode`                                    | 机台二维码登录。已绑定用户走 fast path 返回 token/user；新用户返回 `{ kind: "async", attemptId }`。二维码过期时返回 `code: "qr_expired"`。 |
 | GET  | `/auth/qr-login/:attemptId`          | Public | path: `attemptId`                                                                                         | 轮询二维码登录慢路径。状态为 `pending`、`adding_rival`、`waiting_snapshot`、`matched` 或 `failed`；成功时带 token/user。                   |
@@ -75,12 +75,13 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 以下接口均需要 User 认证。
 
-| 方法 | 路径                           | 入参                                  | 说明                                                                       |
-| ---- | ------------------------------ | ------------------------------------- | -------------------------------------------------------------------------- |
-| POST | `/me/dxnet-jobs`               | body: `skipUpdateScore?` 默认 `false` | 为当前用户创建 `update_score` job；好友码从 JWT 中读取。                   |
-| GET  | `/me/dxnet-jobs/active`        | -                                     | 查询当前用户正在排队或处理中的 job，返回 `{ job }`。                       |
-| GET  | `/me/dxnet-jobs/:jobId`        | path: `jobId`                         | 按 id 查询当前用户自己的 job 详情。                                        |
-| POST | `/me/dxnet-jobs/:jobId/verify` | path: `jobId`                         | 用户声明已完成外部动作，请后端立即验证当前用户自己的 job，返回 `{ job }`。 |
+| 方法 | 路径                             | 入参                                                                 | 说明                                                                                                 |
+| ---- | -------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| POST | `/me/dxnet-jobs`                 | body: `jobType? = "update_score" \| "send_friend_request"`, `friendshipJobId?` | 为当前用户创建成绩更新或好友关系 job；好友码从 JWT 中读取。创建 `update_score` 时若未确认好友关系会返回 `code: "needs_friendship"`。 |
+| GET  | `/me/dxnet-jobs/friendship`      | -                                                                    | 基于 Bot 好友列表快照判断当前用户是否已和可用 Bot 成为好友，返回推荐 Bot。                           |
+| GET  | `/me/dxnet-jobs/active`          | -                                                                    | 查询当前用户正在排队或处理中的成绩更新相关 job，返回 `{ job }`。                                     |
+| GET  | `/me/dxnet-jobs/:jobId`          | path: `jobId`                                                        | 按 id 查询当前用户自己的 job 详情。                                                                  |
+| POST | `/me/dxnet-jobs/:jobId/verify`   | path: `jobId`                                                        | 用户声明已完成外部动作，请后端立即验证当前用户自己的 job，返回 `{ job }`。                           |
 
 ## 曲库与封面
 

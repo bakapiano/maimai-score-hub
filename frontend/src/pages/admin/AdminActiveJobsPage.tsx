@@ -798,8 +798,8 @@ export default function AdminActiveJobsPage() {
             <Tabs defaultValue="charts">
               <Tabs.List>
                 <Tabs.Tab value="charts">图表</Tabs.Tab>
-                <Tabs.Tab value="withUpdate">包含分数更新</Tabs.Tab>
-                <Tabs.Tab value="skipUpdate">跳过分数更新</Tabs.Tab>
+                <Tabs.Tab value="withUpdate">成绩更新</Tabs.Tab>
+                <Tabs.Tab value="nonScoreUpdate">非成绩更新</Tabs.Tab>
                 <Tabs.Tab value="errors">失败原因统计</Tabs.Tab>
               </Tabs.List>
 
@@ -818,7 +818,7 @@ export default function AdminActiveJobsPage() {
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {jobStats.withUpdateScore.map((row) => (
+                    {jobStats.scoreUpdate.map((row) => (
                       <Table.Tr key={row.label}>
                         <Table.Td>{row.label}</Table.Td>
                         <Table.Td ta="right">{row.totalCount}</Table.Td>
@@ -846,7 +846,7 @@ export default function AdminActiveJobsPage() {
                 </ScrollableTable>
               </Tabs.Panel>
 
-              <Tabs.Panel value="skipUpdate" pt="md">
+              <Tabs.Panel value="nonScoreUpdate" pt="md">
                 <ScrollableTable striped highlightOnHover withTableBorder>
                   <Table.Thead>
                     <Table.Tr>
@@ -858,7 +858,7 @@ export default function AdminActiveJobsPage() {
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {jobStats.skipUpdateScore.map((row) => (
+                    {jobStats.nonScoreUpdate.map((row) => (
                       <Table.Tr key={row.label}>
                         <Table.Td>{row.label}</Table.Td>
                         <Table.Td ta="right">{row.totalCount}</Table.Td>
@@ -954,11 +954,11 @@ export default function AdminActiveJobsPage() {
                     </Group>
                     <div>
                       <Text size="sm" fw={500} mb="xs">
-                        过去 {trendLabel} 包含分数更新任务走势
+                        过去 {trendLabel} 成绩更新任务走势
                       </Text>
                       <ResponsiveContainer width="100%" height={280}>
                         <BarChart
-                          data={jobTrend.withUpdateScore.map((row) => ({
+                          data={jobTrend.scoreUpdate.map((row) => ({
                             hour: formatTrendLabel(row.hour),
                             成功: row.completedCount,
                             失败: row.failedCount,
@@ -981,11 +981,11 @@ export default function AdminActiveJobsPage() {
 
                     <div>
                       <Text size="sm" fw={500} mb="xs">
-                        过去 {trendLabel} 跳过分数更新任务走势
+                        过去 {trendLabel} 非成绩更新任务走势
                       </Text>
                       <ResponsiveContainer width="100%" height={280}>
                         <BarChart
-                          data={jobTrend.skipUpdateScore.map((row) => ({
+                          data={jobTrend.nonScoreUpdate.map((row) => ({
                             hour: formatTrendLabel(row.hour),
                             成功: row.completedCount,
                             失败: row.failedCount,
@@ -1012,7 +1012,7 @@ export default function AdminActiveJobsPage() {
                       </Text>
                       <ResponsiveContainer width="100%" height={280}>
                         <LineChart
-                          data={jobTrend.withUpdateScore.map((row) => ({
+                          data={jobTrend.scoreUpdate.map((row) => ({
                             hour: formatTrendLabel(row.hour),
                             平均耗时:
                               row.avgDuration != null
