@@ -5,7 +5,10 @@ import {
   loadPersistedBot,
 } from "./persistence-cookie.ts";
 import { createCleanupFriendsTask } from "./cleanup-friends.ts";
-import { createBotStatusReportTask } from "./status-report.ts";
+import {
+  bindBotStatusChangeReportScheduler,
+  createBotStatusReportTask,
+} from "./status-report.ts";
 import { createHealthCheckTask } from "./health-check.ts";
 
 export type StopTask = () => void;
@@ -28,7 +31,11 @@ export function startBotBackgroundTasks(manager: BotManager): StopTask[] {
     createCleanupFriendsTask(manager),
   ].map(startPeriodicTask);
 
-  return [bindBotSaveScheduler(manager), ...periodicTasks];
+  return [
+    bindBotSaveScheduler(manager),
+    bindBotStatusChangeReportScheduler(manager),
+    ...periodicTasks,
+  ];
 }
 
 function startPeriodicTask(task: PeriodicTask): StopTask {

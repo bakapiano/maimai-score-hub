@@ -68,9 +68,14 @@ export function parseHasSentFriendRequest(html: string): boolean {
  */
 export function parseIsFriendFromSearchPage(html: string): boolean {
   const relationText = getFriendSearchRelationText(html);
-  return relationText !== null
-    && relationText.includes("好友")
-    && !relationText.includes("申请");
+  if (
+    relationText !== null &&
+    relationText.includes("好友") &&
+    !relationText.includes("申请")
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function collectRequestBlocks(html: string): string[] {

@@ -8,12 +8,7 @@ import {
 import { BotFriendSnapshotService } from './services/bot-friend-snapshot.service';
 import { BotStatusEntity, BotStatusSchema } from './schemas/bot-status.schema';
 import { BotStatusService } from './services/bot-status.service';
-import { FeishuNotifyService } from './services/feishu-notify.service';
 import { JobEntity, JobSchema } from '../job/schemas/job.schema';
-import {
-  NotifyStateEntity,
-  NotifyStateSchema,
-} from './schemas/notify-state.schema';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { UserEntity, UserSchema } from '../users/schemas/user.schema';
 import { UsersModule } from '../users/users.module';
@@ -28,12 +23,11 @@ import { UsersModule } from '../users/users.module';
         name: BotFriendSnapshotEntity.name,
         schema: BotFriendSnapshotSchema,
       },
-      { name: NotifyStateEntity.name, schema: NotifyStateSchema },
     ]),
     SdgbWorkerModule,
     forwardRef(() => UsersModule),
   ],
-  providers: [BotStatusService, BotFriendSnapshotService, FeishuNotifyService],
+  providers: [BotStatusService, BotFriendSnapshotService],
   exports: [BotStatusService, BotFriendSnapshotService],
 })
 export class BotsModule {}

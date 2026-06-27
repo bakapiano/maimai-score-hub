@@ -1,8 +1,9 @@
 import type { BotManager, ManagedBot } from "../bot-manager.ts";
-import { postBotStatus } from "../../backend/bots.ts";
-import { WORKER_DEFAULTS } from "../../config.ts";
-import type { PeriodicTask } from "./index.ts";
+
 import type { FriendInfo } from "../../types.ts";
+import type { PeriodicTask } from "./index.ts";
+import { WORKER_DEFAULTS } from "../../config.ts";
+import { postBotStatus } from "../../backend/bots.ts";
 
 type BotStatusFriend = Omit<FriendInfo, "isFavorite">;
 
@@ -17,6 +18,11 @@ interface BotStatusPayload {
 const FRIEND_LIST_RECENT_MS = Number(
   process.env.BOT_FRIEND_LIST_RECENT_MS ?? 60_000,
 );
+const FRIEND_LIST_CHANGE_REPORT_DEBOUNCE_MS = Number(
+  process.env.BOT_FRIEND_LIST_CHANGE_REPORT_DEBOUNCE_MS ?? 1_000,
+);
+
+const lastReportedSnapshotKeys = new WeakMap<BotManager, string | null>();
 
 export function createBotStatusReportTask(manager: BotManager): PeriodicTask {
   return {
@@ -27,18 +33,62 @@ export function createBotStatusReportTask(manager: BotManager): PeriodicTask {
   };
 }
 
-export async function reportBotStatus(manager: BotManager): Promise<void> {
+export function bindBotStatusChangeReportScheduler(
+  manager: BotManager,
+): () => void {
+  let timeout: NodeJS.Timeout | null = null;
+  let running = false;
+  let pending = false;
+
+  const schedule = (): void => {
+    pending = true;
+    if (timeout || running) return;
+    timeout = setTimeout(run, FRIEND_LIST_CHANGE_REPORT_DEBOUNCE_MS);
+  };
+
+  const run = (): void => {
+    timeout = null;
+    if (running) return;
+    running = true;
+    pending = false;
+    reportBotStatus(manager, { onlyIfSnapshotChanged: true })
+      .catch((err) => {
+        console.error("[BotStatusReport] Change report failed:", err);
+      })
+      .finally(() => {
+        running = false;
+        if (pending) schedule();
+      });
+  };
+
+  manager.friendListSnapshots.onChanged(schedule);
+
+  return () => {
+    manager.friendListSnapshots.onChanged(null);
+    if (timeout) {
+      clearTimeout(timeout);
+      timeout = null;
+    }
+  };
+}
+
+export async function reportBotStatus(
+  manager: BotManager,
+  options: { onlyIfSnapshotChanged?: boolean } = {},
+): Promise<void> {
   const bot = manager.getBot();
   if (!bot) return;
 
   if (bot.expired) {
-    await postStatus({ friendCode: bot.friendCode, available: false });
+    if (await postStatus({ friendCode: bot.friendCode, available: false })) {
+      lastReportedSnapshotKeys.set(manager, null);
+    }
     return;
   }
 
   const snapshot = getFriendListSnapshot(manager);
   if (snapshot && isRecent(snapshot.updatedAt)) {
-    await postStatus(buildStatusFromSnapshot(bot, snapshot));
+    await postSnapshotStatus(manager, bot, snapshot, options);
     return;
   }
 
@@ -49,13 +99,31 @@ export async function reportBotStatus(manager: BotManager): Promise<void> {
       friends: list,
       updatedAt: new Date(),
     };
-    await postStatus(buildStatusFromSnapshot(bot, refreshed));
+    await postSnapshotStatus(manager, bot, refreshed, options);
   } catch {
     await postStatus(
       snapshot
         ? buildStatusFromSnapshot(bot, snapshot)
         : { friendCode: bot.friendCode, available: true },
     );
+  }
+}
+
+async function postSnapshotStatus(
+  manager: BotManager,
+  bot: ManagedBot,
+  snapshot: { friends: FriendInfo[]; updatedAt: Date },
+  options: { onlyIfSnapshotChanged?: boolean },
+): Promise<void> {
+  const snapshotKey = getFriendCodeSetKey(snapshot.friends);
+  if (
+    options.onlyIfSnapshotChanged &&
+    lastReportedSnapshotKeys.get(manager) === snapshotKey
+  ) {
+    return;
+  }
+  if (await postStatus(buildStatusFromSnapshot(bot, snapshot))) {
+    lastReportedSnapshotKeys.set(manager, snapshotKey);
   }
 }
 
@@ -68,25 +136,13 @@ function recordFriendList(
   friends: FriendInfo[],
   updatedAt = new Date(),
 ): void {
-  manager.friendListSnapshot = {
-    friends: friends.map((friend) => ({ ...friend })),
-    updatedAt,
-  };
+  manager.friendListSnapshots.replace(friends, updatedAt);
 }
 
 function getFriendListSnapshot(
   manager: BotManager,
 ): { friends: FriendInfo[]; updatedAt: Date } | null {
-  if (!manager.friendListSnapshot) {
-    return null;
-  }
-
-  return {
-    friends: manager.friendListSnapshot.friends.map((friend) => ({
-      ...friend,
-    })),
-    updatedAt: new Date(manager.friendListSnapshot.updatedAt),
-  };
+  return manager.friendListSnapshots.getSnapshot();
 }
 
 function buildStatusFromSnapshot(
@@ -110,10 +166,19 @@ function toBotStatusFriend({
   return friend;
 }
 
-async function postStatus(bot: BotStatusPayload): Promise<void> {
+async function postStatus(bot: BotStatusPayload): Promise<boolean> {
   try {
     await postBotStatus(bot);
+    return true;
   } catch (err) {
     console.error("[BotStatusReport] Report error:", err);
+    return false;
   }
+}
+
+function getFriendCodeSetKey(friends: FriendInfo[]): string {
+  return friends
+    .map((friend) => friend.friendCode)
+    .sort()
+    .join("\u0001");
 }

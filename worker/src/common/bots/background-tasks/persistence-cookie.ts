@@ -146,14 +146,14 @@ function restoreBotSnapshot(
     manager.friendCode = null;
     manager.jar = null;
     manager.expired = false;
-    manager.friendListSnapshot = null;
+    manager.friendListSnapshots.clear();
     return;
   }
 
   manager.friendCode = snapshot.friendCode;
   manager.jar = snapshot.cookieJar;
   manager.expired = snapshot.expired;
-  manager.friendListSnapshot = null;
+  manager.friendListSnapshots.clear();
 }
 
 function serializeBot(snapshot: BotSnapshot | null): PersistedBot | null {

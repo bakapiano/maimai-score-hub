@@ -24,7 +24,7 @@
 | `AdminModule`       | `backend/src/modules/admin`        | `AdminService`                                             | 管理后台聚合查询与运维动作入口。                                           |
 | `AuthModule`        | `backend/src/modules/auth`         | `AuthService`、`AuthGuard`、`QrLoginService`               | 登录、JWT 校验、好友请求登录和机台二维码登录。                             |
 | `AutoUpdateModule`  | `backend/src/modules/auto-update`  | `AutoUpdateSchedulerService`                               | Rival-first 自动更新调度、Map auxiliary、FC/FS enrichment 触发和失败退避。 |
-| `BotsModule`        | `backend/src/modules/bots`         | `BotStatusService`、`BotFriendSnapshotService`             | DXNet bot 状态、好友快照、可用性选择和告警。                               |
+| `BotsModule`        | `backend/src/modules/bots`         | `BotStatusService`、`BotFriendSnapshotService`             | DXNet bot 状态、好友快照、可用性选择和不可用任务清理。                     |
 | `CoverModule`       | `backend/src/modules/cover`        | `CoverService`                                             | 本地封面文件查找、同步、格式变体生成和封面数量统计。                       |
 | `JobModule`         | `backend/src/modules/job`          | `JobService`、`JobTempCacheService`、`JobApiLogService`    | DXNet worker 任务队列与任务生命周期。                                      |
 | `MusicModule`       | `backend/src/modules/music`        | `MusicService`                                             | 曲库数据、曲库来源配置、曲库定时同步和曲库缓存。                           |
@@ -62,7 +62,6 @@
 ### `BotsModule`
 
 - 接收 DXNet worker 上报的 bot 状态，维护 bot 是否可用、好友数量、最近好友快照时间、备注和 `cabinetUserId`。
-- 根据状态变化发送飞书告警，包括单个 bot 不可用、全部 bot 不可用和恢复可用。
 - 定期清理分配给不可用 bot 的 queued/processing job。
 - `BotFriendSnapshotService` 保存和查询 bot 好友列表快照，供 QR 登录反查用户、好友关系判断和 bot 选择使用。
 - 提供可用 cabinet bot 的选择逻辑，会综合好友数量和当前 in-flight job 数量做负载均衡。

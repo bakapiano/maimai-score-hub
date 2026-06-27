@@ -6,11 +6,11 @@
 import { CookieJar } from "tough-cookie";
 
 import { MaimaiClient } from "../maimai/client.ts";
-import type { FriendInfo } from "../types.ts";
 import {
   startBotBackgroundTasks,
   type StopTask,
 } from "./background-tasks/index.ts";
+import { FriendListSnapshotStore } from "./stores/friend-list-snapshot-store.ts";
 
 export type ManagedBot = {
   friendCode: string;
@@ -18,16 +18,11 @@ export type ManagedBot = {
   client: MaimaiClient;
 };
 
-export type _FriendListSnapshot = {
-  friends: FriendInfo[];
-  updatedAt: Date;
-};
-
 export class BotManager {
   friendCode: string | null = null;
   jar: CookieJar | null = null;
   expired = false;
-  friendListSnapshot: _FriendListSnapshot | null = null;
+  readonly friendListSnapshots = new FriendListSnapshotStore();
   private stateChanged: (() => void) | null = null;
 
   getBot(): ManagedBot | null {
@@ -41,12 +36,12 @@ export class BotManager {
       client: new MaimaiClient(this.jar, {
         onCookieExpired: () => this._markExpired(),
         onCookieChanged: () => this.notifyStateChanged(),
-        onFriendListFetched: (friends) => {
-          this.friendListSnapshot = {
-            friends: friends.map((friend) => ({ ...friend })),
-            updatedAt: new Date(),
-          };
-        },
+        onFriendListFetched: (friends) =>
+          this.friendListSnapshots.replace(friends),
+        onFriendRelationChecked: (friendCode, isFriend) =>
+          this.friendListSnapshots.recordFriendRelation(friendCode, isFriend),
+        onFriendListRefreshRequested: () =>
+          this.friendListSnapshots.requestRefresh(),
       }),
     };
   }
@@ -78,7 +73,7 @@ export class BotManager {
     this.friendCode = friendCode;
     this.jar = jar;
     this.expired = false;
-    this.friendListSnapshot = null;
+    this.friendListSnapshots.clear();
     this.notifyStateChanged();
   }
 

@@ -25,6 +25,11 @@ import type { MaimaiHttpClient } from "./infra/http-client.ts";
 
 export interface MaimaiFriendApiOptions {
   onFriendListFetched?: (friends: FriendInfo[]) => void;
+  onFriendRelationChecked?: (
+    friendCode: string,
+    isFriend: boolean,
+  ) => void;
+  onFriendListRefreshRequested?: () => void;
 }
 
 export class MaimaiFriendApi {
@@ -107,6 +112,25 @@ export class MaimaiFriendApi {
     }
   }
 
+  private recordFriendRelation(
+    friendCode: string,
+    isFriend: boolean,
+  ): void {
+    try {
+      this.options.onFriendRelationChecked?.(friendCode, isFriend);
+    } catch (err) {
+      console.warn("[MaimaiClient] Failed to record friend relation:", err);
+    }
+  }
+
+  private requestFriendListRefresh(): void {
+    try {
+      this.options.onFriendListRefreshRequested?.();
+    } catch (err) {
+      console.warn("[MaimaiClient] Failed to request friend list refresh:", err);
+    }
+  }
+
   async getSentRequests(): Promise<SentFriendRequest[]> {
     console.log(`[MaimaiClient] Start get sent friend requests`);
     const result = await this.http.requestPage({
@@ -165,6 +189,7 @@ export class MaimaiFriendApi {
       url: MAIMAI_URLS.friendSearch(friendCode),
     });
     const isFriend = parseIsFriendFromSearchPage(result.body);
+    this.recordFriendRelation(friendCode, isFriend);
     console.log(
       `[MaimaiClient] Done verify friend relation by search page, friend code ${friendCode}: ${isFriend}`,
     );
@@ -183,6 +208,7 @@ export class MaimaiFriendApi {
     await this.http.requestPage({
       url: MAIMAI_URLS.friendInvite,
     });
+    this.recordFriendRelation(friendCode, false);
     console.log(
       `[MaimaiClient] Done send friend request, friend code ${friendCode}`,
     );
@@ -200,6 +226,8 @@ export class MaimaiFriendApi {
     await this.http.requestPage({
       url: MAIMAI_URLS.friendAcceptAllow,
     });
+    this.recordFriendRelation(friendCode, true);
+    this.requestFriendListRefresh();
     console.log(
       `[MaimaiClient] Done allow friend request, friend code ${friendCode}`,
     );
@@ -217,6 +245,7 @@ export class MaimaiFriendApi {
     await this.http.requestPage({
       url: MAIMAI_URLS.friendAccept,
     });
+    this.recordFriendRelation(friendCode, false);
     console.log(
       `[MaimaiClient] Done block friend request, friend code ${friendCode}`,
     );
@@ -230,6 +259,7 @@ export class MaimaiFriendApi {
       url: MAIMAI_URLS.friendInviteCancel,
       formBodyWithToken: `idx=${friendCode}&invite=`,
     });
+    this.recordFriendRelation(friendCode, false);
     console.log(
       `[MaimaiClient] Done cancel friend request, friend code ${friendCode}`,
     );
@@ -243,6 +273,8 @@ export class MaimaiFriendApi {
       url: MAIMAI_URLS.friendDetail,
       formBodyWithToken: `idx=${friendCode}`,
     });
+    this.recordFriendRelation(friendCode, false);
+    this.requestFriendListRefresh();
     console.log(`[MaimaiClient] Done remove friend, friend code ${friendCode}`);
   }
 

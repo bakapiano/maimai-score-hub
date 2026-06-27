@@ -14,6 +14,11 @@ import type { FriendInfo } from "../types.ts";
 
 export interface MaimaiClientOptions {
   onFriendListFetched?: (friends: FriendInfo[]) => void;
+  onFriendRelationChecked?: (
+    friendCode: string,
+    isFriend: boolean,
+  ) => void;
+  onFriendListRefreshRequested?: () => void;
   onCookieExpired?: () => void;
   onCookieChanged?: () => void;
 }
@@ -32,6 +37,8 @@ export class MaimaiClient {
     });
     this.friends = new MaimaiFriendApi(this.http, {
       onFriendListFetched: options.onFriendListFetched,
+      onFriendRelationChecked: options.onFriendRelationChecked,
+      onFriendListRefreshRequested: options.onFriendListRefreshRequested,
     });
     this.profiles = new MaimaiProfileApi(this.http);
     this.scores = new MaimaiScoreApi(this.http);

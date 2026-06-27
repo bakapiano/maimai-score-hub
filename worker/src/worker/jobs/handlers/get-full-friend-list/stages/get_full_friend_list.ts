@@ -1,8 +1,5 @@
-import type { FriendInfo } from "../../../../../common/types.ts";
+import { botManager } from "../../../../../common/bots/bot-manager.ts";
 import type { JobExecutionContext } from "../../index.ts";
-import { postBotStatus } from "../../../../../common/backend/bots.ts";
-
-type BotStatusFriend = Omit<FriendInfo, "isFavorite">;
 
 export async function getFullFriendList(
   ctx: JobExecutionContext,
@@ -15,14 +12,6 @@ export async function getFullFriendList(
   const friends = await ctx.client.friends.getFriendList();
   const friendsUpdatedAt = new Date();
 
-  await postBotStatus({
-    friendCode: botFriendCode,
-    available: true,
-    friendCount: friends.length,
-    friendsUpdatedAt: friendsUpdatedAt.toISOString(),
-    friends: friends.map(toBotStatusFriend),
-  });
-
   await ctx.applyPatch({
     result: {
       friendCount: friends.length,
@@ -31,11 +20,4 @@ export async function getFullFriendList(
     updatedAt: new Date(),
   });
   await ctx.completeJob();
-}
-
-function toBotStatusFriend({
-  isFavorite: _isFavorite,
-  ...friend
-}: FriendInfo): BotStatusFriend {
-  return friend;
 }

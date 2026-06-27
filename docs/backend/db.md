@@ -21,7 +21,6 @@
 | `QrLoginAttemptEntity`       | `qr_login_attempts`                        | auth        | 1 天 TTL  | QR 登录异步尝试                                    |
 | `BotStatusEntity`            | `bot_statuses`                             | admin       | 永久      | DXNet bot 可用性和好友数                           |
 | `BotFriendSnapshotEntity`    | `bot_friend_snapshots`                     | admin       | 30 天 TTL | bot 好友列表快照                                   |
-| `NotifyStateEntity`          | `notify_state`                             | admin       | 永久      | 多实例通知去重状态                                 |
 | `AutoUpdateRunEntity`        | `auto_update_runs`                         | auto-update | 30 天 TTL | 自动更新 cron 每轮执行记录                         |
 | `AutoUpdateProbeStateEntity` | `auto_update_probe_states`                 | auto-update | 永久      | Rival-first 自动更新用户状态                       |
 | `AutoUpdateTaskEntity`       | `auto_update_tasks`                        | auto-update | 3 天 TTL  | Rival-first 自动更新短期任务日志                   |
@@ -308,7 +307,6 @@ type QrLoginStatus =
 | `friendCount`         | `number \| null` | default `null`          | 好友数                |
 | `friendsUpdatedAt`    | `Date \| null`   | default `null`          | 好友列表更新时间      |
 | `remark`              | `string \| null` | default `null`          | 管理备注              |
-| `notifiedUnavailable` | `boolean`        | default `false`         | 是否已发送不可用通知  |
 | `cabinetUserId`       | `number \| null` | default `null`          | bot 对应的机台 userId |
 
 索引：
@@ -337,18 +335,6 @@ type BotFriendSnapshotFriend = {
 
 - `botFriendCode`：唯一索引。
 - `{ updatedAt: 1 }`：TTL 30 天。
-
-### `NotifyStateEntity`
-
-| 字段             | 类型           | 约束 / 默认值             | 说明                             |
-| ---------------- | -------------- | ------------------------- | -------------------------------- |
-| `key`            | `string`       | required, unique, index   | 通知类型标识，如 `all_bots_down` |
-| `notified`       | `boolean`      | required, default `false` | 是否已发送通知                   |
-| `lastNotifiedAt` | `Date \| null` | default `null`            | 上次发送通知时间                 |
-
-索引：
-
-- `key`：唯一索引。
 
 ## Auto Update
 
@@ -493,6 +479,5 @@ type SdgbJobResult =
 | `QrLoginAttemptDocument`    | `QrLoginAttemptEntity`    |
 | `BotStatusDocument`         | `BotStatusEntity`         |
 | `BotFriendSnapshotDocument` | `BotFriendSnapshotEntity` |
-| `NotifyStateDocument`       | `NotifyStateEntity`       |
 | `AutoUpdateRunDocument`     | `AutoUpdateRunEntity`     |
 | `SdgbJobDocument`           | `SdgbJobEntity`           |

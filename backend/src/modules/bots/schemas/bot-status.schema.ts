@@ -22,10 +22,6 @@ export class BotStatusEntity {
   @Prop({ type: String, default: null })
   remark!: string | null;
 
-  /** 是否已发送过不可用通知（用于去重） */
-  @Prop({ type: Boolean, default: false })
-  notifiedUnavailable!: boolean;
-
   /**
    * Numeric cabinet userId for this bot. Used by the auto-update scheduler
    * as the `userId1` of UserFriendRegistApi when adding a user as the bot's
