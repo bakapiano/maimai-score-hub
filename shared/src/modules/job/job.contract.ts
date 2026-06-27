@@ -102,16 +102,9 @@ export const jobContract = c.router({
         z.object({
           friendCode: z.string(),
           lastActiveAt: z.string().nullable(),
+          cabinetUserId: z.number().nullable(),
         }),
       ),
-    },
-  },
-  getExistingUsers: {
-    method: "POST",
-    path: "/workers/dxnet/users/existence",
-    body: z.object({ friendCodes: z.array(z.string()) }),
-    responses: {
-      200: z.object({ existingFriendCodes: z.array(z.string()) }),
     },
   },
   getTempCache: {

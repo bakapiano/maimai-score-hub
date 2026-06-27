@@ -414,32 +414,24 @@ export class UsersService {
    */
   async getActivityByFriendCodes(
     friendCodes: string[],
-  ): Promise<{ friendCode: string; lastActiveAt: Date | null }[]> {
+  ): Promise<
+    {
+      friendCode: string;
+      lastActiveAt: Date | null;
+      cabinetUserId: number | null;
+    }[]
+  > {
     if (!friendCodes.length) return [];
     const users = await this.userModel
       .find({ friendCode: { $in: friendCodes } })
-      .select('friendCode lastActiveAt')
+      .select('friendCode lastActiveAt cabinetUserId')
       .lean();
     return users.map((u) => ({
       friendCode: u.friendCode,
       lastActiveAt: u.lastActiveAt ?? null,
+      cabinetUserId: u.cabinetUserId ?? null,
     }));
   }
-
-  /**
-   * 批量返回这些 friendCode 中、确实存在对应 user 文档的子集。
-   * cleanup 用它区分「null 活跃度但是注册用户」（可驱逐）和
-   * 「后端查无此人」（保守保留）。
-   */
-  async getExistingFriendCodes(friendCodes: string[]): Promise<string[]> {
-    if (!friendCodes.length) return [];
-    const users = await this.userModel
-      .find({ friendCode: { $in: friendCodes } })
-      .select('friendCode')
-      .lean();
-    return users.map((u) => u.friendCode);
-  }
-
   /**
    * 获取所有开启了"自动更新"且已绑定 cabinetUserId 的用户。
    * 由 auto-update scheduler 每隔 AUTO_UPDATE_CRON 扫描调用。

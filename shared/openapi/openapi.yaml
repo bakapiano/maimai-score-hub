@@ -1893,41 +1893,13 @@ paths:
                     lastActiveAt:
                       type: string
                       nullable: true
+                    cabinetUserId:
+                      type: number
+                      nullable: true
                   required:
                     - friendCode
                     - lastActiveAt
-  /workers/dxnet/users/existence:
-    post:
-      tags: *a5
-      parameters: []
-      operationId: job.getExistingUsers
-      requestBody:
-        description: Body
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                friendCodes:
-                  type: array
-                  items:
-                    type: string
-              required:
-                - friendCodes
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  existingFriendCodes:
-                    type: array
-                    items:
-                      type: string
-                required:
-                  - existingFriendCodes
+                    - cabinetUserId
   /workers/dxnet/jobs/{jobId}/cache/{diff}/{type}:
     get:
       tags: *a5

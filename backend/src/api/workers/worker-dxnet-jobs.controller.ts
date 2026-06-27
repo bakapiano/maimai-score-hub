@@ -49,7 +49,13 @@ export class WorkerDxnetJobsController {
   @HttpCode(200)
   async getUsersActivity(
     @Body() body: { friendCodes?: unknown },
-  ): Promise<{ friendCode: string; lastActiveAt: string | null }[]> {
+  ): Promise<
+    {
+      friendCode: string;
+      lastActiveAt: string | null;
+      cabinetUserId: number | null;
+    }[]
+  > {
     if (!Array.isArray(body.friendCodes)) {
       throw new BadRequestException('friendCodes must be an array');
     }
@@ -60,22 +66,7 @@ export class WorkerDxnetJobsController {
     return rows.map((row) => ({
       friendCode: row.friendCode,
       lastActiveAt: row.lastActiveAt?.toISOString() ?? null,
+      cabinetUserId: row.cabinetUserId,
     }));
-  }
-
-  @Post('users/existence')
-  @HttpCode(200)
-  async getExistingUsers(
-    @Body() body: { friendCodes?: unknown },
-  ): Promise<{ existingFriendCodes: string[] }> {
-    if (!Array.isArray(body.friendCodes)) {
-      throw new BadRequestException('friendCodes must be an array');
-    }
-    const friendCodes = body.friendCodes.filter(
-      (value): value is string => typeof value === 'string',
-    );
-    const existingFriendCodes =
-      await this.users.getExistingFriendCodes(friendCodes);
-    return { existingFriendCodes };
   }
 }

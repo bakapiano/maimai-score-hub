@@ -6,17 +6,18 @@
 import type { BotManager, ManagedBot } from "../bot-manager.ts";
 import {
   getActiveFriendCodes,
-  getExistingUsers,
   getUsersActivity,
 } from "../../backend/jobs.ts";
 import { WORKER_DEFAULTS } from "../../config.ts";
 import type { PeriodicTask } from "./index.ts";
 
 const INACTIVE_FRIEND_EVICTION_MS = 30 * 60 * 1000;
+const FRIEND_COUNT_SOFT_LIMIT = 50;
 
 interface UserActivity {
   friendCode: string;
   lastActiveAt: string | null;
+  cabinetUserId: number | null;
 }
 
 export function createCleanupFriendsTask(manager: BotManager): PeriodicTask {
@@ -27,37 +28,82 @@ export function createCleanupFriendsTask(manager: BotManager): PeriodicTask {
   };
 }
 
-function selectInactiveFriends(params: {
+export function selectInactiveFriends(params: {
   friends: string[];
   activeFriendCodes: ReadonlySet<string>;
   activityData: UserActivity[];
-  existingFriendCodes: string[];
   nowMs?: number;
 }): string[] {
   const {
     friends,
     activeFriendCodes,
     activityData,
-    existingFriendCodes,
     nowMs = Date.now(),
   } = params;
-  const activityMap = new Map(
-    activityData.map((u) => [u.friendCode, u.lastActiveAt]),
-  );
-  const existingSet = new Set(existingFriendCodes);
+  const activityMap = new Map(activityData.map((u) => [u.friendCode, u]));
+  const removals = new Set<string>();
 
-  return friends.filter((friendCode) => {
-    if (activeFriendCodes.has(friendCode)) return false;
+  for (const friendCode of friends) {
+    if (activeFriendCodes.has(friendCode)) continue;
 
-    const lastActive = activityMap.get(friendCode);
-    if (!lastActive) {
-      return existingSet.has(friendCode);
+    const activity = activityMap.get(friendCode);
+    if (activity?.cabinetUserId != null) {
+      removals.add(friendCode);
+      continue;
     }
 
-    return (
-      nowMs - new Date(lastActive).getTime() > INACTIVE_FRIEND_EVICTION_MS
-    );
-  });
+    const lastActive = activity?.lastActiveAt;
+    if (!lastActive) {
+      if (activityMap.has(friendCode)) {
+        removals.add(friendCode);
+      }
+      continue;
+    }
+
+    if (isInactive(lastActive, nowMs)) {
+      removals.add(friendCode);
+    }
+  }
+
+  const countAfterBaseCleanup = friends.length - removals.size;
+  if (countAfterBaseCleanup > FRIEND_COUNT_SOFT_LIMIT) {
+    const extraRemovalCount = countAfterBaseCleanup - FRIEND_COUNT_SOFT_LIMIT;
+    const overflowRemovals = friends
+      .filter(
+        (friendCode) =>
+          !activeFriendCodes.has(friendCode) && !removals.has(friendCode),
+      )
+      .map((friendCode) => ({
+        friendCode,
+        lastActiveMs: toLastActiveMs(activityMap.get(friendCode)?.lastActiveAt),
+      }))
+      .filter(
+        (candidate): candidate is { friendCode: string; lastActiveMs: number } =>
+          candidate.lastActiveMs != null,
+      )
+      .sort((a, b) => a.lastActiveMs - b.lastActiveMs)
+      .slice(0, extraRemovalCount);
+
+    for (const { friendCode } of overflowRemovals) {
+      removals.add(friendCode);
+    }
+  }
+
+  return friends.filter((friendCode) => removals.has(friendCode));
+}
+
+function isInactive(lastActive: string, nowMs: number): boolean {
+  const lastActiveMs = toLastActiveMs(lastActive);
+  return (
+    lastActiveMs != null &&
+    nowMs - lastActiveMs > INACTIVE_FRIEND_EVICTION_MS
+  );
+}
+
+function toLastActiveMs(lastActive: string | null | undefined): number | null {
+  if (!lastActive) return null;
+  const ms = new Date(lastActive).getTime();
+  return Number.isFinite(ms) ? ms : null;
 }
 
 let cleanupRunning = false;
@@ -164,21 +210,19 @@ async function cleanupForBot(bot: ManagedBot): Promise<void> {
     // 5. 清除超过 30 分钟未活跃的好友
     const friendsToRemove: string[] = [];
     {
-      const [activityData, existingFriendCodes] = await Promise.all([
-        getUsersActivity(friends),
-        getExistingUsers(friends),
-      ]);
+      const activityData = await getUsersActivity(friends);
 
       // 淘汰不在活跃任务中的好友：
+      //  - 已绑定 cabinetUserId → 驱逐，可通过 addRival 恢复
       //  - 有 lastActiveAt 且距今 > 30min → 驱逐
       //  - lastActiveAt 为 null / 无活跃记录：
       //      后端能查到该 user（注册用户但久未活跃）→ 驱逐
       //      后端查不到（bot / 刚建的号 / 非本服务用户）→ 保守保留
+      //  - 上述清理后好友数仍 >50：按 lastActiveAt 从旧到新继续驱逐到 <=50
       const inactiveFriends = selectInactiveFriends({
         friends,
         activeFriendCodes: activeSet,
         activityData,
-        existingFriendCodes,
       });
 
       if (inactiveFriends.length > 0) {

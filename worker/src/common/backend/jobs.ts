@@ -126,7 +126,13 @@ export async function getActiveFriendCodes(
  */
 export async function getUsersActivity(
   friendCodes: string[],
-): Promise<{ friendCode: string; lastActiveAt: string | null }[]> {
+): Promise<
+  {
+    friendCode: string;
+    lastActiveAt: string | null;
+    cabinetUserId: number | null;
+  }[]
+> {
   if (!friendCodes.length) return [];
   const response = await client.getUsersActivity({
     body: { friendCodes },
@@ -139,25 +145,4 @@ export async function getUsersActivity(
   }
 
   return response.body;
-}
-
-/**
- * 批量查询这些 friendCode 中哪些存在对应的注册 user。
- * 返回存在的 friendCode 子集。
- */
-export async function getExistingUsers(
-  friendCodes: string[],
-): Promise<string[]> {
-  if (!friendCodes.length) return [];
-  const response = await client.getExistingUsers({
-    body: { friendCodes },
-  });
-
-  if (response.status !== 200) {
-    throw new Error(
-      `Failed to fetch existing users. Status: ${response.status}`,
-    );
-  }
-
-  return response.body.existingFriendCodes;
 }
