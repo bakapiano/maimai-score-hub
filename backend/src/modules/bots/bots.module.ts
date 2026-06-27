@@ -1,10 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
-import {
-  BotFriendSnapshotEntity,
-  BotFriendSnapshotSchema,
-} from './schemas/bot-friend-snapshot.schema';
 import { BotFriendSnapshotService } from './services/bot-friend-snapshot.service';
 import { BotStatusEntity, BotStatusSchema } from './schemas/bot-status.schema';
 import { BotStatusService } from './services/bot-status.service';
@@ -19,10 +15,6 @@ import { UsersModule } from '../users/users.module';
       { name: JobEntity.name, schema: JobSchema },
       { name: UserEntity.name, schema: UserSchema },
       { name: BotStatusEntity.name, schema: BotStatusSchema },
-      {
-        name: BotFriendSnapshotEntity.name,
-        schema: BotFriendSnapshotSchema,
-      },
     ]),
     SdgbWorkerModule,
     forwardRef(() => UsersModule),

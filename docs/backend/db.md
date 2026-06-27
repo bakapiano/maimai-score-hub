@@ -20,7 +20,6 @@
 | `JobEntity`                  | `jobs`                                     | job         | 7 天 TTL  | DXNet worker 任务                                  |
 | `QrLoginAttemptEntity`       | `qr_login_attempts`                        | auth        | 1 天 TTL  | QR 登录异步尝试                                    |
 | `BotStatusEntity`            | `bot_statuses`                             | admin       | 永久      | DXNet bot 可用性和好友数                           |
-| `BotFriendSnapshotEntity`    | `bot_friend_snapshots`                     | admin       | 30 天 TTL | bot 好友列表快照                                   |
 | `AutoUpdateRunEntity`        | `auto_update_runs`                         | auto-update | 30 天 TTL | 自动更新 cron 每轮执行记录                         |
 | `AutoUpdateProbeStateEntity` | `auto_update_probe_states`                 | auto-update | 永久      | Rival-first 自动更新用户状态                       |
 | `AutoUpdateTaskEntity`       | `auto_update_tasks`                        | auto-update | 3 天 TTL  | Rival-first 自动更新短期任务日志                   |
@@ -306,6 +305,7 @@ type QrLoginStatus =
 | `lastReportedAt`      | `Date`           | required                | 最近上报时间          |
 | `friendCount`         | `number \| null` | default `null`          | 好友数                |
 | `friendsUpdatedAt`    | `Date \| null`   | default `null`          | 好友列表更新时间      |
+| `friends`             | `BotFriendRow[]` | default `[]`            | bot 当前好友列表快照  |
 | `remark`              | `string \| null` | default `null`          | 管理备注              |
 | `cabinetUserId`       | `number \| null` | default `null`          | bot 对应的机台 userId |
 
@@ -313,28 +313,15 @@ type QrLoginStatus =
 
 - `friendCode`：唯一索引。
 
-### `BotFriendSnapshotEntity`
-
-| 字段            | 类型                        | 约束 / 默认值           | 说明             |
-| --------------- | --------------------------- | ----------------------- | ---------------- |
-| `botFriendCode` | `string`                    | required, unique, index | bot 好友码       |
-| `friends`       | `BotFriendSnapshotFriend[]` | default `[]`            | bot 当前好友列表 |
-| `updatedAt`     | `Date`                      | required                | 快照更新时间     |
-
 嵌套类型：
 
 ```ts
-type BotFriendSnapshotFriend = {
+type BotFriendRow = {
   friendCode: string;
   userName: string | null;
   rating: number | null;
 };
 ```
-
-索引：
-
-- `botFriendCode`：唯一索引。
-- `{ updatedAt: 1 }`：TTL 30 天。
 
 ## Auto Update
 
@@ -478,6 +465,5 @@ type SdgbJobResult =
 | `JobDocument`               | `JobEntity`               |
 | `QrLoginAttemptDocument`    | `QrLoginAttemptEntity`    |
 | `BotStatusDocument`         | `BotStatusEntity`         |
-| `BotFriendSnapshotDocument` | `BotFriendSnapshotEntity` |
 | `AutoUpdateRunDocument`     | `AutoUpdateRunEntity`     |
 | `SdgbJobDocument`           | `SdgbJobEntity`           |

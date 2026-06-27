@@ -27,7 +27,7 @@ export class AccountDeletionService {
    * NOT touched (intentional, since they aren't user-specific or auto-expire):
    * - sdgb_jobs (TTL'd, plus tagged by friendCode in requesterTag — would need
    *   a $regex sweep; deleting auto-expires within 24h)
-   * - bot_friend_snapshots (rebuilt on next worker tick)
+   * - bot_statuses.friends (rebuilt on next worker tick)
    * - auto_update_runs (per-cron-bucket, not per-user)
    */
   async deleteAccount(userId: string) {

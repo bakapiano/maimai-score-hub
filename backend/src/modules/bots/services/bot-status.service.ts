@@ -3,7 +3,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { JobEntity } from '../../job/schemas/job.schema';
 import { BotStatusEntity } from '../schemas/bot-status.schema';
-import { BotFriendSnapshotEntity } from '../schemas/bot-friend-snapshot.schema';
 
 export interface BotStatus {
   friendCode: string;
@@ -37,8 +36,6 @@ export class BotStatusService implements OnModuleDestroy {
     private readonly jobModel: Model<JobEntity>,
     @InjectModel(BotStatusEntity.name)
     private readonly botStatusModel: Model<BotStatusEntity>,
-    @InjectModel(BotFriendSnapshotEntity.name)
-    private readonly botFriendSnapshotModel: Model<BotFriendSnapshotEntity>,
   ) {
     this.startCleanup();
   }
@@ -160,24 +157,17 @@ export class BotStatusService implements OnModuleDestroy {
    * its next heartbeat will recreate the row. Mostly used to clean
    * up dead-cookie bots that clutter the admin UI.
    *
-   * Side effects:
-   *   - bot_friend_snapshots row also deleted (avoids stale data
-   *     polluting QR-login reverse mapping)
+   * Side effects: embedded friend snapshot is deleted with the bot row.
    */
   async remove(friendCode: string): Promise<{
     botStatusDeleted: number;
-    snapshotDeleted: number;
   }> {
-    const [botRes, snapRes] = await Promise.all([
-      this.botStatusModel.deleteOne({ friendCode }),
-      this.botFriendSnapshotModel.deleteOne({ botFriendCode: friendCode }),
-    ]);
+    const botRes = await this.botStatusModel.deleteOne({ friendCode });
     this.logger.log(
-      `removed bot fc=${friendCode}: botStatus=${botRes.deletedCount}, snapshot=${snapRes.deletedCount}`,
+      `removed bot fc=${friendCode}: botStatus=${botRes.deletedCount}`,
     );
     return {
       botStatusDeleted: botRes.deletedCount ?? 0,
-      snapshotDeleted: snapRes.deletedCount ?? 0,
     };
   }
 

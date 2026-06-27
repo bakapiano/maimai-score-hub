@@ -48,7 +48,7 @@ GET /api/v1/me/dxnet-jobs/friendship
 Authorization: Bearer <token>
 ```
 
-后端基于 Bot 状态和 `bot_friend_snapshots` 判断当前用户是否已经存在于某个可用 Bot 的好友列表中，返回：
+后端基于 Bot 状态和 `bot_statuses.friends` 判断当前用户是否已经存在于某个可用 Bot 的好友列表中，返回：
 
 ```json
 {

@@ -1,11 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 
-import {
-  BotFriendSnapshotEntity,
-  type BotFriendSnapshotDocument,
-} from '../schemas/bot-friend-snapshot.schema';
+import { BotStatusEntity } from '../schemas/bot-status.schema';
 
 export interface BotFriendRow {
   friendCode: string;
@@ -15,11 +12,9 @@ export interface BotFriendRow {
 
 @Injectable()
 export class BotFriendSnapshotService {
-  private readonly logger = new Logger(BotFriendSnapshotService.name);
-
   constructor(
-    @InjectModel(BotFriendSnapshotEntity.name)
-    private readonly model: Model<BotFriendSnapshotDocument>,
+    @InjectModel(BotStatusEntity.name)
+    private readonly botStatusModel: Model<BotStatusEntity>,
   ) {}
 
   /** Full-overwrite per bot. Workers call this when they have a friend list. */
@@ -28,13 +23,18 @@ export class BotFriendSnapshotService {
     friends: BotFriendRow[],
     updatedAt = new Date(),
   ): Promise<void> {
-    await this.model.updateOne(
-      { botFriendCode },
+    await this.botStatusModel.updateOne(
+      { friendCode: botFriendCode },
       {
         $set: {
-          botFriendCode,
           friends,
-          updatedAt,
+          friendCount: friends.length,
+          friendsUpdatedAt: updatedAt,
+        },
+        $setOnInsert: {
+          friendCode: botFriendCode,
+          available: true,
+          lastReportedAt: updatedAt,
         },
       },
       { upsert: true },
@@ -46,18 +46,21 @@ export class BotFriendSnapshotService {
     friends: BotFriendRow[];
     updatedAt: Date | null;
   } | null> {
-    const doc = await this.model.findOne({ botFriendCode }).lean();
+    const doc = await this.botStatusModel
+      .findOne({ friendCode: botFriendCode })
+      .select({ friendCode: 1, friends: 1, friendsUpdatedAt: 1 })
+      .lean();
     if (!doc) return null;
     return {
-      botFriendCode: doc.botFriendCode,
+      botFriendCode: doc.friendCode,
       friends: doc.friends ?? [],
-      updatedAt: doc.updatedAt ?? null,
+      updatedAt: doc.friendsUpdatedAt ?? null,
     };
   }
 
   async hasFriend(botFriendCode: string, friendCode: string): Promise<boolean> {
-    const doc = await this.model
-      .findOne({ botFriendCode, 'friends.friendCode': friendCode })
+    const doc = await this.botStatusModel
+      .findOne({ friendCode: botFriendCode, 'friends.friendCode': friendCode })
       .select({ _id: 1 })
       .lean();
     return !!doc;
@@ -69,14 +72,14 @@ export class BotFriendSnapshotService {
   ): Promise<string | null> {
     if (botFriendCodes.length === 0) return null;
 
-    const docs = await this.model
+    const docs = await this.botStatusModel
       .find({
-        botFriendCode: { $in: botFriendCodes },
+        friendCode: { $in: botFriendCodes },
         'friends.friendCode': friendCode,
       })
-      .select({ botFriendCode: 1, _id: 0 })
+      .select({ friendCode: 1, _id: 0 })
       .lean();
-    const hits = new Set(docs.map((d) => d.botFriendCode));
+    const hits = new Set(docs.map((d) => d.friendCode));
     return (
       botFriendCodes.find((botFriendCode) => hits.has(botFriendCode)) ?? null
     );

@@ -19,6 +19,23 @@ export class BotStatusEntity {
   @Prop({ type: Date, default: null })
   friendsUpdatedAt!: Date | null;
 
+  @Prop({
+    type: [
+      {
+        _id: false,
+        friendCode: { type: String, required: true },
+        userName: { type: String, default: null },
+        rating: { type: Number, default: null },
+      },
+    ],
+    default: [],
+  })
+  friends!: Array<{
+    friendCode: string;
+    userName: string | null;
+    rating: number | null;
+  }>;
+
   @Prop({ type: String, default: null })
   remark!: string | null;
 

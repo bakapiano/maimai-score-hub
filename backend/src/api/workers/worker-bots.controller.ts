@@ -27,7 +27,7 @@ export class WorkerBotStatusController {
   ) {
     await this.botStatusService.report(body.bots);
     // Side-channel: any bot row that included a `friends` array also
-    // gets full-overwritten into bot_friend_snapshots for the QR-login
+    // gets full-overwritten into bot_statuses.friends for the QR-login
     // reverse-map flow. Workers send this opportunistically on every tick.
     // Same friends array also drives user.profile auto-population so QR-
     // login users get an avatar/title/etc without an extra RPC.

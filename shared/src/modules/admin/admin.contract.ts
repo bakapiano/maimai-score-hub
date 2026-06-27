@@ -115,7 +115,6 @@ export const adminContract = c.router({
       200: c.type<{
         ok: true;
         botStatusDeleted: number;
-        snapshotDeleted: number;
       }>(),
     },
   },

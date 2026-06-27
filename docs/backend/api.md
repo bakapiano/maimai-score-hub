@@ -167,7 +167,7 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | GET    | `/admin/bots/:botFriendCode/friend-snapshots` | path: `botFriendCode`                 | 查询某 bot 最近好友列表快照；不存在时返回空列表。                                     |
 | PATCH  | `/admin/bots/:friendCode/remark`              | body: `remark: string \| null`        | 更新 bot 管理备注。                                                                   |
 | PATCH  | `/admin/bots/:friendCode/cabinet-user-id`     | body: `cabinetUserId: number \| null` | 配置 bot 的机台 userId。                                                              |
-| DELETE | `/admin/bots/:friendCode`                     | path: numeric `friendCode`            | 删除 bot 状态行和快照，并清理用户侧 dangling pointer。worker 仍在线时下次心跳会重建。 |
+| DELETE | `/admin/bots/:friendCode`                     | path: numeric `friendCode`            | 删除 bot 状态行；内嵌好友快照随状态行一起删除。worker 仍在线时下次心跳会重建。       |
 | POST   | `/admin/bots/:friendCode/cabinet/bind-qr`     | body: `qrCode: string`                | 通过 sdgb-worker 扫码绑定 bot 的 `cabinetUserId`。                                    |
 
 ## OpenAPI 覆盖差异
