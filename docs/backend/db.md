@@ -216,7 +216,7 @@ interface SongMetadata {
 | `updateScoreDuration`        | `number \| null`                  | default `null`                          | `update_score` 耗时                          |
 | `autoExportResult`           | `AutoExportResult \| null`        | `Mixed`, default `null`                 | 自动导出结果                                 |
 | `diffsToScrape`              | `number[] \| null`                | default `null`                          | 指定 `update_score` 只抓取的难度列表         |
-| `context`                    | `Record<string, unknown> \| null` | `Mixed`, default `null`                 | 内部上下文，如 FC/FS ambiguous fallback 来源 |
+| `context`                    | `JobContext \| null`              | `Mixed`, default `null`                 | 内部链路上下文，见下方 `JobContext`          |
 | `runAt`                      | `Date \| null`                    | default `null`                          | 下次允许 BullMQ 投递的时间                   |
 | `createdAt`                  | `Date`                            | required                                | 创建时间                                     |
 | `updatedAt`                  | `Date`                            | required                                | 更新时间                                     |
@@ -246,7 +246,35 @@ interface ScoreProgress {
   completedDiffs: number[];
   totalDiffs: number;
 }
+
+type JobContext =
+  | null
+  | {
+      // AutoUpdateSchedulerService.maybeEnqueueFcfs() 创建的
+      // get_user_recent_event job，用于只合并两次 enrichment 之间的 FC/FS。
+      autoUpdateFcfs: true;
+      reason: "rival_hash_changed" | "map_delta" | "manual";
+      recentEventSince: string | null; // ISO timestamp
+    }
+  | {
+      // get_user_recent_event 合并时出现无法唯一定位难度的 FC/FS，
+      // JobService 自动创建 fallback update_score job 时写入。
+      source: "fcfs_ambiguous_recent_event";
+      recentEventJobId: string;
+      ambiguousDiffs: number[];
+    };
 ```
+
+`context` 当前取值：
+
+| jobType                 | 场景                                    | context                                                     |
+| ----------------------- | --------------------------------------- | ----------------------------------------------------------- |
+| `send_friend_request`   | 登录 / 建好友关系                       | `null`                                                      |
+| `accept_friend_request` | 用户主动加 Bot 登录                     | `null`                                                      |
+| `update_score`          | 用户手动同步 / 普通成绩更新             | `null`                                                      |
+| `update_score`          | FC/FS recent event ambiguity fallback   | `{ source, recentEventJobId, ambiguousDiffs }`              |
+| `get_user_recent_event` | 自动更新 FC/FS enrichment               | `{ autoUpdateFcfs: true, reason, recentEventSince }`        |
+| `get_full_friend_list`  | QR-login slow path 主动刷新 Bot 好友表  | `null`                                                      |
 
 索引：
 
