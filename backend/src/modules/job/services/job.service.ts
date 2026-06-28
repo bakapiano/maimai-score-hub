@@ -12,8 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { randomUUID } from 'crypto';
-import { Queue } from 'bullmq';
-import { Interval } from '@nestjs/schedule';
+import { Queue, QueueEvents } from 'bullmq';
 
 import { SyncService } from '../../sync/services/sync.service';
 import { UsersService } from '../../users/services/users.service';
@@ -29,11 +28,13 @@ import type {
   JobStatus,
   JobType,
 } from '../job.types';
-import { getJobTypePriority } from '@maimai-score-hub/shared';
+import {
+  getDxnetWorkerQueueName,
+  getJobTypePriority,
+} from '@maimai-score-hub/shared';
 import { JobEntity } from '../schemas/job.schema';
 import {
   DEFAULT_WORKER_JOB_OPTIONS,
-  DXNET_WORKER_QUEUE_NAME,
   type DxnetWorkerJobData,
   createBullmqQueueOptions,
 } from '../../../common/bullmq/bullmq.config';
@@ -46,29 +47,12 @@ export interface RecentJobStats {
   avgDuration: number | null;
 }
 
-const DEAD_JOB_TIMEOUT_MS = Number(
-  process.env.DEAD_JOB_TIMEOUT_MS ?? 1 * 30 * 1000,
-);
-
-/** Queued jobs older than this are automatically failed (default: 5 min) */
-const QUEUED_JOB_TIMEOUT_MS = Number(
-  process.env.QUEUED_JOB_TIMEOUT_MS ?? 5 * 60 * 1000,
-);
-
-/**
- * Hard ceiling on any non-terminal job (default: 30 min). Worker has its
- * own 30-min watchdog that PATCHes failed; this is the backstop for when
- * the worker dies or its PATCH never lands.
- */
-const PROCESSING_HARD_TIMEOUT_MS = Number(
-  process.env.PROCESSING_HARD_TIMEOUT_MS ?? 30 * 60 * 1000,
-);
-
-const DISPATCH_SWEEP_INTERVAL_MS = Number(
-  process.env.DXNET_DISPATCH_SWEEP_INTERVAL_MS ?? 30_000,
-);
-
 const FRIENDSHIP_PROOF_MAX_AGE_MS = 10 * 60 * 1000;
+const TERMINAL_STATUSES: readonly JobStatus[] = [
+  'completed',
+  'failed',
+  'canceled',
+] as const;
 
 // [TODO] Change this to 1min
 // const MIN_CREATE_INTERVAL_MS = Number(
@@ -92,9 +76,9 @@ function toJobResponse(job: JobEntity): JobResponse {
     updateScoreDuration: job.updateScoreDuration ?? null,
     diffsToScrape: job.diffsToScrape ?? null,
     context: job.context ?? null,
+    removeFriendAfterComplete: job.removeFriendAfterComplete ?? false,
     runAt: job.runAt?.toISOString() ?? null,
     error: job.error ?? null,
-    executing: job.executing,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
   };
@@ -129,8 +113,9 @@ const JOB_STAGE_MAP: Record<JobType, readonly JobStage[]> = {
 @Injectable()
 export class JobService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(JobService.name);
-  private readonly dxnetQueue: Queue<DxnetWorkerJobData>;
-  private dispatchSweepRunning = false;
+  private readonly queueOptions: ReturnType<typeof createBullmqQueueOptions>;
+  private readonly dxnetQueues = new Map<string, Queue<DxnetWorkerJobData>>();
+  private readonly dxnetQueueEvents = new Map<string, QueueEvents>();
 
   constructor(
     @InjectModel(JobEntity.name)
@@ -146,99 +131,40 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     private readonly botStatus: BotStatusService,
     config: ConfigService,
   ) {
-    this.dxnetQueue = new Queue<DxnetWorkerJobData>(DXNET_WORKER_QUEUE_NAME, {
-      ...createBullmqQueueOptions(config),
-      defaultJobOptions: DEFAULT_WORKER_JOB_OPTIONS,
-    });
+    this.queueOptions = createBullmqQueueOptions(config);
   }
 
   async onModuleInit(): Promise<void> {
-    await this.sweepAndDispatchJobs();
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    await this.dxnetQueue.close();
-  }
-
-  @Interval(DISPATCH_SWEEP_INTERVAL_MS)
-  private async sweepAndDispatchJobs(): Promise<void> {
-    if (this.dispatchSweepRunning) return;
-    this.dispatchSweepRunning = true;
     try {
-      const now = new Date();
-      await this.releaseStaleAndTimedOutJobs(now);
-
-      const dispatchable = await this.jobModel
-        .find({
-          status: { $in: ['queued', 'processing'] },
-          executing: false,
-        })
-        .sort({ priority: -1, updatedAt: 1 })
-        .limit(500)
-        .lean<JobEntity[]>()
-        .exec();
-
-      await Promise.all(dispatchable.map((job) => this.enqueueWorkerJob(job)));
+      const bots = await this.botStatus.getAll();
+      for (const bot of bots) {
+        this.ensureDxnetQueueEvents(getDxnetWorkerQueueName(bot.friendCode));
+      }
     } catch (err) {
       this.logger.warn(
-        `dxnet BullMQ dispatch sweep failed: ${
+        `failed to initialize dxnet queue events: ${
           err instanceof Error ? err.message : err
         }`,
       );
-    } finally {
-      this.dispatchSweepRunning = false;
     }
   }
 
-  private async releaseStaleAndTimedOutJobs(now: Date): Promise<void> {
-    const staleThreshold = new Date(now.getTime() - DEAD_JOB_TIMEOUT_MS);
-    await this.jobModel.updateMany(
-      { executing: true, updatedAt: { $lte: staleThreshold } },
-      { $set: { executing: false, updatedAt: now } },
-    );
-
-    const queuedDeadline = new Date(now.getTime() - QUEUED_JOB_TIMEOUT_MS);
-    await this.jobModel.updateMany(
-      {
-        status: 'queued',
-        botUserFriendCode: null,
-        createdAt: { $lte: queuedDeadline },
-      },
-      {
-        $set: {
-          status: 'failed',
-          runAt: null,
-          error: '排队超时，可能是 Bot 繁忙或异常，请稍后再试',
-          updatedAt: now,
-        },
-      },
-    );
-
-    const hardDeadline = new Date(now.getTime() - PROCESSING_HARD_TIMEOUT_MS);
-    await this.jobModel.updateMany(
-      {
-        status: { $in: ['queued', 'processing'] },
-        createdAt: { $lte: hardDeadline },
-      },
-      {
-        $set: {
-          status: 'failed',
-          executing: false,
-          runAt: null,
-          error: '硬超时：任务存活时间超过 30 分钟',
-          updatedAt: now,
-        },
-      },
-    );
+  async onModuleDestroy(): Promise<void> {
+    await Promise.all([
+      ...[...this.dxnetQueues.values()].map((queue) => queue.close()),
+      ...[...this.dxnetQueueEvents.values()].map((events) => events.close()),
+    ]);
   }
 
   private async enqueueWorkerJob(job: JobEntity): Promise<void> {
-    if (['completed', 'failed', 'canceled'].includes(job.status)) return;
-    if (job.executing) return;
+    if (TERMINAL_STATUSES.includes(job.status)) return;
+    if (!job.botUserFriendCode) {
+      throw new Error(`DXNet job ${job.id} has no botUserFriendCode`);
+    }
 
     const now = Date.now();
     const delay = job.runAt ? Math.max(0, job.runAt.getTime() - now) : 0;
-    await this.dxnetQueue.add(
+    await this.getDxnetQueue(job.botUserFriendCode).add(
       'dxnet-job',
       { jobId: job.id },
       {
@@ -250,10 +176,13 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async promoteOrEnqueueWorkerJob(job: JobEntity): Promise<void> {
-    if (['completed', 'failed', 'canceled'].includes(job.status)) return;
-    if (job.executing) return;
+    if (TERMINAL_STATUSES.includes(job.status)) return;
+    if (!job.botUserFriendCode) {
+      throw new Error(`DXNet job ${job.id} has no botUserFriendCode`);
+    }
 
-    const queued = await this.dxnetQueue.getJob(job.id);
+    const queue = this.getDxnetQueue(job.botUserFriendCode);
+    const queued = await queue.getJob(job.id);
     if (queued) {
       const state = await queued.getState();
       if (state === 'delayed') {
@@ -263,6 +192,64 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     }
 
     await this.enqueueWorkerJob(job);
+  }
+
+  private getDxnetQueue(botFriendCode: string): Queue<DxnetWorkerJobData> {
+    const queueName = getDxnetWorkerQueueName(botFriendCode);
+    const existing = this.dxnetQueues.get(queueName);
+    if (existing) return existing;
+
+    const queue = new Queue<DxnetWorkerJobData>(queueName, {
+      ...this.queueOptions,
+      defaultJobOptions: DEFAULT_WORKER_JOB_OPTIONS,
+    });
+    this.dxnetQueues.set(queueName, queue);
+    this.ensureDxnetQueueEvents(queueName);
+    return queue;
+  }
+
+  private ensureDxnetQueueEvents(queueName: string): void {
+    if (this.dxnetQueueEvents.has(queueName)) return;
+
+    const events = new QueueEvents(queueName, this.queueOptions);
+    events.on('failed', ({ jobId, failedReason }) => {
+      if (!jobId) return;
+      this.markBullmqJobFailed(jobId, failedReason).catch((err) => {
+        this.logger.warn(
+          `failed to mirror BullMQ failure for ${queueName}/${jobId}: ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      });
+    });
+    events.on('stalled', ({ jobId }) => {
+      this.logger.warn(
+        `DXNet BullMQ job stalled queue=${queueName} job=${jobId}`,
+      );
+    });
+    events.on('error', (err) => {
+      this.logger.warn(
+        `DXNet BullMQ queue events error queue=${queueName}: ${err.message}`,
+      );
+    });
+    this.dxnetQueueEvents.set(queueName, events);
+  }
+
+  private async markBullmqJobFailed(
+    jobId: string,
+    failedReason?: string,
+  ): Promise<void> {
+    await this.jobModel.updateOne(
+      { id: jobId, status: { $nin: TERMINAL_STATUSES } },
+      {
+        $set: {
+          status: 'failed',
+          runAt: null,
+          error: failedReason || 'BullMQ job failed',
+          updatedAt: new Date(),
+        },
+      },
+    );
   }
 
   private toBullmqPriority(priority: number): number | undefined {
@@ -275,7 +262,7 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     botUserFriendCode: string | null;
     friendshipReady: boolean;
   }): Promise<{ ready: boolean; botUserFriendCode: string | null }> {
-    if (input.friendshipReady) {
+    if (input.friendshipReady && input.botUserFriendCode) {
       return {
         ready: true,
         botUserFriendCode: input.botUserFriendCode,
@@ -386,6 +373,35 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  private async resolveBotForCreate(input: {
+    friendCode: string;
+    jobType: JobType;
+    botUserFriendCode: string | null;
+  }): Promise<string> {
+    if (input.botUserFriendCode) {
+      return input.botUserFriendCode;
+    }
+
+    if (
+      input.jobType === 'send_friend_request' ||
+      input.jobType === 'accept_friend_request'
+    ) {
+      const picked = await this.botStatus.pickAvailableBot();
+      if (!picked) {
+        throw new BadRequestException('当前没有可用的 Bot');
+      }
+      return picked.friendCode;
+    }
+
+    if (input.jobType === 'get_full_friend_list') {
+      return input.friendCode;
+    }
+
+    throw new BadRequestException(
+      `jobType ${input.jobType} requires botUserFriendCode`,
+    );
+  }
+
   async create(input: {
     friendCode: string;
     jobType?: JobType;
@@ -394,6 +410,7 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     friendshipReady?: boolean;
     diffsToScrape?: number[] | null;
     context?: Record<string, unknown> | null;
+    removeFriendAfterComplete?: boolean;
     cancelActiveJobs?: boolean;
   }) {
     const id = randomUUID();
@@ -523,6 +540,12 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    input.botUserFriendCode = await this.resolveBotForCreate({
+      friendCode: input.friendCode,
+      jobType: resolvedJobType,
+      botUserFriendCode: input.botUserFriendCode ?? null,
+    });
+
     const priority = getJobTypePriority(resolvedJobType);
 
     if (input.cancelActiveJobs !== false) {
@@ -534,7 +557,6 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
         {
           $set: {
             status: 'canceled',
-            executing: false,
             runAt: null,
             updatedAt: now,
           },
@@ -553,11 +575,11 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
         resolvedJobType === 'accept_friend_request' ? now.toISOString() : null,
       status: 'queued',
       stage: resolvedStage,
-      executing: false,
       error: null,
       result: undefined,
       diffsToScrape: input.diffsToScrape ?? null,
       context: input.context ?? null,
+      removeFriendAfterComplete: input.removeFriendAfterComplete ?? false,
       runAt: null,
       createdAt: now,
       updatedAt: now,
@@ -680,13 +702,6 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
         );
       }
       update.friendRequestWaitStartedAt = body.friendRequestWaitStartedAt;
-    }
-
-    if (body.executing !== undefined) {
-      if (typeof body.executing !== 'boolean') {
-        throw new BadRequestException('executing must be a boolean');
-      }
-      update.executing = body.executing;
     }
 
     if (body.runAt !== undefined) {
@@ -843,6 +858,7 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
             botUserFriendCode: updated.botUserFriendCode,
             friendshipReady: true,
             diffsToScrape: mergeResult.ambiguousDiffs,
+            removeFriendAfterComplete: true,
             cancelActiveJobs: false,
             context: {
               source: 'fcfs_ambiguous_recent_event',
@@ -852,6 +868,11 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
           });
           this.logger.log(
             `Scheduled ambiguous FC/FS fallback update_score job ${fallback.jobId} for fc=${updated.friendCode} diffs=[${mergeResult.ambiguousDiffs.join(',')}]`,
+          );
+          updated.removeFriendAfterComplete = false;
+          await this.jobModel.updateOne(
+            { id: jobId },
+            { $set: { removeFriendAfterComplete: false } },
           );
         }
       }
@@ -952,5 +973,4 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     });
     return result.deletedCount;
   }
-
 }

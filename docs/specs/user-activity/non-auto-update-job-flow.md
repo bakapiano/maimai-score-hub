@@ -32,7 +32,6 @@
 | `stage`               | 固定为 `update_score`                                     |
 | `status`              | `queued`、`processing`、`completed`、`failed`、`canceled` |
 | `botUserFriendCode`   | 负责抓取这个用户成绩的 Bot 好友码                         |
-| `executing`           | worker 执行锁；为 `true` 时后端不会再派发                 |
 | `runAt`               | 下次允许派发时间；`update_score` 正常情况下为 `null`      |
 | `scoreProgress`       | 成绩抓取阶段的难度进度                                    |
 | `updateScoreDuration` | worker 抓取耗时                                           |
@@ -109,38 +108,30 @@ Authorization: Bearer <token>
   jobType: "update_score",
   stage: "update_score",
   status: "queued",
-  executing: false,
+  botUserFriendCode: "<负责抓取的 bot>",
   runAt: null
 }
 ```
 
-然后把 `{ jobId }` 加入 BullMQ `dxnet-worker-jobs` 队列。
+然后把 `{ jobId }` 加入该 bot 的 BullMQ named queue：`dxnet-worker-jobs:<botUserFriendCode>`。
 
 ## 后端派发与超时保护
 
-后端在模块初始化和每 30 秒的 interval 中执行一次派发 sweep：
-
-1. 释放过期执行锁：`executing=true` 且 `updatedAt` 超过 30 秒未刷新时，置回 `executing=false`。
-2. 失败过期排队 job：`status=queued`、`botUserFriendCode=null`、创建超过 5 分钟时，标记失败，错误为“排队超时，可能是 Bot 繁忙或异常，请稍后再试”。
-3. 失败硬超时 job：`queued/processing` 且创建超过 30 分钟时，标记失败，错误为“硬超时：任务存活时间超过 30 分钟”。
-4. 查找 `queued/processing` 且 `executing=false` 的 job，按优先级和更新时间排序，最多 500 个，加入 BullMQ。
-
-BullMQ job 只包含 `{ jobId: string }`。如果 MongoDB job 有未来的 `runAt`，后端 enqueue 时会把它转换成 BullMQ delay。
+后端不再用 MongoDB dispatch sweep 补投递。`update_score` 创建时必须先解析出 `botUserFriendCode`，随后直接进入该 bot 的 named queue。BullMQ job 只包含 `{ jobId: string }`；如果 MongoDB job 有未来的 `runAt`，后端 enqueue 时会把它转换成 BullMQ delay。
 
 ## Worker 领取 update_score
 
 `worker/src/worker/worker.ts` 中的 BullMQ worker：
 
-1. 并发数来自 `MAX_PROCESS_JOBS`，默认 8。
-2. 收到 BullMQ job 后，先调用后端 `GET /workers/dxnet/jobs/:jobId` 拉取完整 job。
-3. 如果 job 已是终态，直接返回。
-4. 如果 `runAt` 在未来，把 BullMQ job 延后到 `runAt`。
-5. 如果当前没有可用 Bot 或 Bot cookie expired，把 BullMQ job 延后 5 秒。
-6. 如果 job 已绑定 `botUserFriendCode`，但当前 worker 拿到的 Bot 不是它，把 BullMQ job 延后 5 秒。
-7. 调用后端 PATCH 标记开始：`executing=true`、`queued` 改成 `processing`、必要时填入当前 Bot、清空 `runAt`。
-8. 创建 `JobHandler`，由 `updateScoreJobHandler` 执行。
+1. 收到 BullMQ job 后，先调用后端 `GET /workers/dxnet/jobs/:jobId` 拉取完整 job。
+2. 如果 job 已是终态，直接返回。
+3. 如果 `runAt` 在未来，把 BullMQ job 延后到 `runAt`。
+4. 如果当前没有可用 Bot 或 Bot cookie expired，把 BullMQ job 延后 5 秒。
+5. 如果 job 缺失 `botUserFriendCode` 或被投递到错误 bot 的 queue，worker 将业务 job 标记为 `failed`。
+6. 调用后端 PATCH 标记开始：`queued` 改成 `processing`、清空 `runAt`。
+7. 创建 `JobHandler`，由 `updateScoreJobHandler` 执行。
 
-`JobHandler` 还有两层保护：每 20 秒 PATCH 一次 `updatedAt` 的心跳，以及 30 分钟 worker 侧硬超时。普通 handler 抛错会把 job 标记为 `failed`；`CookieExpiredError` 不会直接失败 job，而是释放 `executing` 后回到队列，等待其他可用 Bot 或 cookie 恢复。
+`JobHandler` 有 30 分钟 worker 侧硬超时。普通 handler 抛错会把 job 标记为 `failed`；`CookieExpiredError` 不会直接失败 job，而是暂停该 bot 的 named queue consumer，等待 cookie 恢复或 stale-bot cleanup。
 
 ## Worker 抓取成绩
 

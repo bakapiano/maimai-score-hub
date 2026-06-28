@@ -17,7 +17,6 @@ import {
 } from '@maimai-score-hub/shared';
 
 import { SharedSecretGuard } from '../../common/guards/shared-secret.guard';
-import { BotFriendSnapshotService } from '../../modules/bots/services/bot-friend-snapshot.service';
 import { BotStatusService } from '../../modules/bots/services/bot-status.service';
 import { SdgbJobDispatcher } from '../../modules/sdgb-worker/services/sdgb-job.dispatcher';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -27,23 +26,12 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 export class AdminBotsController {
   constructor(
     private readonly botStatusService: BotStatusService,
-    private readonly botFriendSnapshotService: BotFriendSnapshotService,
     private readonly sdgbDispatcher: SdgbJobDispatcher,
   ) {}
 
   @Get()
   async getBotStatus() {
     return this.botStatusService.getAll();
-  }
-
-  /**
-   * Admin 查询某个 bot 的好友 snapshot（debug 用）。
-   */
-  @Get(':botFriendCode/friend-snapshots')
-  async getBotFriendSnapshot(@Param('botFriendCode') botFriendCode: string) {
-    const snap = await this.botFriendSnapshotService.get(botFriendCode);
-    if (!snap) return { botFriendCode, friends: [], updatedAt: null };
-    return snap;
   }
 
   @Patch(':friendCode/remark')

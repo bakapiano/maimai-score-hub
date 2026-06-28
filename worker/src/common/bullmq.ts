@@ -36,12 +36,9 @@ export function getBullmqPrefix(): string {
   return `${redisPrefix.replace(/:+$/, "")}:bull`;
 }
 
-export function createBullmqWorkerOptions(
-  concurrency: number,
-): WorkerOptions {
+export function createBullmqWorkerOptions(): WorkerOptions {
   return {
     connection: createBullmqConnection(),
     prefix: getBullmqPrefix(),
-    concurrency,
   };
 }

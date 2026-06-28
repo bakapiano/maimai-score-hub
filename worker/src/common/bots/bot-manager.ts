@@ -23,7 +23,7 @@ export class BotManager {
   jar: CookieJar | null = null;
   expired = false;
   readonly friendListSnapshots = new FriendListSnapshotStore();
-  private stateChanged: (() => void) | null = null;
+  private readonly stateChangedListeners = new Set<() => void>();
 
   getBot(): ManagedBot | null {
     if (!this.friendCode || !this.jar) {
@@ -47,11 +47,23 @@ export class BotManager {
   }
 
   _onStateChanged(callback: (() => void) | null): void {
-    this.stateChanged = callback;
+    this.stateChangedListeners.clear();
+    if (callback) {
+      this.stateChangedListeners.add(callback);
+    }
+  }
+
+  onStateChanged(callback: () => void): () => void {
+    this.stateChangedListeners.add(callback);
+    return () => {
+      this.stateChangedListeners.delete(callback);
+    };
   }
 
   private notifyStateChanged(): void {
-    this.stateChanged?.();
+    for (const listener of this.stateChangedListeners) {
+      listener();
+    }
   }
 
   _set(friendCode: string, jar: CookieJar): void {

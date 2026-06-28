@@ -47,29 +47,21 @@ export class AuthService {
     }
 
     if (method === 'user_sends_request') {
-      const availableBots = (await this.botStatus.getAll()).filter(
-        (b) => b.available,
-      );
-      if (!availableBots.length) {
+      const selectedBot = await this.botStatus.pickAvailableBot();
+      if (!selectedBot) {
         throw new BadRequestException('当前没有可用的 Bot');
       }
-
-      const selectedBot =
-        availableBots
-          .slice()
-          .sort((a, b) => (a.friendCount ?? 0) - (b.friendCount ?? 0))[0]
-          ?.friendCode ?? null;
 
       const result = await this.jobs.create({
         friendCode: normalized,
         jobType: 'accept_friend_request',
-        botUserFriendCode: selectedBot,
+        botUserFriendCode: selectedBot.friendCode,
       });
 
       return {
         ...result,
         userId: user._id,
-        botFriendCode: selectedBot,
+        botFriendCode: selectedBot.friendCode,
         createdAt: result.job.createdAt,
       };
     }
@@ -94,7 +86,8 @@ export class AuthService {
 
     const verified =
       status === 'completed' ||
-      (job.jobType === 'accept_friend_request' && job.stage === 'accept_request');
+      (job.jobType === 'accept_friend_request' &&
+        job.stage === 'accept_request');
 
     if (verified) {
       const user = await this.users.findByFriendCode(job.friendCode);
@@ -139,9 +132,6 @@ export class AuthService {
       throw new BadRequestException(
         'verify is only valid for login friend-request jobs',
       );
-    }
-    if (job.executing) {
-      return { job };
     }
     return { job: await this.jobs.wake(jobId) };
   }

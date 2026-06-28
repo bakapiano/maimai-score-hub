@@ -12,19 +12,19 @@
 
 ## 集合总览
 
-| Entity                       | Collection                                 | 模块        | 保留期    | 用途                                               |
-| ---------------------------- | ------------------------------------------ | ----------- | --------- | -------------------------------------------------- |
-| `UserEntity`                 | Mongoose 隐式集合名，通常为 `userentities` | users       | 永久      | 用户、密码登录、导入 token、机台绑定、自动更新开关 |
-| `SyncEntity`                 | `syncs`                                    | sync        | 永久      | 一次成绩同步结果                                   |
-| `MusicEntity`                | `musics`                                   | music       | 永久      | 乐曲与谱面元数据                                   |
-| `JobEntity`                  | `jobs`                                     | job         | 7 天 TTL  | DXNet worker 任务                                  |
-| `ProberExportJobEntity`      | `prober_export_jobs`                       | prober-export | 永久   | Diving-Fish / LXNS 导出任务与结果                  |
-| `QrLoginAttemptEntity`       | `qr_login_attempts`                        | auth        | 1 天 TTL  | QR 登录异步尝试                                    |
-| `BotStatusEntity`            | `bot_statuses`                             | admin       | 永久      | DXNet bot 可用性和好友数                           |
-| `AutoUpdateRunEntity`        | `auto_update_runs`                         | auto-update | 30 天 TTL | 自动更新 cron 每轮执行记录                         |
-| `AutoUpdateProbeStateEntity` | `auto_update_probe_states`                 | auto-update | 永久      | Rival-first 自动更新用户状态                       |
-| `AutoUpdateTaskEntity`       | `auto_update_tasks`                        | auto-update | 3 天 TTL  | Rival-first 自动更新短期任务日志                   |
-| `SdgbJobEntity`              | `sdgb_jobs`                                | sdgb-worker | 1 天 TTL  | sdgb-worker 机台协议任务                           |
+| Entity                       | Collection                                 | 模块          | 保留期    | 用途                                               |
+| ---------------------------- | ------------------------------------------ | ------------- | --------- | -------------------------------------------------- |
+| `UserEntity`                 | Mongoose 隐式集合名，通常为 `userentities` | users         | 永久      | 用户、密码登录、导入 token、机台绑定、自动更新开关 |
+| `SyncEntity`                 | `syncs`                                    | sync          | 永久      | 一次成绩同步结果                                   |
+| `MusicEntity`                | `musics`                                   | music         | 永久      | 乐曲与谱面元数据                                   |
+| `JobEntity`                  | `jobs`                                     | job           | 7 天 TTL  | DXNet worker 任务                                  |
+| `ProberExportJobEntity`      | `prober_export_jobs`                       | prober-export | 永久      | Diving-Fish / LXNS 导出任务与结果                  |
+| `QrLoginAttemptEntity`       | `qr_login_attempts`                        | auth          | 1 天 TTL  | QR 登录异步尝试                                    |
+| `BotStatusEntity`            | `bot_statuses`                             | admin         | 永久      | DXNet bot 可用性和好友数                           |
+| `AutoUpdateRunEntity`        | `auto_update_runs`                         | auto-update   | 30 天 TTL | 自动更新 cron 每轮执行记录                         |
+| `AutoUpdateProbeStateEntity` | `auto_update_probe_states`                 | auto-update   | 永久      | Rival-first 自动更新用户状态                       |
+| `AutoUpdateTaskEntity`       | `auto_update_tasks`                        | auto-update   | 3 天 TTL  | Rival-first 自动更新短期任务日志                   |
+| `SdgbJobEntity`              | `sdgb_jobs`                                | sdgb-worker   | 1 天 TTL  | sdgb-worker 机台协议任务                           |
 
 ## Redis Runtime 数据
 
@@ -131,23 +131,23 @@ type AutoExportResult = {
 
 ### `ProberExportJobEntity`
 
-| 字段 | 类型 | 约束 / 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `id` | `string` | required, unique, index | 导出任务 id |
-| `trigger` | `string` | required, index | `dxnet_update_score` / `auto_update_rival` / `auto_update_fcfs` / `manual` |
-| `friendCode` | `string` | required, index | 用户好友码 |
-| `syncId` | `string` | required, index | 要导出的固定 sync 快照 |
-| `sourceJobId` | `string \| null` | default `null` | 来源 DXNet job id |
-| `sourceTaskId` | `string \| null` | default `null` | 来源 auto-update task id |
-| `targets` | `string[]` | default `[]` | `divingFish` / `lxns` |
-| `status` | `string` | required, index | `queued` / `processing` / `completed` / `partial_failed` / `failed` / `skipped` |
-| `attempts` | `number` | default `0` | worker claim 次数 |
-| `result` | `Object \| null` | default `null` | 每个 provider 的完整导出结果 |
-| `error` | `string \| null` | default `null` | job 级错误 |
-| `claimedAt` | `Date \| null` | default `null` | worker claim 时间 |
-| `completedAt` | `Date \| null` | default `null` | 完成时间 |
-| `createdAt` | `Date` | timestamps | 创建时间 |
-| `updatedAt` | `Date` | timestamps | 更新时间 |
+| 字段           | 类型             | 约束 / 默认值           | 说明                                                                            |
+| -------------- | ---------------- | ----------------------- | ------------------------------------------------------------------------------- |
+| `id`           | `string`         | required, unique, index | 导出任务 id                                                                     |
+| `trigger`      | `string`         | required, index         | `dxnet_update_score` / `auto_update_rival` / `auto_update_fcfs` / `manual`      |
+| `friendCode`   | `string`         | required, index         | 用户好友码                                                                      |
+| `syncId`       | `string`         | required, index         | 要导出的固定 sync 快照                                                          |
+| `sourceJobId`  | `string \| null` | default `null`          | 来源 DXNet job id                                                               |
+| `sourceTaskId` | `string \| null` | default `null`          | 来源 auto-update task id                                                        |
+| `targets`      | `string[]`       | default `[]`            | `divingFish` / `lxns`                                                           |
+| `status`       | `string`         | required, index         | `queued` / `processing` / `completed` / `partial_failed` / `failed` / `skipped` |
+| `attempts`     | `number`         | default `0`             | worker claim 次数                                                               |
+| `result`       | `Object \| null` | default `null`          | 每个 provider 的完整导出结果                                                    |
+| `error`        | `string \| null` | default `null`          | job 级错误                                                                      |
+| `claimedAt`    | `Date \| null`   | default `null`          | worker claim 时间                                                               |
+| `completedAt`  | `Date \| null`   | default `null`          | 完成时间                                                                        |
+| `createdAt`    | `Date`           | timestamps              | 创建时间                                                                        |
+| `updatedAt`    | `Date`           | timestamps              | 更新时间                                                                        |
 
 索引：
 
@@ -230,28 +230,28 @@ interface SongMetadata {
 
 ### `JobEntity`
 
-| 字段                         | 类型                              | 约束 / 默认值                           | 说明                                         |
-| ---------------------------- | --------------------------------- | --------------------------------------- | -------------------------------------------- |
-| `id`                         | `string`                          | required, unique, index                 | job id                                       |
-| `friendCode`                 | `string`                          | required                                | 目标用户好友码                               |
-| `jobType`                    | `JobType`                         | required, default `send_friend_request` | job 类型                                     |
-| `priority`                   | `number`                          | required, default `0`                   | 调度优先级                                   |
-| `botUserFriendCode`          | `string \| null`                  | default `null`                          | 执行 bot 好友码                              |
-| `friendRequestSentAt`        | `string \| null`                  | default `null`                          | 好友请求发送时间                             |
-| `friendRequestWaitStartedAt` | `string \| null`                  | default `null`                          | 等待好友请求开始时间                         |
-| `status`                     | `JobStatus`                       | required                                | job 状态                                     |
-| `stage`                      | `JobStage`                        | required                                | 当前阶段                                     |
-| `result`                     | `any`                             | `Mixed`, default `undefined`            | 执行结果                                     |
-| `profile`                    | `UserNetProfile`                  | `Mixed`, default `undefined`            | 任务得到的用户资料                           |
-| `error`                      | `string \| null`                  | default `null`                          | 错误信息                                     |
-| `executing`                  | `boolean`                         | required, default `false`               | BullMQ worker 是否正在执行                   |
-| `scoreProgress`              | `ScoreProgress \| null`           | `Mixed`, default `null`                 | 成绩更新进度                                 |
-| `updateScoreDuration`        | `number \| null`                  | default `null`                          | `update_score` 耗时                          |
-| `diffsToScrape`              | `number[] \| null`                | default `null`                          | 指定 `update_score` 只抓取的难度列表         |
-| `context`                    | `JobContext \| null`              | `Mixed`, default `null`                 | 内部链路上下文，见下方 `JobContext`          |
-| `runAt`                      | `Date \| null`                    | default `null`                          | 下次允许 BullMQ 投递的时间                   |
-| `createdAt`                  | `Date`                            | required                                | 创建时间                                     |
-| `updatedAt`                  | `Date`                            | required                                | 更新时间                                     |
+| 字段                         | 类型                    | 约束 / 默认值                           | 说明                                     |
+| ---------------------------- | ----------------------- | --------------------------------------- | ---------------------------------------- |
+| `id`                         | `string`                | required, unique, index                 | job id                                   |
+| `friendCode`                 | `string`                | required                                | 目标用户好友码                           |
+| `jobType`                    | `JobType`               | required, default `send_friend_request` | job 类型                                 |
+| `priority`                   | `number`                | required, default `0`                   | 调度优先级                               |
+| `botUserFriendCode`          | `string \| null`        | default `null`                          | 执行 bot 好友码                          |
+| `friendRequestSentAt`        | `string \| null`        | default `null`                          | 好友请求发送时间                         |
+| `friendRequestWaitStartedAt` | `string \| null`        | default `null`                          | 等待好友请求开始时间                     |
+| `status`                     | `JobStatus`             | required                                | job 状态                                 |
+| `stage`                      | `JobStage`              | required                                | 当前阶段                                 |
+| `result`                     | `any`                   | `Mixed`, default `undefined`            | 执行结果                                 |
+| `profile`                    | `UserNetProfile`        | `Mixed`, default `undefined`            | 任务得到的用户资料                       |
+| `error`                      | `string \| null`        | default `null`                          | 错误信息                                 |
+| `scoreProgress`              | `ScoreProgress \| null` | `Mixed`, default `null`                 | 成绩更新进度                             |
+| `updateScoreDuration`        | `number \| null`        | default `null`                          | `update_score` 耗时                      |
+| `diffsToScrape`              | `number[] \| null`      | default `null`                          | 指定 `update_score` 只抓取的难度列表     |
+| `context`                    | `JobContext \| null`    | `Mixed`, default `null`                 | 内部链路上下文，见下方 `JobContext`      |
+| `removeFriendAfterComplete`  | `boolean`               | default `false`                         | job 成功完成后由 worker 异步删除目标好友 |
+| `runAt`                      | `Date \| null`          | default `null`                          | 下次允许 BullMQ 投递的时间               |
+| `createdAt`                  | `Date`                  | required                                | 创建时间                                 |
+| `updatedAt`                  | `Date`                  | required                                | 更新时间                                 |
 
 枚举和嵌套类型：
 
@@ -299,23 +299,19 @@ type JobContext =
 
 `context` 当前取值：
 
-| jobType                 | 场景                                    | context                                                     |
-| ----------------------- | --------------------------------------- | ----------------------------------------------------------- |
-| `send_friend_request`   | 登录 / 建好友关系                       | `null`                                                      |
-| `accept_friend_request` | 用户主动加 Bot 登录                     | `null`                                                      |
-| `update_score`          | 用户手动同步 / 普通成绩更新             | `null`                                                      |
-| `update_score`          | FC/FS recent event ambiguity fallback   | `{ source, recentEventJobId, ambiguousDiffs }`              |
-| `get_user_recent_event` | 自动更新 FC/FS enrichment               | `{ autoUpdateFcfs: true, reason, recentEventSince }`        |
-| `get_full_friend_list`  | QR-login slow path 主动刷新 Bot 好友表  | `null`                                                      |
+| jobType                 | 场景                                   | context                                              |
+| ----------------------- | -------------------------------------- | ---------------------------------------------------- |
+| `send_friend_request`   | 登录 / 建好友关系                      | `null`                                               |
+| `accept_friend_request` | 用户主动加 Bot 登录                    | `null`                                               |
+| `update_score`          | 用户手动同步 / 普通成绩更新            | `null`                                               |
+| `update_score`          | FC/FS recent event ambiguity fallback  | `{ source, recentEventJobId, ambiguousDiffs }`       |
+| `get_user_recent_event` | 自动更新 FC/FS enrichment              | `{ autoUpdateFcfs: true, reason, recentEventSince }` |
+| `get_full_friend_list`  | QR-login slow path 主动刷新 Bot 好友表 | `null`                                               |
 
 索引：
 
 - `id`：唯一索引。
 - `{ createdAt: 1 }`：TTL 7 天。
-- `{ status: 1, botUserFriendCode: 1, executing: 1 }`，名称 `hot_claim`。
-- `{ executing: 1, updatedAt: 1 }`，名称 `stale_lock`。
-- `{ status: 1, botUserFriendCode: 1, executing: 1, runAt: 1 }`，名称 `hot_claim_due`。
-- `{ status: 1, botUserFriendCode: 1, executing: 1, runAt: 1, priority: -1, updatedAt: 1 }`，名称 `hot_claim_priority`。
 - `{ botUserFriendCode: 1, status: 1 }`，名称 `bot_status`。
 - `{ jobType: 1, friendCode: 1, createdAt: -1 }`，名称 `latest_by_type_friend`。
 - `{ status: 1, createdAt: -1 }`，名称 `status_createdAt_desc`。
@@ -344,7 +340,11 @@ type JobContext =
 
 ```ts
 type QrLoginStatus =
-  "pending" | "adding_rival" | "waiting_snapshot" | "matched" | "failed";
+  | "pending"
+  | "adding_rival"
+  | "waiting_snapshot"
+  | "matched"
+  | "failed";
 ```
 
 索引：
@@ -358,16 +358,16 @@ type QrLoginStatus =
 
 ### `BotStatusEntity`
 
-| 字段                  | 类型             | 约束 / 默认值           | 说明                  |
-| --------------------- | ---------------- | ----------------------- | --------------------- |
-| `friendCode`          | `string`         | required, unique, index | bot 好友码            |
-| `available`           | `boolean`        | required                | 是否可用              |
-| `lastReportedAt`      | `Date`           | required                | 最近上报时间          |
-| `friendCount`         | `number \| null` | default `null`          | 好友数                |
-| `friendsUpdatedAt`    | `Date \| null`   | default `null`          | 好友列表更新时间      |
-| `friends`             | `BotFriendRow[]` | default `[]`            | bot 当前好友列表快照  |
-| `remark`              | `string \| null` | default `null`          | 管理备注              |
-| `cabinetUserId`       | `number \| null` | default `null`          | bot 对应的机台 userId |
+| 字段               | 类型             | 约束 / 默认值           | 说明                  |
+| ------------------ | ---------------- | ----------------------- | --------------------- |
+| `friendCode`       | `string`         | required, unique, index | bot 好友码            |
+| `available`        | `boolean`        | required                | 是否可用              |
+| `lastReportedAt`   | `Date`           | required                | 最近上报时间          |
+| `friendCount`      | `number \| null` | default `null`          | 好友数                |
+| `friendsUpdatedAt` | `Date \| null`   | default `null`          | 好友列表更新时间      |
+| `friends`          | `BotFriendRow[]` | default `[]`            | bot 当前好友列表快照  |
+| `remark`           | `string \| null` | default `null`          | 管理备注              |
+| `cabinetUserId`    | `number \| null` | default `null`          | bot 对应的机台 userId |
 
 索引：
 
@@ -517,13 +517,13 @@ type SdgbJobResult =
 
 ## Document 类型清单
 
-| Document 类型               | Entity                    |
-| --------------------------- | ------------------------- |
-| `UserDocument`              | `UserEntity`              |
-| `SyncDocument`              | `SyncEntity`              |
-| `MusicDocument`             | `MusicEntity`             |
-| `JobDocument`               | `JobEntity`               |
-| `QrLoginAttemptDocument`    | `QrLoginAttemptEntity`    |
-| `BotStatusDocument`         | `BotStatusEntity`         |
-| `AutoUpdateRunDocument`     | `AutoUpdateRunEntity`     |
-| `SdgbJobDocument`           | `SdgbJobEntity`           |
+| Document 类型            | Entity                 |
+| ------------------------ | ---------------------- |
+| `UserDocument`           | `UserEntity`           |
+| `SyncDocument`           | `SyncEntity`           |
+| `MusicDocument`          | `MusicEntity`          |
+| `JobDocument`            | `JobEntity`            |
+| `QrLoginAttemptDocument` | `QrLoginAttemptEntity` |
+| `BotStatusDocument`      | `BotStatusEntity`      |
+| `AutoUpdateRunDocument`  | `AutoUpdateRunEntity`  |
+| `SdgbJobDocument`        | `SdgbJobEntity`        |

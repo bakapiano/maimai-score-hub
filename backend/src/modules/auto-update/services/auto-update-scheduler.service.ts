@@ -777,6 +777,7 @@ export class AutoUpdateSchedulerService
         friendCode: state.friendCode,
         jobType: 'get_user_recent_event',
         botUserFriendCode: bot.friendCode,
+        removeFriendAfterComplete: true,
         cancelActiveJobs: false,
         context: {
           autoUpdateFcfs: true,

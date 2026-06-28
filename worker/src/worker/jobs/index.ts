@@ -8,10 +8,7 @@ import { MaimaiClient } from "../../common/maimai/client.ts";
 import { CookieExpiredError } from "../../common/maimai/infra/errors.ts";
 import { JobSession } from "./job-session.ts";
 import { JobWatchdog } from "./job-watchdog.ts";
-import {
-  executeJobByType,
-  prepareJob,
-} from "./handlers/index.ts";
+import { executeJobByType, prepareJob } from "./handlers/index.ts";
 import { runWithRequestContext } from "../../common/maimai/infra/request-runtime.ts";
 import { getJobTypePriority } from "@maimai-score-hub/shared";
 
@@ -61,19 +58,30 @@ export class JobHandler {
         );
       });
       clearApiLogBuffer(this.session.job.id);
-
-      if (!this.session.isAborted && this.session.job.executing) {
-        try {
-          await this.session.applyPatch({ executing: false });
-        } catch (releaseErr) {
-          console.error(
-            `[JobHandler] Job ${this.session.job.id}: failed to release execution flag`,
-            releaseErr,
-          );
-        }
-      }
     }
 
+    this.cleanupFriendAfterComplete();
     return this.session.job;
+  }
+
+  private cleanupFriendAfterComplete(): void {
+    const job = this.session.job;
+    if (job.status !== "completed" || !job.removeFriendAfterComplete) {
+      return;
+    }
+
+    void this.session.ctx.client.friends
+      .removeFriend(job.friendCode)
+      .then(() => {
+        console.log(
+          `[JobHandler] Job ${job.id}: removed friend ${job.friendCode} after completion`,
+        );
+      })
+      .catch((err) => {
+        console.warn(
+          `[JobHandler] Job ${job.id}: failed to remove friend ${job.friendCode} after completion`,
+          err,
+        );
+      });
   }
 }

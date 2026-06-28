@@ -39,7 +39,11 @@ export interface UserProfile {
 // ============================================================================
 
 export type JobStatus =
-  "queued" | "processing" | "completed" | "failed" | "canceled";
+  | "queued"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "canceled";
 
 export type JobStage =
   | "send_request"
@@ -74,11 +78,11 @@ export interface Job {
   result?: AggregatedScoreResult;
   profile?: UserProfile;
   error?: string | null;
-  executing?: boolean;
   scoreProgress?: ScoreProgress | null;
   updateScoreDuration?: number | null;
   diffsToScrape?: number[] | null;
   context?: Record<string, unknown> | null;
+  removeFriendAfterComplete?: boolean;
   runAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -124,7 +128,12 @@ export interface FriendInfo {
 }
 
 export type FriendRecentEventDifficulty =
-  "basic" | "advanced" | "expert" | "master" | "remaster" | "utage";
+  | "basic"
+  | "advanced"
+  | "expert"
+  | "master"
+  | "remaster"
+  | "utage";
 
 export type FriendRecentEventFc = "fc" | "fcp" | "ap" | "app";
 export type FriendRecentEventFs = "fs" | "fsp" | "fdx" | "fdxp";

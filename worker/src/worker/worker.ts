@@ -5,11 +5,11 @@ import {
   Worker as BullMQWorker,
 } from "bullmq";
 import {
-  DXNET_WORKER_QUEUE_NAME,
+  getDxnetWorkerQueueName,
   type DxnetWorkerJobData,
 } from "@maimai-score-hub/shared";
 
-import { botManager, type ManagedBot } from "../common/bots/bot-manager.ts";
+import { botManager } from "../common/bots/bot-manager.ts";
 import { getJob, updateJob } from "../common/backend/jobs.ts";
 import { createBullmqWorkerOptions } from "../common/bullmq.ts";
 import { WORKER_DEFAULTS } from "../common/config.ts";
@@ -29,22 +29,61 @@ export function startWorker(): void {
 
 export class Worker {
   private queueWorker: BullMQWorker<DxnetWorkerJobData, void> | null = null;
+  private queueName: string | null = null;
+  private unsubscribeBotState: (() => void) | null = null;
 
   start(): void {
-    if (this.queueWorker) {
+    if (this.unsubscribeBotState) {
       return;
     }
 
+    this.unsubscribeBotState = botManager.onStateChanged(() => {
+      this.refreshQueueWorker();
+    });
+    this.refreshQueueWorker();
+
+    console.log("[Worker] Started");
+  }
+
+  stop(): void {
+    this.unsubscribeBotState?.();
+    this.unsubscribeBotState = null;
+    this.closeQueueWorker();
+
+    console.log("[Worker] Stopped");
+  }
+
+  private refreshQueueWorker(): void {
+    const bot = botManager.getBot();
+    const nextQueueName =
+      bot && !bot.expired ? getDxnetWorkerQueueName(bot.friendCode) : null;
+
+    if (nextQueueName === this.queueName) {
+      return;
+    }
+
+    this.closeQueueWorker();
+
+    if (!nextQueueName) {
+      if (bot?.expired) {
+        console.warn(
+          `[Worker] BullMQ worker paused: bot ${bot.friendCode} is expired`,
+        );
+      } else {
+        console.log("[Worker] Waiting for bot cookie before starting BullMQ");
+      }
+      return;
+    }
+
+    this.queueName = nextQueueName;
     this.queueWorker = new BullMQWorker<DxnetWorkerJobData, void>(
-      DXNET_WORKER_QUEUE_NAME,
+      nextQueueName,
       (job, token) => this.processQueueJob(job, token),
-      createBullmqWorkerOptions(WORKER_DEFAULTS.maxProcessJobs),
+      createBullmqWorkerOptions(),
     );
 
     this.queueWorker.on("ready", () => {
-      console.log(
-        `[Worker] BullMQ worker ready (queue=${DXNET_WORKER_QUEUE_NAME}, concurrency=${WORKER_DEFAULTS.maxProcessJobs})`,
-      );
+      console.log(`[Worker] BullMQ worker ready (queue=${nextQueueName})`);
     });
     this.queueWorker.on("error", (err) => {
       console.error("[Worker] BullMQ worker error:", err);
@@ -53,27 +92,21 @@ export class Worker {
       console.warn(`[Worker] BullMQ job stalled: ${jobId}`);
     });
     this.queueWorker.on("failed", (job, err) => {
-      console.error(
-        `[Worker] BullMQ job ${job?.id ?? "unknown"} failed:`,
-        err,
-      );
+      console.error(`[Worker] BullMQ job ${job?.id ?? "unknown"} failed:`, err);
     });
-
-    console.log("[Worker] Started");
   }
 
-  stop(): void {
+  private closeQueueWorker(): void {
     if (!this.queueWorker) {
       return;
     }
 
     const current = this.queueWorker;
     this.queueWorker = null;
+    this.queueName = null;
     current.close().catch((err) => {
       console.error("[Worker] Failed to close BullMQ worker:", err);
     });
-
-    console.log("[Worker] Stopped");
   }
 
   private async processQueueJob(
@@ -125,18 +158,27 @@ export class Worker {
       );
     }
 
-    if (
-      job.botUserFriendCode &&
-      job.botUserFriendCode !== bot.friendCode
-    ) {
-      await this.delayQueueJob(
-        queueJob,
-        token,
-        Date.now() + WORKER_DEFAULTS.queueRetryDelayMs,
-      );
+    if (!job.botUserFriendCode) {
+      await updateJob(job.id, {
+        status: "failed",
+        error: "DXNet job is missing botUserFriendCode",
+        runAt: null,
+        updatedAt: new Date(),
+      });
+      return;
     }
 
-    job = await this.markJobStarted(job, bot);
+    if (job.botUserFriendCode !== bot.friendCode) {
+      await updateJob(job.id, {
+        status: "failed",
+        error: `DXNet job routed to wrong bot queue: expected ${job.botUserFriendCode}, got ${bot.friendCode}`,
+        runAt: null,
+        updatedAt: new Date(),
+      });
+      return;
+    }
+
+    job = await this.markJobStarted(job);
     console.log(
       `[Worker] Processing job ${job.id} with bot ${bot.friendCode} (stage=${job.stage})`,
     );
@@ -146,18 +188,13 @@ export class Worker {
     await this.rescheduleIfNeeded(queueJob, token, finalJob);
   }
 
-  private async markJobStarted(job: Job, bot: ManagedBot): Promise<Job> {
+  private async markJobStarted(job: Job): Promise<Job> {
     const patch: JobPatch = {
-      executing: true,
       updatedAt: new Date(),
     };
 
     if (job.status === "queued") {
       patch.status = "processing";
-    }
-
-    if (!job.botUserFriendCode) {
-      patch.botUserFriendCode = bot.friendCode;
     }
 
     if (job.runAt) {

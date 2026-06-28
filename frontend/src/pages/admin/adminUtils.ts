@@ -69,7 +69,6 @@ export interface ActiveJob {
   botUserFriendCode: string | null;
   status: string;
   stage: string;
-  executing: boolean;
   scoreProgress: { completedDiffs: number[]; totalDiffs: number } | null;
   createdAt: string;
   updatedAt: string;
@@ -99,7 +98,6 @@ export interface SearchJobResult {
   status: string;
   stage: string;
   error: string | null;
-  executing: boolean;
   scoreProgress: { completedDiffs: number[]; totalDiffs: number } | null;
   updateScoreDuration: number | null;
   createdAt: string;

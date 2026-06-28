@@ -57,10 +57,6 @@ function getEnvInt(key: string, fallback: number): number {
 // ============================================================================
 
 export const WORKER_DEFAULTS = {
-  /** 心跳间隔 (ms) */
-  heartbeatIntervalMs: 20_000,
-  /** 最大并发处理任务数 */
-  maxProcessJobs: getEnvInt("MAX_PROCESS_JOBS", 8),
   /** Friend VS 并发数 */
   friendVSConcurrency: 2,
   /** 清理任务间隔 (ms) - 默认 5 分钟 */

@@ -63,12 +63,12 @@ export function loadPersistedBot(manager: BotManager): number {
 }
 
 export function bindBotSaveScheduler(manager: BotManager): () => void {
-  manager._onStateChanged(() => {
+  const unsubscribe = manager.onStateChanged(() => {
     scheduleBotSave(manager);
   });
 
   return () => {
-    manager._onStateChanged(null);
+    unsubscribe();
     flushScheduledBotSave(manager);
   };
 }

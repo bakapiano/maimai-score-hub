@@ -1,8 +1,4 @@
-import type {
-  Job,
-  JobPatch,
-  JobStage,
-} from "../../common/types.ts";
+import type { Job, JobPatch, JobStage } from "../../common/types.ts";
 
 import type { MaimaiClient } from "../../common/maimai/client.ts";
 import type { JobExecutionContext } from "./handlers/index.ts";
@@ -50,10 +46,7 @@ export class JobSession {
     });
   }
 
-  async transitionTo(
-    stage: JobStage,
-    patch: JobPatch = {},
-  ): Promise<Job> {
+  async transitionTo(stage: JobStage, patch: JobPatch = {}): Promise<Job> {
     return this.applyPatch({
       ...patch,
       stage,
@@ -109,20 +102,15 @@ export class JobSession {
 
     throw lastErr instanceof Error
       ? lastErr
-      : new Error(`applyPatch failed after ${PATCH_BACKOFF_MS.length} attempts`);
-  }
-
-  async touch(): Promise<void> {
-    this.ctx.job = await updateJob(this.ctx.job.id, {
-      updatedAt: new Date(),
-    });
+      : new Error(
+          `applyPatch failed after ${PATCH_BACKOFF_MS.length} attempts`,
+        );
   }
 
   async forceFail(error: string): Promise<void> {
     this.ctx.job = await updateJob(this.ctx.job.id, {
       status: "failed",
       error,
-      executing: false,
       runAt: null,
       updatedAt: new Date(),
     });

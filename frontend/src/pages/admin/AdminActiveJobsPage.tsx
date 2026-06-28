@@ -719,11 +719,7 @@ export default function AdminActiveJobsPage() {
                         variant="light"
                         size="sm"
                       >
-                        {job.status === "queued"
-                          ? "排队中"
-                          : job.executing
-                            ? "执行中"
-                            : "处理中"}
+                        {job.status === "queued" ? "排队中" : "处理中"}
                       </Badge>
                     </Table.Td>
                     <Table.Td>

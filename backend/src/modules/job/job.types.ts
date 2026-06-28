@@ -46,7 +46,6 @@ export interface JobPatchBody {
   error?: string | null;
   friendRequestSentAt?: string | null;
   friendRequestWaitStartedAt?: string | null;
-  executing?: boolean;
   runAt?: string | null;
   updatedAt?: string;
   scoreProgress?: ScoreProgress | null;
@@ -67,11 +66,11 @@ export interface JobResponse {
   // result?: any;
   profile?: UserProfile;
   error?: string | null;
-  executing?: boolean;
   scoreProgress?: ScoreProgress | null;
   updateScoreDuration?: number | null;
   diffsToScrape?: number[] | null;
   context?: Record<string, unknown> | null;
+  removeFriendAfterComplete?: boolean;
   runAt?: string | null;
   createdAt: string;
   updatedAt: string;

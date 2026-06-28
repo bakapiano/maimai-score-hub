@@ -14,6 +14,11 @@ export interface BotStatus {
   cabinetUserId: number | null;
 }
 
+const DXNET_BOT_FRIEND_LIMIT = (() => {
+  const parsed = Number(process.env.DXNET_BOT_FRIEND_LIMIT ?? 90);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 90;
+})();
+
 /**
  * Bot 状态管理服务
  * 存储 Worker 上报的 Bot 可用性信息（MongoDB），并定期清理分配给不可用 Bot 的任务
@@ -131,6 +136,21 @@ export class BotStatusService implements OnModuleDestroy {
   }
 
   /**
+   * Pick an available DXNet bot with friend capacity. Active job count is the
+   * primary load signal; friendCount is a capacity gate and tie-breaker.
+   */
+  async pickAvailableBot(): Promise<{ friendCode: string } | null> {
+    const all = await this.getAll();
+    const candidates = all.filter(
+      (b) => b.available && this.hasFriendCapacity(b),
+    );
+    if (candidates.length === 0) return null;
+
+    const [pick] = await this.sortByPickPriority(candidates);
+    return { friendCode: pick.friendCode };
+  }
+
+  /**
    * 更新指定 bot 的备注
    */
   async updateRemark(friendCode: string, remark: string | null): Promise<void> {
@@ -184,15 +204,24 @@ export class BotStatusService implements OnModuleDestroy {
   } | null> {
     const all = await this.getAll();
     const candidates = all.filter(
-      (b) => b.available && b.cabinetUserId != null,
+      (b) =>
+        b.available && b.cabinetUserId != null && this.hasFriendCapacity(b),
     );
     if (candidates.length === 0) return null;
 
-    // worker 每 60s 才上报一次 friendCount，AutoUpdate sweep 一次能在
-    // 几秒内连续触发 5-10 个 pick，那段时间所有 pick 看到的都是同一个
-    // friendCount snapshot，永远选最小的那个 → 全堆同一个 bot 上。
-    // 加上当前 queued/processing 的 in-flight job 数（这些 worker 还没
-    // 上报为 friendCount 增量），让连续 pick 也能体现"刚刚分了一个"。
+    const [pick] = await this.sortByPickPriority(candidates);
+    return { friendCode: pick.friendCode, cabinetUserId: pick.cabinetUserId! };
+  }
+
+  private hasFriendCapacity(bot: { friendCount: number | null }): boolean {
+    return bot.friendCount == null || bot.friendCount < DXNET_BOT_FRIEND_LIMIT;
+  }
+
+  private async sortByPickPriority<
+    T extends { friendCode: string; friendCount: number | null },
+  >(candidates: T[]): Promise<T[]> {
+    // Active queued/processing job count is the actual worker load. friendCount
+    // is only a capacity signal, so it is used as a tie-breaker after load.
     const fcs = candidates.map((c) => c.friendCode);
     const inflightAgg = await this.jobModel
       .aggregate<{ _id: string; count: number }>([
@@ -208,12 +237,15 @@ export class BotStatusService implements OnModuleDestroy {
     const inflight = new Map(inflightAgg.map((r) => [r._id, r.count]));
 
     candidates.sort((a, b) => {
-      const aLoad = (a.friendCount ?? 0) + (inflight.get(a.friendCode) ?? 0);
-      const bLoad = (b.friendCount ?? 0) + (inflight.get(b.friendCode) ?? 0);
-      return aLoad - bLoad;
+      const aJobLoad = inflight.get(a.friendCode) ?? 0;
+      const bJobLoad = inflight.get(b.friendCode) ?? 0;
+      if (aJobLoad !== bJobLoad) return aJobLoad - bJobLoad;
+
+      const aFriendUsage = a.friendCount ?? DXNET_BOT_FRIEND_LIMIT;
+      const bFriendUsage = b.friendCount ?? DXNET_BOT_FRIEND_LIMIT;
+      return aFriendUsage - bFriendUsage;
     });
-    const pick = candidates[0];
-    return { friendCode: pick.friendCode, cabinetUserId: pick.cabinetUserId! };
+    return candidates;
   }
 
   /**
@@ -260,7 +292,6 @@ export class BotStatusService implements OnModuleDestroy {
       {
         $set: {
           status: 'failed',
-          executing: false,
           error: 'Bot Cookie 已过期或不可用',
           updatedAt: new Date(),
         },

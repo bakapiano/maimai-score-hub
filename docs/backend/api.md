@@ -48,30 +48,30 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 以下接口均需要 User 认证。
 
-| 方法   | 路径                            | 入参                                                                                                          | 说明                                                                                                   |
-| ------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| GET    | `/me`                           | -                                                                                                             | 返回当前用户资料。不会暴露 import token 或原始 `cabinetUserId`，只返回 `has*` 布尔标记。               |
-| PATCH  | `/me`                           | body: `divingFishImportToken?`, `lxnsImportToken?`, `autoUpdate?`                                            | 更新导入 token 和自动更新开关。保存 token 后同步完成会默认自动导出到对应查分器；开启自动更新前必须已绑定机台二维码；返回脱敏后的用户资料。 |
-| PUT    | `/me/password`                  | body: `username?`, `currentPassword?`, `newPassword?`                                                         | 已登录用户设置/修改用户名和密码。已有密码时需要 `currentPassword`。                                    |
-| POST   | `/me/prober-tokens/diving-fish` | body: `username`, `password`                                                                                  | 用 Diving Fish 账号密码一次性获取 import token；用户名密码不保存。                                     |
-| PUT    | `/me/cabinet`                   | JSON body: `qrCode?`，或 multipart field: `image`                                                             | 绑定机台 `cabinetUserId`。要求账号尚未绑定，并且已完成过成绩同步；匹配失败返回 409。                   |
-| DELETE | `/me/cabinet`                   | -                                                                                                             | 解绑机台 userId，并关闭自动更新。                                                                      |
-| DELETE | `/me`                           | -                                                                                                             | 删除当前账号及相关数据，返回删除统计。                                                                 |
+| 方法   | 路径                            | 入参                                                              | 说明                                                                                                                                       |
+| ------ | ------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/me`                           | -                                                                 | 返回当前用户资料。不会暴露 import token 或原始 `cabinetUserId`，只返回 `has*` 布尔标记。                                                   |
+| PATCH  | `/me`                           | body: `divingFishImportToken?`, `lxnsImportToken?`, `autoUpdate?` | 更新导入 token 和自动更新开关。保存 token 后同步完成会默认自动导出到对应查分器；开启自动更新前必须已绑定机台二维码；返回脱敏后的用户资料。 |
+| PUT    | `/me/password`                  | body: `username?`, `currentPassword?`, `newPassword?`             | 已登录用户设置/修改用户名和密码。已有密码时需要 `currentPassword`。                                                                        |
+| POST   | `/me/prober-tokens/diving-fish` | body: `username`, `password`                                      | 用 Diving Fish 账号密码一次性获取 import token；用户名密码不保存。                                                                         |
+| PUT    | `/me/cabinet`                   | JSON body: `qrCode?`，或 multipart field: `image`                 | 绑定机台 `cabinetUserId`。要求账号尚未绑定，并且已完成过成绩同步；匹配失败返回 409。                                                       |
+| DELETE | `/me/cabinet`                   | -                                                                 | 解绑机台 userId，并关闭自动更新。                                                                                                          |
+| DELETE | `/me`                           | -                                                                 | 删除当前账号及相关数据，返回删除统计。                                                                                                     |
 
 ## 同步与成绩导出
 
 以下接口均需要 User 认证。
 
-| 方法 | 路径                                  | 入参                                    | 说明                                                                                       |
-| ---- | ------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------ |
-| GET  | `/me/sync/latest`                     | -                                       | 返回当前用户最近一次同步记录和 scores，可能为 `null`。                                     |
+| 方法 | 路径                                  | 入参                                    | 说明                                                                                        |
+| ---- | ------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------- |
+| GET  | `/me/sync/latest`                     | -                                       | 返回当前用户最近一次同步记录和 scores，可能为 `null`。                                      |
 | POST | `/me/sync/latest/exports/diving-fish` | -                                       | 创建异步 Diving Fish 导出任务，返回 `exportJobId`。要求用户已保存 `divingFishImportToken`。 |
 | POST | `/me/sync/latest/exports/lxns`        | -                                       | 创建异步 LXNS 导出任务，返回 `exportJobId`。要求用户已保存 `lxnsImportToken`。              |
-| GET  | `/me/prober-export-jobs/:exportJobId` | path: `exportJobId`                     | 查询当前用户自己的查分器导出任务结果。                                                     |
-| GET  | `/me/prober-export-jobs`              | query: `limit?`                         | 查询当前用户最近的查分器导出任务。                                                         |
-| GET  | `/me/score-exports/best50`            | -                                       | 生成 Best 50 PNG，响应 `Content-Type: image/png`，下载名 `best50.png`。                    |
-| GET  | `/me/score-exports/level`             | query: `level?`                         | 按等级生成成绩 PNG，下载名 `level-<level>.png`。                                           |
-| GET  | `/me/score-exports/version`           | query: `version?`, `minLevel?`, `plan?` | 按版本/牌子计划生成成绩 PNG。`plan` 支持 `jiang`、`ji`、`wuwu`、`shen`，非法值按 `jiang`。 |
+| GET  | `/me/prober-export-jobs/:exportJobId` | path: `exportJobId`                     | 查询当前用户自己的查分器导出任务结果。                                                      |
+| GET  | `/me/prober-export-jobs`              | query: `limit?`                         | 查询当前用户最近的查分器导出任务。                                                          |
+| GET  | `/me/score-exports/best50`            | -                                       | 生成 Best 50 PNG，响应 `Content-Type: image/png`，下载名 `best50.png`。                     |
+| GET  | `/me/score-exports/level`             | query: `level?`                         | 按等级生成成绩 PNG，下载名 `level-<level>.png`。                                            |
+| GET  | `/me/score-exports/version`           | query: `version?`, `minLevel?`, `plan?` | 按版本/牌子计划生成成绩 PNG。`plan` 支持 `jiang`、`ji`、`wuwu`、`shen`，非法值按 `jiang`。  |
 
 ## DXNet Job
 
@@ -100,15 +100,15 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 ### DXNet Worker
 
-| 方法  | 路径                                                         | 入参                                                                                                                                                 | 说明                                                                                                      |
-| ----- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| GET   | `/workers/dxnet/bots/:botUserFriendCode/active-friend-codes` | path: `botUserFriendCode`                                                                                                                            | 查询指定 bot 当前活跃 job 覆盖的好友码列表。                                                              |
-| GET   | `/workers/dxnet/jobs/:jobId`                                 | path: `jobId`                                                                                                                                        | worker 按 id 获取 job。                                                                                   |
-| PATCH | `/workers/dxnet/jobs/:jobId`                                 | body: `status?`, `stage?`, `result?`, `profile?`, `error?`, `executing?`, `runAt?`, `scoreProgress?`, `addCompletedDiff?`, `updateScoreDuration?` 等 | worker 更新 job 状态、阶段、进度、结果或错误。`get_user_recent_event` 完成后后端会把 events 合并进 sync。 |
-| POST  | `/workers/dxnet/users/activity`                              | body: `friendCodes: string[]`                                                                                                                        | 批量查询用户最近活跃时间和机台绑定状态，返回 `{ friendCode, lastActiveAt, cabinetUserId }[]`。             |
-| GET   | `/workers/dxnet/jobs/:jobId/cache/:diff/:type`               | path: `jobId`, `diff`, `type`                                                                                                                        | 读取 `update_score` 临时缓存的 FriendVS 解析结果。缺失返回 400。                                          |
-| PUT   | `/workers/dxnet/jobs/:jobId/cache/:diff/:type`               | body: `songs: FriendVsSong[]`                                                                                                                        | 写入临时缓存，返回 `{ success: true }`。                                                                  |
-| POST  | `/workers/dxnet/jobs/:jobId/api-logs`                        | body: `logs: { url, method, statusCode, responseBody? }[]`                                                                                           | worker 上报某 job 的外部 API 调用日志。                                                                   |
+| 方法  | 路径                                                         | 入参                                                                                                                                   | 说明                                                                                                      |
+| ----- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| GET   | `/workers/dxnet/bots/:botUserFriendCode/active-friend-codes` | path: `botUserFriendCode`                                                                                                              | 查询指定 bot 当前活跃 job 覆盖的好友码列表。                                                              |
+| GET   | `/workers/dxnet/jobs/:jobId`                                 | path: `jobId`                                                                                                                          | worker 按 id 获取 job。                                                                                   |
+| PATCH | `/workers/dxnet/jobs/:jobId`                                 | body: `status?`, `stage?`, `result?`, `profile?`, `error?`, `runAt?`, `scoreProgress?`, `addCompletedDiff?`, `updateScoreDuration?` 等 | worker 更新 job 状态、阶段、进度、结果或错误。`get_user_recent_event` 完成后后端会把 events 合并进 sync。 |
+| POST  | `/workers/dxnet/users/activity`                              | body: `friendCodes: string[]`                                                                                                          | 批量查询用户最近活跃时间和机台绑定状态，返回 `{ friendCode, lastActiveAt, cabinetUserId }[]`。            |
+| GET   | `/workers/dxnet/jobs/:jobId/cache/:diff/:type`               | path: `jobId`, `diff`, `type`                                                                                                          | 读取 `update_score` 临时缓存的 FriendVS 解析结果。缺失返回 400。                                          |
+| PUT   | `/workers/dxnet/jobs/:jobId/cache/:diff/:type`               | body: `songs: FriendVsSong[]`                                                                                                          | 写入临时缓存，返回 `{ success: true }`。                                                                  |
+| POST  | `/workers/dxnet/jobs/:jobId/api-logs`                        | body: `logs: { url, method, statusCode, responseBody? }[]`                                                                             | worker 上报某 job 的外部 API 调用日志。                                                                   |
 
 ### SDGB Worker
 
@@ -163,20 +163,18 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 ### Bot 管理
 
-| 方法   | 路径                                          | 入参                                  | 说明                                                                                  |
-| ------ | --------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------- |
-| GET    | `/admin/bots`                                 | -                                     | 返回全部 bot 状态。                                                                   |
-| GET    | `/admin/bots/:botFriendCode/friend-snapshots` | path: `botFriendCode`                 | 查询某 bot 最近好友列表快照；不存在时返回空列表。                                     |
-| PATCH  | `/admin/bots/:friendCode/remark`              | body: `remark: string \| null`        | 更新 bot 管理备注。                                                                   |
-| PATCH  | `/admin/bots/:friendCode/cabinet-user-id`     | body: `cabinetUserId: number \| null` | 配置 bot 的机台 userId。                                                              |
-| DELETE | `/admin/bots/:friendCode`                     | path: numeric `friendCode`            | 删除 bot 状态行；内嵌好友快照随状态行一起删除。worker 仍在线时下次心跳会重建。       |
-| POST   | `/admin/bots/:friendCode/cabinet/bind-qr`     | body: `qrCode: string`                | 通过 sdgb-worker 扫码绑定 bot 的 `cabinetUserId`。                                    |
+| 方法   | 路径                                      | 入参                                  | 说明                                                                           |
+| ------ | ----------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------ |
+| GET    | `/admin/bots`                             | -                                     | 返回全部 bot 状态。                                                            |
+| PATCH  | `/admin/bots/:friendCode/remark`          | body: `remark: string \| null`        | 更新 bot 管理备注。                                                            |
+| PATCH  | `/admin/bots/:friendCode/cabinet-user-id` | body: `cabinetUserId: number \| null` | 配置 bot 的机台 userId。                                                       |
+| DELETE | `/admin/bots/:friendCode`                 | path: numeric `friendCode`            | 删除 bot 状态行；内嵌好友快照随状态行一起删除。worker 仍在线时下次心跳会重建。 |
+| POST   | `/admin/bots/:friendCode/cabinet/bind-qr` | body: `qrCode: string`                | 通过 sdgb-worker 扫码绑定 bot 的 `cabinetUserId`。                             |
 
 ## OpenAPI 覆盖差异
 
 `/api/v1/swagger` 使用 `shared/openapi/openapi.yaml`。该文件覆盖了 shared contracts 中定义的大部分用户、worker、admin 和 catalog 接口，但下列 controller-only 接口当前不在 generated OpenAPI 中，或实现比 contract 多：
 
-- `GET /admin/bots/:botFriendCode/friend-snapshots`
 - `POST /admin/bots/:friendCode/cabinet/bind-qr`
 - `/admin/worker-logs*`
 - `POST /workers/logs/:kind/batches`

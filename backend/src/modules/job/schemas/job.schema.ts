@@ -43,9 +43,6 @@ export class JobEntity {
   @Prop({ type: String, default: null })
   error!: string | null;
 
-  @Prop({ required: true, default: false })
-  executing!: boolean;
-
   @Prop({ type: MongooseSchema.Types.Mixed, default: null })
   scoreProgress!: ScoreProgress | null;
 
@@ -57,6 +54,9 @@ export class JobEntity {
 
   @Prop({ type: MongooseSchema.Types.Mixed, default: null })
   context!: Record<string, unknown> | null;
+
+  @Prop({ type: Boolean, default: false })
+  removeFriendAfterComplete!: boolean;
 
   /**
    * Next time this job may be delivered by BullMQ. Null means immediately
@@ -79,30 +79,7 @@ export const JobSchema = SchemaFactory.createForClass(JobEntity);
 // 7 天 TTL 索引，自动清理过期 job
 JobSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7 * 24 * 60 * 60 });
 
-// Hot-path indexes. Before these, the `jobs` collection only had
-// _id / id / createdAt (TTL), and every dispatch sweep + stale-lock release
-// + pickAvailableCabinetBot bot-load aggregation did a full COLLSCAN, which
-// overloaded mongo (169% CPU) on 2026-05-29.
-JobSchema.index(
-  { status: 1, botUserFriendCode: 1, executing: 1 },
-  { name: 'hot_claim' },
-);
-JobSchema.index({ executing: 1, updatedAt: 1 }, { name: 'stale_lock' });
-JobSchema.index(
-  { status: 1, botUserFriendCode: 1, executing: 1, runAt: 1 },
-  { name: 'hot_claim_due' },
-);
-JobSchema.index(
-  {
-    status: 1,
-    botUserFriendCode: 1,
-    executing: 1,
-    runAt: 1,
-    priority: -1,
-    updatedAt: 1,
-  },
-  { name: 'hot_claim_priority' },
-);
+// Hot-path indexes for active job lookups and per-bot load aggregation.
 JobSchema.index({ botUserFriendCode: 1, status: 1 }, { name: 'bot_status' });
 JobSchema.index(
   { jobType: 1, friendCode: 1, createdAt: -1 },

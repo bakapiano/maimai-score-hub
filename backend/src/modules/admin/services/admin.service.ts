@@ -84,7 +84,6 @@ export interface ActiveJob {
   botUserFriendCode: string | null;
   status: string;
   stage: string;
-  executing: boolean;
   scoreProgress: { completedDiffs: number[]; totalDiffs: number } | null;
   createdAt: string;
   updatedAt: string;
@@ -105,7 +104,6 @@ export interface SearchJobResult {
   status: string;
   stage: string;
   error: string | null;
-  executing: boolean;
   scoreProgress: { completedDiffs: number[]; totalDiffs: number } | null;
   updateScoreDuration: number | null;
   createdAt: string;
@@ -216,7 +214,6 @@ export class AdminService {
         botUserFriendCode: job.botUserFriendCode ?? null,
         status: job.status,
         stage: job.stage,
-        executing: job.executing,
         scoreProgress: job.scoreProgress,
         createdAt: job.createdAt.toISOString(),
         updatedAt: job.updatedAt.toISOString(),
@@ -435,7 +432,8 @@ export class AdminService {
       const pipeline = [
         {
           $match: {
-            jobType: kind === 'score' ? 'update_score' : { $ne: 'update_score' },
+            jobType:
+              kind === 'score' ? 'update_score' : { $ne: 'update_score' },
             createdAt: { $gte: startTime },
           },
         },
@@ -624,7 +622,6 @@ export class AdminService {
           status: job.status,
           stage: job.stage,
           error: job.error ?? null,
-          executing: job.executing,
           scoreProgress: job.scoreProgress ?? null,
           updateScoreDuration: job.updateScoreDuration ?? null,
           createdAt: job.createdAt.toISOString(),

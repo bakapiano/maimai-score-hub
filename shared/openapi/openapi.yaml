@@ -142,8 +142,6 @@ paths:
                       error:
                         type: string
                         nullable: true
-                      executing:
-                        type: boolean
                       scoreProgress:
                         type: object
                         properties:
@@ -172,6 +170,8 @@ paths:
                         type: object
                         additionalProperties: {}
                         nullable: true
+                      removeFriendAfterComplete:
+                        type: boolean
                       runAt:
                         type: string
                         nullable: true
@@ -285,8 +285,6 @@ paths:
                       error:
                         type: string
                         nullable: true
-                      executing:
-                        type: boolean
                       scoreProgress:
                         type: object
                         properties:
@@ -315,6 +313,8 @@ paths:
                         type: object
                         additionalProperties: {}
                         nullable: true
+                      removeFriendAfterComplete:
+                        type: boolean
                       runAt:
                         type: string
                         nullable: true
@@ -1406,8 +1406,6 @@ paths:
                       error:
                         type: string
                         nullable: true
-                      executing:
-                        type: boolean
                       scoreProgress:
                         type: object
                         properties:
@@ -1436,6 +1434,8 @@ paths:
                         type: object
                         additionalProperties: {}
                         nullable: true
+                      removeFriendAfterComplete:
+                        type: boolean
                       runAt:
                         type: string
                         nullable: true
@@ -1541,8 +1541,6 @@ paths:
                   error:
                     type: string
                     nullable: true
-                  executing:
-                    type: boolean
                   scoreProgress:
                     type: object
                     properties:
@@ -1571,6 +1569,8 @@ paths:
                     type: object
                     additionalProperties: {}
                     nullable: true
+                  removeFriendAfterComplete:
+                    type: boolean
                   runAt:
                     type: string
                     nullable: true
@@ -1653,8 +1653,6 @@ paths:
                       error:
                         type: string
                         nullable: true
-                      executing:
-                        type: boolean
                       scoreProgress:
                         type: object
                         properties:
@@ -1683,6 +1681,8 @@ paths:
                         type: object
                         additionalProperties: {}
                         nullable: true
+                      removeFriendAfterComplete:
+                        type: boolean
                       runAt:
                         type: string
                         nullable: true
@@ -1819,8 +1819,6 @@ paths:
                       error:
                         type: string
                         nullable: true
-                      executing:
-                        type: boolean
                       scoreProgress:
                         type: object
                         properties:
@@ -1849,6 +1847,8 @@ paths:
                         type: object
                         additionalProperties: {}
                         nullable: true
+                      removeFriendAfterComplete:
+                        type: boolean
                       runAt:
                         type: string
                         nullable: true
@@ -1930,8 +1930,6 @@ paths:
                   error:
                     type: string
                     nullable: true
-                  executing:
-                    type: boolean
                   scoreProgress:
                     type: object
                     properties:
@@ -1960,6 +1958,8 @@ paths:
                     type: object
                     additionalProperties: {}
                     nullable: true
+                  removeFriendAfterComplete:
+                    type: boolean
                   runAt:
                     type: string
                     nullable: true
@@ -2025,8 +2025,6 @@ paths:
                 friendRequestWaitStartedAt:
                   type: string
                   nullable: true
-                executing:
-                  type: boolean
                 runAt:
                   type: string
                   nullable: true
@@ -2108,8 +2106,6 @@ paths:
                   error:
                     type: string
                     nullable: true
-                  executing:
-                    type: boolean
                   scoreProgress:
                     type: object
                     properties:
@@ -2138,6 +2134,8 @@ paths:
                     type: object
                     additionalProperties: {}
                     nullable: true
+                  removeFriendAfterComplete:
+                    type: boolean
                   runAt:
                     type: string
                     nullable: true
