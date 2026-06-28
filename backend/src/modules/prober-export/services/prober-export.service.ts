@@ -136,9 +136,13 @@ export class ProberExportService implements OnModuleDestroy {
     sourceTaskId?: string | null;
   }): Promise<ProberExportJobView | null> {
     const user = await this.users.findByFriendCode(input.friendCode);
-    if (!user) return null;
+    if (!user) {
+      return null;
+    }
     const targets = this.resolveTargets(user);
-    if (!targets.length) return null;
+    if (!targets.length) {
+      return null;
+    }
 
     return this.createAndQueue({
       trigger: input.trigger,
@@ -223,7 +227,9 @@ export class ProberExportService implements OnModuleDestroy {
       )
       .lean<ProberExportJobEntity | null>();
 
-    if (!doc) return;
+    if (!doc) {
+      return;
+    }
 
     let result: ProberExportResult = { ...(doc.result ?? {}) };
     let status: ProberExportStatus = 'failed';
@@ -231,11 +237,15 @@ export class ProberExportService implements OnModuleDestroy {
 
     try {
       const user = await this.users.findByFriendCode(doc.friendCode);
-      if (!user) throw new Error('User not found');
+      if (!user) {
+        throw new Error('User not found');
+      }
 
       for (const target of doc.targets ?? []) {
         const existing = result[target];
-        if (existing?.status === 'success') continue;
+        if (existing?.status === 'success') {
+          continue;
+        }
         result = {
           ...result,
           [target]: await this.exportTarget(doc, target, user),
@@ -270,7 +280,9 @@ export class ProberExportService implements OnModuleDestroy {
 
   @Interval(SWEEP_INTERVAL_MS)
   async sweepStaleAndQueued(): Promise<void> {
-    if (this.sweepRunning) return;
+    if (this.sweepRunning) {
+      return;
+    }
     this.sweepRunning = true;
     try {
       const now = new Date();
@@ -386,8 +398,12 @@ export class ProberExportService implements OnModuleDestroy {
 
   private resolveTargets(user: UserWithTokens): ProberExportProvider[] {
     const targets: ProberExportProvider[] = [];
-    if (user.divingFishImportToken) targets.push('divingFish');
-    if (user.lxnsImportToken) targets.push('lxns');
+    if (user.divingFishImportToken) {
+      targets.push('divingFish');
+    }
+    if (user.lxnsImportToken) {
+      targets.push('lxns');
+    }
     return targets;
   }
 
@@ -466,9 +482,15 @@ export class ProberExportService implements OnModuleDestroy {
     const entries = targets
       .map((target) => result[target])
       .filter((entry): entry is ProberExportProviderResult => !!entry);
-    if (!entries.length) return 'skipped';
-    if (entries.every((entry) => entry.status === 'skipped')) return 'skipped';
-    if (entries.every((entry) => entry.status === 'failed')) return 'failed';
+    if (!entries.length) {
+      return 'skipped';
+    }
+    if (entries.every((entry) => entry.status === 'skipped')) {
+      return 'skipped';
+    }
+    if (entries.every((entry) => entry.status === 'failed')) {
+      return 'failed';
+    }
     if (entries.some((entry) => entry.status === 'failed')) {
       return 'partial_failed';
     }
@@ -479,7 +501,9 @@ export class ProberExportService implements OnModuleDestroy {
     job: ProberExportJobEntity,
     result: ProberExportResult,
   ): Promise<void> {
-    if (job.trigger === 'manual') return;
+    if (job.trigger === 'manual') {
+      return;
+    }
 
     const mirror = this.toMirror(result);
     await this.syncs.updateAutoExportResultBySyncId(job.syncId, mirror);

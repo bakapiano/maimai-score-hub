@@ -5,7 +5,10 @@
  * 构建双向 ID 映射。
  */
 
-import { convertDivingFishItemToDocument } from './diving-fish/transform';
+import {
+  convertDivingFishItemToDocument,
+  type DivingFishItem,
+} from './diving-fish/transform';
 import {
   convertLxnsSongToDocument,
   buildGenreMap,
@@ -86,7 +89,7 @@ function makeKeyForDoc(source: SourceName, doc: MusicDoc): string {
 // Convert raw API data → MusicDoc[]
 // ---------------------------------------------------------------------------
 
-export function buildDivingFishDocs(items: any[]): MusicDoc[] {
+export function buildDivingFishDocs(items: DivingFishItem[]): MusicDoc[] {
   const now = new Date();
   return items.map(
     (item) => convertDivingFishItemToDocument(item, now) as MusicDoc,

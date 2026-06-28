@@ -58,7 +58,7 @@ function toSafeProfile(user: Record<string, unknown>) {
     id: String(user._id ?? user.id),
     hasDivingFishImportToken: !!divingFishImportToken,
     hasLxnsImportToken: !!lxnsImportToken,
-    hasCabinetUserId: cabinetUserId != null,
+    hasCabinetUserId: cabinetUserId !== null && cabinetUserId !== undefined,
     hasPassword: !!passwordHash,
     autoUpdate: !!user.autoUpdate,
   };
@@ -107,7 +107,7 @@ export class MeController {
     if (body.autoUpdate !== undefined) {
       if (body.autoUpdate) {
         const user = await this.users.getById(userId);
-        if (user.cabinetUserId == null) {
+        if (user.cabinetUserId === null || user.cabinetUserId === undefined) {
           throw new BadRequestException('请先绑定二维码再开启自动更新');
         }
       }
@@ -204,7 +204,10 @@ export class MeController {
     }
 
     const user = await this.users.getById(userId);
-    if ((user as { cabinetUserId?: number | null }).cabinetUserId != null) {
+    if (
+      (user as { cabinetUserId?: number | null }).cabinetUserId !== null &&
+      (user as { cabinetUserId?: number | null }).cabinetUserId !== undefined
+    ) {
       throw new BadRequestException('该账号已绑定二维码，无法重复绑定');
     }
     const result = await this.cabinet.bindByQr(user.friendCode, qrCode);
@@ -235,7 +238,7 @@ export class MeController {
       throw new BadRequestException('No user context');
     }
     const user = await this.users.getById(userId);
-    if (user.cabinetUserId == null) {
+    if (user.cabinetUserId === null || user.cabinetUserId === undefined) {
       throw new BadRequestException('当前账号未绑定二维码');
     }
     await this.users.update(userId, {

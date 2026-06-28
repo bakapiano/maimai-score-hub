@@ -8,22 +8,32 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 export function mapDivingFishCategory(raw: unknown): string | null | undefined {
-  if (typeof raw !== 'string') return raw as string | null | undefined;
+  if (typeof raw !== 'string') {
+    return raw as string | null | undefined;
+  }
   return CATEGORY_MAP[raw] ?? raw;
 }
 
 export function mapDivingFishType(
   rawType: string | undefined,
   mappedCategory?: string | null,
-): 'standard' | 'dx' | 'utage' | string | undefined {
-  if (mappedCategory === '宴会場') return 'utage';
-  if (rawType === 'SD') return 'standard';
-  if (rawType === 'DX') return 'dx';
+): string | undefined {
+  if (mappedCategory === '宴会場') {
+    return 'utage';
+  }
+  if (rawType === 'SD') {
+    return 'standard';
+  }
+  if (rawType === 'DX') {
+    return 'dx';
+  }
   return rawType;
 }
 
 export function getDivingFishMusicSourceUrl(
   configService: ConfigService,
 ): string {
-  return 'https://www.diving-fish.com/api/maimaidxprober/music_data';
+  return (
+    configService.get<string>('DIVING_FISH_MUSIC_URL') ?? DEFAULT_SOURCE_URL
+  );
 }

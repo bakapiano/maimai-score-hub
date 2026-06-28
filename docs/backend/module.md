@@ -21,12 +21,12 @@
 
 | Module              | 路径                               | 导出服务                                                   | 负责功能摘要                                                               |
 | ------------------- | ---------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `AdminModule`       | `backend/src/modules/admin`        | `AdminService`                                             | 管理后台聚合查询与运维动作入口。                                           |
+| `AdminModule`       | `backend/src/modules/admin`        | `AdminSummaryService`、`AdminJobMetricsService` 等         | 管理后台聚合查询与运维动作入口。                                           |
 | `AuthModule`        | `backend/src/modules/auth`         | `AuthService`、`AuthGuard`、`QrLoginService`               | 登录、JWT 校验、好友请求登录和机台二维码登录。                             |
 | `AutoUpdateModule`  | `backend/src/modules/auto-update`  | `AutoUpdateSchedulerService`                               | Rival-first 自动更新调度、Map auxiliary、FC/FS enrichment 触发和失败退避。 |
 | `BotsModule`        | `backend/src/modules/bots`         | `BotStatusService`、`BotFriendSnapshotService`             | DXNet bot 状态、好友快照、可用性选择和不可用任务清理。                     |
 | `CoverModule`       | `backend/src/modules/cover`        | `CoverService`                                             | 本地封面文件查找、同步、格式变体生成和封面数量统计。                       |
-| `JobModule`         | `backend/src/modules/job`          | `JobService`、`JobTempCacheService`、`JobApiLogService`    | DXNet worker 任务队列与任务生命周期。                                      |
+| `JobModule`         | `backend/src/modules/job`          | `JobService`、`JobFriendshipService`、`JobQueueService` 等 | DXNet worker 任务队列与任务生命周期。                                      |
 | `MusicModule`       | `backend/src/modules/music`        | `MusicService`                                             | 曲库数据、曲库来源配置、曲库定时同步和曲库缓存。                           |
 | `ScoreExportModule` | `backend/src/modules/score-export` | `ScoreExportService`                                       | 将同步成绩渲染为 PNG 图片。                                                |
 | `SdgbWorkerModule`  | `backend/src/modules/sdgb-worker`  | `SdgbJobService`、`SdgbJobDispatcher`                      | 机台协议 worker 的任务队列、调度和同步调用封装。                           |
@@ -41,7 +41,7 @@
 - 面向管理后台聚合数据，不直接表达用户侧业务流程。
 - 统计用户、曲库、同步、封面、DXNet job、自动更新、prober 导出等运维指标。
 - 调用 `CoverService` / `MusicService` / `JobService` / `SdgbJobService` 等服务执行管理操作。
-- 直接读取多个 Mongo model，用于 dashboard、job 搜索、趋势、错误统计和指标聚合。
+- 按职责拆分为 summary、users、catalog、job query、job metrics、auto-update metrics、prober export metrics 等服务。
 
 ### `AuthModule`
 

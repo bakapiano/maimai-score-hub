@@ -47,8 +47,21 @@ type MusicCache = {
   byTitleKey: Map<string, MusicRow>;
   byTitle: Map<string, MusicRow[]>;
 };
+type VsScorePayload = {
+  dxScore?: string | null;
+  score?: string | null;
+  fs?: string | null;
+  fc?: string | null;
+};
+type VsScoreRow = {
+  category: string;
+  type: string;
+  title: string;
+  chartIndex: number;
+  payload: VsScorePayload;
+};
 
-type RecentFcFsEvent = {
+export type RecentFcFsEvent = {
   time?: unknown;
   songName?: unknown;
   difficulty?: unknown;
@@ -71,7 +84,9 @@ const DIFFICULTY_TO_CHART_INDEX: Record<string, number> = {
 const FC_RANK = ['fc', 'fcp', 'ap', 'app'] as const;
 const FS_RANK = ['fs', 'fsp', 'fdx', 'fdxp'] as const;
 function rankIdx(table: readonly string[], v: string | null): number {
-  if (v == null) return -1;
+  if (v === null) {
+    return -1;
+  }
   const i = table.indexOf(v);
   return i < 0 ? -1 : i;
 }
@@ -84,7 +99,9 @@ function pickHigher(
 }
 /** Parse a numeric score string. dxScore is plain int, score is "100.3107%". */
 function numScore(v: string | null): number {
-  if (v == null) return -Infinity;
+  if (v === null) {
+    return -Infinity;
+  }
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : -Infinity;
 }
@@ -96,7 +113,9 @@ function parseRecentEventTime(value: string): Date | null {
   const match = /^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})$/.exec(
     value.trim(),
   );
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
   const [, year, month, day, hour, minute] = match;
   const parsed = new Date(`${year}-${month}-${day}T${hour}:${minute}:00+08:00`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
@@ -135,8 +154,12 @@ export class SyncService {
   ) {}
 
   async createFromJob(job: JobLike) {
-    if (job.jobType && job.jobType !== 'update_score') return null;
-    if (!job.result) return null;
+    if (job.jobType && job.jobType !== 'update_score') {
+      return null;
+    }
+    if (!job.result) {
+      return null;
+    }
 
     const syncId = randomUUID();
     const newScores = await this.mapResultToScores(job.result);
@@ -219,7 +242,7 @@ export class SyncService {
       .sort({ createdAt: -1 })
       .lean();
     const previousScores: ScoreSnapshot[] = Array.isArray(previous?.scores)
-      ? [...(previous.scores as ScoreSnapshot[])]
+      ? [...previous.scores]
       : [];
     if (!previousScores.length) {
       return {
@@ -245,11 +268,15 @@ export class SyncService {
           ? event.difficulty.toLowerCase()
           : '';
       const chartIndex = DIFFICULTY_TO_CHART_INDEX[difficulty];
-      if (!songName || chartIndex === undefined) continue;
+      if (!songName || chartIndex === undefined) {
+        continue;
+      }
 
       const candidates = byTitle.get(songName) ?? [];
       const candidateIds = new Set(candidates.map((m) => m.id));
-      if (!candidateIds.size) continue;
+      if (!candidateIds.size) {
+        continue;
+      }
 
       const matches = previousScores.filter(
         (score) =>
@@ -261,7 +288,9 @@ export class SyncService {
         continue;
       }
       const score = matches[0];
-      if (!score) continue;
+      if (!score) {
+        continue;
+      }
 
       matchedCount++;
       const nextFc =
@@ -312,7 +341,9 @@ export class SyncService {
     events: RecentFcFsEvent[],
     since: Date | null | undefined,
   ): RecentFcFsEvent[] {
-    if (!since) return events;
+    if (!since) {
+      return events;
+    }
     return events.filter((event) => {
       const parsed =
         typeof event.time === 'string'
@@ -382,7 +413,7 @@ export class SyncService {
   ): ScoreSnapshot[] {
     const merged = new Map<string, ScoreSnapshot>();
     if (Array.isArray(previousScores)) {
-      for (const s of previousScores as ScoreSnapshot[]) {
+      for (const s of previousScores) {
         merged.set(`${s.musicId}::${s.chartIndex}`, s);
       }
     }
@@ -427,117 +458,154 @@ export class SyncService {
     return this.musicCache;
   }
 
-  private async mapResultToScores(result: any): Promise<ScoreSnapshot[]> {
-    if (!result || typeof result !== 'object') return [];
+  private async mapResultToScores(result: unknown): Promise<ScoreSnapshot[]> {
+    if (!result || typeof result !== 'object') {
+      return [];
+    }
 
     const { byTitleKey: musicMap } = await this.getMusicCache();
-
     const scores: ScoreSnapshot[] = [];
-
-    for (const [category, typeMap] of Object.entries(
-      result as Record<
-        string,
-        Record<string, Record<string, Record<string, unknown>>>
-      >,
-    )) {
-      if (!typeMap || typeof typeMap !== 'object') continue;
-
-      for (const [type, songs] of Object.entries(
-        typeMap as Record<string, Record<string, Record<string, unknown>>>,
-      )) {
-        if (!songs || typeof songs !== 'object') continue;
-
-        for (const [title, charts] of Object.entries(
-          songs as Record<string, Record<string, unknown>>,
-        )) {
-          if (!charts || typeof charts !== 'object') continue;
-          let resolvedTitle = title;
-
-          for (const [indexStr, payload] of Object.entries(
-            charts as Record<
-              string,
-              {
-                dxScore?: string | null;
-                score?: string | null;
-                fs?: string | null;
-                fc?: string | null;
-              }
-            >,
-          )) {
-            const chartIndex = Number(indexStr);
-            if (Number.isNaN(chartIndex)) continue;
-
-            const dxScoreFromVS = payload?.dxScore ?? null;
-            const scoreFromVS = payload?.score ?? null;
-            if (dxScoreFromVS === null && scoreFromVS === null) {
-              continue;
-            }
-
-            // Fix for 11422, title is single full-width space
-            if (resolvedTitle.length === 0) {
-              resolvedTitle = '\u3000';
-            }
-
-            const music = musicMap.get(
-              `${category || ''}::${resolvedTitle}::${type}`,
-            );
-            if (!music) {
-              this.logger.warn(
-                `No music found for score: category="${category}", type="${type}", title="${resolvedTitle}, key="${category || ''}::${resolvedTitle}::${type}"`,
-              );
-              continue;
-            }
-
-            const chart = Array.isArray(music.charts)
-              ? (music.charts[chartIndex === 10 ? 0 : chartIndex] as
-                  | ChartPayload
-                  | undefined)
-              : undefined;
-            if (!chart || chart.cid === undefined || chart.cid === null) {
-              this.logger.warn(
-                `No chart found for score: category="${category}", type="${type}", title="${title}", chartIndex=${chartIndex}`,
-              );
-              continue;
-            }
-
-            const achievement = normalizeAchievement(scoreFromVS);
-            const musicDetailLevel = chart.detailLevel ?? null;
-            const rating =
-              musicDetailLevel !== null && achievement !== null
-                ? getRating(musicDetailLevel, achievement)
-                : null;
-
-            scores.push({
-              musicId: music.id,
-              cid: music.id + '_' + (chartIndex === 10 ? 0 : chartIndex),
-              chartIndex,
-              type,
-              dxScore: dxScoreFromVS,
-              score: scoreFromVS,
-              fs: payload?.fs ?? null,
-              fc: payload?.fc ?? null,
-              rating,
-              isNew: music.isNew ?? null,
-            });
-          }
-        }
+    for (const row of this.iterVsScoreRows(result)) {
+      const score = this.mapVsScoreRow(row, musicMap);
+      if (score) {
+        scores.push(score);
       }
     }
 
     return scores;
   }
 
+  private *iterVsScoreRows(result: object): Generator<VsScoreRow> {
+    const categoryMap = result as Record<
+      string,
+      Record<string, Record<string, Record<string, VsScorePayload>>>
+    >;
+    for (const [category, typeMap] of Object.entries(categoryMap)) {
+      if (!typeMap || typeof typeMap !== 'object') {
+        continue;
+      }
+      yield* this.iterVsTypeRows(category, typeMap);
+    }
+  }
+
+  private *iterVsTypeRows(
+    category: string,
+    typeMap: Record<string, Record<string, Record<string, VsScorePayload>>>,
+  ): Generator<VsScoreRow> {
+    for (const [type, songs] of Object.entries(typeMap)) {
+      if (!songs || typeof songs !== 'object') {
+        continue;
+      }
+      yield* this.iterVsSongRows(category, type, songs);
+    }
+  }
+
+  private *iterVsSongRows(
+    category: string,
+    type: string,
+    songs: Record<string, Record<string, VsScorePayload>>,
+  ): Generator<VsScoreRow> {
+    for (const [title, charts] of Object.entries(songs)) {
+      if (!charts || typeof charts !== 'object') {
+        continue;
+      }
+      for (const [indexStr, payload] of Object.entries(charts)) {
+        const chartIndex = Number(indexStr);
+        if (!Number.isNaN(chartIndex)) {
+          yield { category, type, title, chartIndex, payload };
+        }
+      }
+    }
+  }
+
+  private mapVsScoreRow(
+    row: VsScoreRow,
+    musicMap: Map<string, MusicRow>,
+  ): ScoreSnapshot | null {
+    const dxScoreFromVS = row.payload.dxScore ?? null;
+    const scoreFromVS = row.payload.score ?? null;
+    if (dxScoreFromVS === null && scoreFromVS === null) {
+      return null;
+    }
+    const resolvedTitle = row.title.length === 0 ? '\u3000' : row.title;
+    const music = musicMap.get(
+      `${row.category || ''}::${resolvedTitle}::${row.type}`,
+    );
+    if (!music) {
+      this.logger.warn(
+        `No music found for score: category="${row.category}", type="${row.type}", title="${resolvedTitle}, key="${row.category || ''}::${resolvedTitle}::${row.type}"`,
+      );
+      return null;
+    }
+    const chart = this.resolveChartForIndex(music, row.chartIndex);
+    if (!chart?.cid) {
+      this.logger.warn(
+        `No chart found for score: category="${row.category}", type="${row.type}", title="${row.title}", chartIndex=${row.chartIndex}`,
+      );
+      return null;
+    }
+    return this.buildScoreSnapshot(
+      row,
+      music,
+      chart,
+      dxScoreFromVS,
+      scoreFromVS,
+    );
+  }
+
+  private resolveChartForIndex(
+    music: MusicRow,
+    chartIndex: number,
+  ): ChartPayload | undefined {
+    return Array.isArray(music.charts)
+      ? (music.charts[chartIndex === 10 ? 0 : chartIndex] as
+          | ChartPayload
+          | undefined)
+      : undefined;
+  }
+
+  private buildScoreSnapshot(
+    row: VsScoreRow,
+    music: MusicRow,
+    chart: ChartPayload,
+    dxScoreFromVS: string | null,
+    scoreFromVS: string | null,
+  ): ScoreSnapshot {
+    const achievement = normalizeAchievement(scoreFromVS);
+    const musicDetailLevel = chart.detailLevel ?? null;
+    const rating =
+      musicDetailLevel !== null && achievement !== null
+        ? getRating(musicDetailLevel, achievement)
+        : null;
+    return {
+      musicId: music.id,
+      cid: music.id + '_' + (row.chartIndex === 10 ? 0 : row.chartIndex),
+      chartIndex: row.chartIndex,
+      type: row.type,
+      dxScore: dxScoreFromVS,
+      score: scoreFromVS,
+      fs: row.payload.fs ?? null,
+      fc: row.payload.fc ?? null,
+      rating,
+      isNew: music.isNew ?? null,
+    };
+  }
+
   private async mapRivalMusicToScores(
     rivalMusic: SdgbWorkerMusicEntry[],
   ): Promise<ScoreSnapshot[]> {
-    if (!Array.isArray(rivalMusic) || !rivalMusic.length) return [];
+    if (!Array.isArray(rivalMusic) || !rivalMusic.length) {
+      return [];
+    }
 
     const { byId: musicMap } = await this.getMusicCache();
     const scores: ScoreSnapshot[] = [];
 
     for (const entry of rivalMusic) {
       const music = musicMap.get(String(entry.musicId));
-      if (!music) continue;
+      if (!music) {
+        continue;
+      }
 
       for (const detail of entry.userRivalMusicDetailList ?? []) {
         const chartIndex = detail.level;
@@ -546,7 +614,9 @@ export class SyncService {
               | ChartPayload
               | undefined)
           : undefined;
-        if (!chart || chart.cid === undefined || chart.cid === null) continue;
+        if (!chart || chart.cid === undefined || chart.cid === null) {
+          continue;
+        }
 
         const score = (detail.achievement / 10000).toFixed(4) + '%';
         const achievement = normalizeAchievement(score);
@@ -591,10 +661,7 @@ export class SyncService {
     return this.exportDivingFishSync(sync, input.importToken);
   }
 
-  private async exportDivingFishSync(
-    sync: SyncForExport,
-    importToken: string,
-  ) {
+  private async exportDivingFishSync(sync: SyncForExport, importToken: string) {
     const scores: SyncScore[] = Array.isArray(sync.scores) ? sync.scores : [];
     if (!scores.length) {
       return { status: 'skipped', reason: 'no scores to export' };

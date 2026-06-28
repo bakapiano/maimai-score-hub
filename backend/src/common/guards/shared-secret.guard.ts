@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Request } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 
 export const API_SHARED_SECRET_ENV = 'API_SHARED_SECRET';
@@ -20,10 +21,12 @@ export class SharedSecretGuard implements CanActivate {
       throw new UnauthorizedException('API shared secret is not configured');
     }
 
-    const req = context.switchToHttp().getRequest();
+    const req = context.switchToHttp().getRequest<Request>();
     const rawHeader: unknown =
       req.headers[API_SHARED_SECRET_HEADER] ?? req.headers['X-API-Secret'];
-    const providedSecret = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+    const providedSecret: unknown = Array.isArray(rawHeader)
+      ? (rawHeader as unknown[])[0]
+      : rawHeader;
 
     if (typeof providedSecret !== 'string' || providedSecret.length === 0) {
       throw new UnauthorizedException('Missing API shared secret');

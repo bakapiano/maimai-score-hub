@@ -144,7 +144,9 @@ export class BotStatusService implements OnModuleDestroy {
     const candidates = all.filter(
       (b) => b.available && this.hasFriendCapacity(b),
     );
-    if (candidates.length === 0) return null;
+    if (candidates.length === 0) {
+      return null;
+    }
 
     const [pick] = await this.sortByPickPriority(candidates);
     return { friendCode: pick.friendCode };
@@ -205,16 +207,25 @@ export class BotStatusService implements OnModuleDestroy {
     const all = await this.getAll();
     const candidates = all.filter(
       (b) =>
-        b.available && b.cabinetUserId != null && this.hasFriendCapacity(b),
+        b.available &&
+        b.cabinetUserId !== null &&
+        b.cabinetUserId !== undefined &&
+        this.hasFriendCapacity(b),
     );
-    if (candidates.length === 0) return null;
+    if (candidates.length === 0) {
+      return null;
+    }
 
     const [pick] = await this.sortByPickPriority(candidates);
     return { friendCode: pick.friendCode, cabinetUserId: pick.cabinetUserId! };
   }
 
   private hasFriendCapacity(bot: { friendCount: number | null }): boolean {
-    return bot.friendCount == null || bot.friendCount < DXNET_BOT_FRIEND_LIMIT;
+    return (
+      bot.friendCount === null ||
+      bot.friendCount === undefined ||
+      bot.friendCount < DXNET_BOT_FRIEND_LIMIT
+    );
   }
 
   private async sortByPickPriority<
@@ -239,7 +250,9 @@ export class BotStatusService implements OnModuleDestroy {
     candidates.sort((a, b) => {
       const aJobLoad = inflight.get(a.friendCode) ?? 0;
       const bJobLoad = inflight.get(b.friendCode) ?? 0;
-      if (aJobLoad !== bJobLoad) return aJobLoad - bJobLoad;
+      if (aJobLoad !== bJobLoad) {
+        return aJobLoad - bJobLoad;
+      }
 
       const aFriendUsage = a.friendCount ?? DXNET_BOT_FRIEND_LIMIT;
       const bFriendUsage = b.friendCount ?? DXNET_BOT_FRIEND_LIMIT;
@@ -307,7 +320,9 @@ export class BotStatusService implements OnModuleDestroy {
 }
 
 function parseDateOrNull(value: string | undefined): Date | null {
-  if (!value) return null;
+  if (!value) {
+    return null;
+  }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

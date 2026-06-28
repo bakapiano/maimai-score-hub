@@ -58,7 +58,9 @@ export class WorkerBotStatusController {
 }
 
 function parseDateOrUndefined(value: string | undefined): Date | undefined {
-  if (!value) return undefined;
+  if (!value) {
+    return undefined;
+  }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }

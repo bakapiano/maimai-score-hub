@@ -11,6 +11,13 @@ import { JobService } from '../../job/services/job.service';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../../users/services/users.service';
 
+export type AuthTokenPayload = {
+  sub?: string;
+  friendCode?: string;
+  iat?: number;
+  exp?: number;
+};
+
 @Injectable()
 export class AuthService {
   private readonly skipAuth: boolean;
@@ -136,9 +143,9 @@ export class AuthService {
     return { job: await this.jobs.wake(jobId) };
   }
 
-  verifyToken(token: string) {
+  verifyToken(token: string): AuthTokenPayload | null {
     try {
-      return this.jwt.verify(token);
+      return this.jwt.verify<AuthTokenPayload>(token);
     } catch {
       return null;
     }
@@ -159,13 +166,11 @@ export class AuthService {
     token: string;
     user: { id: string; friendCode: string; [key: string]: unknown };
   }> {
-    const {
-      passwordHash: _passwordHash,
-      divingFishImportToken: _divingFishImportToken,
-      lxnsImportToken: _lxnsImportToken,
-      cabinetUserId: _cabinetUserId,
-      ...safeUser
-    } = user;
+    const safeUser = { ...user };
+    delete safeUser.passwordHash;
+    delete safeUser.divingFishImportToken;
+    delete safeUser.lxnsImportToken;
+    delete safeUser.cabinetUserId;
     const now = Math.floor(Date.now() / 1000);
     const userId = String(user._id);
     const token = await this.jwt.signAsync(

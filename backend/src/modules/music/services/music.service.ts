@@ -21,6 +21,7 @@ import { MusicEntity } from '../schemas/music.schema';
 import {
   getDivingFishSourceUrl,
   convertDivingFishItemToDocument,
+  type DivingFishItem,
 } from '../../../common/prober/diving-fish/transform';
 
 const MUSIC_DATA_SOURCE = 'diving-fish';
@@ -38,7 +39,7 @@ export class MusicService implements OnModuleInit {
     private readonly cache: Cache,
   ) {}
 
-  private async fetchJson(url: string) {
+  private async fetchJson(url: string): Promise<ResponseLike> {
     if (typeof fetch === 'function') {
       return fetch(url);
     }
@@ -50,7 +51,9 @@ export class MusicService implements OnModuleInit {
     return new Promise<ResponseLike>((resolve, reject) => {
       const req = client(parsed, (res) => {
         const chunks: Buffer[] = [];
-        res.on('data', (d) => chunks.push(d));
+        res.on('data', (d: unknown) => {
+          chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(String(d)));
+        });
         res.on('end', () => {
           const body = Buffer.concat(chunks).toString('utf8');
           resolve({
@@ -59,7 +62,7 @@ export class MusicService implements OnModuleInit {
               res.statusCode >= 200 &&
               res.statusCode < 300,
             status: res.statusCode ?? 0,
-            json: async () => JSON.parse(body),
+            json: () => Promise.resolve(JSON.parse(body) as unknown),
           });
         });
       });
@@ -68,7 +71,7 @@ export class MusicService implements OnModuleInit {
     });
   }
 
-  async onModuleInit() {
+  onModuleInit() {
     const cronExpression =
       this.configService.get<string>('MUSIC_SYNC_CRON') ??
       CronExpression.EVERY_6_HOURS;
@@ -115,18 +118,18 @@ export class MusicService implements OnModuleInit {
   }
 
   private async syncFromDivingFish(sourceUrl: string) {
-    let items: any[];
+    let items: DivingFishItem[];
 
     try {
       const response = await this.fetchJson(sourceUrl);
       if (!response.ok) {
         throw new Error(`Remote responded with status ${response.status}`);
       }
-      const payload = await response.json();
+      const payload: unknown = await response.json();
       if (!Array.isArray(payload)) {
         throw new Error('Unexpected payload structure (not an array)');
       }
-      items = payload;
+      items = payload as DivingFishItem[];
     } catch (error) {
       this.logger.error(
         'Failed to fetch music data from diving-fish',
@@ -153,7 +156,10 @@ export class MusicService implements OnModuleInit {
     return this.persistDocuments(documents, items.length);
   }
 
-  private async persistDocuments(documents: any[], total: number) {
+  private async persistDocuments(
+    documents: Array<ReturnType<typeof convertDivingFishItemToDocument>>,
+    total: number,
+  ) {
     try {
       await this.musicModel.deleteMany({});
       const result = await this.musicModel.insertMany(documents, {
@@ -181,5 +187,5 @@ export class MusicService implements OnModuleInit {
 interface ResponseLike {
   ok: boolean;
   status: number;
-  json: () => Promise<any>;
+  json: () => Promise<unknown>;
 }

@@ -7,6 +7,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { RedisModule } from './common/redis/redis.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { createMongooseQueryTimeoutPlugin } from './common/mongoose-query-timeout.plugin';
+import type { Connection } from 'mongoose';
 
 function getPositiveInt(
   config: ConfigService,
@@ -14,7 +15,9 @@ function getPositiveInt(
   fallback: number,
 ): number {
   const raw = config.get<string | number>(key);
-  if (raw == null || raw === '') return fallback;
+  if (raw === null || raw === undefined || raw === '') {
+    return fallback;
+  }
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
 }
@@ -87,7 +90,7 @@ function getPositiveInt(
           // are well-batched). 30 leaves head room.
           maxPoolSize: 30,
           minPoolSize: 2,
-          connectionFactory: (connection) => {
+          connectionFactory: (connection: Connection): Connection => {
             connection.plugin(
               createMongooseQueryTimeoutPlugin({
                 readMaxTimeMS: queryMaxTimeMS,

@@ -65,14 +65,20 @@ export class WorkerLogsService {
     workerId: string,
     entries: WorkerLogIngestEntry[],
   ): Promise<{ accepted: number }> {
-    if (!entries.length) return { accepted: 0 };
+    if (!entries.length) {
+      return { accepted: 0 };
+    }
 
     const stream = this.streamKey(workerKind);
     let accepted = 0;
     for (const e of entries) {
-      if (!e || typeof e.message !== 'string') continue;
+      if (!e || typeof e.message !== 'string') {
+        continue;
+      }
       const ts = new Date(e.ts);
-      if (Number.isNaN(ts.getTime())) continue;
+      if (Number.isNaN(ts.getTime())) {
+        continue;
+      }
       const level: WorkerLogLevel =
         e.level === 'warn' || e.level === 'error' ? e.level : 'log';
 
@@ -140,9 +146,13 @@ export class WorkerLogsService {
 
     for (const entry of rows) {
       const view = this.toView(entry);
-      if (!view) continue;
+      if (!view) {
+        continue;
+      }
       const seenAt = new Date(view.ts).getTime();
-      if (seenAt < since) continue;
+      if (seenAt < since) {
+        continue;
+      }
       const key = `${view.workerKind}:${view.workerId}`;
       const previous = byWorker.get(key);
       if (!previous || seenAt > new Date(previous.lastSeenAt).getTime()) {
@@ -173,10 +183,16 @@ export class WorkerLogsService {
 
     for (const entry of rows) {
       const view = this.toView(entry);
-      if (!view) continue;
+      if (!view) {
+        continue;
+      }
       const ts = new Date(view.ts).getTime();
-      if (ts < sinceMs) continue;
-      if (!view.message.toLowerCase().includes(needle)) continue;
+      if (ts < sinceMs) {
+        continue;
+      }
+      if (!view.message.toLowerCase().includes(needle)) {
+        continue;
+      }
       const bucket = Math.floor(ts / input.bucketMs) * input.bucketMs;
       buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1);
     }
@@ -206,7 +222,9 @@ export class WorkerLogsService {
       fields.workerKind === 'sdgb' || fields.workerKind === 'dxnet'
         ? fields.workerKind
         : null;
-    if (!workerKind || !fields.workerId || !fields.ts) return null;
+    if (!workerKind || !fields.workerId || !fields.ts) {
+      return null;
+    }
 
     return {
       workerKind,
@@ -223,7 +241,9 @@ export class WorkerLogsService {
     fallback: number,
   ): number {
     const raw = config.get<string | number>(key);
-    if (raw == null || raw === '') return fallback;
+    if (raw === null || raw === undefined || raw === '') {
+      return fallback;
+    }
     const parsed = Number(raw);
     return Number.isFinite(parsed) && parsed > 0
       ? Math.floor(parsed)

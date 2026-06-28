@@ -50,7 +50,9 @@ export class BotFriendSnapshotService {
       .findOne({ friendCode: botFriendCode })
       .select({ friendCode: 1, friends: 1, friendsUpdatedAt: 1 })
       .lean();
-    if (!doc) return null;
+    if (!doc) {
+      return null;
+    }
     return {
       botFriendCode: doc.friendCode,
       friends: doc.friends ?? [],
@@ -70,7 +72,9 @@ export class BotFriendSnapshotService {
     friendCode: string,
     botFriendCodes: string[],
   ): Promise<string | null> {
-    if (botFriendCodes.length === 0) return null;
+    if (botFriendCodes.length === 0) {
+      return null;
+    }
 
     const docs = await this.botStatusModel
       .find({
@@ -104,13 +108,18 @@ export class BotFriendSnapshotService {
     | { kind: 'ambiguous'; matches: number }
   > {
     const snap = await this.get(botFriendCode);
-    if (!snap) return { kind: 'not_found' };
+    if (!snap) {
+      return { kind: 'not_found' };
+    }
     const matches = snap.friends.filter(
       (f) => f.userName === userName && f.rating === rating,
     );
-    if (matches.length === 0) return { kind: 'not_found' };
-    if (matches.length > 1)
+    if (matches.length === 0) {
+      return { kind: 'not_found' };
+    }
+    if (matches.length > 1) {
       return { kind: 'ambiguous', matches: matches.length };
+    }
     return { kind: 'found', friendCode: matches[0].friendCode };
   }
 }

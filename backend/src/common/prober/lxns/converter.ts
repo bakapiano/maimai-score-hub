@@ -24,7 +24,9 @@ function mapType(type: string) {
 }
 
 function mapFs(fs: string | null | undefined): string | null {
-  if (!fs) return null;
+  if (!fs) {
+    return null;
+  }
   switch (fs.toLowerCase()) {
     case 'fdxp':
       return 'fsdp';
@@ -40,7 +42,9 @@ function mapFs(fs: string | null | undefined): string | null {
 }
 
 function toNumber(value: string | number | null | undefined): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
   if (typeof value === 'string' && value.trim()) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
@@ -58,7 +62,9 @@ function mapMusicId(
   if (!Number.isFinite(parsed)) {
     throw new Error(`Invalid musicId for LXNS payload: ${mapped ?? id}`);
   }
-  if (mapped !== undefined) return parsed;
+  if (mapped !== undefined) {
+    return parsed;
+  }
   return type === 'dx' ? parsed - 10000 : parsed;
 }
 

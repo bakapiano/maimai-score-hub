@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Worker } from 'bullmq';
 
@@ -20,7 +25,9 @@ function getPositiveInt(
 }
 
 @Injectable()
-export class ProberExportWorkerService implements OnModuleInit, OnModuleDestroy {
+export class ProberExportWorkerService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(ProberExportWorkerService.name);
   private readonly concurrency: number;
   private worker: Worker<ProberExportJobData> | null = null;

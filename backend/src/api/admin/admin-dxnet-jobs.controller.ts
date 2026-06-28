@@ -5,7 +5,7 @@ import {
 } from '@maimai-score-hub/shared';
 
 import { SharedSecretGuard } from '../../common/guards/shared-secret.guard';
-import { AdminService } from '../../modules/admin/services/admin.service';
+import { AdminJobQueryService } from '../../modules/admin/services/admin-job-query.service';
 import { JobApiLogService } from '../../modules/job/api-log/api-log.service';
 import { JobService } from '../../modules/job/services/job.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -14,21 +14,21 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 @UseGuards(SharedSecretGuard)
 export class AdminDxnetJobsController {
   constructor(
-    private readonly adminService: AdminService,
+    private readonly adminJobQueryService: AdminJobQueryService,
     private readonly apiLogService: JobApiLogService,
     private readonly jobService: JobService,
   ) {}
 
   @Get('active')
   async getActiveJobs() {
-    return await this.adminService.getActiveJobs();
+    return await this.adminJobQueryService.getActiveJobs();
   }
 
   @Get()
   async searchJobs(
     @Query(new ZodValidationPipe(SearchJobsQuerySchema)) query: SearchJobsQuery,
   ) {
-    return await this.adminService.searchJobs({
+    return await this.adminJobQueryService.searchJobs({
       friendCode: query.friendCode,
       status: query.status,
       page: query.page,

@@ -15,6 +15,7 @@ import {
 } from '../../../common/prober/id-map';
 import { getLxnsSongListUrl } from '../../../common/prober/lxns/transform';
 import type { LxnsApiResponse } from '../../../common/prober/lxns/transform';
+import type { DivingFishItem } from '../../../common/prober/diving-fish/transform';
 
 type SyncSummary = {
   total: number;
@@ -85,13 +86,17 @@ export class CoverService {
   async getPreferredLocalPath(id: string, preferWebp: boolean) {
     if (preferWebp) {
       const webp = await this.getLocalPathIfExists(id, 'webp');
-      if (webp) return { path: webp, format: 'webp' as const };
+      if (webp) {
+        return { path: webp, format: 'webp' as const };
+      }
       const png = await this.getLocalPathIfExists(id, 'png');
       return png ? { path: png, format: 'png' as const } : null;
     }
 
     const png = await this.getLocalPathIfExists(id, 'png');
-    if (png) return { path: png, format: 'png' as const };
+    if (png) {
+      return { path: png, format: 'png' as const };
+    }
     const webp = await this.getLocalPathIfExists(id, 'webp');
     return webp ? { path: webp, format: 'webp' as const } : null;
   }
@@ -117,11 +122,19 @@ export class CoverService {
 
     const [dfRaw, lxnsRaw] = await Promise.all([
       fetch(DIVING_FISH_MUSIC_URL).then(async (r) => {
-        if (!r.ok) throw new Error(`diving-fish responded ${r.status}`);
-        return r.json() as Promise<any[]>;
+        if (!r.ok) {
+          throw new Error(`diving-fish responded ${r.status}`);
+        }
+        const payload: unknown = await r.json();
+        if (!Array.isArray(payload)) {
+          throw new Error('diving-fish returned non-array music payload');
+        }
+        return payload as DivingFishItem[];
       }),
       fetch(getLxnsSongListUrl()).then(async (r) => {
-        if (!r.ok) throw new Error(`lxns responded ${r.status}`);
+        if (!r.ok) {
+          throw new Error(`lxns responded ${r.status}`);
+        }
         return r.json() as Promise<LxnsApiResponse>;
       }),
     ]);
@@ -179,7 +192,9 @@ export class CoverService {
     const idSet = new Set<string>();
     for (const file of files) {
       const match = /^(\d+)\.(png|webp)$/i.exec(file);
-      if (!match) continue;
+      if (!match) {
+        continue;
+      }
       idSet.add(match[1]);
     }
 
@@ -204,10 +219,18 @@ export class CoverService {
         summary.skipped += 1;
       } else if (pngExists) {
         const ok = await this.convertLocalVariant(pngPath, webpPath, 'webp');
-        ok ? (summary.saved += 1) : (summary.failed += 1);
+        if (ok) {
+          summary.saved += 1;
+        } else {
+          summary.failed += 1;
+        }
       } else if (webpExists) {
         const ok = await this.convertLocalVariant(webpPath, pngPath, 'png');
-        ok ? (summary.saved += 1) : (summary.failed += 1);
+        if (ok) {
+          summary.saved += 1;
+        } else {
+          summary.failed += 1;
+        }
       } else {
         summary.failed += 1;
       }
@@ -303,7 +326,9 @@ export class CoverService {
         webpPath,
         'webp',
       );
-      if (generated) return 'saved';
+      if (generated) {
+        return 'saved';
+      }
     }
 
     if (webpExists && !pngExists) {
@@ -312,7 +337,9 @@ export class CoverService {
         pngPath,
         'png',
       );
-      if (generated) return 'saved';
+      if (generated) {
+        return 'saved';
+      }
     }
 
     const saved = await this.fetchAndSaveCoverVariants(

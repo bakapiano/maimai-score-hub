@@ -14,14 +14,20 @@ export type DivingFishRecord = {
 export type MusicTitleMap = Map<string, string>;
 
 function mapType(type: string): 'SD' | 'DX' {
-  if (type === 'dx' || type === 'utage') return 'DX';
-  if (type === 'standard') return 'SD';
+  if (type === 'dx' || type === 'utage') {
+    return 'DX';
+  }
+  if (type === 'standard') {
+    return 'SD';
+  }
   // Default to DX for unknown non-standard types
   return 'DX';
 }
 
 function toNumber(value: string | number | null | undefined): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
   if (typeof value === 'string' && value.trim()) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;

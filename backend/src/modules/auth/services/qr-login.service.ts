@@ -96,7 +96,7 @@ export class QrLoginService {
       throw new Error('qrCode required');
     }
 
-    let scan;
+    let scan: Awaited<ReturnType<SdgbJobDispatcher['scanQr']>>;
     try {
       scan = await this.sdgb.scanQr(
         { qrCode: qrCode.trim() },
@@ -127,7 +127,7 @@ export class QrLoginService {
     }
 
     const myRating = await this.computeB50(scan.music);
-    if (myRating == null) {
+    if (myRating === null) {
       throw new Error(
         '无法从机台成绩计算 rating（可能 music 表未同步），请稍后重试',
       );
@@ -193,18 +193,62 @@ export class QrLoginService {
     myRating: number,
     bot: { friendCode: string; cabinetUserId: number },
   ): Promise<void> {
-    const setStatus = async (
-      status: QrLoginStatus,
-      extra: Record<string, unknown> = {},
-    ) => {
-      await this.attemptModel.updateOne(
-        { id: attemptId },
-        { $set: { status, ...extra } },
-      );
+    const triggeredAt = await this.addQrLoginRival(
+      attemptId,
+      cabinetUserId,
+      bot,
+    );
+    await this.dispatchFriendListRefresh(attemptId, bot.friendCode);
+    const friends = await this.waitFreshSnapshot(
+      attemptId,
+      bot.friendCode,
+      triggeredAt,
+    );
+    const friendCode = this.findUniqueFriendCode(friends, rivalName, myRating);
+    const placeholderProfile = {
+      avatarUrl: null,
+      title: null,
+      titleColor: null,
+      username: rivalName,
+      rating: myRating,
+      ratingBgUrl: null,
+      courseRankUrl: null,
+      classRankUrl: null,
+      awakeningCount: null,
     };
+    const user = await this.findOrCreateQrUser(
+      attemptId,
+      friendCode,
+      cabinetUserId,
+      placeholderProfile,
+    );
+    const signed = await this.signFor(user as never);
+    await this.users
+      .updateLastActiveAt(String(user._id))
+      .catch(() => undefined);
+    await this.setAttemptStatus(attemptId, 'matched', {
+      resolvedFriendCode: friendCode,
+      token: signed.token,
+    });
+  }
 
-    // (1) addRival on the cabinet (instant + bidirectional).
-    await setStatus('adding_rival');
+  private async setAttemptStatus(
+    attemptId: string,
+    status: QrLoginStatus,
+    extra: Record<string, unknown> = {},
+  ): Promise<void> {
+    await this.attemptModel.updateOne(
+      { id: attemptId },
+      { $set: { status, ...extra } },
+    );
+  }
+
+  private async addQrLoginRival(
+    attemptId: string,
+    cabinetUserId: number,
+    bot: { friendCode: string; cabinetUserId: number },
+  ): Promise<Date> {
+    await this.setAttemptStatus(attemptId, 'adding_rival');
     const rival = await this.sdgb.addRival(
       {
         botCabinetUserId: bot.cabinetUserId,
@@ -212,59 +256,77 @@ export class QrLoginService {
       },
       { tag: `qr-login-add:${cabinetUserId}`, timeoutMs: 60_000 },
     );
-    const triggeredAt = new Date();
     this.logger.log(
       `QR-login attemptId=${attemptId} addRival rc1=${rival.returnCode1} rc2=${rival.returnCode2}`,
     );
+    return new Date();
+  }
 
-    // (2) Actively ask the same DXNet worker to fetch the full friend
-    // list after addRival. That job reports the list immediately on
-    // completion, so QR login no longer depends on the periodic status
-    // heartbeat timing.
-    await setStatus('waiting_snapshot');
+  private async dispatchFriendListRefresh(
+    attemptId: string,
+    botFriendCode: string,
+  ): Promise<void> {
+    await this.setAttemptStatus(attemptId, 'waiting_snapshot');
     const refreshJob = await this.jobs.create({
-      friendCode: bot.friendCode,
+      friendCode: botFriendCode,
       jobType: 'get_full_friend_list',
-      botUserFriendCode: bot.friendCode,
+      botUserFriendCode: botFriendCode,
       cancelActiveJobs: false,
     });
     this.logger.log(
-      `QR-login attemptId=${attemptId} dispatched full friend-list refresh job=${refreshJob.jobId} bot=${bot.friendCode}`,
+      `QR-login attemptId=${attemptId} dispatched full friend-list refresh job=${refreshJob.jobId} bot=${botFriendCode}`,
     );
+  }
 
-    // (3) Wait for the refresh job report to land a fresh snapshot
-    // (`updatedAt > triggeredAt`), then look up (userName, rating) in it.
-    type Friend = {
+  private async waitFreshSnapshot(
+    attemptId: string,
+    botFriendCode: string,
+    triggeredAt: Date,
+  ): Promise<
+    Array<{
       friendCode: string;
       userName: string | null;
       rating: number | null;
-    };
+    }>
+  > {
+    const snap = await this.pollFreshSnapshot(botFriendCode, triggeredAt);
+    if (!snap?.updatedAt) {
+      throw new Error(
+        '未在超时时间内拿到 bot 最新好友列表快照（worker 未上报），请稍后重试',
+      );
+    }
+    this.logger.log(
+      `QR-login attemptId=${attemptId} snapshot updatedAt=${snap.updatedAt.toISOString()} friends=${snap.friends.length}`,
+    );
+    return snap.friends;
+  }
+
+  private async pollFreshSnapshot(botFriendCode: string, triggeredAt: Date) {
     const SNAPSHOT_WAIT_DEADLINE_MS = 90_000;
     const SNAPSHOT_POLL_INTERVAL_MS = 2_000;
     const deadline = Date.now() + SNAPSHOT_WAIT_DEADLINE_MS;
-    let snap = await this.snapshot.get(bot.friendCode);
+    let snap = await this.snapshot.get(botFriendCode);
     while (
       Date.now() < deadline &&
       (!snap?.updatedAt || snap.updatedAt.getTime() <= triggeredAt.getTime())
     ) {
       await new Promise((r) => setTimeout(r, SNAPSHOT_POLL_INTERVAL_MS));
-      snap = await this.snapshot.get(bot.friendCode);
+      snap = await this.snapshot.get(botFriendCode);
     }
-    if (
-      !snap ||
-      !snap.updatedAt ||
-      snap.updatedAt.getTime() <= triggeredAt.getTime()
-    ) {
-      throw new Error(
-        '未在超时时间内拿到 bot 最新好友列表快照（worker 未上报），请稍后重试',
-      );
-    }
-    const friends: Friend[] = snap.friends;
-    this.logger.log(
-      `QR-login attemptId=${attemptId} snapshot updatedAt=${snap.updatedAt.toISOString()} friends=${friends.length}`,
-    );
+    return snap?.updatedAt && snap.updatedAt.getTime() > triggeredAt.getTime()
+      ? snap
+      : null;
+  }
 
-    // (3) Match (userName, rating) inside the snapshot. Unique → win.
+  private findUniqueFriendCode(
+    friends: Array<{
+      friendCode: string;
+      userName: string | null;
+      rating: number | null;
+    }>,
+    rivalName: string,
+    myRating: number,
+  ): string {
     const matches = friends.filter(
       (c) => c.userName === rivalName && c.rating === myRating,
     );
@@ -282,23 +344,26 @@ export class QrLoginService {
         `候选好友里找到 ${matches.length} 个 name=${rivalName} rating=${myRating} 的记录，请使用 friendCode 登录`,
       );
     }
+    return matches[0].friendCode;
+  }
 
-    const friendCode = matches[0].friendCode;
-
-    // (5) Find or create the User row, persist cabinetUserId so the
-    // next QR login hits the fast path. Seed a placeholder profile.
+  private async findOrCreateQrUser(
+    attemptId: string,
+    friendCode: string,
+    cabinetUserId: number,
+    placeholderProfile: {
+      username: string;
+      rating: number;
+      avatarUrl: null;
+      title: null;
+      titleColor: null;
+      ratingBgUrl: null;
+      courseRankUrl: null;
+      classRankUrl: null;
+      awakeningCount: null;
+    },
+  ) {
     let user = await this.users.findByFriendCode(friendCode);
-    const placeholderProfile = {
-      avatarUrl: null,
-      title: null,
-      titleColor: null,
-      username: rivalName,
-      rating: myRating,
-      ratingBgUrl: null,
-      courseRankUrl: null,
-      classRankUrl: null,
-      awakeningCount: null,
-    };
     if (!user) {
       user = await this.users.create({
         friendCode,
@@ -308,35 +373,23 @@ export class QrLoginService {
       this.logger.log(
         `QR-login attemptId=${attemptId} created user fc=${friendCode} cabinetUid=${cabinetUserId}`,
       );
-    } else {
-      const updates: Record<string, unknown> = {};
-      if (
-        (user as { cabinetUserId?: number | null }).cabinetUserId !==
-        cabinetUserId
-      ) {
-        updates.cabinetUserId = cabinetUserId;
-      }
-      if (!(user as { profile?: unknown }).profile) {
-        updates.profile = placeholderProfile;
-      }
-      if (Object.keys(updates).length > 0) {
-        await this.users.update(String(user._id), updates);
-        user = (await this.users.findByFriendCode(friendCode))!;
-      }
+      return user;
     }
-    const signed = await this.signFor(user as never);
-    // Mark the user active NOW so the dxnet worker's cleanup loop
-    // (which evicts friends inactive > 1h) doesn't immediately drop the
-    // friend we just added on the bot side. Without this, a
-    // brand-new user can lose the bot-side friendship before they
-    // ever finish syncing.
-    await this.users
-      .updateLastActiveAt(String(user._id))
-      .catch(() => undefined);
-    await setStatus('matched', {
-      resolvedFriendCode: friendCode,
-      token: signed.token,
-    });
+    const updates: Record<string, unknown> = {};
+    if (
+      (user as { cabinetUserId?: number | null }).cabinetUserId !==
+      cabinetUserId
+    ) {
+      updates.cabinetUserId = cabinetUserId;
+    }
+    if (!(user as { profile?: unknown }).profile) {
+      updates.profile = placeholderProfile;
+    }
+    if (Object.keys(updates).length > 0) {
+      await this.users.update(String(user._id), updates);
+      return (await this.users.findByFriendCode(friendCode))!;
+    }
+    return user;
   }
 
   /**
@@ -377,7 +430,9 @@ export class QrLoginService {
     >();
     for (const m of allMusic) {
       const num = Number(m.id);
-      if (!Number.isFinite(num)) continue;
+      if (!Number.isFinite(num)) {
+        continue;
+      }
       byNumericId.set(num, { isNew: m.isNew ?? null, charts: m.charts ?? [] });
     }
 
@@ -385,19 +440,29 @@ export class QrLoginService {
     const rows: Row[] = [];
     for (const entry of music) {
       const meta = byNumericId.get(entry.musicId);
-      if (!meta) continue;
+      if (!meta) {
+        continue;
+      }
       for (const detail of entry.userRivalMusicDetailList ?? []) {
-        if (detail.level === 10) continue; // utage
+        if (detail.level === 10) {
+          continue;
+        } // utage
         const chart = meta.charts[detail.level];
         const detailLevel = chart?.detailLevel ?? null;
-        if (detailLevel == null) continue;
+        if (detailLevel === null || detailLevel === undefined) {
+          continue;
+        }
         const achv = detail.achievement / 10000;
         const rating = getRating(detailLevel, achv);
-        if (!Number.isFinite(rating) || rating <= 0) continue;
+        if (!Number.isFinite(rating) || rating <= 0) {
+          continue;
+        }
         rows.push({ isNew: meta.isNew, rating });
       }
     }
-    if (!rows.length) return null;
+    if (!rows.length) {
+      return null;
+    }
 
     const news = rows
       .filter((r) => r.isNew === true)
@@ -421,13 +486,11 @@ export class QrLoginService {
     token: string;
     user: { id: string; friendCode: string; [key: string]: unknown };
   }> {
-    const {
-      passwordHash: _passwordHash,
-      divingFishImportToken: _divingFishImportToken,
-      lxnsImportToken: _lxnsImportToken,
-      cabinetUserId: _cabinetUserId,
-      ...safeUser
-    } = user;
+    const safeUser = { ...user };
+    delete safeUser.passwordHash;
+    delete safeUser.divingFishImportToken;
+    delete safeUser.lxnsImportToken;
+    delete safeUser.cabinetUserId;
     const userId = String(user._id);
     const now = Math.floor(Date.now() / 1000);
     const token = await this.jwt.signAsync(

@@ -112,7 +112,9 @@ function secondsSince(
   date: Date | null | undefined,
   nowMs: number,
 ): number | null {
-  if (!date) return null;
+  if (!date) {
+    return null;
+  }
   return Math.max(0, Math.floor((nowMs - date.getTime()) / 1000));
 }
 
@@ -198,7 +200,9 @@ export class SdgbJobService implements OnModuleDestroy {
 
   async get(jobId: string): Promise<SdgbJobView> {
     const doc = await this.model.findOne({ id: jobId });
-    if (!doc) throw new NotFoundException('Sdgb job not found');
+    if (!doc) {
+      throw new NotFoundException('Sdgb job not found');
+    }
     return toView(doc.toObject() as SdgbJobEntity);
   }
 
@@ -284,11 +288,21 @@ export class SdgbJobService implements OnModuleDestroy {
     const byTypeMap = new Map(byType.map((row) => [row.jobType, row]));
     for (const row of byTypeCounts) {
       const target = byTypeMap.get(row._id.jobType);
-      if (!target) continue;
-      if (row._id.status === 'queued') target.queued = row.count;
-      if (row._id.status === 'processing') target.processing = row.count;
-      if (row._id.status === 'completed') target.completedLastHour = row.count;
-      if (row._id.status === 'failed') target.failedLastHour = row.count;
+      if (!target) {
+        continue;
+      }
+      if (row._id.status === 'queued') {
+        target.queued = row.count;
+      }
+      if (row._id.status === 'processing') {
+        target.processing = row.count;
+      }
+      if (row._id.status === 'completed') {
+        target.completedLastHour = row.count;
+      }
+      if (row._id.status === 'failed') {
+        target.failedLastHour = row.count;
+      }
     }
 
     return {
@@ -318,8 +332,12 @@ export class SdgbJobService implements OnModuleDestroy {
     const page = Math.max(1, opts.page);
     const pageSize = Math.min(200, Math.max(1, opts.pageSize));
     const filter: Record<string, unknown> = {};
-    if (opts.jobType) filter.jobType = opts.jobType;
-    if (opts.status) filter.status = opts.status;
+    if (opts.jobType) {
+      filter.jobType = opts.jobType;
+    }
+    if (opts.status) {
+      filter.status = opts.status;
+    }
     if (opts.tag) {
       filter.requesterTag = { $regex: escapeRegex(opts.tag), $options: 'i' };
     }
@@ -358,9 +376,15 @@ export class SdgbJobService implements OnModuleDestroy {
   ): Promise<SdgbJobView> {
     const now = new Date();
     const update: Record<string, unknown> = { updatedAt: now };
-    if (body.status !== undefined) update.status = body.status;
-    if (body.result !== undefined) update.result = body.result;
-    if (body.error !== undefined) update.error = body.error;
+    if (body.status !== undefined) {
+      update.status = body.status;
+    }
+    if (body.result !== undefined) {
+      update.result = body.result;
+    }
+    if (body.error !== undefined) {
+      update.error = body.error;
+    }
     if (body.status === 'processing') {
       update.executing = true;
       update.claimedAt = now;
@@ -374,7 +398,9 @@ export class SdgbJobService implements OnModuleDestroy {
       { $set: update },
       { new: true },
     );
-    if (!doc) throw new NotFoundException('Sdgb job not found');
+    if (!doc) {
+      throw new NotFoundException('Sdgb job not found');
+    }
     return toView(doc.toObject() as SdgbJobEntity);
   }
 
@@ -401,7 +427,9 @@ export class SdgbJobService implements OnModuleDestroy {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const job = await this.get(jobId);
-      if (job.status === 'completed') return job;
+      if (job.status === 'completed') {
+        return job;
+      }
       if (job.status === 'failed') {
         throw new Error(job.error ?? `sdgb job ${jobId} failed`);
       }

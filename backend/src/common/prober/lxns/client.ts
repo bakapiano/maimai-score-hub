@@ -55,7 +55,9 @@ export async function uploadLxnsScores(
       };
     }
     const detail =
-      typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+      typeof result.data === 'string'
+        ? result.data
+        : JSON.stringify(result.data);
     const err = new BadRequestException(
       `LXNS responded ${result.status}${detail ? `: ${detail}` : ''}`,
     );

@@ -4,12 +4,10 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import { CronJob } from 'cron';
 import type { Model } from 'mongoose';
-import type { SdgbWorkerUserMapEntry } from '@maimai-score-hub/shared';
 
 import { BotStatusService } from '../../bots/services/bot-status.service';
 import { JobService } from '../../job/services/job.service';
@@ -17,65 +15,34 @@ import { ProberExportService } from '../../prober-export/services/prober-export.
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
 import { SyncService } from '../../sync/services/sync.service';
 import { UsersService } from '../../users/services/users.service';
-import { AUTO_UPDATE_BACKOFF_POLICY } from '../auto-update-backoff';
 import {
   AutoUpdateProbeStateEntity,
   type AutoUpdateTier,
 } from '../schemas/auto-update-probe-state.schema';
 import { AutoUpdateRunEntity } from '../schemas/auto-update-run.schema';
 import { AutoUpdateTaskEntity } from '../schemas/auto-update-task.schema';
+import {
+  AutoUpdateSchedulerTimingService,
+  countRivalDetails,
+} from './auto-update-scheduler-timing.service';
 
-const MINUTE = 60 * 1000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
 const SCHEDULER_VERSION = 'rival-first-v1';
 
-function getPositiveInt(config: ConfigService, key: string, fallback: number) {
-  const raw = config.get<string | number>(key);
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
-}
-
-function maxDate(...dates: Array<Date | null | undefined>): Date | null {
-  const valid = dates.filter((d): d is Date => d instanceof Date);
-  if (!valid.length) return null;
-  return new Date(Math.max(...valid.map((d) => d.getTime())));
-}
-
-function countDetails(music: Array<{ userRivalMusicDetailList?: unknown[] }>) {
-  return music.reduce(
-    (sum, item) => sum + (item.userRivalMusicDetailList?.length ?? 0),
-    0,
-  );
-}
-
-function deterministicOffsetMs(key: string, moduloMs: number): number {
-  const digest = createHash('sha256').update(key).digest();
-  const value = digest.readUInt32BE(0);
-  return value % Math.max(1, moduloMs);
-}
+type AutoUpdateProbeResult = {
+  friendCode: string;
+  cabinetUserId: number;
+  action: 'triggered' | 'skipped' | 'failed';
+  message?: string;
+};
+type RivalMusic = Awaited<
+  ReturnType<SdgbJobDispatcher['getRivalHash']>
+>['music'];
 
 @Injectable()
 export class AutoUpdateSchedulerService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new Logger(AutoUpdateSchedulerService.name);
-  private readonly cronExpr: string;
-  private readonly hotIntervalMs: number;
-  private readonly warmIntervalMs: number;
-  private readonly coldIntervalMs: number;
-  private readonly hotSessionMs: number;
-  private readonly warmMaxIdleMs: number;
-  private readonly batchLimit: number;
-  private readonly mapBatchLimit: number;
-  private readonly concurrency: number;
-  private readonly mapConcurrency: number;
-  private readonly rivalTimeoutMs: number;
-  private readonly mapTimeoutMs: number;
-  private readonly recentEventCooldownMs: number;
-  private readonly mapHotIntervalMs: number;
-  private readonly mapWarmIntervalMs: number;
-  private readonly mapColdIntervalMs: number;
   private cron: CronJob | null = null;
   private running = false;
 
@@ -92,89 +59,12 @@ export class AutoUpdateSchedulerService
     private readonly taskModel: Model<AutoUpdateTaskEntity>,
     @InjectModel(AutoUpdateRunEntity.name)
     private readonly runsModel: Model<AutoUpdateRunEntity>,
-    config: ConfigService,
-  ) {
-    this.cronExpr = config.get<string>('AUTO_UPDATE_CRON', '*/1 * * * *');
-    this.hotIntervalMs = getPositiveInt(
-      config,
-      'AUTO_UPDATE_HOT_INTERVAL_MS',
-      10 * MINUTE,
-    );
-    this.warmIntervalMs = getPositiveInt(
-      config,
-      'AUTO_UPDATE_WARM_INTERVAL_MS',
-      30 * MINUTE,
-    );
-    this.coldIntervalMs = getPositiveInt(
-      config,
-      'AUTO_UPDATE_COLD_INTERVAL_MS',
-      HOUR,
-    );
-    this.hotSessionMs = getPositiveInt(
-      config,
-      'AUTO_UPDATE_HOT_SESSION_MS',
-      90 * MINUTE,
-    );
-    this.warmMaxIdleMs = getPositiveInt(
-      config,
-      'AUTO_UPDATE_WARM_MAX_IDLE_MS',
-      7 * DAY,
-    );
-    this.batchLimit = getPositiveInt(
-      config,
-      'AUTO_UPDATE_RIVAL_BATCH_LIMIT',
-      480,
-    );
-    this.mapBatchLimit = getPositiveInt(
-      config,
-      'AUTO_UPDATE_MAP_BATCH_LIMIT',
-      120,
-    );
-    this.concurrency = getPositiveInt(
-      config,
-      'AUTO_UPDATE_RIVAL_CONCURRENCY',
-      4,
-    );
-    this.mapConcurrency = getPositiveInt(
-      config,
-      'AUTO_UPDATE_MAP_CONCURRENCY',
-      2,
-    );
-    this.rivalTimeoutMs = getPositiveInt(
-      config,
-      'AUTO_UPDATE_RIVAL_TIMEOUT_MS',
-      120_000,
-    );
-    this.mapTimeoutMs = getPositiveInt(
-      config,
-      'AUTO_UPDATE_MAP_TIMEOUT_MS',
-      60_000,
-    );
-    this.recentEventCooldownMs = getPositiveInt(
-      config,
-      'AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS',
-      30 * MINUTE,
-    );
-    this.mapHotIntervalMs = getPositiveInt(
-      config,
-      'AUTO_UPDATE_MAP_HOT_INTERVAL_MS',
-      30 * MINUTE,
-    );
-    this.mapWarmIntervalMs = getPositiveInt(
-      config,
-      'AUTO_UPDATE_MAP_WARM_INTERVAL_MS',
-      HOUR,
-    );
-    this.mapColdIntervalMs = getPositiveInt(
-      config,
-      'AUTO_UPDATE_MAP_COLD_INTERVAL_MS',
-      HOUR,
-    );
-  }
+    private readonly timing: AutoUpdateSchedulerTimingService,
+  ) {}
 
   onModuleInit() {
     this.cron = new CronJob(
-      this.cronExpr,
+      this.timing.cronExpr,
       () => {
         this.runSweepClaimed().catch((err) =>
           this.logger.error('Auto-update cron sweep failed', err),
@@ -184,7 +74,7 @@ export class AutoUpdateSchedulerService
       true,
     );
     this.logger.log(
-      `Rival-first auto-update scheduler started (cron=${this.cronExpr})`,
+      `Rival-first auto-update scheduler started (cron=${this.timing.cronExpr})`,
     );
   }
 
@@ -231,7 +121,9 @@ export class AutoUpdateSchedulerService
       }
     }
 
-    if (!won) return null;
+    if (!won) {
+      return null;
+    }
 
     const summary = await this.runSweep();
     await this.runsModel
@@ -287,7 +179,7 @@ export class AutoUpdateSchedulerService
           $or: [{ backoffUntil: null }, { backoffUntil: { $lte: now } }],
         })
         .sort({ nextRivalProbeAt: 1 })
-        .limit(this.batchLimit)
+        .limit(this.timing.batchLimit)
         .lean<AutoUpdateProbeStateEntity[]>()
         .exec();
 
@@ -299,7 +191,7 @@ export class AutoUpdateSchedulerService
           $or: [{ backoffUntil: null }, { backoffUntil: { $lte: now } }],
         })
         .sort({ nextMapProbeAt: 1 })
-        .limit(this.mapBatchLimit)
+        .limit(this.timing.mapBatchLimit)
         .lean<AutoUpdateProbeStateEntity[]>()
         .exec();
       const mapResults = await this.runDueMapStates(mapDue);
@@ -334,16 +226,10 @@ export class AutoUpdateSchedulerService
     if (users.length) {
       await this.stateModel.bulkWrite(
         users.map((u) => {
-          const initialDue = new Date(
-            now.getTime() +
-              deterministicOffsetMs(u.friendCode, this.coldIntervalMs),
-          );
-          const initialMapDue = new Date(
-            now.getTime() +
-              deterministicOffsetMs(
-                `map:${u.friendCode}`,
-                this.mapColdIntervalMs,
-              ),
+          const initialDue = this.timing.initialRivalProbeAt(u.friendCode, now);
+          const initialMapDue = this.timing.initialMapProbeAt(
+            u.friendCode,
+            now,
           );
           return {
             updateOne: {
@@ -383,225 +269,284 @@ export class AutoUpdateSchedulerService
     );
   }
 
-  private async runDueStates(states: AutoUpdateProbeStateEntity[]): Promise<
-    Array<{
-      friendCode: string;
-      cabinetUserId: number;
-      action: 'triggered' | 'skipped' | 'failed';
-      message?: string;
-    }>
-  > {
-    const results: Array<{
-      friendCode: string;
-      cabinetUserId: number;
-      action: 'triggered' | 'skipped' | 'failed';
-      message?: string;
-    }> = new Array(states.length);
+  private async runDueStates(
+    states: AutoUpdateProbeStateEntity[],
+  ): Promise<AutoUpdateProbeResult[]> {
+    const results: AutoUpdateProbeResult[] = [];
     let next = 0;
-    const workers = new Array(Math.min(this.concurrency, states.length))
-      .fill(null)
-      .map(async () => {
+    const workers = Array.from(
+      { length: Math.min(this.timing.concurrency, states.length) },
+      async () => {
         while (next < states.length) {
           const index = next++;
           results[index] = await this.processRivalProbe(states[index]);
         }
-      });
+      },
+    );
     await Promise.all(workers);
     return results;
   }
 
-  private async runDueMapStates(states: AutoUpdateProbeStateEntity[]): Promise<
-    Array<{
-      friendCode: string;
-      cabinetUserId: number;
-      action: 'triggered' | 'skipped' | 'failed';
-      message?: string;
-    }>
-  > {
-    const results: Array<{
-      friendCode: string;
-      cabinetUserId: number;
-      action: 'triggered' | 'skipped' | 'failed';
-      message?: string;
-    }> = new Array(states.length);
+  private async runDueMapStates(
+    states: AutoUpdateProbeStateEntity[],
+  ): Promise<AutoUpdateProbeResult[]> {
+    const results: AutoUpdateProbeResult[] = [];
     let next = 0;
-    const workers = new Array(Math.min(this.mapConcurrency, states.length))
-      .fill(null)
-      .map(async () => {
+    const workers = Array.from(
+      { length: Math.min(this.timing.mapConcurrency, states.length) },
+      async () => {
         while (next < states.length) {
           const index = next++;
           results[index] = await this.processMapProbe(states[index]);
         }
-      });
+      },
+    );
     await Promise.all(workers);
     return results;
   }
 
-  private async processRivalProbe(state: AutoUpdateProbeStateEntity): Promise<{
-    friendCode: string;
-    cabinetUserId: number;
-    action: 'triggered' | 'skipped' | 'failed';
-    message?: string;
-  }> {
+  private async processRivalProbe(
+    state: AutoUpdateProbeStateEntity,
+  ): Promise<AutoUpdateProbeResult> {
     const taskId = randomUUID();
     const startedAt = Date.now();
-    await this.taskModel.create({
-      id: taskId,
-      type: 'rival_score_probe',
-      friendCode: state.friendCode,
-      cabinetUserId: state.cabinetUserId,
-      status: 'processing',
-      priority: this.priorityForTier(state.tier),
-      runAt: new Date(),
-      attempts: 1,
-      lastError: null,
-      metrics: null,
-    });
+    await this.createRivalTask(taskId, state);
 
     try {
       const { hash, music } = await this.sdgb.getRivalHash(
         { cabinetUserId: state.cabinetUserId },
         {
           tag: `auto-rival:${state.friendCode}`,
-          timeoutMs: this.rivalTimeoutMs,
+          timeoutMs: this.timing.rivalTimeoutMs,
         },
       );
       const now = new Date();
       const durationMs = Date.now() - startedAt;
       const hashChanged = hash !== state.lastRivalHash;
       const musicCount = music.length;
-      const detailCount = countDetails(music);
+      const detailCount = countRivalDetails(music);
 
       if (hashChanged) {
-        const sync = await this.syncService.createFromRivalMusic({
-          friendCode: state.friendCode,
-          sourceId: taskId,
-          music,
-        });
-        if (!sync) {
-          throw new Error('rival music returned no mappable scores');
-        }
-        await this.proberExports
-          .enqueueAutoExportForSync({
-            trigger: 'auto_update_rival',
-            friendCode: state.friendCode,
-            syncId: sync.id,
-            sourceTaskId: taskId,
-          })
-          .catch((err) =>
-            this.logger.warn(
-              `failed to enqueue rival auto-export fc=${state.friendCode}: ${
-                err instanceof Error ? err.message : err
-              }`,
-            ),
-          );
-
-        await this.stateModel.updateOne(
-          { friendCode: state.friendCode },
-          {
-            $set: {
-              tier: 'hot',
-              lastRivalHash: hash,
-              lastRivalProbeAt: now,
-              lastScoreChangedAt: now,
-              nextRivalProbeAt: this.nextProbeAt('hot', now, state),
-              rivalErrorCount: 0,
-              backoffUntil: null,
-              schedulerVersion: SCHEDULER_VERSION,
-            },
-          },
-        );
-        await this.completeTask(taskId, {
+        return await this.completeChangedRivalProbe({
+          state,
+          taskId,
+          now,
           durationMs,
-          hashChanged,
           musicCount,
           detailCount,
-          scoreCount: Array.isArray(sync.scores) ? sync.scores.length : null,
+          hash,
+          music,
         });
-        await this.maybeEnqueueFcfs(state, 'rival_hash_changed', now).catch(
-          (err) =>
-            this.logger.warn(
-              `failed to enqueue fcfs enrichment fc=${state.friendCode}: ${
-                err instanceof Error ? err.message : err
-              }`,
-            ),
-        );
-        return {
-          friendCode: state.friendCode,
-          cabinetUserId: state.cabinetUserId,
-          action: 'triggered',
-          message: `hash changed, merged ${Array.isArray(sync.scores) ? sync.scores.length : '?'} scores`,
-        };
       }
 
-      const nextTier = this.decayTier(state, now);
-      await this.stateModel.updateOne(
-        { friendCode: state.friendCode },
-        {
-          $set: {
-            tier: nextTier,
-            lastRivalProbeAt: now,
-            nextRivalProbeAt: this.nextProbeAt(nextTier, now, state),
-            rivalErrorCount: 0,
-            backoffUntil: null,
-            schedulerVersion: SCHEDULER_VERSION,
-          },
-        },
-      );
-      await this.completeTask(taskId, {
+      return await this.completeUnchangedRivalProbe({
+        state,
+        taskId,
+        now,
         durationMs,
-        hashChanged,
         musicCount,
         detailCount,
       });
-      return {
-        friendCode: state.friendCode,
-        cabinetUserId: state.cabinetUserId,
-        action: 'skipped',
-        message: 'hash unchanged',
-      };
     } catch (err) {
-      const now = new Date();
-      const msg = err instanceof Error ? err.message : String(err);
-      const failureCount = (state.rivalErrorCount ?? 0) + 1;
-      const backoffUntil = new Date(
-        now.getTime() + this.backoffDelayMs(failureCount),
-      );
-      await Promise.all([
-        this.stateModel.updateOne(
-          { friendCode: state.friendCode },
-          {
-            $set: {
-              rivalErrorCount: failureCount,
-              backoffUntil,
-              nextRivalProbeAt: backoffUntil,
-              lastRivalProbeAt: now,
-              schedulerVersion: SCHEDULER_VERSION,
-            },
-          },
-        ),
-        this.taskModel.updateOne(
-          { id: taskId },
-          {
-            $set: {
-              status: 'failed',
-              lastError: msg,
-              updatedAt: now,
-              metrics: { durationMs: Date.now() - startedAt },
-            },
-          },
-        ),
-      ]);
-      this.logger.warn(
-        `rival-first auto-update failed fc=${state.friendCode}: ${msg}`,
-      );
-      return {
-        friendCode: state.friendCode,
-        cabinetUserId: state.cabinetUserId,
-        action: 'failed',
-        message: msg,
-      };
+      return await this.failRivalProbe(state, taskId, startedAt, err);
     }
+  }
+
+  private async createRivalTask(
+    taskId: string,
+    state: AutoUpdateProbeStateEntity,
+  ): Promise<void> {
+    await this.taskModel.create({
+      id: taskId,
+      type: 'rival_score_probe',
+      friendCode: state.friendCode,
+      cabinetUserId: state.cabinetUserId,
+      status: 'processing',
+      priority: this.timing.priorityForTier(state.tier),
+      runAt: new Date(),
+      attempts: 1,
+      lastError: null,
+      metrics: null,
+    });
+  }
+
+  private async completeChangedRivalProbe(input: {
+    state: AutoUpdateProbeStateEntity;
+    taskId: string;
+    now: Date;
+    durationMs: number;
+    musicCount: number;
+    detailCount: number;
+    hash: string;
+    music: RivalMusic;
+  }): Promise<AutoUpdateProbeResult> {
+    const {
+      state,
+      taskId,
+      now,
+      durationMs,
+      musicCount,
+      detailCount,
+      hash,
+      music,
+    } = input;
+    const sync = await this.syncService.createFromRivalMusic({
+      friendCode: state.friendCode,
+      sourceId: taskId,
+      music,
+    });
+    if (!sync) {
+      throw new Error('rival music returned no mappable scores');
+    }
+    this.enqueueRivalAutoExport(state.friendCode, sync.id, taskId);
+    await this.stateModel.updateOne(
+      { friendCode: state.friendCode },
+      {
+        $set: {
+          tier: 'hot',
+          lastRivalHash: hash,
+          lastRivalProbeAt: now,
+          lastScoreChangedAt: now,
+          nextRivalProbeAt: this.timing.nextProbeAt('hot', now, state),
+          rivalErrorCount: 0,
+          backoffUntil: null,
+          schedulerVersion: SCHEDULER_VERSION,
+        },
+      },
+    );
+    await this.completeTask(taskId, {
+      durationMs,
+      hashChanged: true,
+      musicCount,
+      detailCount,
+      scoreCount: Array.isArray(sync.scores) ? sync.scores.length : null,
+    });
+    await this.enqueueFcfsAfterRivalChange(state, now);
+    return {
+      friendCode: state.friendCode,
+      cabinetUserId: state.cabinetUserId,
+      action: 'triggered',
+      message: `hash changed, merged ${Array.isArray(sync.scores) ? sync.scores.length : '?'} scores`,
+    };
+  }
+
+  private enqueueRivalAutoExport(
+    friendCode: string,
+    syncId: string,
+    taskId: string,
+  ): void {
+    this.proberExports
+      .enqueueAutoExportForSync({
+        trigger: 'auto_update_rival',
+        friendCode,
+        syncId,
+        sourceTaskId: taskId,
+      })
+      .catch((err) =>
+        this.logger.warn(
+          `failed to enqueue rival auto-export fc=${friendCode}: ${
+            err instanceof Error ? err.message : err
+          }`,
+        ),
+      );
+  }
+
+  private async enqueueFcfsAfterRivalChange(
+    state: AutoUpdateProbeStateEntity,
+    now: Date,
+  ): Promise<void> {
+    await this.maybeEnqueueFcfs(state, 'rival_hash_changed', now).catch((err) =>
+      this.logger.warn(
+        `failed to enqueue fcfs enrichment fc=${state.friendCode}: ${
+          err instanceof Error ? err.message : err
+        }`,
+      ),
+    );
+  }
+
+  private async completeUnchangedRivalProbe(input: {
+    state: AutoUpdateProbeStateEntity;
+    taskId: string;
+    now: Date;
+    durationMs: number;
+    musicCount: number;
+    detailCount: number;
+  }): Promise<AutoUpdateProbeResult> {
+    const { state, taskId, now, durationMs, musicCount, detailCount } = input;
+    const nextTier = this.timing.decayTier(state, now);
+    await this.stateModel.updateOne(
+      { friendCode: state.friendCode },
+      {
+        $set: {
+          tier: nextTier,
+          lastRivalProbeAt: now,
+          nextRivalProbeAt: this.timing.nextProbeAt(nextTier, now, state),
+          rivalErrorCount: 0,
+          backoffUntil: null,
+          schedulerVersion: SCHEDULER_VERSION,
+        },
+      },
+    );
+    await this.completeTask(taskId, {
+      durationMs,
+      hashChanged: false,
+      musicCount,
+      detailCount,
+    });
+    return {
+      friendCode: state.friendCode,
+      cabinetUserId: state.cabinetUserId,
+      action: 'skipped',
+      message: 'hash unchanged',
+    };
+  }
+
+  private async failRivalProbe(
+    state: AutoUpdateProbeStateEntity,
+    taskId: string,
+    startedAt: number,
+    err: unknown,
+  ): Promise<AutoUpdateProbeResult> {
+    const now = new Date();
+    const msg = err instanceof Error ? err.message : String(err);
+    const failureCount = (state.rivalErrorCount ?? 0) + 1;
+    const backoffUntil = new Date(
+      now.getTime() + this.timing.rivalBackoffDelayMs(failureCount),
+    );
+    await Promise.all([
+      this.stateModel.updateOne(
+        { friendCode: state.friendCode },
+        {
+          $set: {
+            rivalErrorCount: failureCount,
+            backoffUntil,
+            nextRivalProbeAt: backoffUntil,
+            lastRivalProbeAt: now,
+            schedulerVersion: SCHEDULER_VERSION,
+          },
+        },
+      ),
+      this.taskModel.updateOne(
+        { id: taskId },
+        {
+          $set: {
+            status: 'failed',
+            lastError: msg,
+            updatedAt: now,
+            metrics: { durationMs: Date.now() - startedAt },
+          },
+        },
+      ),
+    ]);
+    this.logger.warn(
+      `rival-first auto-update failed fc=${state.friendCode}: ${msg}`,
+    );
+    return {
+      friendCode: state.friendCode,
+      cabinetUserId: state.cabinetUserId,
+      action: 'failed',
+      message: msg,
+    };
   }
 
   private async completeTask(
@@ -635,7 +580,7 @@ export class AutoUpdateSchedulerService
       friendCode: state.friendCode,
       cabinetUserId: state.cabinetUserId,
       status: 'processing',
-      priority: this.priorityForTier(state.tier),
+      priority: this.timing.priorityForTier(state.tier),
       runAt: new Date(),
       attempts: 1,
       lastError: null,
@@ -645,22 +590,26 @@ export class AutoUpdateSchedulerService
     try {
       const { maps } = await this.sdgb.getUserMap(
         { cabinetUserId: state.cabinetUserId },
-        { tag: `auto-map:${state.friendCode}`, timeoutMs: this.mapTimeoutMs },
+        {
+          tag: `auto-map:${state.friendCode}`,
+          timeoutMs: this.timing.mapTimeoutMs,
+        },
       );
       const now = new Date();
-      const fingerprint = this.mapFingerprint(maps);
+      const fingerprint = this.timing.mapFingerprint(maps);
       const changed =
-        state.mapFingerprint != null &&
+        state.mapFingerprint !== null &&
+        state.mapFingerprint !== undefined &&
         state.mapFingerprint !== fingerprint.mapFingerprint;
       const nextTier: AutoUpdateTier = changed
         ? 'hot'
-        : this.decayTier(state, now);
+        : this.timing.decayTier(state, now);
       const set: Record<string, unknown> = {
         tier: nextTier,
         mapFingerprint: fingerprint.mapFingerprint,
         mapDistanceSum: fingerprint.mapDistanceSum,
         lastMapProbeAt: now,
-        nextMapProbeAt: this.nextMapProbeAt(nextTier, now, state),
+        nextMapProbeAt: this.timing.nextMapProbeAt(nextTier, now, state),
         mapErrorCount: 0,
         backoffUntil: null,
         schedulerVersion: SCHEDULER_VERSION,
@@ -668,7 +617,7 @@ export class AutoUpdateSchedulerService
 
       if (changed) {
         set.lastMapDeltaAt = now;
-        if (this.shouldProbeRivalNow(state, now)) {
+        if (this.timing.shouldProbeRivalNow(state, now)) {
           set.nextRivalProbeAt = now;
         }
       }
@@ -705,7 +654,7 @@ export class AutoUpdateSchedulerService
       const msg = err instanceof Error ? err.message : String(err);
       const failureCount = (state.mapErrorCount ?? 0) + 1;
       const backoffUntil = new Date(
-        now.getTime() + Math.min(HOUR, 5 * MINUTE * failureCount),
+        now.getTime() + this.timing.mapBackoffDelayMs(failureCount),
       );
       await Promise.all([
         this.stateModel.updateOne(
@@ -744,7 +693,9 @@ export class AutoUpdateSchedulerService
     reason: 'rival_hash_changed' | 'map_delta' | 'manual',
     now: Date,
   ): Promise<void> {
-    if (state.nextRecentEventAt && state.nextRecentEventAt > now) return;
+    if (state.nextRecentEventAt && state.nextRecentEventAt > now) {
+      return;
+    }
 
     const taskId = randomUUID();
     await this.taskModel.create({
@@ -753,7 +704,7 @@ export class AutoUpdateSchedulerService
       friendCode: state.friendCode,
       cabinetUserId: state.cabinetUserId,
       status: 'processing',
-      priority: this.priorityForTier('hot'),
+      priority: this.timing.priorityForTier('hot'),
       runAt: now,
       attempts: 1,
       lastError: null,
@@ -786,7 +737,7 @@ export class AutoUpdateSchedulerService
         },
       });
       const nextRecentEventAt = new Date(
-        now.getTime() + this.recentEventCooldownMs,
+        now.getTime() + this.timing.recentEventCooldownMs,
       );
       await Promise.all([
         this.stateModel.updateOne(
@@ -826,7 +777,8 @@ export class AutoUpdateSchedulerService
             $set: {
               recentErrorCount: failureCount,
               nextRecentEventAt: new Date(
-                now.getTime() + Math.min(6 * HOUR, 30 * MINUTE * failureCount),
+                now.getTime() +
+                  this.timing.recentEventRetryDelayMs(failureCount),
               ),
             },
           },
@@ -844,108 +796,5 @@ export class AutoUpdateSchedulerService
       ]);
       throw err;
     }
-  }
-
-  private priorityForTier(tier: AutoUpdateTier): number {
-    if (tier === 'hot') return 30;
-    if (tier === 'warm') return 10;
-    return 0;
-  }
-
-  private intervalForTier(tier: AutoUpdateTier): number {
-    if (tier === 'hot') return this.hotIntervalMs;
-    if (tier === 'warm') return this.warmIntervalMs;
-    return this.coldIntervalMs;
-  }
-
-  private mapIntervalForTier(tier: AutoUpdateTier): number {
-    if (tier === 'hot') return this.mapHotIntervalMs;
-    if (tier === 'warm') return this.mapWarmIntervalMs;
-    return this.mapColdIntervalMs;
-  }
-
-  private nextProbeAt(
-    tier: AutoUpdateTier,
-    now: Date,
-    state: AutoUpdateProbeStateEntity,
-  ): Date {
-    const base = this.intervalForTier(tier);
-    const habitMultiplier = Number.isFinite(state.habitMultiplier)
-      ? state.habitMultiplier
-      : 1;
-    const loadMultiplier = Number.isFinite(state.loadMultiplier)
-      ? state.loadMultiplier
-      : 1;
-    const ms = Math.max(
-      MINUTE,
-      Math.floor(base * habitMultiplier * loadMultiplier),
-    );
-    return new Date(now.getTime() + ms);
-  }
-
-  private nextMapProbeAt(
-    tier: AutoUpdateTier,
-    now: Date,
-    state: AutoUpdateProbeStateEntity,
-  ): Date {
-    const base = this.mapIntervalForTier(tier);
-    const loadMultiplier = Number.isFinite(state.loadMultiplier)
-      ? state.loadMultiplier
-      : 1;
-    return new Date(
-      now.getTime() + Math.max(MINUTE, Math.floor(base * loadMultiplier)),
-    );
-  }
-
-  private shouldProbeRivalNow(
-    state: AutoUpdateProbeStateEntity,
-    now: Date,
-  ): boolean {
-    if (!state.lastRivalProbeAt) return true;
-    return (
-      now.getTime() - state.lastRivalProbeAt.getTime() >=
-      this.intervalForTier(state.tier)
-    );
-  }
-
-  private mapFingerprint(maps: SdgbWorkerUserMapEntry[]): {
-    mapFingerprint: string;
-    mapDistanceSum: number;
-    rowCount: number;
-  } {
-    const pairs = maps
-      .filter((m) => Number.isFinite(m.mapId) && Number.isFinite(m.distance))
-      .map((m) => [m.mapId, m.distance] as const)
-      .sort((a, b) => a[0] - b[0]);
-    const stable = pairs
-      .map(([mapId, distance]) => `${mapId}:${distance}`)
-      .join('|');
-    return {
-      mapFingerprint: createHash('sha256').update(stable).digest('hex'),
-      mapDistanceSum: pairs.reduce((sum, [, distance]) => sum + distance, 0),
-      rowCount: pairs.length,
-    };
-  }
-
-  private decayTier(
-    state: AutoUpdateProbeStateEntity,
-    now: Date,
-  ): AutoUpdateTier {
-    const lastSignal = maxDate(state.lastScoreChangedAt, state.lastMapDeltaAt);
-    if (!lastSignal) return 'cold';
-    const idleMs = now.getTime() - lastSignal.getTime();
-    if (state.tier === 'hot' && idleMs <= this.hotSessionMs) return 'hot';
-    if (idleMs <= this.warmMaxIdleMs) return 'warm';
-    return 'cold';
-  }
-
-  private backoffDelayMs(failureCount: number): number {
-    return Math.min(
-      AUTO_UPDATE_BACKOFF_POLICY.capMs,
-      Math.floor(
-        AUTO_UPDATE_BACKOFF_POLICY.baseMs *
-          Math.pow(AUTO_UPDATE_BACKOFF_POLICY.factor, failureCount - 1),
-      ),
-    );
   }
 }

@@ -17,6 +17,32 @@ const PASSWORD_HASH_VERSION = 'scrypt';
 const PASSWORD_KEY_LENGTH = 64;
 const USERNAME_RE = /^[a-z0-9_]{3,32}$/;
 const FRIEND_CODE_RE = /^\d{15}$/;
+type FriendListProfileRow = {
+  friendCode: string;
+  userName?: string | null;
+  rating?: number | null;
+  avatarUrl?: string | null;
+  title?: string | null;
+  titleColor?: string | null;
+  ratingBgUrl?: string | null;
+  courseRankUrl?: string | null;
+  classRankUrl?: string | null;
+  awakeningCount?: number | null;
+};
+type ProfileSetDoc = Record<string, string | number | null>;
+const FRIEND_LIST_PROFILE_FIELDS: Array<
+  readonly [keyof FriendListProfileRow, keyof UserNetProfile]
+> = [
+  ['avatarUrl', 'avatarUrl'],
+  ['title', 'title'],
+  ['titleColor', 'titleColor'],
+  ['userName', 'username'],
+  ['rating', 'rating'],
+  ['ratingBgUrl', 'ratingBgUrl'],
+  ['courseRankUrl', 'courseRankUrl'],
+  ['classRankUrl', 'classRankUrl'],
+  ['awakeningCount', 'awakeningCount'],
+];
 
 @Injectable()
 export class UsersService {
@@ -51,16 +77,22 @@ export class UsersService {
         query = null;
       }
     }
-    if (!query) return null;
+    if (!query) {
+      return null;
+    }
 
     const doc = await this.userModel.findOne(query).select('+passwordHash');
-    if (!doc?.passwordHash) return null;
+    if (!doc?.passwordHash) {
+      return null;
+    }
 
     const ok = await this.verifyPassword(password, doc.passwordHash);
-    if (!ok) return null;
+    if (!ok) {
+      return null;
+    }
 
-    const { passwordHash: _passwordHash, ...user } =
-      doc.toObject() as unknown as Record<string, unknown>;
+    const user = doc.toObject() as unknown as Record<string, unknown>;
+    delete user.passwordHash;
     return user;
   }
 
@@ -84,9 +116,13 @@ export class UsersService {
     deleted: boolean;
     friendCode: string;
   }> {
-    if (!isValidObjectId(id)) throw new NotFoundException('User not found');
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('User not found');
+    }
     const user = await this.userModel.findById(id);
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
     const friendCode = user.friendCode;
     await this.userModel.deleteOne({ _id: id });
     return { deleted: true, friendCode };
@@ -218,27 +254,15 @@ export class UsersService {
       throw new BadRequestException('请先设置密码');
     }
 
-    if (hasPassword && (usernameChanged || passwordChanged)) {
-      if (!input.currentPassword) {
-        throw new BadRequestException('请输入当前密码');
-      }
-      const currentPasswordOk = await this.verifyPassword(
-        input.currentPassword,
-        user.passwordHash!,
-      );
-      if (!currentPasswordOk) {
-        throw new BadRequestException('当前密码不正确');
-      }
-    }
+    await this.verifyCurrentPasswordIfNeeded({
+      hasPassword,
+      changed: usernameChanged || passwordChanged,
+      currentPassword: input.currentPassword,
+      storedHash: user.passwordHash,
+    });
 
     if (usernameChanged && normalizedUsername) {
-      const existing = await this.userModel.exists({
-        _id: { $ne: user._id },
-        username: normalizedUsername,
-      });
-      if (existing) {
-        throw new ConflictException('用户名已被使用');
-      }
+      await this.ensureUsernameAvailable(normalizedUsername, user._id);
       updateDoc.username = normalizedUsername;
     }
 
@@ -260,6 +284,40 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     return updated.toObject();
+  }
+
+  private async verifyCurrentPasswordIfNeeded(input: {
+    hasPassword: boolean;
+    changed: boolean;
+    currentPassword?: string;
+    storedHash?: string | null;
+  }): Promise<void> {
+    if (!input.hasPassword || !input.changed) {
+      return;
+    }
+    if (!input.currentPassword) {
+      throw new BadRequestException('请输入当前密码');
+    }
+    const currentPasswordOk = await this.verifyPassword(
+      input.currentPassword,
+      input.storedHash!,
+    );
+    if (!currentPasswordOk) {
+      throw new BadRequestException('当前密码不正确');
+    }
+  }
+
+  private async ensureUsernameAvailable(
+    normalizedUsername: string,
+    currentUserId: unknown,
+  ): Promise<void> {
+    const existing = await this.userModel.exists({
+      _id: { $ne: currentUserId },
+      username: normalizedUsername,
+    });
+    if (existing) {
+      throw new ConflictException('用户名已被使用');
+    }
   }
 
   private normalizeUsername(username: string): string {
@@ -336,44 +394,25 @@ export class UsersService {
    *     friends per bot.
    */
   async patchProfilesFromFriendList(
-    rows: ReadonlyArray<{
-      friendCode: string;
-      userName?: string | null;
-      rating?: number | null;
-      avatarUrl?: string | null;
-      title?: string | null;
-      titleColor?: string | null;
-      ratingBgUrl?: string | null;
-      courseRankUrl?: string | null;
-      classRankUrl?: string | null;
-      awakeningCount?: number | null;
-    }>,
+    rows: ReadonlyArray<FriendListProfileRow>,
   ): Promise<{ matched: number; modified: number }> {
-    if (!rows.length) return { matched: 0, modified: 0 };
+    if (!rows.length) {
+      return { matched: 0, modified: 0 };
+    }
 
     // Use $set on individual nested keys (e.g. profile.avatarUrl) so we
     // don't clobber existing fields that aren't in the friend list scrape.
-    type SetDoc = Record<string, string | number | null>;
     const ops: Array<{
       updateOne: {
         filter: { friendCode: string };
-        update: { $set: SetDoc };
+        update: { $set: ProfileSetDoc };
       };
     }> = [];
     for (const r of rows) {
-      const set: SetDoc = {};
-      if (r.avatarUrl != null) set['profile.avatarUrl'] = r.avatarUrl;
-      if (r.title != null) set['profile.title'] = r.title;
-      if (r.titleColor != null) set['profile.titleColor'] = r.titleColor;
-      if (r.userName != null) set['profile.username'] = r.userName;
-      if (r.rating != null) set['profile.rating'] = r.rating;
-      if (r.ratingBgUrl != null) set['profile.ratingBgUrl'] = r.ratingBgUrl;
-      if (r.courseRankUrl != null)
-        set['profile.courseRankUrl'] = r.courseRankUrl;
-      if (r.classRankUrl != null) set['profile.classRankUrl'] = r.classRankUrl;
-      if (r.awakeningCount != null)
-        set['profile.awakeningCount'] = r.awakeningCount;
-      if (Object.keys(set).length === 0) continue;
+      const set = this.buildFriendListProfileSet(r);
+      if (Object.keys(set).length === 0) {
+        continue;
+      }
       ops.push({
         updateOne: {
           filter: { friendCode: r.friendCode },
@@ -382,7 +421,9 @@ export class UsersService {
         },
       });
     }
-    if (!ops.length) return { matched: 0, modified: 0 };
+    if (!ops.length) {
+      return { matched: 0, modified: 0 };
+    }
     const result = await this.userModel.bulkWrite(ops, { ordered: false });
     return {
       matched: result.matchedCount ?? 0,
@@ -390,11 +431,24 @@ export class UsersService {
     };
   }
 
+  private buildFriendListProfileSet(row: FriendListProfileRow): ProfileSetDoc {
+    const set: ProfileSetDoc = {};
+    for (const [sourceKey, profileKey] of FRIEND_LIST_PROFILE_FIELDS) {
+      const value = row[sourceKey];
+      if (value !== null && value !== undefined) {
+        set[`profile.${profileKey}`] = value;
+      }
+    }
+    return set;
+  }
+
   /**
    * 更新用户最后活跃时间
    */
   async updateLastActiveAt(userId: string): Promise<void> {
-    if (!isValidObjectId(userId)) return;
+    if (!isValidObjectId(userId)) {
+      return;
+    }
     await this.userModel.updateOne(
       { _id: userId },
       { lastActiveAt: new Date() },
@@ -404,16 +458,16 @@ export class UsersService {
   /**
    * 批量查询用户活跃度
    */
-  async getActivityByFriendCodes(
-    friendCodes: string[],
-  ): Promise<
+  async getActivityByFriendCodes(friendCodes: string[]): Promise<
     {
       friendCode: string;
       lastActiveAt: Date | null;
       cabinetUserId: number | null;
     }[]
   > {
-    if (!friendCodes.length) return [];
+    if (!friendCodes.length) {
+      return [];
+    }
     const users = await this.userModel
       .find({ friendCode: { $in: friendCodes } })
       .select('friendCode lastActiveAt cabinetUserId')

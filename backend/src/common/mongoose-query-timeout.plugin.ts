@@ -28,12 +28,9 @@ function isEnabled(ms: number | undefined): ms is number {
   return typeof ms === 'number' && Number.isFinite(ms) && ms > 0;
 }
 
-function setQueryMaxTimeMS(
-  query: Query<unknown, unknown>,
-  maxTimeMS: number,
-) {
+function setQueryMaxTimeMS(query: Query<unknown, unknown>, maxTimeMS: number) {
   const options = query.getOptions();
-  if (options.maxTimeMS == null) {
+  if (options.maxTimeMS === null || options.maxTimeMS === undefined) {
     query.setOptions({ maxTimeMS });
   }
 }
@@ -67,7 +64,10 @@ export function createMongooseQueryTimeoutPlugin(
     if (isEnabled(options.aggregateMaxTimeMS)) {
       schema.pre('aggregate', function defaultAggregateMaxTimeMS() {
         const aggregate = this as Aggregate<unknown[]>;
-        if (aggregate.options.maxTimeMS == null) {
+        if (
+          aggregate.options.maxTimeMS === null ||
+          aggregate.options.maxTimeMS === undefined
+        ) {
           aggregate.option({ maxTimeMS: options.aggregateMaxTimeMS });
         }
       });

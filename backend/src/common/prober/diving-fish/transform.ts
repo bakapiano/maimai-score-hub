@@ -34,7 +34,9 @@ const VERSION_MAP: Record<string, string> = {
 };
 
 function mapVersion(version: string | null | undefined): string | null {
-  if (!version) return null;
+  if (!version) {
+    return null;
+  }
   return VERSION_MAP[version] ?? version;
 }
 
@@ -49,6 +51,27 @@ type ItemOverride = {
   charts?: ChartPayload[];
 };
 
+type DivingFishBasicInfo = {
+  title?: unknown;
+  artist?: unknown;
+  genre?: unknown;
+  category?: unknown;
+  bpm?: unknown;
+  from?: unknown;
+  version?: unknown;
+  is_new?: unknown;
+};
+
+export type DivingFishItem = {
+  id?: unknown;
+  title?: unknown;
+  type?: unknown;
+  level?: unknown;
+  ds?: unknown;
+  charts?: unknown;
+  basic_info?: unknown;
+};
+
 const ITEM_OVERRIDES: Record<string, ItemOverride> = {
   '11568': { category: '流行&动漫' }, // INTERNET OVERDOSE
   '383': { title: 'Link' },
@@ -58,82 +81,128 @@ function getOverrideForItem(id: string | number): ItemOverride | undefined {
   return ITEM_OVERRIDES[String(id)];
 }
 
-export function buildChartsFromDivingFishItem(item: any): ChartPayload[] {
-  const levels = Array.isArray(item.level) ? item.level : [];
-  const detailLevels = Array.isArray(item.ds) ? item.ds : [];
-  const charts = Array.isArray(item.charts) ? item.charts : [];
+function formatUnknown(value: unknown): string {
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value);
+  }
+  return 'unknown';
+}
+
+export function buildChartsFromDivingFishItem(
+  item: DivingFishItem,
+): ChartPayload[] {
+  const levels: unknown[] = Array.isArray(item.level) ? item.level : [];
+  const detailLevels: unknown[] = Array.isArray(item.ds) ? item.ds : [];
+  const charts: unknown[] = Array.isArray(item.charts) ? item.charts : [];
 
   const maxLen = Math.max(levels.length, detailLevels.length, charts.length);
-  if (!maxLen) return [];
+  if (!maxLen) {
+    return [];
+  }
 
   const normalized: ChartPayload[] = [];
 
   const musicId = String(item.id);
 
   for (let i = 0; i < maxLen; i++) {
-    const rawChart = charts[i];
-    const hasRawChart = rawChart && typeof rawChart === 'object';
-
-    const detailLevelRaw = detailLevels[i];
-    const detailLevelParsed =
-      typeof detailLevelRaw === 'number'
-        ? detailLevelRaw
-        : typeof detailLevelRaw === 'string'
-          ? Number(detailLevelRaw)
-          : undefined;
-
-    const cid = `${musicId}_${i}`;
-    const level = levels[i];
-    const detailLevel = Number.isFinite(detailLevelParsed)
-      ? detailLevelParsed
-      : undefined;
-
-    if (level === undefined || level === null) {
-      throw new Error(
-        `Missing level for chart index ${i} of song ${item.title ?? item.id ?? 'unknown'}`,
-      );
-    }
-    if (detailLevel === undefined) {
-      throw new Error(
-        `Missing detailLevel (ds) for chart index ${i} of song ${item.title ?? item.id ?? 'unknown'}`,
-      );
-    }
-
-    const chart: ChartPayload = {
-      cid,
-      level,
-      detailLevel,
-      charter: hasRawChart
-        ? (rawChart.charter ?? rawChart.designer)
-        : undefined,
-    };
-
-    if (hasRawChart && Object.keys(rawChart).length) {
-      chart.notes = rawChart;
-    }
-
-    normalized.push(chart);
+    normalized.push(
+      buildChartPayload(item, musicId, i, levels, detailLevels, charts),
+    );
   }
 
   return normalized;
 }
 
-export function mapSongMetadataFromDivingFish(info: any): SongMetadata | null {
+function buildChartPayload(
+  item: DivingFishItem,
+  musicId: string,
+  index: number,
+  levels: unknown[],
+  detailLevels: unknown[],
+  charts: unknown[],
+): ChartPayload {
+  const levelRaw = levels[index];
+  const detailLevel = parseDetailLevel(detailLevels[index]);
+  if (levelRaw === undefined || levelRaw === null) {
+    throw new Error(
+      `Missing level for chart index ${index} of song ${formatUnknown(
+        item.title ?? item.id,
+      )}`,
+    );
+  }
+  if (detailLevel === undefined) {
+    throw new Error(
+      `Missing detailLevel (ds) for chart index ${index} of song ${formatUnknown(
+        item.title ?? item.id,
+      )}`,
+    );
+  }
+
+  const rawChartRecord = toChartRecord(charts[index]);
+  const chart: ChartPayload = {
+    cid: `${musicId}_${index}`,
+    level:
+      typeof levelRaw === 'string' || typeof levelRaw === 'number'
+        ? String(levelRaw)
+        : formatUnknown(levelRaw),
+    detailLevel,
+    charter: getChartDesigner(rawChartRecord),
+  };
+
+  if (rawChartRecord && Object.keys(rawChartRecord).length) {
+    chart.notes = charts[index];
+  }
+  return chart;
+}
+
+function parseDetailLevel(raw: unknown): number | undefined {
+  const parsed =
+    typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function toChartRecord(raw: unknown): Record<string, unknown> | null {
+  return raw && typeof raw === 'object'
+    ? (raw as Record<string, unknown>)
+    : null;
+}
+
+function getChartDesigner(
+  record: Record<string, unknown> | null,
+): string | undefined {
+  if (typeof record?.charter === 'string') {
+    return record.charter;
+  }
+  return typeof record?.designer === 'string' ? record.designer : undefined;
+}
+
+export function mapSongMetadataFromDivingFish(
+  info: unknown,
+): SongMetadata | null {
   if (!info || typeof info !== 'object') {
     return null;
   }
+  const record = info as DivingFishBasicInfo;
 
-  const rawCategory = info.genre ?? info.category;
+  const rawCategory = record.genre ?? record.category;
   const mappedCategory = mapDivingFishCategory(rawCategory);
-  const title = info.title;
+  const title = typeof record.title === 'string' ? record.title : undefined;
 
   return {
-    title: title ?? info.title,
-    artist: info.artist,
+    title,
+    artist: typeof record.artist === 'string' ? record.artist : undefined,
     category: mappedCategory ?? undefined,
-    bpm: info.bpm ?? null,
-    from: info.from ?? info.version ?? null,
-    isNew: info.is_new ?? undefined,
+    bpm:
+      typeof record.bpm === 'string' || typeof record.bpm === 'number'
+        ? record.bpm
+        : null,
+    from:
+      typeof record.from === 'string'
+        ? record.from
+        : typeof record.version === 'string'
+          ? record.version
+          : null,
+    isNew: typeof record.is_new === 'boolean' ? record.is_new : undefined,
   };
 }
 
@@ -141,15 +210,19 @@ export function getDivingFishSourceUrl(configService: ConfigService): string {
   return getDivingFishMusicSourceUrl(configService);
 }
 
-export function convertDivingFishItemToDocument(item: any, now: Date) {
+export function convertDivingFishItemToDocument(
+  item: DivingFishItem,
+  now: Date,
+) {
   const charts = buildChartsFromDivingFishItem(item);
   const metadata = mapSongMetadataFromDivingFish(item.basic_info);
   const id = String(item.id);
   const override = getOverrideForItem(id);
   const fallbackCategory = metadata?.category ?? null;
   const category = override?.category ?? fallbackCategory;
-  const mappedType = override?.type ?? mapDivingFishType(item.type, category);
-  const title = item.title;
+  const rawType = typeof item.type === 'string' ? item.type : undefined;
+  const mappedType = override?.type ?? mapDivingFishType(rawType, category);
+  const title = typeof item.title === 'string' ? item.title : id;
   const rawVersion = metadata?.from ?? null;
   const version = mapVersion(rawVersion);
 

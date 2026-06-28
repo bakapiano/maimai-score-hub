@@ -1,21 +1,29 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 
 import { SharedSecretGuard } from '../../common/guards/shared-secret.guard';
-import { AdminService } from '../../modules/admin/services/admin.service';
+import { AdminAutoUpdateMetricsService } from '../../modules/admin/services/admin-auto-update-metrics.service';
+import { AdminJobMetricsService } from '../../modules/admin/services/admin-job-metrics.service';
+import { AdminProberExportMetricsService } from '../../modules/admin/services/admin-prober-export-metrics.service';
+import { AdminSummaryService } from '../../modules/admin/services/admin-summary.service';
 
 @Controller('admin/dashboard')
 @UseGuards(SharedSecretGuard)
 export class AdminDashboardController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly summaryService: AdminSummaryService,
+    private readonly jobMetricsService: AdminJobMetricsService,
+    private readonly autoUpdateMetricsService: AdminAutoUpdateMetricsService,
+    private readonly proberExportMetricsService: AdminProberExportMetricsService,
+  ) {}
 
   @Get('stats')
   async getStats() {
-    return this.adminService.getStats();
+    return this.summaryService.getStats();
   }
 
   @Get('job-stats')
   async getJobStats() {
-    return await this.adminService.getJobStats();
+    return await this.jobMetricsService.getJobStats();
   }
 
   /**
@@ -25,7 +33,7 @@ export class AdminDashboardController {
   @Get('auto-update-metrics')
   async getAutoUpdateMetrics(@Query('window') window?: string) {
     const w: '24h' | '7d' = window === '7d' ? '7d' : '24h';
-    return this.adminService.getAutoUpdateMetrics(w);
+    return this.autoUpdateMetricsService.getAutoUpdateMetrics(w);
   }
 
   /**
@@ -35,7 +43,7 @@ export class AdminDashboardController {
   @Get('prober-export-metrics')
   async getProberExportMetrics(@Query('window') window?: string) {
     const w: '24h' | '7d' = window === '7d' ? '7d' : '24h';
-    return this.adminService.getProberExportMetrics(w);
+    return this.proberExportMetricsService.getProberExportMetrics(w);
   }
 
   @Get('job-trend')
@@ -43,11 +51,11 @@ export class AdminDashboardController {
     const hours = hoursStr
       ? Math.min(Math.max(parseInt(hoursStr, 10) || 24, 1), 720)
       : 24;
-    return await this.adminService.getJobTrend(hours);
+    return await this.jobMetricsService.getJobTrend(hours);
   }
 
   @Get('job-error-stats')
   async getJobErrorStats() {
-    return await this.adminService.getJobErrorStats();
+    return await this.jobMetricsService.getJobErrorStats();
   }
 }

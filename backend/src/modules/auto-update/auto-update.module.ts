@@ -20,6 +20,7 @@ import {
   AutoUpdateTaskSchema,
 } from './schemas/auto-update-task.schema';
 import { AutoUpdateSchedulerService } from './services/auto-update-scheduler.service';
+import { AutoUpdateSchedulerTimingService } from './services/auto-update-scheduler-timing.service';
 
 @Module({
   imports: [
@@ -38,7 +39,7 @@ import { AutoUpdateSchedulerService } from './services/auto-update-scheduler.ser
       { name: AutoUpdateTaskEntity.name, schema: AutoUpdateTaskSchema },
     ]),
   ],
-  providers: [AutoUpdateSchedulerService],
+  providers: [AutoUpdateSchedulerService, AutoUpdateSchedulerTimingService],
   exports: [AutoUpdateSchedulerService],
 })
 export class AutoUpdateModule {}

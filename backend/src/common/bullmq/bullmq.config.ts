@@ -18,7 +18,9 @@ export interface ProberExportJobData {
 
 function getInt(config: ConfigService, key: string, fallback: number): number {
   const raw = config.get<string | number>(key);
-  if (raw == null || raw === '') return fallback;
+  if (raw === null || raw === undefined || raw === '') {
+    return fallback;
+  }
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? Math.floor(parsed) : fallback;
 }
@@ -51,7 +53,9 @@ export function createBullmqConnection(
 
 export function getBullmqPrefix(config: ConfigService): string {
   const explicit = getOptionalString(config, 'BULLMQ_PREFIX');
-  if (explicit) return explicit.replace(/:+$/, '');
+  if (explicit) {
+    return explicit.replace(/:+$/, '');
+  }
 
   const redisPrefix = config.get<string>('REDIS_KEY_PREFIX', 'maimai:');
   return `${redisPrefix.replace(/:+$/, '')}:bull`;

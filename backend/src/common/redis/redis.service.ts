@@ -50,7 +50,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async getJson<T>(key: string): Promise<T | null> {
     const raw = await this.client.get(key);
-    if (!raw) return null;
+    if (!raw) {
+      return null;
+    }
     return JSON.parse(raw) as T;
   }
 
@@ -89,11 +91,13 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     args.push('*');
 
     for (const [key, value] of Object.entries(fields)) {
-      if (value === undefined) continue;
+      if (value === undefined) {
+        continue;
+      }
       args.push(key, value === null ? '' : String(value));
     }
 
-    return (await this.client.sendCommand(args)) as string;
+    return await this.client.sendCommand(args);
   }
 
   async xRevRange(
@@ -113,7 +117,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   private getRedisUrl(): string {
     const explicit = this.config.get<string>('REDIS_URL');
-    if (explicit) return explicit;
+    if (explicit) {
+      return explicit;
+    }
 
     const host = this.config.get<string>('REDIS_HOST', '127.0.0.1');
     const port = this.config.get<string>('REDIS_PORT', '6379');
@@ -128,13 +134,18 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   private parseStreamEntries(raw: unknown): RedisStreamEntry[] {
-    if (!Array.isArray(raw)) return [];
+    if (!Array.isArray(raw)) {
+      return [];
+    }
     const entries: RedisStreamEntry[] = [];
 
     for (const row of raw) {
-      if (!Array.isArray(row) || row.length < 2) continue;
-      const id = String(row[0]);
-      const payload = row[1];
+      if (!Array.isArray(row) || row.length < 2) {
+        continue;
+      }
+      const rowItems = row as unknown[];
+      const id = String(rowItems[0]);
+      const payload: unknown = rowItems[1];
       const fields: Record<string, string> = {};
 
       if (Array.isArray(payload)) {

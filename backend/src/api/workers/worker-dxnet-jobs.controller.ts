@@ -47,9 +47,7 @@ export class WorkerDxnetJobsController {
 
   @Post('users/activity')
   @HttpCode(200)
-  async getUsersActivity(
-    @Body() body: { friendCodes?: unknown },
-  ): Promise<
+  async getUsersActivity(@Body() body: { friendCodes?: unknown }): Promise<
     {
       friendCode: string;
       lastActiveAt: string | null;

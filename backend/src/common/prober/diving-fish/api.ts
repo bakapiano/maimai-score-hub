@@ -47,7 +47,9 @@ async function fetchWithRetry(
       lastErr = err;
       continue;
     }
-    if (res.ok) return res;
+    if (res.ok) {
+      return res;
+    }
     if (res.status >= 400 && res.status < 500) {
       // 4xx: don't retry, but include body in error
       const text = await res.text().catch(() => '');

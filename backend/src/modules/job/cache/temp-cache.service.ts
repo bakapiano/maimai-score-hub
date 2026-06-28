@@ -50,7 +50,9 @@ export class JobTempCacheService {
 
   async deleteByJobId(jobId: string): Promise<number> {
     const keys = await this.redis.keys(this.cacheKey(jobId, '*', '*'));
-    if (!keys.length) return 0;
+    if (!keys.length) {
+      return 0;
+    }
 
     let deleted = 0;
     for (const key of keys) {
@@ -71,7 +73,9 @@ export class JobTempCacheService {
     fallback: number,
   ): number {
     const raw = config.get<string | number>(key);
-    if (raw == null || raw === '') return fallback;
+    if (raw === null || raw === undefined || raw === '') {
+      return fallback;
+    }
     const parsed = Number(raw);
     return Number.isFinite(parsed) && parsed > 0
       ? Math.floor(parsed)

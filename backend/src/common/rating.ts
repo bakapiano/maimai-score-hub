@@ -75,11 +75,17 @@ export function getRankByAchievement(achievement: number) {
 export function normalizeAchievement(
   raw: string | number | null | undefined,
 ): number | null {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw) ? raw : null;
+  }
 
   const trimmed = raw.trim();
-  if (!trimmed) return null;
+  if (!trimmed) {
+    return null;
+  }
 
   const withoutPercent = trimmed.endsWith('%') ? trimmed.slice(0, -1) : trimmed;
   const parsed = Number(withoutPercent);
@@ -89,7 +95,9 @@ export function normalizeAchievement(
 export function getRating(level: number, achv: number) {
   const achievement = Math.min(achv, RANK_SSS_PLUS.minAchv);
   const rank = getRankByAchievement(achievement);
-  if (!rank) return 0;
+  if (!rank) {
+    return 0;
+  }
 
   const positiveLv = Math.abs(level);
   if (rank.maxAchv && rank.maxFactor && rank.maxAchv === achv) {

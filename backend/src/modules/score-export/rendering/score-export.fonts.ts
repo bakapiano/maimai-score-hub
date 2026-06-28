@@ -7,7 +7,9 @@ const FONT_DIR = join(process.cwd(), 'assets', 'fonts');
 let fontsLoaded = false;
 
 export function ensureFontsLoaded() {
-  if (fontsLoaded) return;
+  if (fontsLoaded) {
+    return;
+  }
 
   const fonts = (
     Canvas as unknown as {

@@ -88,7 +88,9 @@ export class MeScoreExportController {
 }
 
 function sanitizeFilename(value?: string) {
-  if (!value) return 'unknown';
+  if (!value) {
+    return 'unknown';
+  }
   // Only allow ASCII-safe characters for Content-Disposition header
   return value.replace(/[^a-zA-Z0-9\-_]+/g, '_');
 }

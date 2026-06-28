@@ -63,9 +63,15 @@ function mapLxnsType(
   const hasDx = difficulties.dx && difficulties.dx.length > 0;
   const hasUtage = difficulties.utage && difficulties.utage.length > 0;
 
-  if (hasUtage && !hasStandard && !hasDx) return 'utage';
-  if (hasDx) return 'dx';
-  if (hasStandard) return 'standard';
+  if (hasUtage && !hasStandard && !hasDx) {
+    return 'utage';
+  }
+  if (hasDx) {
+    return 'dx';
+  }
+  if (hasStandard) {
+    return 'standard';
+  }
   return 'unknown';
 }
 

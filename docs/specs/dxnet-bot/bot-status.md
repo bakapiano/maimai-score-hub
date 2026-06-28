@@ -139,7 +139,7 @@ X-API-Secret: <API_SHARED_SECRET>
 | `AutoUpdateSchedulerService.maybeEnqueueFcfs()` | FC/FS enrichment 需要 `pickAvailableCabinetBot()`，随后 sdgb `addRival` 并创建 `get_user_recent_event` DXNet job。 |
 | `Worker get_full_friend_list` job | 主动抓完整好友列表，通过 `getFriendList()` full-overwrite BotManager 内存快照；快照变化后由统一监听器触发 bot status report，刷新 `bot_statuses`。 |
 | `BotStatusService.cleanupStaleJobs()` | 定期根据不可用/超时 Bot fail 掉已分配给这些 Bot 的 queued/processing job。 |
-| `AdminService.getAutoUpdateMetrics()` | 直接统计 `bot_statuses` 中 `available=true && cabinetUserId != null` 的 Bot 数，用于自动更新容量估算。 |
+| `AdminAutoUpdateMetricsService.getAutoUpdateMetrics()` | 直接统计 `bot_statuses` 中 `available=true && cabinetUserId != null` 的 Bot 数，用于自动更新容量估算。 |
 | ADB worker `bot_monitor` / `recovery` | 通过 `GET /api/v1/admin/bots` 拉取状态，缓存后找出 `available=false` 的 Bot；若本地有设备绑定且满足恢复间隔，就触发 WeChat WebView cookie recovery。 |
 
 ## 前端如何判断“用户是否已和 DXNet Bot 成为好友”

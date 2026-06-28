@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { json, urlencoded } from 'express';
 
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 import { AppModule } from './app.module';
 import { NestFactory } from '@nestjs/core';
+import * as dns from 'node:dns';
 import { lookup as originalLookup } from 'node:dns';
 import { parse } from 'yaml';
 import { resolve } from 'node:path';
@@ -15,8 +16,12 @@ import swaggerUi from 'swagger-ui-express';
 // `setDefaultResultOrder('ipv4first')` is insufficient because getaddrinfo
 // with family=0 still queries AAAA and fails on SERVFAIL.
 const _origLookup = originalLookup;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-require('node:dns').lookup = function patchedLookup(
+type DnsLookup = typeof originalLookup;
+type HttpServerWithAddress = {
+  address: () => AddressInfo | string | null;
+};
+
+(dns as { lookup: DnsLookup }).lookup = function patchedLookup(
   hostname: string,
   options: unknown,
   callback: unknown,
@@ -31,8 +36,25 @@ require('node:dns').lookup = function patchedLookup(
   } else {
     options = { family: 4 };
   }
-  return _origLookup.call(this, hostname, options as never, callback as never);
-};
+  void _origLookup(hostname, options as never, callback as never);
+} as DnsLookup;
+
+function getHttpAddress(server: unknown): AddressInfo {
+  const address = (server as HttpServerWithAddress).address();
+  if (!address || typeof address === 'string') {
+    throw new Error('HTTP server did not expose a TCP address');
+  }
+  return address;
+}
+
+function isRecoverableListenError(err: unknown): err is { code: string } {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err.code === 'EACCES' || err.code === 'EADDRINUSE')
+  );
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -57,7 +79,7 @@ async function bootstrap() {
 
   if (openApiPath) {
     const openApiYaml = readFileSync(openApiPath, 'utf8');
-    const openApiDoc = parse(openApiYaml);
+    const openApiDoc = parse(openApiYaml) as Record<string, unknown>;
     app.use('/api/v1/swagger', swaggerUi.serve, swaggerUi.setup(openApiDoc));
     console.log(
       `Swagger UI available at /api/v1/swagger (source: ${openApiPath})`,
@@ -74,15 +96,15 @@ async function bootstrap() {
 
   try {
     await app.listen(preferredPort, host);
-    const addr = app.getHttpServer().address() as AddressInfo;
+    const addr = getHttpAddress(app.getHttpServer());
     console.log(`Listening on ${addr.address}:${addr.port}`);
-  } catch (err: any) {
-    if (err?.code === 'EACCES' || err?.code === 'EADDRINUSE') {
+  } catch (err: unknown) {
+    if (isRecoverableListenError(err)) {
       // Retry with a fallback (or random free port) instead of crashing on bind errors
       await app.listen(fallbackPort, host);
-      const addr = app.getHttpServer().address() as AddressInfo;
+      const addr = getHttpAddress(app.getHttpServer());
       console.warn(
-        `Port ${preferredPort} unavailable (${err?.code}); using ${addr.address}:${addr.port}`,
+        `Port ${preferredPort} unavailable (${err.code}); using ${addr.address}:${addr.port}`,
       );
       console.log(`Listening on ${addr.address}:${addr.port}`);
     } else {
@@ -91,4 +113,4 @@ async function bootstrap() {
   }
 }
 
-bootstrap();
+void bootstrap();

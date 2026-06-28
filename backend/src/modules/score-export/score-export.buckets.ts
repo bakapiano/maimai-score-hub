@@ -11,7 +11,9 @@ import type { SyncScore } from '../sync/schemas/sync.schema';
 import { VERSION_ORDER } from './rendering/score-export.constants';
 
 export function buildRatingSummary(scores: SyncScore[]): RatingSummary | null {
-  if (!Array.isArray(scores)) return null;
+  if (!Array.isArray(scores)) {
+    return null;
+  }
   const withRating = scores.filter(
     (s) => typeof s.rating === 'number' && s.type !== 'utage',
   );
@@ -55,9 +57,13 @@ export function buildLevelBuckets(
       const detailKey = normalizeDetailKey(chart);
       const levelBucket =
         levelMap.get(levelKey) ?? new Map<string, ChartEntry[]>();
-      if (!levelMap.has(levelKey)) levelMap.set(levelKey, levelBucket);
+      if (!levelMap.has(levelKey)) {
+        levelMap.set(levelKey, levelBucket);
+      }
       const detailBucket = levelBucket.get(detailKey) ?? [];
-      if (!levelBucket.has(detailKey)) levelBucket.set(detailKey, detailBucket);
+      if (!levelBucket.has(detailKey)) {
+        levelBucket.set(detailKey, detailBucket);
+      }
 
       detailBucket.push({
         music,
@@ -90,7 +96,9 @@ export function buildLevelBuckets(
   buckets.sort((a, b) => {
     const numDiff =
       (b.levelNumeric ?? -Infinity) - (a.levelNumeric ?? -Infinity);
-    if (numDiff !== 0) return numDiff;
+    if (numDiff !== 0) {
+      return numDiff;
+    }
     return a.levelKey.localeCompare(b.levelKey);
   });
 
@@ -113,12 +121,16 @@ export function buildVersionBuckets(
     const versionKey = music.version || '未知版本';
     const levelMap =
       versionMap.get(versionKey) ?? new Map<string, ChartEntry[]>();
-    if (!versionMap.has(versionKey)) versionMap.set(versionKey, levelMap);
+    if (!versionMap.has(versionKey)) {
+      versionMap.set(versionKey, levelMap);
+    }
 
     charts.forEach((chart, idx) => {
       const levelKey = normalizeLevelKey(chart);
       const list = levelMap.get(levelKey) ?? [];
-      if (!levelMap.has(levelKey)) levelMap.set(levelKey, list);
+      if (!levelMap.has(levelKey)) {
+        levelMap.set(levelKey, list);
+      }
 
       list.push({
         music,
@@ -150,8 +162,12 @@ export function buildVersionBuckets(
   buckets.sort((a, b) => {
     const aUnknown = a.versionKey === '未知版本';
     const bUnknown = b.versionKey === '未知版本';
-    if (aUnknown && !bUnknown) return 1;
-    if (!aUnknown && bUnknown) return -1;
+    if (aUnknown && !bUnknown) {
+      return 1;
+    }
+    if (!aUnknown && bUnknown) {
+      return -1;
+    }
     return (
       getVersionSortIndex(a.versionKey) - getVersionSortIndex(b.versionKey)
     );
@@ -161,7 +177,9 @@ export function buildVersionBuckets(
 }
 
 export function normalizeLevelKey(chart: ChartPayload) {
-  if (chart.level) return chart.level;
+  if (chart.level) {
+    return chart.level;
+  }
   if (typeof chart.detailLevel === 'number') {
     return Math.floor(chart.detailLevel).toString();
   }
@@ -169,25 +187,36 @@ export function normalizeLevelKey(chart: ChartPayload) {
 }
 
 export function normalizeDetailKey(chart: ChartPayload) {
-  if (typeof chart.detailLevel === 'number')
+  if (typeof chart.detailLevel === 'number') {
     return chart.detailLevel.toFixed(1);
-  if (chart.level) return chart.level;
+  }
+  if (chart.level) {
+    return chart.level;
+  }
   return '?';
 }
 
 export function parseLevelValue(value: string) {
   const match = /^([0-9]+(?:\.[0-9]+)?)(\+)?$/.exec(value.trim());
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
   const base = parseFloat(match[1]);
-  if (!Number.isFinite(base)) return null;
+  if (!Number.isFinite(base)) {
+    return null;
+  }
   return base + (match[2] ? 0.1 : 0);
 }
 
 export function detailSortValue(chart: ChartPayload) {
-  if (typeof chart.detailLevel === 'number') return chart.detailLevel;
+  if (typeof chart.detailLevel === 'number') {
+    return chart.detailLevel;
+  }
   if (chart.level) {
     const parsed = parseLevelValue(chart.level);
-    if (parsed !== null) return parsed;
+    if (parsed !== null) {
+      return parsed;
+    }
   }
   return -Infinity;
 }

@@ -1,6 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import type { HydratedDocument } from 'mongoose';
-import { Schema as MongooseSchema } from 'mongoose';
 
 export type QrLoginStatus =
   | 'pending'

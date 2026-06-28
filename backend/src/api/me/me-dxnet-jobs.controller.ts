@@ -16,6 +16,7 @@ import {
 } from '@maimai-score-hub/shared';
 
 import { AuthGuard } from '../../modules/auth/guards/auth.guard';
+import { JobFriendshipService } from '../../modules/job/services/job-friendship.service';
 import { JobService } from '../../modules/job/services/job.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
@@ -26,7 +27,10 @@ type AuthedRequest = Request & {
 @Controller('me/dxnet-jobs')
 @UseGuards(AuthGuard)
 export class MeDxnetJobsController {
-  constructor(private readonly jobs: JobService) {}
+  constructor(
+    private readonly jobs: JobService,
+    private readonly friendship: JobFriendshipService,
+  ) {}
 
   @Post()
   async create(
@@ -61,7 +65,7 @@ export class MeDxnetJobsController {
     if (!friendCode) {
       throw new BadRequestException('Missing friendCode in token');
     }
-    return this.jobs.getFriendshipStatus(friendCode);
+    return this.friendship.getFriendshipStatus(friendCode);
   }
 
   @Get(':jobId')

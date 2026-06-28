@@ -1,0 +1,2 @@
+npm --prefix backend run lint:check
+npm --prefix backend run typecheck

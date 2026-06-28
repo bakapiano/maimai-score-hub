@@ -7,7 +7,13 @@ import {
   AutoUpdateRunSchema,
 } from '../auto-update/schemas/auto-update-run.schema';
 
-import { AdminService } from './services/admin.service';
+import { AdminAutoUpdateMetricsService } from './services/admin-auto-update-metrics.service';
+import { AdminCatalogService } from './services/admin-catalog.service';
+import { AdminJobMetricsService } from './services/admin-job-metrics.service';
+import { AdminJobQueryService } from './services/admin-job-query.service';
+import { AdminProberExportMetricsService } from './services/admin-prober-export-metrics.service';
+import { AdminSummaryService } from './services/admin-summary.service';
+import { AdminUsersService } from './services/admin-users.service';
 import {
   BotStatusEntity,
   BotStatusSchema,
@@ -41,7 +47,23 @@ import { UsersModule } from '../users/users.module';
     SdgbWorkerModule,
     UsersModule,
   ],
-  providers: [AdminService],
-  exports: [AdminService],
+  providers: [
+    AdminAutoUpdateMetricsService,
+    AdminCatalogService,
+    AdminJobMetricsService,
+    AdminJobQueryService,
+    AdminProberExportMetricsService,
+    AdminSummaryService,
+    AdminUsersService,
+  ],
+  exports: [
+    AdminAutoUpdateMetricsService,
+    AdminCatalogService,
+    AdminJobMetricsService,
+    AdminJobQueryService,
+    AdminProberExportMetricsService,
+    AdminSummaryService,
+    AdminUsersService,
+  ],
 })
 export class AdminModule {}

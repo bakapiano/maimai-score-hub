@@ -36,7 +36,9 @@ export class WorkerLogIngestController {
       typeof body.workerId === 'string' && body.workerId.trim()
         ? body.workerId.trim()
         : null;
-    if (!workerId) throw new BadRequestException('workerId required');
+    if (!workerId) {
+      throw new BadRequestException('workerId required');
+    }
     if (!Array.isArray(body.entries)) {
       throw new BadRequestException('entries must be an array');
     }

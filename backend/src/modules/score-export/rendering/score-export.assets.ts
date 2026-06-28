@@ -28,7 +28,9 @@ const ASSETS_BASE = join(process.cwd(), 'assets', 'mai', 'pic');
 const cache = new Map<string, CanvasImage | null>();
 
 export async function loadAsset(filename: string): Promise<CanvasImage | null> {
-  if (cache.has(filename)) return cache.get(filename)!;
+  if (cache.has(filename)) {
+    return cache.get(filename)!;
+  }
   const fullPath = join(ASSETS_BASE, filename);
   if (!existsSync(fullPath)) {
     cache.set(filename, null);

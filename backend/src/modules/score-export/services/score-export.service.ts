@@ -34,6 +34,26 @@ import {
   renderVersionScoresImage,
 } from '../rendering/score-export.render';
 
+const LEGACY_VERSION_KEYS = [
+  'maimai',
+  'maimai+',
+  'green',
+  'green+',
+  'orange',
+  'orange+',
+  'pink',
+  'pink+',
+  'murasaki',
+  'murasaki+',
+  'milk',
+  'milk+',
+  'finale',
+];
+
+const VERSION_MERGE_MAP: Record<string, string[]> = {
+  maimai: ['maimai', 'maimai+'],
+};
+
 @Injectable()
 export class ScoreExportService {
   private readonly iconCache = new Map<
@@ -139,167 +159,10 @@ export class ScoreExportService {
       throw new NotFoundException('No version data');
     }
 
-    let current: VersionBucket;
-
-    if (versionKey === '__mai__') {
-      // 舞代: merge all legacy versions (maimai → FiNALE)
-      const legacyVersions = new Set([
-        'maimai',
-        'maimai+',
-        'green',
-        'green+',
-        'orange',
-        'orange+',
-        'pink',
-        'pink+',
-        'murasaki',
-        'murasaki+',
-        'milk',
-        'milk+',
-        'finale',
-      ]);
-      const legacyBuckets = buckets.filter((b) =>
-        legacyVersions.has(b.versionKey),
-      );
-      const mergedLevelMap = new Map<
-        string,
-        { items: ChartEntry[]; levelNumeric: number | null }
-      >();
-      for (const bucket of legacyBuckets) {
-        for (const level of bucket.levels) {
-          const existing = mergedLevelMap.get(level.levelKey);
-          if (existing) {
-            existing.items.push(...level.items);
-          } else {
-            mergedLevelMap.set(level.levelKey, {
-              items: [...level.items],
-              levelNumeric: level.levelNumeric,
-            });
-          }
-        }
-      }
-      current = {
-        versionKey: '__mai__',
-        levels: Array.from(mergedLevelMap.entries())
-          .map(([levelKey, { items, levelNumeric }]) => ({
-            levelKey,
-            levelNumeric,
-            items: items.sort((a, b) => {
-              const aDs =
-                typeof a.chart?.detailLevel === 'number'
-                  ? a.chart.detailLevel
-                  : -Infinity;
-              const bDs =
-                typeof b.chart?.detailLevel === 'number'
-                  ? b.chart.detailLevel
-                  : -Infinity;
-              return bDs - aDs;
-            }),
-          }))
-          .sort(
-            (a, b) =>
-              (b.levelNumeric ?? -Infinity) - (a.levelNumeric ?? -Infinity),
-          ),
-      };
-    } else {
-      // Merge groups that share a plate (e.g. maimai + maimai+ → 真代)
-      const MERGE_MAP: Record<string, string[]> = {
-        maimai: ['maimai', 'maimai+'],
-      };
-      const mergeVersions = MERGE_MAP[versionKey ?? ''];
-      if (mergeVersions) {
-        const mergeBuckets = buckets.filter((b) =>
-          mergeVersions.includes(b.versionKey),
-        );
-        const mergedLevelMap = new Map<
-          string,
-          { items: ChartEntry[]; levelNumeric: number | null }
-        >();
-        for (const bucket of mergeBuckets) {
-          for (const level of bucket.levels) {
-            const existing = mergedLevelMap.get(level.levelKey);
-            if (existing) {
-              existing.items.push(...level.items);
-            } else {
-              mergedLevelMap.set(level.levelKey, {
-                items: [...level.items],
-                levelNumeric: level.levelNumeric,
-              });
-            }
-          }
-        }
-        current = {
-          versionKey: versionKey!,
-          levels: Array.from(mergedLevelMap.entries())
-            .map(([levelKey, { items, levelNumeric }]) => ({
-              levelKey,
-              levelNumeric,
-              items: items.sort((a, b) => {
-                const aDs =
-                  typeof a.chart?.detailLevel === 'number'
-                    ? a.chart.detailLevel
-                    : -Infinity;
-                const bDs =
-                  typeof b.chart?.detailLevel === 'number'
-                    ? b.chart.detailLevel
-                    : -Infinity;
-                return bDs - aDs;
-              }),
-            }))
-            .sort(
-              (a, b) =>
-                (b.levelNumeric ?? -Infinity) - (a.levelNumeric ?? -Infinity),
-            ),
-        };
-      } else {
-        current =
-          buckets.find((b) => b.versionKey === versionKey) ?? buckets[0];
-      }
-    }
-
-    // Filter by minLevel if specified
-    if (minLevel !== undefined && !isNaN(minLevel)) {
-      current = {
-        ...current,
-        levels: current.levels
-          .map((level) => ({
-            ...level,
-            items: level.items.filter((item) => {
-              const detailLevel = item.chart?.detailLevel;
-              if (typeof detailLevel === 'number') {
-                return detailLevel >= minLevel;
-              }
-              // Fallback to parsing level string
-              const levelNum = level.levelNumeric;
-              return levelNum !== null && levelNum >= minLevel;
-            }),
-          }))
-          .filter((level) => level.items.length > 0),
-      };
-    }
-
-    // Filter out Re:Master (chartIndex=4) for non-舞代 versions
-    // 舞代 (__mai__) includes Re:Master; individual versions don't
-    if (versionKey !== '__mai__') {
-      current = {
-        ...current,
-        levels: current.levels
-          .map((level) => ({
-            ...level,
-            items: level.items.filter((item) => item.chartIndex !== 4),
-          }))
-          .filter((level) => level.items.length > 0),
-      };
-    }
-
-    // Load user profile for header display
-    let profile: UserNetProfile | null = null;
-    try {
-      const user = await this.users.findByFriendCode(friendCode);
-      profile = user?.profile ?? null;
-    } catch {
-      // Profile is optional, continue without it
-    }
+    let current = this.resolveVersionBucket(buckets, versionKey);
+    current = this.filterByMinLevel(current, minLevel);
+    current = this.filterRemasterForVersion(current, versionKey);
+    const profile = await this.loadOptionalProfile(friendCode);
 
     const rating = profile?.rating ?? 0;
 
@@ -312,6 +175,139 @@ export class ScoreExportService {
       (musicId) => this.loadCoverImage(musicId),
       (url) => this.loadRemoteImage(url),
     );
+  }
+
+  private resolveVersionBucket(
+    buckets: VersionBucket[],
+    versionKey: string | undefined,
+  ): VersionBucket {
+    if (versionKey === '__mai__') {
+      return this.mergeVersionBuckets(
+        '__mai__',
+        buckets.filter((b) => LEGACY_VERSION_KEYS.includes(b.versionKey)),
+      );
+    }
+    const mergeVersions = VERSION_MERGE_MAP[versionKey ?? ''];
+    if (mergeVersions) {
+      return this.mergeVersionBuckets(
+        versionKey!,
+        buckets.filter((b) => mergeVersions.includes(b.versionKey)),
+      );
+    }
+    return buckets.find((b) => b.versionKey === versionKey) ?? buckets[0];
+  }
+
+  private mergeVersionBuckets(
+    versionKey: string,
+    buckets: VersionBucket[],
+  ): VersionBucket {
+    const mergedLevelMap = new Map<
+      string,
+      { items: ChartEntry[]; levelNumeric: number | null }
+    >();
+    for (const bucket of buckets) {
+      for (const level of bucket.levels) {
+        const existing = mergedLevelMap.get(level.levelKey);
+        if (existing) {
+          existing.items.push(...level.items);
+        } else {
+          mergedLevelMap.set(level.levelKey, {
+            items: [...level.items],
+            levelNumeric: level.levelNumeric,
+          });
+        }
+      }
+    }
+    return {
+      versionKey,
+      levels: this.sortMergedLevels(mergedLevelMap),
+    };
+  }
+
+  private sortMergedLevels(
+    mergedLevelMap: Map<
+      string,
+      { items: ChartEntry[]; levelNumeric: number | null }
+    >,
+  ): VersionBucket['levels'] {
+    return Array.from(mergedLevelMap.entries())
+      .map(([levelKey, { items, levelNumeric }]) => ({
+        levelKey,
+        levelNumeric,
+        items: items.sort(
+          (a, b) => this.detailLevelOf(b) - this.detailLevelOf(a),
+        ),
+      }))
+      .sort(
+        (a, b) => (b.levelNumeric ?? -Infinity) - (a.levelNumeric ?? -Infinity),
+      );
+  }
+
+  private detailLevelOf(entry: ChartEntry): number {
+    return typeof entry.chart?.detailLevel === 'number'
+      ? entry.chart.detailLevel
+      : -Infinity;
+  }
+
+  private filterByMinLevel(
+    bucket: VersionBucket,
+    minLevel: number | undefined,
+  ): VersionBucket {
+    if (minLevel === undefined || isNaN(minLevel)) {
+      return bucket;
+    }
+    return {
+      ...bucket,
+      levels: bucket.levels
+        .map((level) => ({
+          ...level,
+          items: level.items.filter((item) =>
+            this.matchesMinLevel(item, level.levelNumeric, minLevel),
+          ),
+        }))
+        .filter((level) => level.items.length > 0),
+    };
+  }
+
+  private matchesMinLevel(
+    item: ChartEntry,
+    levelNumeric: number | null,
+    minLevel: number,
+  ): boolean {
+    const detailLevel = item.chart?.detailLevel;
+    if (typeof detailLevel === 'number') {
+      return detailLevel >= minLevel;
+    }
+    return levelNumeric !== null && levelNumeric >= minLevel;
+  }
+
+  private filterRemasterForVersion(
+    bucket: VersionBucket,
+    versionKey: string | undefined,
+  ): VersionBucket {
+    if (versionKey === '__mai__') {
+      return bucket;
+    }
+    return {
+      ...bucket,
+      levels: bucket.levels
+        .map((level) => ({
+          ...level,
+          items: level.items.filter((item) => item.chartIndex !== 4),
+        }))
+        .filter((level) => level.items.length > 0),
+    };
+  }
+
+  private async loadOptionalProfile(
+    friendCode: string,
+  ): Promise<UserNetProfile | null> {
+    try {
+      const user = await this.users.findByFriendCode(friendCode);
+      return user?.profile ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async generateImagesForFriendCode(

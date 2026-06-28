@@ -10,6 +10,7 @@ import {
   getLxnsSongListUrl,
   type LxnsApiResponse,
 } from '../../../common/prober/lxns/transform';
+import type { DivingFishItem } from '../../../common/prober/diving-fish/transform';
 
 const DIVING_FISH_MUSIC_URL =
   'https://www.diving-fish.com/api/maimaidxprober/music_data';
@@ -41,11 +42,19 @@ export class ProberExportMapService {
 
     const [dfRaw, lxnsRaw] = await Promise.all([
       fetch(DIVING_FISH_MUSIC_URL).then(async (r) => {
-        if (!r.ok) throw new Error(`diving-fish responded ${r.status}`);
-        return r.json() as Promise<any[]>;
+        if (!r.ok) {
+          throw new Error(`diving-fish responded ${r.status}`);
+        }
+        const payload: unknown = await r.json();
+        if (!Array.isArray(payload)) {
+          throw new Error('diving-fish returned non-array music payload');
+        }
+        return payload as DivingFishItem[];
       }),
       fetch(getLxnsSongListUrl()).then(async (r) => {
-        if (!r.ok) throw new Error(`lxns responded ${r.status}`);
+        if (!r.ok) {
+          throw new Error(`lxns responded ${r.status}`);
+        }
         return r.json() as Promise<LxnsApiResponse>;
       }),
     ]);

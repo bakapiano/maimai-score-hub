@@ -48,7 +48,9 @@ export class JobApiLogService {
   }
 
   async saveLogs(jobId: string, logs: ApiLogEntry[]): Promise<void> {
-    if (logs.length === 0) return;
+    if (logs.length === 0) {
+      return;
+    }
 
     const key = this.apiLogKey(jobId);
     const existing = (await this.redis.getJson<StoredApiLog[]>(key)) ?? [];
@@ -87,7 +89,9 @@ export class JobApiLogService {
     fallback: number,
   ): number {
     const raw = config.get<string | number>(key);
-    if (raw == null || raw === '') return fallback;
+    if (raw === null || raw === undefined || raw === '') {
+      return fallback;
+    }
     const parsed = Number(raw);
     return Number.isFinite(parsed) && parsed > 0
       ? Math.floor(parsed)

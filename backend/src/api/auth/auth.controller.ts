@@ -38,10 +38,7 @@ export class AuthController {
   async loginRequest(
     @Body(new ZodValidationPipe(LoginRequestBodySchema)) body: LoginRequestBody,
   ) {
-    return this.auth.requestLogin(
-      body.friendCode,
-      body.method,
-    );
+    return this.auth.requestLogin(body.friendCode, body.method);
   }
 
   @Post('login-requests/:jobId/verify')

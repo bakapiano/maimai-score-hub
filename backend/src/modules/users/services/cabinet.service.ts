@@ -24,9 +24,13 @@ const MIN_MATCH_ROWS = 10;
  * to a number. Returns null when the value is missing/non-numeric.
  */
 function parseDx(raw: string | null | undefined): number | null {
-  if (raw === null || raw === undefined) return null;
+  if (raw === null || raw === undefined) {
+    return null;
+  }
   const cleaned = String(raw).replace(/,/g, '').trim();
-  if (!cleaned) return null;
+  if (!cleaned) {
+    return null;
+  }
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }
@@ -36,11 +40,17 @@ function parseDx(raw: string | null | undefined): number | null {
  * representation (1005210). Returns null when missing.
  */
 function parseAchievement(raw: string | null | undefined): number | null {
-  if (raw === null || raw === undefined) return null;
+  if (raw === null || raw === undefined) {
+    return null;
+  }
   const cleaned = String(raw).replace(/%/g, '').trim();
-  if (!cleaned) return null;
+  if (!cleaned) {
+    return null;
+  }
   const n = Number(cleaned);
-  if (!Number.isFinite(n)) return null;
+  if (!Number.isFinite(n)) {
+    return null;
+  }
   return Math.round(n * 10000);
 }
 
@@ -98,11 +108,7 @@ export class CabinetService {
     // Effective threshold: usually MIN_MATCH_ROWS, but if the user has
     // synced fewer than that we just require all of them to match.
     const required = Math.min(MIN_MATCH_ROWS, localScores.length);
-    const matchedRows = await this.countMatchingRows(
-      localScores,
-      music,
-      required,
-    );
+    const matchedRows = this.countMatchingRows(localScores, music, required);
     this.logger.log(
       `bindByQr fc=${friendCode} cabinetUserId=${cabinetUserId} matched=${matchedRows}/${required}`,
     );
@@ -123,11 +129,11 @@ export class CabinetService {
    * charts the numeric id is just `Number(music.id)`, so we filter to
    * those that parse as integers — the rest can never match.
    */
-  private async countMatchingRows(
+  private countMatchingRows(
     localScores: SyncScore[],
     cabinetMusic: SdgbWorkerMusicEntry[],
     earlyExitAt: number = MIN_MATCH_ROWS,
-  ): Promise<number> {
+  ): number {
     const cabinetMap = new Map<string, { ach: number; dx: number }>();
     for (const m of cabinetMusic) {
       for (const d of m.userRivalMusicDetailList ?? []) {
@@ -141,14 +147,20 @@ export class CabinetService {
     let matched = 0;
     for (const s of localScores) {
       const numericMusicId = Number(s.musicId);
-      if (!Number.isFinite(numericMusicId)) continue;
+      if (!Number.isFinite(numericMusicId)) {
+        continue;
+      }
       // chartIndex follows the same 0..4 + 10 (utage) convention as the cabinet
       const cabinet = cabinetMap.get(`${numericMusicId}::${s.chartIndex}`);
-      if (!cabinet) continue;
+      if (!cabinet) {
+        continue;
+      }
 
       const localAch = parseAchievement(s.score);
       const localDx = parseDx(s.dxScore);
-      if (localAch === null || localDx === null) continue;
+      if (localAch === null || localDx === null) {
+        continue;
+      }
 
       if (localAch === cabinet.ach && localDx === cabinet.dx) {
         matched++;
