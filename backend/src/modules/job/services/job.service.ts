@@ -18,6 +18,7 @@ import { Interval } from '@nestjs/schedule';
 import { SyncService } from '../../sync/services/sync.service';
 import { UsersService } from '../../users/services/users.service';
 import { JobTempCacheService } from '../cache/temp-cache.service';
+import { ProberExportService } from '../../prober-export/services/prober-export.service';
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
 import { BotFriendSnapshotService } from '../../bots/services/bot-friend-snapshot.service';
 import { BotStatusService } from '../../bots/services/bot-status.service';
@@ -91,7 +92,6 @@ function toJobResponse(job: JobEntity): JobResponse {
     updateScoreDuration: job.updateScoreDuration ?? null,
     diffsToScrape: job.diffsToScrape ?? null,
     context: job.context ?? null,
-    autoExportResult: job.autoExportResult ?? null,
     runAt: job.runAt?.toISOString() ?? null,
     error: job.error ?? null,
     executing: job.executing,
@@ -137,6 +137,7 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     private readonly jobModel: Model<JobEntity>,
     private readonly syncService: SyncService,
     private readonly tempCacheService: JobTempCacheService,
+    private readonly proberExports: ProberExportService,
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
     private readonly sdgb: SdgbJobDispatcher,
@@ -775,27 +776,22 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
       updated.jobType === 'update_score' &&
       updated.result
     ) {
-      await this.syncService.createFromJob(updated.toObject() as JobEntity);
-
-      // Auto-export is fire-and-forget. Worker may PATCH a completed job
-      // multiple times (e.g. retried bookkeeping update), and each PATCH
-      // hits this branch — without the autoExportResult guard we'd
-      // re-run the export every time, hammering diving-fish/lxns.
-      // Use atomic findOneAndUpdate so concurrent patches in the same
-      // backend replica race only one winner.
-      const claimed = await this.jobModel
-        .findOneAndUpdate(
-          { id: jobId, autoExportResult: null },
-          { $set: { autoExportResult: { divingFish: null, lxns: null } } },
-          { new: true },
-        )
-        .exec();
-      if (claimed) {
-        this.runAutoExport(jobId, updated.friendCode).catch((err: Error) => {
-          this.logger.error(
-            `Auto-export failed for job ${jobId}: ${err?.message}`,
-          );
-        });
+      const sync = await this.syncService.createFromJob(
+        updated.toObject() as JobEntity,
+      );
+      if (sync?.id) {
+        this.proberExports
+          .enqueueAutoExportForSync({
+            trigger: 'dxnet_update_score',
+            friendCode: updated.friendCode,
+            syncId: sync.id,
+            sourceJobId: jobId,
+          })
+          .catch((err: Error) => {
+            this.logger.error(
+              `Failed to enqueue auto-export for job ${jobId}: ${err?.message}`,
+            );
+          });
       }
     }
 
@@ -818,6 +814,24 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
           events,
           since: since && !Number.isNaN(since.getTime()) ? since : null,
         });
+        if (
+          context?.autoUpdateFcfs === true &&
+          mergeResult.updatedCount > 0 &&
+          mergeResult.syncId
+        ) {
+          this.proberExports
+            .enqueueAutoExportForSync({
+              trigger: 'auto_update_fcfs',
+              friendCode: updated.friendCode,
+              syncId: mergeResult.syncId,
+              sourceJobId: jobId,
+            })
+            .catch((err: Error) => {
+              this.logger.warn(
+                `failed to enqueue fcfs auto-export job=${jobId}: ${err?.message}`,
+              );
+            });
+        }
         if (
           context?.autoUpdateFcfs === true &&
           mergeResult.ambiguousDiffs.length > 0 &&
@@ -939,75 +953,4 @@ export class JobService implements OnModuleInit, OnModuleDestroy {
     return result.deletedCount;
   }
 
-  /**
-   * 自动导出：检查用户设置，异步导出到 diving-fish / lxns，
-   * 完成后将结果写回 job.autoExportResult
-   */
-  private async runAutoExport(
-    jobId: string,
-    friendCode: string,
-  ): Promise<void> {
-    const user = await this.usersService.findByFriendCode(friendCode);
-    if (!user) return;
-
-    const userDoc = user as unknown as Record<string, unknown>;
-    const shouldExportDf =
-      !!userDoc.autoExportDivingFish && !!user.divingFishImportToken;
-    const shouldExportLxns = !!userDoc.autoExportLxns && !!user.lxnsImportToken;
-
-    if (!shouldExportDf && !shouldExportLxns) return;
-
-    const exportResult: {
-      divingFish?: { status: string; message?: string } | null;
-      lxns?: { status: string; message?: string } | null;
-    } = {};
-
-    if (shouldExportDf) {
-      try {
-        const res = await this.syncService.exportToDivingFish(
-          friendCode,
-          user.divingFishImportToken!,
-        );
-        exportResult.divingFish = {
-          status: 'success',
-          message: `导出 ${res.exported ?? 0} 条成绩`,
-        };
-        this.logger.log(`Auto-export to DivingFish succeeded for job ${jobId}`);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        exportResult.divingFish = { status: 'failed', message: msg };
-        this.logger.warn(
-          `Auto-export to DivingFish failed for job ${jobId}: ${msg}`,
-        );
-      }
-    }
-
-    if (shouldExportLxns) {
-      try {
-        const res = await this.syncService.exportToLxns(
-          friendCode,
-          user.lxnsImportToken!,
-        );
-        exportResult.lxns = {
-          status: 'success',
-          message: `导出 ${res.exported ?? 0} 条成绩`,
-        };
-        this.logger.log(`Auto-export to LXNS succeeded for job ${jobId}`);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        exportResult.lxns = { status: 'failed', message: msg };
-        this.logger.warn(`Auto-export to LXNS failed for job ${jobId}: ${msg}`);
-      }
-    }
-
-    // Write results back to the job document and the sync record
-    await Promise.all([
-      this.jobModel.updateOne(
-        { id: jobId },
-        { $set: { autoExportResult: exportResult } },
-      ),
-
-      this.syncService.updateAutoExportResult(jobId, exportResult),
-    ]);
-  }
 }

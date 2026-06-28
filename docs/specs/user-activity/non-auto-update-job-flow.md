@@ -37,7 +37,6 @@
 | `scoreProgress`       | 成绩抓取阶段的难度进度                                    |
 | `updateScoreDuration` | worker 抓取耗时                                           |
 | `result`              | worker 聚合后的 Friend VS 成绩结果                        |
-| `autoExportResult`    | 同步后自动导出的结果                                      |
 
 ## 创建前置：确认好友关系
 
@@ -179,7 +178,7 @@ Worker PATCH `update_score` 为 `completed` 后，`JobService.patch()` 会做以
 
 ### 3. 同步后自动导出
 
-如果用户开启了“同步后自动更新水鱼 / 落雪查分器”，并配置了对应 token，`JobService.runAutoExport()` 会在 sync 写入后异步导出到 Diving-Fish / LXNS。导出结果会写回 `jobs.autoExportResult` 和对应 `syncs.autoExportResult`。
+如果用户配置了 Diving-Fish / LXNS token，`JobService` 会在 sync 写入后创建 `prober_export_jobs` 并加入 backend 内嵌导出队列。导出结果以 `prober_export_jobs.result` 为 source of truth，并镜像简化结果到对应 `syncs.autoExportResult`；DXNet `jobs` 不再保存 `autoExportResult`。
 
 前端在 `update_score` job 完成后会延迟 3 秒重新拉一次 job，以展示导出结果。
 

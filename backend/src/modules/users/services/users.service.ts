@@ -143,8 +143,6 @@ export class UsersService {
       divingFishImportToken?: string | null;
       lxnsImportToken?: string | null;
       profile?: UserNetProfile | null;
-      autoExportDivingFish?: boolean;
-      autoExportLxns?: boolean;
       cabinetUserId?: number | null;
       autoUpdate?: boolean;
     },
@@ -167,12 +165,6 @@ export class UsersService {
     }
     if ('profile' in input) {
       updateDoc.profile = input.profile ?? null;
-    }
-    if ('autoExportDivingFish' in input) {
-      updateDoc.autoExportDivingFish = !!input.autoExportDivingFish;
-    }
-    if ('autoExportLxns' in input) {
-      updateDoc.autoExportLxns = !!input.autoExportLxns;
     }
     if ('cabinetUserId' in input) {
       updateDoc.cabinetUserId = input.cabinetUserId ?? null;

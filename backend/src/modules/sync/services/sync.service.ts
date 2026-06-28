@@ -35,6 +35,11 @@ type MusicRow = MusicEntity & {
 };
 
 type ScoreSnapshot = SyncScore;
+type SyncForExport = {
+  id: string;
+  friendCode: string;
+  scores?: SyncScore[];
+};
 type MusicCache = {
   at: number;
   rows: MusicRow[];
@@ -346,14 +351,29 @@ export class SyncService {
     };
   }
 
-  async updateAutoExportResult(
-    jobId: string,
+  async updateAutoExportResultBySyncId(
+    syncId: string,
     autoExportResult: {
       divingFish?: { status: string; message?: string } | null;
       lxns?: { status: string; message?: string } | null;
     },
   ) {
-    await this.syncModel.updateOne({ jobId }, { $set: { autoExportResult } });
+    await this.syncModel.updateOne(
+      { id: syncId },
+      { $set: { autoExportResult } },
+    );
+  }
+
+  async getLatestSyncId(friendCode: string): Promise<string> {
+    const sync = await this.syncModel
+      .findOne({ friendCode })
+      .sort({ createdAt: -1 })
+      .select({ id: 1 })
+      .lean<{ id: string } | null>();
+    if (!sync) {
+      throw new NotFoundException('Sync not found');
+    }
+    return sync.id;
   }
 
   private mergeWithPrevious(
@@ -555,14 +575,26 @@ export class SyncService {
   }
 
   async exportToDivingFish(friendCode: string, importToken: string) {
-    const sync = await this.syncModel
-      .findOne({ friendCode })
-      .sort({ createdAt: -1 })
-      .lean();
-    if (!sync) {
-      throw new NotFoundException('Sync not found');
-    }
+    const sync = await this.getSyncForExport({ friendCode });
+    return this.exportDivingFishSync(sync, importToken);
+  }
 
+  async exportSyncToDivingFish(input: {
+    friendCode: string;
+    syncId: string;
+    importToken: string;
+  }) {
+    const sync = await this.getSyncForExport({
+      friendCode: input.friendCode,
+      syncId: input.syncId,
+    });
+    return this.exportDivingFishSync(sync, input.importToken);
+  }
+
+  private async exportDivingFishSync(
+    sync: SyncForExport,
+    importToken: string,
+  ) {
     const scores: SyncScore[] = Array.isArray(sync.scores) ? sync.scores : [];
     if (!scores.length) {
       return { status: 'skipped', reason: 'no scores to export' };
@@ -603,14 +635,23 @@ export class SyncService {
   }
 
   async exportToLxns(friendCode: string, importToken: string) {
-    const sync = await this.syncModel
-      .findOne({ friendCode })
-      .sort({ createdAt: -1 })
-      .lean();
-    if (!sync) {
-      throw new NotFoundException('Sync not found');
-    }
+    const sync = await this.getSyncForExport({ friendCode });
+    return this.exportLxnsSync(sync, importToken);
+  }
 
+  async exportSyncToLxns(input: {
+    friendCode: string;
+    syncId: string;
+    importToken: string;
+  }) {
+    const sync = await this.getSyncForExport({
+      friendCode: input.friendCode,
+      syncId: input.syncId,
+    });
+    return this.exportLxnsSync(sync, input.importToken);
+  }
+
+  private async exportLxnsSync(sync: SyncForExport, importToken: string) {
     const scores: SyncScore[] = Array.isArray(sync.scores) ? sync.scores : [];
     if (!scores.length) {
       return { status: 'skipped', reason: 'no scores to export' };
@@ -643,5 +684,23 @@ export class SyncService {
       skipped: scores.length - exportableScores.length,
       response: res.response,
     };
+  }
+
+  private async getSyncForExport(input: {
+    friendCode: string;
+    syncId?: string;
+  }): Promise<SyncForExport> {
+    const query = input.syncId
+      ? { id: input.syncId, friendCode: input.friendCode }
+      : { friendCode: input.friendCode };
+    let dbQuery = this.syncModel.findOne(query);
+    if (!input.syncId) {
+      dbQuery = dbQuery.sort({ createdAt: -1 });
+    }
+    const sync = await dbQuery.lean<SyncForExport | null>();
+    if (!sync) {
+      throw new NotFoundException('Sync not found');
+    }
+    return sync;
   }
 }

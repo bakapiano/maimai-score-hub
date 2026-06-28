@@ -5,6 +5,7 @@ import { UserEntity } from '../../users/schemas/user.schema';
 import { MusicEntity } from '../../music/schemas/music.schema';
 import { SyncEntity } from '../../sync/schemas/sync.schema';
 import { JobEntity } from '../../job/schemas/job.schema';
+import { ProberExportJobEntity } from '../../prober-export/schemas/prober-export-job.schema';
 import { BotStatusEntity } from '../../bots/schemas/bot-status.schema';
 import { AutoUpdateRunEntity } from '../../auto-update/schemas/auto-update-run.schema';
 import { CoverService } from '../../cover/services/cover.service';
@@ -126,6 +127,8 @@ export class AdminService {
     private readonly syncModel: Model<SyncEntity>,
     @InjectModel(JobEntity.name)
     private readonly jobModel: Model<JobEntity>,
+    @InjectModel(ProberExportJobEntity.name)
+    private readonly proberExportJobModel: Model<ProberExportJobEntity>,
     @InjectModel(BotStatusEntity.name)
     private readonly botStatusModel: Model<BotStatusEntity>,
     @InjectModel(AutoUpdateRunEntity.name)
@@ -914,10 +917,8 @@ export class AdminService {
   }
 
   /**
-   * Aggregated stats for prober auto-export (diving-fish + lxns) across
-   * ALL job types (send_friend_request / update_score / manual) — not just auto-update.
-   * Source of truth: jobs.autoExportResult populated by JobService.runAutoExport
-   * after the score sync completes.
+   * Aggregated stats for prober exports (diving-fish + lxns). Source of truth:
+   * prober_export_jobs.
    */
   async getProberExportMetrics(window: '24h' | '7d') {
     const now = Date.now();
@@ -931,12 +932,12 @@ export class AdminService {
       _id: { hr: string; provider: string; status: string };
       count: number;
     };
-    const exportRows = await this.jobModel
+    const exportRows = await this.proberExportJobModel
       .aggregate<ExportBucketRow>([
         {
           $match: {
             createdAt: { $gte: since },
-            autoExportResult: { $ne: null },
+            result: { $ne: null },
           },
         },
         {
@@ -947,11 +948,11 @@ export class AdminService {
                 input: [
                   {
                     provider: 'divingFish',
-                    status: '$autoExportResult.divingFish.status',
+                    status: '$result.divingFish.status',
                   },
                   {
                     provider: 'lxns',
-                    status: '$autoExportResult.lxns.status',
+                    status: '$result.lxns.status',
                   },
                 ],
                 as: 'e',
@@ -1006,7 +1007,7 @@ export class AdminService {
     );
 
     // Top failure messages
-    const topFailures = await this.jobModel
+    const topFailures = await this.proberExportJobModel
       .aggregate<{
         _id: { provider: string; message: string };
         count: number;
@@ -1015,14 +1016,14 @@ export class AdminService {
         {
           $match: {
             createdAt: { $gte: since },
-            autoExportResult: { $ne: null },
+            result: { $ne: null },
           },
         },
         {
           $project: {
             createdAt: 1,
-            df: '$autoExportResult.divingFish',
-            lxns: '$autoExportResult.lxns',
+            df: '$result.divingFish',
+            lxns: '$result.lxns',
           },
         },
         {
@@ -1098,12 +1099,12 @@ export class AdminService {
     }
 
     // Recent failures table (last 50, with friendCode + jobType for triage)
-    const recent = await this.jobModel
+    const recent = await this.proberExportJobModel
       .find({
         createdAt: { $gte: since },
         $or: [
-          { 'autoExportResult.divingFish.status': 'failed' },
-          { 'autoExportResult.lxns.status': 'failed' },
+          { 'result.divingFish.status': 'failed' },
+          { 'result.lxns.status': 'failed' },
         ],
       })
       .sort({ createdAt: -1 })
@@ -1111,9 +1112,13 @@ export class AdminService {
       .select({
         id: 1,
         friendCode: 1,
-        jobType: 1,
+        trigger: 1,
+        sourceJobId: 1,
+        sourceTaskId: 1,
+        syncId: 1,
         createdAt: 1,
-        autoExportResult: 1,
+        status: 1,
+        result: 1,
         _id: 0,
       })
       .lean()
@@ -1127,12 +1132,16 @@ export class AdminService {
       timeline,
       topFailures: failures,
       recentFailures: recent.map((r) => ({
-        jobId: r.id,
+        exportJobId: r.id,
+        jobId: r.sourceJobId ?? r.id,
+        sourceTaskId: r.sourceTaskId ?? null,
+        syncId: r.syncId,
         friendCode: r.friendCode,
-        jobType: r.jobType,
+        jobType: r.trigger,
+        status: r.status,
         createdAt: r.createdAt.toISOString(),
-        divingFish: r.autoExportResult?.divingFish ?? null,
-        lxns: r.autoExportResult?.lxns ?? null,
+        divingFish: r.result?.divingFish ?? null,
+        lxns: r.result?.lxns ?? null,
       })),
     };
   }

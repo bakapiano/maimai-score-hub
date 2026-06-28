@@ -29,8 +29,8 @@ export class AdminDashboardController {
   }
 
   /**
-   * Aggregated stats for prober auto-export across ALL job types
-   * (not limited to auto-update). Source: jobs.autoExportResult.
+   * Aggregated stats for prober exports across all triggers.
+   * Source: prober_export_jobs.
    */
   @Get('prober-export-metrics')
   async getProberExportMetrics(@Query('window') window?: string) {

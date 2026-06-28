@@ -72,10 +72,6 @@ export interface JobResponse {
   updateScoreDuration?: number | null;
   diffsToScrape?: number[] | null;
   context?: Record<string, unknown> | null;
-  autoExportResult?: {
-    divingFish?: { status: string; message?: string } | null;
-    lxns?: { status: string; message?: string } | null;
-  } | null;
   runAt?: string | null;
   createdAt: string;
   updatedAt: string;

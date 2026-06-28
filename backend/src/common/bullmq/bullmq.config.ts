@@ -3,12 +3,17 @@ import type { ConnectionOptions, JobsOptions, QueueOptions } from 'bullmq';
 
 export const DXNET_WORKER_QUEUE_NAME = 'dxnet-worker-jobs';
 export const SDGB_WORKER_QUEUE_NAME = 'sdgb-worker-jobs';
+export const PROBER_EXPORT_QUEUE_NAME = 'prober-export-jobs';
 
 export interface DxnetWorkerJobData {
   jobId: string;
 }
 
 export interface SdgbWorkerJobData {
+  jobId: string;
+}
+
+export interface ProberExportJobData {
   jobId: string;
 }
 

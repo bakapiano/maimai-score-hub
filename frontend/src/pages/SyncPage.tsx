@@ -11,7 +11,6 @@ import {
   PasswordInput,
   Progress,
   Stack,
-  Switch,
   Tabs,
   Text,
   TextInput,
@@ -40,12 +39,41 @@ type UserProfileResponse = {
   friendCode: string;
   hasDivingFishImportToken?: boolean;
   hasLxnsImportToken?: boolean;
-  autoExportDivingFish?: boolean;
-  autoExportLxns?: boolean;
   profile: UserProfile | null;
   hasCabinetUserId?: boolean;
   autoUpdate?: boolean;
   lastScoreHash?: string | null;
+};
+
+type ExportTarget = "diving-fish" | "lxns";
+type ExportProviderKey = "divingFish" | "lxns";
+type ProberExportProviderResult = {
+  status: "success" | "failed" | "skipped";
+  exported?: number;
+  skipped?: number;
+  scores?: number;
+  message?: string;
+  response?: { creates?: number; updates?: number; data?: unknown[] };
+};
+type ProberExportJob = {
+  id: string;
+  status:
+    | "queued"
+    | "processing"
+    | "completed"
+    | "partial_failed"
+    | "failed"
+    | "skipped";
+  result?: {
+    divingFish?: ProberExportProviderResult | null;
+    lxns?: ProberExportProviderResult | null;
+  } | null;
+  error?: string | null;
+};
+type ProberExportCreateResponse = {
+  exportJobId: string;
+  status: ProberExportJob["status"];
+  job: ProberExportJob;
 };
 
 type LastSyncInfo = {
@@ -97,10 +125,6 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
     if ("lxnsImportToken" in body)
       patchBody.lxnsImportToken =
         (body.lxnsImportToken as string | null) ?? null;
-    if ("autoExportDivingFish" in body)
-      patchBody.autoExportDivingFish = !!body.autoExportDivingFish;
-    if ("autoExportLxns" in body)
-      patchBody.autoExportLxns = !!body.autoExportLxns;
     const res = await usersApi.updateProfile({
       headers: { authorization },
       body: patchBody,
@@ -170,6 +194,21 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
     });
     return {
       ok: res.status === 201,
+      status: res.status,
+      data: (res.body ?? null) as T,
+    };
+  }
+
+  const exportJobMatch = path.match(
+    /^\/api\/v1\/me\/prober-export-jobs\/([^/]+)$/,
+  );
+  if (exportJobMatch && method === "GET" && authorization) {
+    const res = await syncApi.getProberExportJob({
+      headers: { authorization },
+      params: { exportJobId: decodeURIComponent(exportJobMatch[1]) },
+    });
+    return {
+      ok: res.status === 200,
       status: res.status,
       data: (res.body ?? null) as T,
     };
@@ -418,31 +457,6 @@ export default function SyncPage() {
     return false;
   };
 
-  // Toggle auto-export settings
-  const toggleAutoExport = async (
-    field: "autoExportDivingFish" | "autoExportLxns",
-    value: boolean,
-  ) => {
-    if (!token) return;
-    const res = await fetchJson<unknown>("/api/v1/me", {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ [field]: value }),
-    });
-    if (res.ok) {
-      loadProfile();
-    } else {
-      notifications.show({
-        title: "保存失败",
-        message: "无法更新自动导出设置",
-        color: "red",
-      });
-    }
-  };
-
   const startUpdateScoreJob = useCallback(
     async (friendshipJobId?: string) => {
       if (!token) return;
@@ -537,11 +551,10 @@ export default function SyncPage() {
             loadProfile();
             loadLastSync();
 
-            // Re-fetch job after a delay to pick up auto-export results
+            // Refresh latest sync after a delay to pick up queued export results
             setTimeout(async () => {
               try {
-                const updated = await getJobById(syncJobId, token);
-                setSyncStatus(updated);
+                await loadLastSync();
               } catch {
                 // ignore
               }
@@ -613,101 +626,108 @@ export default function SyncPage() {
     }
   };
 
-  // Export to diving-fish
-  const exportToDivingFish = async () => {
+  const exportProviderKey = (target: ExportTarget): ExportProviderKey =>
+    target === "diving-fish" ? "divingFish" : "lxns";
+
+  const exportProviderName = (target: ExportTarget) =>
+    target === "diving-fish" ? "Diving-Fish" : "落雪查分器";
+
+  const exportStatusColor = (status: string) =>
+    status === "success" ? "green" : status === "skipped" ? "yellow" : "red";
+
+  const pollProberExportJob = async (
+    exportJobId: string,
+    target: ExportTarget,
+  ): Promise<ProberExportJob> => {
+    if (!token) throw new Error("需要登录");
+    const terminal = new Set([
+      "completed",
+      "partial_failed",
+      "failed",
+      "skipped",
+    ]);
+    for (let i = 0; i < 240; i++) {
+      const res = await fetchJson<ProberExportJob>(
+        `/api/v1/me/prober-export-jobs/${encodeURIComponent(exportJobId)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (!res.ok || !res.data) {
+        throw new Error(`查询导出任务失败 (HTTP ${res.status})`);
+      }
+      if (terminal.has(res.data.status)) {
+        const result = res.data.result?.[exportProviderKey(target)];
+        if (result?.status === "failed" || res.data.status === "failed") {
+          throw new Error(result?.message || res.data.error || "导出失败");
+        }
+        return res.data;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    throw new Error("导出仍在处理中，请稍后查看结果");
+  };
+
+  const queueExport = async (target: ExportTarget) => {
     if (!token) return;
+    setExportLoading(target);
+    try {
+      const saved = await saveTokens();
+      if (!saved) {
+        throw new Error("Token 保存失败");
+      }
 
-    setExportLoading("diving-fish");
-
-    // Save token first
-    await saveTokens();
-
-    const res = await fetchJson<{
-      success?: boolean;
-      message?: string;
-      scores?: number;
-      exported?: number;
-      response?: { creates?: number; updates?: number; message?: string };
-    }>("/api/v1/me/sync/latest/exports/diving-fish", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    setExportLoading(null);
-
-    if (res.ok) {
-      const scores = res.data?.scores;
-      const creates = res.data?.response?.creates ?? 0;
-      const updates = res.data?.response?.updates ?? 0;
-      notifications.show({
-        title: "导出成功",
-        message: `成绩已导出到 Diving-Fish（共 ${scores ?? "?"} 条成绩，新增 ${creates} 条，更新 ${updates} 条）`,
-        color: "green",
+      const path =
+        target === "diving-fish"
+          ? "/api/v1/me/sync/latest/exports/diving-fish"
+          : "/api/v1/me/sync/latest/exports/lxns";
+      const res = await fetchJson<ProberExportCreateResponse>(path, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
       });
-    } else {
-      const data = res.data as { message?: string } | null;
+
+      if (!res.ok || !res.data?.exportJobId) {
+        const data = res.data as { message?: string } | null;
+        throw new Error(
+          (data?.message || `HTTP ${res.status}`) + " 请检查 Token 是否正确！",
+        );
+      }
+
+      notifications.show({
+        title: "已加入导出队列",
+        message: `正在导出到 ${exportProviderName(target)}`,
+        color: "blue",
+      });
+
+      const job = await pollProberExportJob(res.data.exportJobId, target);
+      const result = job.result?.[exportProviderKey(target)];
+      const scores = result?.scores;
+      const exported = result?.exported;
+
+      notifications.show({
+        title: result?.status === "skipped" ? "无需导出" : "导出成功",
+        message:
+          exported !== undefined
+            ? `成绩已导出到 ${exportProviderName(target)}（共 ${scores ?? "?"} 条成绩，导出 ${exported} 条）`
+            : result?.message || `成绩已导出到 ${exportProviderName(target)}`,
+        color: result?.status === "skipped" ? "yellow" : "green",
+      });
+    } catch (error) {
       notifications.show({
         title: "导出失败",
-        message:
-          (data?.message || `HTTP ${res.status}`) + " 请检查 Token 是否正确！",
+        message: error instanceof Error ? error.message : "未知错误",
         color: "red",
       });
+    } finally {
+      setExportLoading(null);
     }
   };
 
-  // Export to LXNS
-  const exportToLxns = async () => {
-    if (!token) return;
-
-    setExportLoading("lxns");
-
-    // Save token first
-    await saveTokens();
-
-    const res = await fetchJson<{
-      success?: boolean;
-      message?: string;
-      scores?: number;
-      exported?: number;
-      response?: { success?: boolean; code?: number; data?: unknown[] };
-    }>("/api/v1/me/sync/latest/exports/lxns", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    setExportLoading(null);
-
-    if (res.ok) {
-      const scores = res.data?.scores;
-      const dataCount = Array.isArray(res.data?.response?.data)
-        ? res.data?.response?.data.length
-        : undefined;
-      const exported = res.data?.exported;
-      const count = dataCount ?? exported;
-      notifications.show({
-        title: "导出成功",
-        message:
-          count !== undefined
-            ? `成绩已导出到 落雪查分器（共 ${scores ?? "?"} 条成绩，导出 ${count} 条）`
-            : "成绩已导出到 落雪查分器",
-        color: "green",
-      });
-    } else {
-      const data = res.data as { message?: string } | null;
-      notifications.show({
-        title: "导出失败",
-        message:
-          (data?.message || `HTTP ${res.status}`) + " 请检查 Token 是否正确！",
-        color: "red",
-      });
-    }
-  };
+  const exportToDivingFish = () => queueExport("diving-fish");
+  const exportToLxns = () => queueExport("lxns");
 
   // Compute sync progress
   const getSyncProgress = () => {
@@ -812,17 +832,19 @@ export default function SyncPage() {
                             size="lg"
                             radius="md"
                             color={
-                              lastSync.autoExportResult.divingFish.status ===
-                              "success"
-                                ? "green"
-                                : "red"
+                              exportStatusColor(
+                                lastSync.autoExportResult.divingFish.status,
+                              )
                             }
                           >
                             水鱼{" "}
                             {lastSync.autoExportResult.divingFish.status ===
                             "success"
                               ? "✓"
-                              : "✗"}
+                              : lastSync.autoExportResult.divingFish.status ===
+                                  "skipped"
+                                ? "—"
+                                : "✗"}
                           </Badge>
                         )}
                         {lastSync.autoExportResult.lxns && (
@@ -831,16 +853,18 @@ export default function SyncPage() {
                             size="lg"
                             radius="md"
                             color={
-                              lastSync.autoExportResult.lxns.status ===
-                              "success"
-                                ? "green"
-                                : "red"
+                              exportStatusColor(
+                                lastSync.autoExportResult.lxns.status,
+                              )
                             }
                           >
                             落雪{" "}
                             {lastSync.autoExportResult.lxns.status === "success"
                               ? "✓"
-                              : "✗"}
+                              : lastSync.autoExportResult.lxns.status ===
+                                  "skipped"
+                                ? "—"
+                                : "✗"}
                           </Badge>
                         )}
                       </Group>
@@ -1060,66 +1084,6 @@ export default function SyncPage() {
                   </Alert>
                 )}
 
-                {/* Auto-export results */}
-                {syncStatus.status === "completed" &&
-                  syncStatus.autoExportResult && (
-                    <Stack gap="xs">
-                      <Divider />
-                      <Text size="sm" fw={500} c="dimmed">
-                        自动导出结果
-                      </Text>
-                      {syncStatus.autoExportResult.divingFish && (
-                        <Group gap="xs">
-                          <Text size="sm">水鱼查分器：</Text>
-                          <Badge
-                            variant="light"
-                            size="sm"
-                            color={
-                              syncStatus.autoExportResult.divingFish.status ===
-                              "success"
-                                ? "green"
-                                : "red"
-                            }
-                          >
-                            {syncStatus.autoExportResult.divingFish.status ===
-                            "success"
-                              ? "✓ 成功"
-                              : "✗ 失败"}
-                          </Badge>
-                          {syncStatus.autoExportResult.divingFish.message && (
-                            <Text size="xs" c="dimmed">
-                              {syncStatus.autoExportResult.divingFish.message}
-                            </Text>
-                          )}
-                        </Group>
-                      )}
-                      {syncStatus.autoExportResult.lxns && (
-                        <Group gap="xs">
-                          <Text size="sm">落雪查分器：</Text>
-                          <Badge
-                            variant="light"
-                            size="sm"
-                            color={
-                              syncStatus.autoExportResult.lxns.status ===
-                              "success"
-                                ? "green"
-                                : "red"
-                            }
-                          >
-                            {syncStatus.autoExportResult.lxns.status ===
-                            "success"
-                              ? "✓ 成功"
-                              : "✗ 失败"}
-                          </Badge>
-                          {syncStatus.autoExportResult.lxns.message && (
-                            <Text size="xs" c="dimmed">
-                              {syncStatus.autoExportResult.lxns.message}
-                            </Text>
-                          )}
-                        </Group>
-                      )}
-                    </Stack>
-                  )}
               </Stack>
             </Card>
           )}
@@ -1150,42 +1114,13 @@ export default function SyncPage() {
             icon={<IconCloudUpload size={18} />}
             color="teal"
             title="更新查分器"
-            subtitle="将成绩自动导出到水鱼 / 落雪查分器"
+            subtitle="配置 token 后，同步完成会自动导出到对应查分器"
           />
 
-          <Card withBorder padding="md" radius="md">
-            <Stack gap="md">
-              <Switch
-                label="同步后自动更新水鱼查分器"
-                description={
-                  !profile?.hasDivingFishImportToken
-                    ? "请先配置水鱼 Import Token"
-                    : undefined
-                }
-                checked={profile?.autoExportDivingFish ?? false}
-                disabled={!profile?.hasDivingFishImportToken}
-                onChange={(e) =>
-                  toggleAutoExport(
-                    "autoExportDivingFish",
-                    e.currentTarget.checked,
-                  )
-                }
-              />
-              <Switch
-                label="同步后自动更新落雪查分器"
-                description={
-                  !profile?.hasLxnsImportToken
-                    ? "请先配置落雪 Personal Token"
-                    : undefined
-                }
-                checked={profile?.autoExportLxns ?? false}
-                disabled={!profile?.hasLxnsImportToken}
-                onChange={(e) =>
-                  toggleAutoExport("autoExportLxns", e.currentTarget.checked)
-                }
-              />
-            </Stack>
-          </Card>
+          <Alert color="teal" variant="light">
+            已保存 token 的查分器会在每次成绩同步完成后自动更新；删除或清空
+            token 后将停止导出到对应查分器。
+          </Alert>
 
           {/* Diving-Fish Section */}
           <Card withBorder padding="md" radius="md">
@@ -1334,35 +1269,45 @@ export default function SyncPage() {
                             );
 
                             if (saveRes.ok) {
-                              // Step 3: Export to diving-fish
-                              const exportRes = await fetchJson<{
-                                success?: boolean;
-                                message?: string;
-                                exported?: number;
-                                response?: {
-                                  creates?: number;
-                                  updates?: number;
-                                  message?: string;
-                                };
-                              }>("/api/v1/me/sync/latest/exports/diving-fish", {
-                                method: "POST",
-                                headers: {
-                                  Authorization: `Bearer ${token}`,
-                                  "Content-Type": "application/json",
-                                },
-                              });
+                              // Step 3: Queue export to diving-fish
+                              const exportRes =
+                                await fetchJson<ProberExportCreateResponse>(
+                                  "/api/v1/me/sync/latest/exports/diving-fish",
+                                  {
+                                    method: "POST",
+                                    headers: {
+                                      Authorization: `Bearer ${token}`,
+                                      "Content-Type": "application/json",
+                                    },
+                                  },
+                                );
 
-                              if (exportRes.ok) {
-                                const creates =
-                                  exportRes.data?.response?.creates ?? 0;
-                                const updates =
-                                  exportRes.data?.response?.updates ?? 0;
+                              if (exportRes.ok && exportRes.data?.exportJobId) {
                                 notifications.show({
-                                  title: "更新成功",
-                                  message: `成绩已导出到 Diving-Fish（新增 ${creates} 条，更新 ${updates} 条）`,
-                                  color: "green",
+                                  title: "已加入导出队列",
+                                  message: "正在导出到 Diving-Fish",
+                                  color: "blue",
                                 });
-                                // Switch to token mode
+                                const job = await pollProberExportJob(
+                                  exportRes.data.exportJobId,
+                                  "diving-fish",
+                                );
+                                const result = job.result?.divingFish;
+                                notifications.show({
+                                  title:
+                                    result?.status === "skipped"
+                                      ? "无需导出"
+                                      : "更新成功",
+                                  message:
+                                    result?.message ||
+                                    `成绩已导出到 Diving-Fish（导出 ${
+                                      result?.exported ?? "?"
+                                    } 条）`,
+                                  color:
+                                    result?.status === "skipped"
+                                      ? "yellow"
+                                      : "green",
+                                });
                                 setDivingFishMode("token");
                               } else {
                                 const data = exportRes.data as {
@@ -1395,10 +1340,13 @@ export default function SyncPage() {
                               color: "red",
                             });
                           }
-                        } catch {
+                        } catch (error) {
                           notifications.show({
                             title: "操作失败",
-                            message: "网络错误，请稍后重试",
+                            message:
+                              error instanceof Error
+                                ? error.message
+                                : "网络错误，请稍后重试",
                             color: "red",
                           });
                         } finally {

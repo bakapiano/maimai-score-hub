@@ -172,30 +172,6 @@ paths:
                         type: object
                         additionalProperties: {}
                         nullable: true
-                      autoExportResult:
-                        type: object
-                        properties:
-                          divingFish:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                          lxns:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                        nullable: true
                       runAt:
                         type: string
                         nullable: true
@@ -338,30 +314,6 @@ paths:
                       context:
                         type: object
                         additionalProperties: {}
-                        nullable: true
-                      autoExportResult:
-                        type: object
-                        properties:
-                          divingFish:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                          lxns:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
                         nullable: true
                       runAt:
                         type: string
@@ -531,10 +483,6 @@ paths:
                     type: boolean
                   profile:
                     nullable: true
-                  autoExportDivingFish:
-                    type: boolean
-                  autoExportLxns:
-                    type: boolean
                   hasCabinetUserId:
                     type: boolean
                   autoUpdate:
@@ -560,10 +508,6 @@ paths:
                 lxnsImportToken:
                   type: string
                   nullable: true
-                autoExportDivingFish:
-                  type: boolean
-                autoExportLxns:
-                  type: boolean
                 autoUpdate:
                   type: boolean
       responses:
@@ -589,10 +533,6 @@ paths:
                     type: boolean
                   profile:
                     nullable: true
-                  autoExportDivingFish:
-                    type: boolean
-                  autoExportLxns:
-                    type: boolean
                   hasCabinetUserId:
                     type: boolean
                   autoUpdate:
@@ -656,10 +596,6 @@ paths:
                     type: boolean
                   profile:
                     nullable: true
-                  autoExportDivingFish:
-                    type: boolean
-                  autoExportLxns:
-                    type: boolean
                   hasCabinetUserId:
                     type: boolean
                   autoUpdate:
@@ -830,17 +766,141 @@ paths:
               schema:
                 type: object
                 properties:
-                  success:
-                    type: boolean
-                  message:
+                  exportJobId:
                     type: string
-                  scores:
-                    type: number
-                  exported:
-                    type: number
-                  response:
-                    nullable: true
-                additionalProperties: true
+                  status:
+                    type: string
+                    enum:
+                      - queued
+                      - processing
+                      - completed
+                      - partial_failed
+                      - failed
+                      - skipped
+                  job:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      trigger:
+                        type: string
+                        enum:
+                          - dxnet_update_score
+                          - auto_update_rival
+                          - auto_update_fcfs
+                          - manual
+                      friendCode:
+                        type: string
+                      syncId:
+                        type: string
+                      sourceJobId:
+                        type: string
+                        nullable: true
+                      sourceTaskId:
+                        type: string
+                        nullable: true
+                      targets:
+                        type: array
+                        items:
+                          type: string
+                          enum:
+                            - divingFish
+                            - lxns
+                      status:
+                        type: string
+                        enum:
+                          - queued
+                          - processing
+                          - completed
+                          - partial_failed
+                          - failed
+                          - skipped
+                      attempts:
+                        type: number
+                      result:
+                        type: object
+                        properties:
+                          divingFish:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                                enum:
+                                  - success
+                                  - failed
+                                  - skipped
+                              exported:
+                                type: number
+                              skipped:
+                                type: number
+                              scores:
+                                type: number
+                              message:
+                                type: string
+                              response:
+                                nullable: true
+                            required:
+                              - status
+                            additionalProperties: true
+                            nullable: true
+                          lxns:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                                enum:
+                                  - success
+                                  - failed
+                                  - skipped
+                              exported:
+                                type: number
+                              skipped:
+                                type: number
+                              scores:
+                                type: number
+                              message:
+                                type: string
+                              response:
+                                nullable: true
+                            required:
+                              - status
+                            additionalProperties: true
+                            nullable: true
+                        nullable: true
+                      error:
+                        type: string
+                        nullable: true
+                      claimedAt:
+                        type: string
+                        nullable: true
+                      completedAt:
+                        type: string
+                        nullable: true
+                      createdAt:
+                        type: string
+                      updatedAt:
+                        type: string
+                    required:
+                      - id
+                      - trigger
+                      - friendCode
+                      - syncId
+                      - sourceJobId
+                      - sourceTaskId
+                      - targets
+                      - status
+                      - attempts
+                      - result
+                      - error
+                      - claimedAt
+                      - completedAt
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: true
+                required:
+                  - exportJobId
+                  - status
+                  - job
   /me/sync/latest/exports/lxns:
     post:
       tags: *a4
@@ -854,17 +914,413 @@ paths:
               schema:
                 type: object
                 properties:
-                  success:
-                    type: boolean
-                  message:
+                  exportJobId:
                     type: string
-                  scores:
-                    type: number
-                  exported:
-                    type: number
-                  response:
+                  status:
+                    type: string
+                    enum:
+                      - queued
+                      - processing
+                      - completed
+                      - partial_failed
+                      - failed
+                      - skipped
+                  job:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      trigger:
+                        type: string
+                        enum:
+                          - dxnet_update_score
+                          - auto_update_rival
+                          - auto_update_fcfs
+                          - manual
+                      friendCode:
+                        type: string
+                      syncId:
+                        type: string
+                      sourceJobId:
+                        type: string
+                        nullable: true
+                      sourceTaskId:
+                        type: string
+                        nullable: true
+                      targets:
+                        type: array
+                        items:
+                          type: string
+                          enum:
+                            - divingFish
+                            - lxns
+                      status:
+                        type: string
+                        enum:
+                          - queued
+                          - processing
+                          - completed
+                          - partial_failed
+                          - failed
+                          - skipped
+                      attempts:
+                        type: number
+                      result:
+                        type: object
+                        properties:
+                          divingFish:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                                enum:
+                                  - success
+                                  - failed
+                                  - skipped
+                              exported:
+                                type: number
+                              skipped:
+                                type: number
+                              scores:
+                                type: number
+                              message:
+                                type: string
+                              response:
+                                nullable: true
+                            required:
+                              - status
+                            additionalProperties: true
+                            nullable: true
+                          lxns:
+                            type: object
+                            properties:
+                              status:
+                                type: string
+                                enum:
+                                  - success
+                                  - failed
+                                  - skipped
+                              exported:
+                                type: number
+                              skipped:
+                                type: number
+                              scores:
+                                type: number
+                              message:
+                                type: string
+                              response:
+                                nullable: true
+                            required:
+                              - status
+                            additionalProperties: true
+                            nullable: true
+                        nullable: true
+                      error:
+                        type: string
+                        nullable: true
+                      claimedAt:
+                        type: string
+                        nullable: true
+                      completedAt:
+                        type: string
+                        nullable: true
+                      createdAt:
+                        type: string
+                      updatedAt:
+                        type: string
+                    required:
+                      - id
+                      - trigger
+                      - friendCode
+                      - syncId
+                      - sourceJobId
+                      - sourceTaskId
+                      - targets
+                      - status
+                      - attempts
+                      - result
+                      - error
+                      - claimedAt
+                      - completedAt
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: true
+                required:
+                  - exportJobId
+                  - status
+                  - job
+  /me/prober-export-jobs/{exportJobId}:
+    get:
+      tags: *a4
+      parameters:
+        - name: exportJobId
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: sync.getProberExportJob
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  trigger:
+                    type: string
+                    enum:
+                      - dxnet_update_score
+                      - auto_update_rival
+                      - auto_update_fcfs
+                      - manual
+                  friendCode:
+                    type: string
+                  syncId:
+                    type: string
+                  sourceJobId:
+                    type: string
                     nullable: true
+                  sourceTaskId:
+                    type: string
+                    nullable: true
+                  targets:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                        - divingFish
+                        - lxns
+                  status:
+                    type: string
+                    enum:
+                      - queued
+                      - processing
+                      - completed
+                      - partial_failed
+                      - failed
+                      - skipped
+                  attempts:
+                    type: number
+                  result:
+                    type: object
+                    properties:
+                      divingFish:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            enum:
+                              - success
+                              - failed
+                              - skipped
+                          exported:
+                            type: number
+                          skipped:
+                            type: number
+                          scores:
+                            type: number
+                          message:
+                            type: string
+                          response:
+                            nullable: true
+                        required:
+                          - status
+                        additionalProperties: true
+                        nullable: true
+                      lxns:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            enum:
+                              - success
+                              - failed
+                              - skipped
+                          exported:
+                            type: number
+                          skipped:
+                            type: number
+                          scores:
+                            type: number
+                          message:
+                            type: string
+                          response:
+                            nullable: true
+                        required:
+                          - status
+                        additionalProperties: true
+                        nullable: true
+                    nullable: true
+                  error:
+                    type: string
+                    nullable: true
+                  claimedAt:
+                    type: string
+                    nullable: true
+                  completedAt:
+                    type: string
+                    nullable: true
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                required:
+                  - id
+                  - trigger
+                  - friendCode
+                  - syncId
+                  - sourceJobId
+                  - sourceTaskId
+                  - targets
+                  - status
+                  - attempts
+                  - result
+                  - error
+                  - claimedAt
+                  - completedAt
+                  - createdAt
+                  - updatedAt
                 additionalProperties: true
+  /me/prober-export-jobs:
+    get:
+      tags: *a4
+      parameters: []
+      operationId: sync.listProberExportJobs
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        trigger:
+                          type: string
+                          enum:
+                            - dxnet_update_score
+                            - auto_update_rival
+                            - auto_update_fcfs
+                            - manual
+                        friendCode:
+                          type: string
+                        syncId:
+                          type: string
+                        sourceJobId:
+                          type: string
+                          nullable: true
+                        sourceTaskId:
+                          type: string
+                          nullable: true
+                        targets:
+                          type: array
+                          items:
+                            type: string
+                            enum:
+                              - divingFish
+                              - lxns
+                        status:
+                          type: string
+                          enum:
+                            - queued
+                            - processing
+                            - completed
+                            - partial_failed
+                            - failed
+                            - skipped
+                        attempts:
+                          type: number
+                        result:
+                          type: object
+                          properties:
+                            divingFish:
+                              type: object
+                              properties:
+                                status:
+                                  type: string
+                                  enum:
+                                    - success
+                                    - failed
+                                    - skipped
+                                exported:
+                                  type: number
+                                skipped:
+                                  type: number
+                                scores:
+                                  type: number
+                                message:
+                                  type: string
+                                response:
+                                  nullable: true
+                              required:
+                                - status
+                              additionalProperties: true
+                              nullable: true
+                            lxns:
+                              type: object
+                              properties:
+                                status:
+                                  type: string
+                                  enum:
+                                    - success
+                                    - failed
+                                    - skipped
+                                exported:
+                                  type: number
+                                skipped:
+                                  type: number
+                                scores:
+                                  type: number
+                                message:
+                                  type: string
+                                response:
+                                  nullable: true
+                              required:
+                                - status
+                              additionalProperties: true
+                              nullable: true
+                          nullable: true
+                        error:
+                          type: string
+                          nullable: true
+                        claimedAt:
+                          type: string
+                          nullable: true
+                        completedAt:
+                          type: string
+                          nullable: true
+                        createdAt:
+                          type: string
+                        updatedAt:
+                          type: string
+                      required:
+                        - id
+                        - trigger
+                        - friendCode
+                        - syncId
+                        - sourceJobId
+                        - sourceTaskId
+                        - targets
+                        - status
+                        - attempts
+                        - result
+                        - error
+                        - claimedAt
+                        - completedAt
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: true
+                required:
+                  - items
   /me/dxnet-jobs:
     post:
       tags: &a5
@@ -979,30 +1435,6 @@ paths:
                       context:
                         type: object
                         additionalProperties: {}
-                        nullable: true
-                      autoExportResult:
-                        type: object
-                        properties:
-                          divingFish:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                          lxns:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
                         nullable: true
                       runAt:
                         type: string
@@ -1139,30 +1571,6 @@ paths:
                     type: object
                     additionalProperties: {}
                     nullable: true
-                  autoExportResult:
-                    type: object
-                    properties:
-                      divingFish:
-                        type: object
-                        properties:
-                          status:
-                            type: string
-                          message:
-                            type: string
-                        required:
-                          - status
-                        nullable: true
-                      lxns:
-                        type: object
-                        properties:
-                          status:
-                            type: string
-                          message:
-                            type: string
-                        required:
-                          - status
-                        nullable: true
-                    nullable: true
                   runAt:
                     type: string
                     nullable: true
@@ -1274,30 +1682,6 @@ paths:
                       context:
                         type: object
                         additionalProperties: {}
-                        nullable: true
-                      autoExportResult:
-                        type: object
-                        properties:
-                          divingFish:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                          lxns:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
                         nullable: true
                       runAt:
                         type: string
@@ -1465,30 +1849,6 @@ paths:
                         type: object
                         additionalProperties: {}
                         nullable: true
-                      autoExportResult:
-                        type: object
-                        properties:
-                          divingFish:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                          lxns:
-                            type: object
-                            properties:
-                              status:
-                                type: string
-                              message:
-                                type: string
-                            required:
-                              - status
-                            nullable: true
-                        nullable: true
                       runAt:
                         type: string
                         nullable: true
@@ -1599,30 +1959,6 @@ paths:
                   context:
                     type: object
                     additionalProperties: {}
-                    nullable: true
-                  autoExportResult:
-                    type: object
-                    properties:
-                      divingFish:
-                        type: object
-                        properties:
-                          status:
-                            type: string
-                          message:
-                            type: string
-                        required:
-                          - status
-                        nullable: true
-                      lxns:
-                        type: object
-                        properties:
-                          status:
-                            type: string
-                          message:
-                            type: string
-                        required:
-                          - status
-                        nullable: true
                     nullable: true
                   runAt:
                     type: string
@@ -1801,30 +2137,6 @@ paths:
                   context:
                     type: object
                     additionalProperties: {}
-                    nullable: true
-                  autoExportResult:
-                    type: object
-                    properties:
-                      divingFish:
-                        type: object
-                        properties:
-                          status:
-                            type: string
-                          message:
-                            type: string
-                        required:
-                          - status
-                        nullable: true
-                      lxns:
-                        type: object
-                        properties:
-                          status:
-                            type: string
-                          message:
-                            type: string
-                        required:
-                          - status
-                        nullable: true
                     nullable: true
                   runAt:
                     type: string

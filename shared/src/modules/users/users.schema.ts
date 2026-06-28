@@ -9,8 +9,6 @@ export const UserProfileSchema = z
     hasDivingFishImportToken: z.boolean().optional(),
     hasLxnsImportToken: z.boolean().optional(),
     profile: z.unknown().nullable().optional(),
-    autoExportDivingFish: z.boolean().optional(),
-    autoExportLxns: z.boolean().optional(),
     hasCabinetUserId: z.boolean().optional(),
     autoUpdate: z.boolean().optional(),
   })
@@ -19,8 +17,6 @@ export const UserProfileSchema = z
 export const UpdateProfileBodySchema = z.object({
   divingFishImportToken: z.string().nullable().optional(),
   lxnsImportToken: z.string().nullable().optional(),
-  autoExportDivingFish: z.boolean().optional(),
-  autoExportLxns: z.boolean().optional(),
   autoUpdate: z.boolean().optional(),
 });
 

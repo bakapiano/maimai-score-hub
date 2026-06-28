@@ -2,13 +2,16 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { AuthGuard } from '../../modules/auth/guards/auth.guard';
+import { ProberExportService } from '../../modules/prober-export/services/prober-export.service';
 import { SyncService } from '../../modules/sync/services/sync.service';
 import { UsersService } from '../../modules/users/services/users.service';
 
@@ -38,6 +41,7 @@ export class MeSyncController {
   constructor(
     private readonly syncs: SyncService,
     private readonly users: UsersService,
+    private readonly proberExports: ProberExportService,
   ) {}
 
   @Get('latest')
@@ -57,7 +61,13 @@ export class MeSyncController {
       throw new BadRequestException('User missing divingFishImportToken');
     }
 
-    return this.syncs.exportToDivingFish(friendCode, token);
+    const syncId = await this.syncs.getLatestSyncId(friendCode);
+    const job = await this.proberExports.enqueueManualExport({
+      friendCode,
+      syncId,
+      target: 'divingFish',
+    });
+    return { exportJobId: job.id, status: job.status, job };
   }
 
   @Post('latest/exports/lxns')
@@ -71,6 +81,35 @@ export class MeSyncController {
       throw new BadRequestException('User missing lxnsImportToken');
     }
 
-    return this.syncs.exportToLxns(friendCode, token);
+    const syncId = await this.syncs.getLatestSyncId(friendCode);
+    const job = await this.proberExports.enqueueManualExport({
+      friendCode,
+      syncId,
+      target: 'lxns',
+    });
+    return { exportJobId: job.id, status: job.status, job };
+  }
+
+  @Get('prober-export-jobs/:exportJobId')
+  async getProberExportJob(
+    @Req() req: AuthedRequest,
+    @Param('exportJobId') exportJobId: string,
+  ) {
+    const friendCode = requireFriendCode(req);
+    return this.proberExports.getForUser(exportJobId, friendCode);
+  }
+
+  @Get('prober-export-jobs')
+  async listProberExportJobs(
+    @Req() req: AuthedRequest,
+    @Query('limit') limitRaw?: string,
+  ) {
+    const friendCode = requireFriendCode(req);
+    const limit = limitRaw ? Number(limitRaw) : 20;
+    const items = await this.proberExports.getRecentForUser(
+      friendCode,
+      Number.isFinite(limit) ? limit : 20,
+    );
+    return { items };
   }
 }

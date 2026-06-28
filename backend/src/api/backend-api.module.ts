@@ -22,6 +22,7 @@ import { MeSyncController } from './me/me-sync.controller';
 import { MusicCatalogController } from './catalog/music-catalog.controller';
 import { MusicModule } from '../modules/music/music.module';
 import { PublicStatisticsController } from './public/public-statistics.controller';
+import { ProberExportModule } from '../modules/prober-export/prober-export.module';
 import { ScoreExportModule } from '../modules/score-export/score-export.module';
 import { SdgbWorkerModule } from '../modules/sdgb-worker/sdgb-worker.module';
 import { SyncModule } from '../modules/sync/sync.module';
@@ -43,6 +44,7 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
     CoverModule,
     JobModule,
     MusicModule,
+    ProberExportModule,
     ScoreExportModule,
     SdgbWorkerModule,
     SyncModule,

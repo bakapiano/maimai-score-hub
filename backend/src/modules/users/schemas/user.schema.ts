@@ -27,12 +27,6 @@ export class UserEntity {
   @Prop({ type: MongooseSchema.Types.Mixed, default: undefined })
   profile?: UserNetProfile | null;
 
-  @Prop({ type: Boolean, default: false })
-  autoExportDivingFish!: boolean;
-
-  @Prop({ type: Boolean, default: false })
-  autoExportLxns!: boolean;
-
   @Prop({ type: Date, default: null })
   lastActiveAt!: Date | null;
 

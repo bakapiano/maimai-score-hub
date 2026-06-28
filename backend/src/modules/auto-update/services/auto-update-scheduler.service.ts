@@ -13,6 +13,7 @@ import type { SdgbWorkerUserMapEntry } from '@maimai-score-hub/shared';
 
 import { BotStatusService } from '../../bots/services/bot-status.service';
 import { JobService } from '../../job/services/job.service';
+import { ProberExportService } from '../../prober-export/services/prober-export.service';
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
 import { SyncService } from '../../sync/services/sync.service';
 import { UsersService } from '../../users/services/users.service';
@@ -84,6 +85,7 @@ export class AutoUpdateSchedulerService
     private readonly botStatus: BotStatusService,
     private readonly sdgb: SdgbJobDispatcher,
     private readonly syncService: SyncService,
+    private readonly proberExports: ProberExportService,
     @InjectModel(AutoUpdateProbeStateEntity.name)
     private readonly stateModel: Model<AutoUpdateProbeStateEntity>,
     @InjectModel(AutoUpdateTaskEntity.name)
@@ -479,6 +481,20 @@ export class AutoUpdateSchedulerService
         if (!sync) {
           throw new Error('rival music returned no mappable scores');
         }
+        await this.proberExports
+          .enqueueAutoExportForSync({
+            trigger: 'auto_update_rival',
+            friendCode: state.friendCode,
+            syncId: sync.id,
+            sourceTaskId: taskId,
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `failed to enqueue rival auto-export fc=${state.friendCode}: ${
+                err instanceof Error ? err.message : err
+              }`,
+            ),
+          );
 
         await this.stateModel.updateOne(
           { friendCode: state.friendCode },

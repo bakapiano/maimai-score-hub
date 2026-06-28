@@ -7,6 +7,7 @@ import { JobApiLogService } from './api-log/api-log.service';
 import { JobService } from './services/job.service';
 import { JobTempCacheService } from './cache/temp-cache.service';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ProberExportModule } from '../prober-export/prober-export.module';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { SyncModule } from '../sync/sync.module';
 import { UsersModule } from '../users/users.module';
@@ -15,6 +16,7 @@ import { UsersModule } from '../users/users.module';
   imports: [
     MongooseModule.forFeature([{ name: JobEntity.name, schema: JobSchema }]),
     SdgbWorkerModule,
+    ProberExportModule,
     BotsModule,
     forwardRef(() => SyncModule),
     forwardRef(() => AuthModule),

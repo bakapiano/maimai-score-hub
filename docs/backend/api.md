@@ -8,7 +8,7 @@
 - Swagger UI：`/api/v1/swagger`，加载 `shared/openapi/openapi.yaml`。注意该 OpenAPI 文件由 shared ts-rest contracts 生成，不覆盖所有 controller-only 接口。
 - CORS：`origin: true`。
 - 请求体大小：JSON 和 urlencoded 均为 `100mb`。
-- 业务端点数量：64 个，含 `/health`，不含 Swagger 静态资源。
+- 业务端点数量：66 个，含 `/health`，不含 Swagger 静态资源。
 
 ## 路由分层
 
@@ -51,7 +51,7 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | 方法   | 路径                            | 入参                                                                                                          | 说明                                                                                                   |
 | ------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | GET    | `/me`                           | -                                                                                                             | 返回当前用户资料。不会暴露 import token 或原始 `cabinetUserId`，只返回 `has*` 布尔标记。               |
-| PATCH  | `/me`                           | body: `divingFishImportToken?`, `lxnsImportToken?`, `autoExportDivingFish?`, `autoExportLxns?`, `autoUpdate?` | 更新导入 token、自动导出开关和自动更新开关。开启自动更新前必须已绑定机台二维码；返回脱敏后的用户资料。 |
+| PATCH  | `/me`                           | body: `divingFishImportToken?`, `lxnsImportToken?`, `autoUpdate?`                                            | 更新导入 token 和自动更新开关。保存 token 后同步完成会默认自动导出到对应查分器；开启自动更新前必须已绑定机台二维码；返回脱敏后的用户资料。 |
 | PUT    | `/me/password`                  | body: `username?`, `currentPassword?`, `newPassword?`                                                         | 已登录用户设置/修改用户名和密码。已有密码时需要 `currentPassword`。                                    |
 | POST   | `/me/prober-tokens/diving-fish` | body: `username`, `password`                                                                                  | 用 Diving Fish 账号密码一次性获取 import token；用户名密码不保存。                                     |
 | PUT    | `/me/cabinet`                   | JSON body: `qrCode?`，或 multipart field: `image`                                                             | 绑定机台 `cabinetUserId`。要求账号尚未绑定，并且已完成过成绩同步；匹配失败返回 409。                   |
@@ -65,8 +65,10 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | 方法 | 路径                                  | 入参                                    | 说明                                                                                       |
 | ---- | ------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------ |
 | GET  | `/me/sync/latest`                     | -                                       | 返回当前用户最近一次同步记录和 scores，可能为 `null`。                                     |
-| POST | `/me/sync/latest/exports/diving-fish` | -                                       | 将最近同步成绩导出到 Diving Fish。要求用户已保存 `divingFishImportToken`。                 |
-| POST | `/me/sync/latest/exports/lxns`        | -                                       | 将最近同步成绩导出到 LXNS。要求用户已保存 `lxnsImportToken`。                              |
+| POST | `/me/sync/latest/exports/diving-fish` | -                                       | 创建异步 Diving Fish 导出任务，返回 `exportJobId`。要求用户已保存 `divingFishImportToken`。 |
+| POST | `/me/sync/latest/exports/lxns`        | -                                       | 创建异步 LXNS 导出任务，返回 `exportJobId`。要求用户已保存 `lxnsImportToken`。              |
+| GET  | `/me/prober-export-jobs/:exportJobId` | path: `exportJobId`                     | 查询当前用户自己的查分器导出任务结果。                                                     |
+| GET  | `/me/prober-export-jobs`              | query: `limit?`                         | 查询当前用户最近的查分器导出任务。                                                         |
 | GET  | `/me/score-exports/best50`            | -                                       | 生成 Best 50 PNG，响应 `Content-Type: image/png`，下载名 `best50.png`。                    |
 | GET  | `/me/score-exports/level`             | query: `level?`                         | 按等级生成成绩 PNG，下载名 `level-<level>.png`。                                           |
 | GET  | `/me/score-exports/version`           | query: `version?`, `minLevel?`, `plan?` | 按版本/牌子计划生成成绩 PNG。`plan` 支持 `jiang`、`ji`、`wuwu`、`shen`，非法值按 `jiang`。 |

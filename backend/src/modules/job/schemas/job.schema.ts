@@ -52,12 +52,6 @@ export class JobEntity {
   @Prop({ type: Number, default: null })
   updateScoreDuration!: number | null;
 
-  @Prop({ type: MongooseSchema.Types.Mixed, default: null })
-  autoExportResult!: {
-    divingFish?: { status: string; message?: string } | null;
-    lxns?: { status: string; message?: string } | null;
-  } | null;
-
   @Prop({ type: [Number], default: null })
   diffsToScrape!: number[] | null;
 

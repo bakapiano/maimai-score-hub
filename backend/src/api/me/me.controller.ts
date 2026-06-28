@@ -104,12 +104,6 @@ export class MeController {
     if (body.lxnsImportToken !== undefined) {
       updateInput.lxnsImportToken = body.lxnsImportToken ?? null;
     }
-    if (body.autoExportDivingFish !== undefined) {
-      updateInput.autoExportDivingFish = body.autoExportDivingFish;
-    }
-    if (body.autoExportLxns !== undefined) {
-      updateInput.autoExportLxns = body.autoExportLxns;
-    }
     if (body.autoUpdate !== undefined) {
       if (body.autoUpdate) {
         const user = await this.users.getById(userId);
