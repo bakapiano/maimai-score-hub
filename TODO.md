@@ -37,7 +37,8 @@
 06/21
 
 [] 完全删除 二维码登录？get user rival list 不需要 auth -> dx net add rival -> get user rival list 反查 user id
-[] GetUserMapApi 探测用户登录?
-[] 后端设置密码 + 密码登录
 [] dx net 添加好友时自动更新（有点鸡肋 都有自动更新了）
 [] oauth 三方站接入
+
+[] b50 直出功能 - 从没账号到直接生成 b50 图片
+[] 前端添加 eslint check
