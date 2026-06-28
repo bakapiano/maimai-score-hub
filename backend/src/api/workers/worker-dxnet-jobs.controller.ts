@@ -12,6 +12,7 @@ import {
 import { JobPatchBodySchema } from '@maimai-score-hub/shared';
 
 import { JobService } from '../../modules/job/services/job.service';
+import { QrLoginService } from '../../modules/auth/services/qr-login.service';
 import { UsersService } from '../../modules/users/services/users.service';
 import { SharedSecretGuard } from '../../common/guards/shared-secret.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -23,6 +24,7 @@ export class WorkerDxnetJobsController {
   constructor(
     private readonly jobs: JobService,
     private readonly users: UsersService,
+    private readonly qrLogin: QrLoginService,
   ) {}
 
   @Get('bots/:botUserFriendCode/active-friend-codes')
@@ -30,6 +32,11 @@ export class WorkerDxnetJobsController {
     @Param('botUserFriendCode') botUserFriendCode: string,
   ) {
     return this.jobs.getActiveFriendCodesByBot(botUserFriendCode);
+  }
+
+  @Get('qr-login/rival-names')
+  async getRunningQrLoginRivalNames() {
+    return this.qrLogin.getRunningRivalNames();
   }
 
   @Get('jobs/:jobId')

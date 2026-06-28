@@ -77,6 +77,7 @@ export const JobByFriendCodeActiveResponseSchema = z.object({
 
 export const JobFriendshipStatusResponseSchema = z.object({
   isFriend: z.boolean(),
+  hasCabinetUserId: z.boolean(),
   botFriendCode: z.string().nullable(),
   recommendedBotFriendCode: z.string().nullable(),
   availableBotCount: z.number().int().nonnegative(),

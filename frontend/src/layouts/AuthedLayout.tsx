@@ -26,10 +26,9 @@ import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { AppFooter } from "../components/AppFooter";
-import { usersApi } from "../api/appClient";
 import { useAuth } from "../providers/AuthProvider";
 import { useDisclosure } from "@mantine/hooks";
-import { cacheProfile, getCachedProfile } from "../utils/offlineCache";
+import { getCachedProfile } from "../utils/offlineCache";
 
 type PageMeta = {
   label: string;
@@ -80,7 +79,7 @@ const pages: PageMeta[] = [
 export default function AuthedLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { token, clearToken, offline, setOffline } = useAuth();
+  const { clearToken, offline, setOffline, profile: authProfile } = useAuth();
   const [opened, { toggle, close }] = useDisclosure(false);
   const [settingsOpened, { open: openSettings, close: closeSettings }] =
     useDisclosure(false);
@@ -89,7 +88,9 @@ export default function AuthedLayout() {
   // the RESOLVED scheme — useComputedColorScheme resolves "auto" against
   // prefers-color-scheme so dark-mode-via-system works correctly.
   const colorScheme = useComputedColorScheme("light");
-  const [profile, setProfile] = useState<MiniProfile | null>(null);
+  const [offlineProfile, setOfflineProfile] = useState<MiniProfile | null>(
+    null,
+  );
   const touchStartX = useRef<number | null>(null);
 
   const currentPage = pages.find((p) => p.to === location.pathname);
@@ -102,43 +103,30 @@ export default function AuthedLayout() {
     navigate("/login", { replace: true });
   };
 
-  // Load profile for mini card
   useEffect(() => {
-    if (offline) {
-      // In offline mode, load from cache
-      const cached = getCachedProfile();
-      if (cached) {
-        setProfile({ avatarUrl: cached.avatarUrl, username: cached.username });
-      }
+    if (!offline) {
+      setOfflineProfile(null);
       return;
     }
 
-    if (!token) return;
+    const cached = getCachedProfile();
+    setOfflineProfile(
+      cached
+        ? { avatarUrl: cached.avatarUrl, username: cached.username }
+        : null,
+    );
+  }, [offline]);
 
-    let cancelled = false;
-
-    (async () => {
-      const res = await usersApi.profile({
-        headers: { authorization: `Bearer ${token}` },
-      });
-
-      if (cancelled) return;
-
-      if (res.status === 200 && res.body?.profile) {
-        const p = {
-          avatarUrl: (res.body.profile as MiniProfile).avatarUrl,
-          username: (res.body.profile as MiniProfile).username,
-        };
-        setProfile(p);
-        // Cache profile for offline use
-        cacheProfile(p);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [token, offline]);
+  const profile: MiniProfile | null = offline
+    ? offlineProfile
+    : authProfile?.profile
+      ? {
+          avatarUrl: authProfile.profile.avatarUrl,
+          username: authProfile.profile.username,
+        }
+      : authProfile
+        ? { avatarUrl: null, username: authProfile.username ?? null }
+        : null;
 
   const headerBg =
     colorScheme === "dark"

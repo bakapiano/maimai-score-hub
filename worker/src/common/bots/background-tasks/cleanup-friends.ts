@@ -6,10 +6,12 @@
 import type { BotManager, ManagedBot } from "../bot-manager.ts";
 import {
   getActiveFriendCodes,
+  getRunningQrLoginRivalNames,
   getUsersActivity,
 } from "../../backend/jobs.ts";
 import { WORKER_DEFAULTS } from "../../config.ts";
 import type { PeriodicTask } from "./index.ts";
+import type { FriendInfo } from "../../types.ts";
 
 const INACTIVE_FRIEND_EVICTION_MS = 30 * 60 * 1000;
 const FRIEND_COUNT_SOFT_LIMIT = 50;
@@ -29,22 +31,27 @@ export function createCleanupFriendsTask(manager: BotManager): PeriodicTask {
 }
 
 export function selectInactiveFriends(params: {
-  friends: string[];
+  friends: Array<Pick<FriendInfo, "friendCode" | "userName">>;
   activeFriendCodes: ReadonlySet<string>;
+  protectedRivalNames?: ReadonlySet<string>;
   activityData: UserActivity[];
   nowMs?: number;
 }): string[] {
   const {
     friends,
     activeFriendCodes,
+    protectedRivalNames = new Set<string>(),
     activityData,
     nowMs = Date.now(),
   } = params;
   const activityMap = new Map(activityData.map((u) => [u.friendCode, u]));
   const removals = new Set<string>();
 
-  for (const friendCode of friends) {
+  for (const friend of friends) {
+    const friendCode = friend.friendCode;
     if (activeFriendCodes.has(friendCode)) continue;
+    const userName = normalizeRivalName(friend.userName);
+    if (userName && protectedRivalNames.has(userName)) continue;
 
     const activity = activityMap.get(friendCode);
     if (activity?.cabinetUserId != null) {
@@ -54,9 +61,7 @@ export function selectInactiveFriends(params: {
 
     const lastActive = activity?.lastActiveAt;
     if (!lastActive) {
-      if (activityMap.has(friendCode)) {
-        removals.add(friendCode);
-      }
+      removals.add(friendCode);
       continue;
     }
 
@@ -70,12 +75,22 @@ export function selectInactiveFriends(params: {
     const extraRemovalCount = countAfterBaseCleanup - FRIEND_COUNT_SOFT_LIMIT;
     const overflowRemovals = friends
       .filter(
-        (friendCode) =>
-          !activeFriendCodes.has(friendCode) && !removals.has(friendCode),
+        (friend) => {
+          if (
+            activeFriendCodes.has(friend.friendCode) ||
+            removals.has(friend.friendCode)
+          ) {
+            return false;
+          }
+          const userName = normalizeRivalName(friend.userName);
+          return !userName || !protectedRivalNames.has(userName);
+        },
       )
-      .map((friendCode) => ({
-        friendCode,
-        lastActiveMs: toLastActiveMs(activityMap.get(friendCode)?.lastActiveAt),
+      .map((friend) => ({
+        friendCode: friend.friendCode,
+        lastActiveMs: toLastActiveMs(
+          activityMap.get(friend.friendCode)?.lastActiveAt,
+        ),
       }))
       .filter(
         (candidate): candidate is { friendCode: string; lastActiveMs: number } =>
@@ -89,7 +104,14 @@ export function selectInactiveFriends(params: {
     }
   }
 
-  return friends.filter((friendCode) => removals.has(friendCode));
+  return friends
+    .map((friend) => friend.friendCode)
+    .filter((friendCode) => removals.has(friendCode));
+}
+
+function normalizeRivalName(name: string | null | undefined): string | null {
+  const normalized = name?.trim();
+  return normalized ? normalized : null;
 }
 
 function isInactive(lastActive: string, nowMs: number): boolean {
@@ -163,12 +185,22 @@ async function cleanupForBot(bot: ManagedBot): Promise<void> {
       `[CleanupService] Bot ${botFriendCode} has ${sentRequests.length} sent requests, ${acceptRequests.length} accept requests and ${friends.length} friends`,
     );
 
-    // 2. 获取活跃的 friendCode 列表
-    const activeFriendCodes = await getActiveFriendCodes(botFriendCode);
+    // 2. 获取活跃的 friendCode 列表，以及 QR 登录慢路径中尚未解析出
+    // friendCode 的玩家名。后者需要按 name 暂时保护，否则刚加上的好友
+    // 可能在快照刷新前被 cleanup 删掉。
+    const [activeFriendCodes, runningRivalNames] = await Promise.all([
+      getActiveFriendCodes(botFriendCode),
+      getRunningQrLoginRivalNames(),
+    ]);
     const activeSet = new Set(activeFriendCodes);
+    const protectedRivalNameSet = new Set(
+      runningRivalNames
+        .map((name) => normalizeRivalName(name))
+        .filter((name): name is string => Boolean(name)),
+    );
 
     console.log(
-      `[CleanupService] Bot ${botFriendCode} has ${activeFriendCodes.length} active jobs`,
+      `[CleanupService] Bot ${botFriendCode} has ${activeFriendCodes.length} active jobs and ${protectedRivalNameSet.size} running QR-login names`,
     );
 
     // 3. 取消不在活跃列表中的好友请求（好友请求仍然定期清理）
@@ -212,16 +244,18 @@ async function cleanupForBot(bot: ManagedBot): Promise<void> {
     {
       const activityData = await getUsersActivity(friends);
 
-      // 淘汰不在活跃任务中的好友：
+      // 淘汰不在活跃任务 / QR 登录保护名中的好友：
+      //  - friend name 命中正在 QR 登录的 rivalName → 保留（此时可能还没有 friendCode）
       //  - 已绑定 cabinetUserId → 驱逐，可通过 addRival 恢复
       //  - 有 lastActiveAt 且距今 > 30min → 驱逐
       //  - lastActiveAt 为 null / 无活跃记录：
       //      后端能查到该 user（注册用户但久未活跃）→ 驱逐
-      //      后端查不到（bot / 刚建的号 / 非本服务用户）→ 保守保留
+      //      后端查不到 → 驱逐
       //  - 上述清理后好友数仍 >50：按 lastActiveAt 从旧到新继续驱逐到 <=50
       const inactiveFriends = selectInactiveFriends({
-        friends,
+        friends: friendInfos,
         activeFriendCodes: activeSet,
+        protectedRivalNames: protectedRivalNameSet,
         activityData,
       });
 

@@ -93,6 +93,13 @@ export const jobContract = c.router({
       200: z.array(z.string()),
     },
   },
+  getRunningQrLoginRivalNames: {
+    method: "GET",
+    path: "/workers/dxnet/qr-login/rival-names",
+    responses: {
+      200: z.array(z.string()),
+    },
+  },
   getUsersActivity: {
     method: "POST",
     path: "/workers/dxnet/users/activity",

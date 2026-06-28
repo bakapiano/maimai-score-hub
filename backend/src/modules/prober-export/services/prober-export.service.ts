@@ -105,6 +105,16 @@ function duplicateKey(err: unknown): boolean {
   );
 }
 
+function isInvalidTokenError(
+  target: ProberExportProvider,
+  message: string,
+): boolean {
+  if (target === 'divingFish') {
+    return /Diving-fish responded 400/i.test(message) && /token/i.test(message);
+  }
+  return /LXNS responded 401/i.test(message);
+}
+
 @Injectable()
 export class ProberExportService implements OnModuleDestroy {
   private readonly logger = new Logger(ProberExportService.name);
@@ -447,7 +457,15 @@ export class ProberExportService implements OnModuleDestroy {
             });
       return this.toProviderResult(response);
     } catch (err) {
-      return { status: 'failed', message: errorMessage(err) };
+      const message = errorMessage(err);
+      if (isInvalidTokenError(target, message)) {
+        await this.users.clearProberImportToken(job.friendCode, target);
+        return {
+          status: 'failed',
+          message: `${message}，已清除失效 token，请重新配置后再试。`,
+        };
+      }
+      return { status: 'failed', message };
     }
   }
 

@@ -9,14 +9,16 @@ const minutesAgo = (minutes: number) =>
 assert.deepEqual(
   selectInactiveFriends({
     friends: [
-      "active",
-      "cabinet-bound",
-      "recent",
-      "old",
-      "registered-null",
-      "unknown",
+      { friendCode: "active", userName: "active-user" },
+      { friendCode: "cabinet-bound", userName: "cabinet-user" },
+      { friendCode: "recent", userName: "recent-user" },
+      { friendCode: "old", userName: "old-user" },
+      { friendCode: "registered-null", userName: "registered-null-user" },
+      { friendCode: "unknown", userName: "unknown-user" },
+      { friendCode: "qr-login", userName: "Protected QR Name" },
     ],
     activeFriendCodes: new Set(["active"]),
+    protectedRivalNames: new Set(["Protected QR Name"]),
     activityData: [
       {
         friendCode: "active",
@@ -38,13 +40,16 @@ assert.deepEqual(
     ],
     nowMs,
   }),
-  ["cabinet-bound", "old", "registered-null"],
+  ["cabinet-bound", "old", "registered-null", "unknown"],
 );
 
 {
-  const friends = Array.from({ length: 55 }, (_, index) => `user-${index}`);
-  const activityData = friends.map((friendCode, index) => ({
-    friendCode,
+  const friends = Array.from({ length: 55 }, (_, index) => ({
+    friendCode: `user-${index}`,
+    userName: `User ${index}`,
+  }));
+  const activityData = friends.map((friend, index) => ({
+    friendCode: friend.friendCode,
     lastActiveAt: new Date(nowMs - (29 * 60_000 - index * 1_000)).toISOString(),
     cabinetUserId: null,
   }));

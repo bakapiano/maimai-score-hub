@@ -9,10 +9,30 @@ import {
 import { usersApi } from "../api/appClient";
 import {
   isOfflineMode,
+  cacheProfile,
   setOfflineMode as persistOfflineMode,
 } from "../utils/offlineCache";
+import type { UserProfile } from "../components/ProfileCard";
 
 const TOKEN_KEY = "netbot_token";
+const PROFILE_CACHE_TTL_MS = 10_000;
+
+export type AuthProfile = {
+  id: string;
+  friendCode: string;
+  username?: string | null;
+  hasPassword?: boolean;
+  hasDivingFishImportToken?: boolean;
+  hasLxnsImportToken?: boolean;
+  profile?: UserProfile | null;
+  hasCabinetUserId?: boolean;
+  autoUpdate?: boolean;
+  lastScoreHash?: string | null;
+};
+
+type RefreshProfileOptions = {
+  force?: boolean;
+};
 
 type AuthContextValue = {
   token: string | null;
@@ -20,9 +40,21 @@ type AuthContextValue = {
   clearToken: () => void;
   offline: boolean;
   setOffline: (v: boolean) => void;
+  profile: AuthProfile | null;
+  profileLoading: boolean;
+  profileError: string | null;
+  refreshProfile: (options?: RefreshProfileOptions) => Promise<AuthProfile | null>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+const profileRequests = new Map<string, Promise<AuthProfile | null>>();
+const profileCache = new Map<
+  string,
+  { value: AuthProfile | null; expiresAt: number }
+>();
+
+class UnauthorizedProfileError extends Error {}
 
 function readInitialToken() {
   try {
@@ -50,8 +82,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     readInitialToken()
   );
   const [offline, setOfflineState] = useState(() => isOfflineMode());
+  const [profile, setProfile] = useState<AuthProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   const setToken = useCallback((next: string | null) => {
+    setProfile(null);
+    setProfileError(null);
     setTokenState(next);
     persistToken(next);
   }, []);
@@ -63,58 +100,134 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     persistOfflineMode(v);
   }, []);
 
+  const refreshProfile = useCallback(
+    async (options: RefreshProfileOptions = {}) => {
+      if (!token || offline) {
+        setProfileLoading(false);
+        if (!token) setProfile(null);
+        return null;
+      }
+
+      const cached = profileCache.get(token);
+      if (!options.force && cached && cached.expiresAt > Date.now()) {
+        setProfile(cached.value);
+        return cached.value;
+      }
+
+      setProfileLoading(true);
+      setProfileError(null);
+
+      let request = profileRequests.get(token);
+      if (!request || options.force) {
+        const nextRequest: Promise<AuthProfile | null> = usersApi
+          .profile({
+            headers: { authorization: `Bearer ${token}` },
+          })
+          .then((res: { status: number; body?: unknown }) => {
+            if (res.status === 401 || res.status === 403) {
+              throw new UnauthorizedProfileError("Unauthorized");
+            }
+            if (res.status !== 200) {
+              throw new Error(`Profile request failed (HTTP ${res.status})`);
+            }
+            return (res.body ?? null) as AuthProfile | null;
+          })
+          .finally(() => {
+            if (profileRequests.get(token) === nextRequest) {
+              profileRequests.delete(token);
+            }
+          });
+        request = nextRequest;
+        profileRequests.set(token, request);
+      }
+
+      try {
+        const nextProfile = await request;
+        profileCache.set(token, {
+          value: nextProfile,
+          expiresAt: Date.now() + PROFILE_CACHE_TTL_MS,
+        });
+        setProfile(nextProfile);
+
+        const fc = nextProfile?.friendCode;
+        const username = nextProfile?.username;
+        try {
+          if (fc) localStorage.setItem("lastFriendCode", fc);
+          if (username) localStorage.setItem("lastUsername", username);
+        } catch {
+          // ignore
+        }
+        if (nextProfile?.profile) {
+          cacheProfile({
+            avatarUrl: nextProfile.profile.avatarUrl,
+            username: nextProfile.profile.username,
+          });
+        }
+
+        return nextProfile;
+      } catch (err) {
+        if (err instanceof UnauthorizedProfileError) {
+          setToken(null);
+          return null;
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        setProfileError(message);
+        throw err;
+      } finally {
+        setProfileLoading(false);
+      }
+    },
+    [token, offline, setToken],
+  );
+
   useEffect(() => {
     // Skip token validation in offline mode
     if (!token || offline) return;
 
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const res = await usersApi.profile({
-          headers: { authorization: `Bearer ${token}` },
-        });
-
-        if (cancelled) return;
-
-        if (res.status === 401 || res.status === 403) {
-          setToken(null);
-          return;
-        }
-
-        // Persist the active friendCode so the login page can pre-fill
-        // it if the user logs out (covers QR-login users too — they
-        // never typed their fc but we know it now). Only writes when
-        // profile actually returned one.
-        const profile = res.body as {
-          friendCode?: string;
-          username?: string | null;
-        } | null;
-        const fc = profile?.friendCode;
-        const username = profile?.username;
-        if (fc || username) {
-          try {
-            if (fc) localStorage.setItem("lastFriendCode", fc);
-            if (username) localStorage.setItem("lastUsername", username);
-          } catch {
-            // ignore
-          }
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.warn("Token validation failed", err);
-        }
+    refreshProfile().catch((err) => {
+      if (!(err instanceof UnauthorizedProfileError)) {
+        console.warn("Token validation failed", err);
       }
-    })();
+    });
+  }, [token, offline, refreshProfile]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [token, setToken, offline]);
+  useEffect(() => {
+    if (!token) {
+      setProfile(null);
+      setProfileLoading(false);
+      setProfileError(null);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (offline) {
+      setProfileLoading(false);
+    }
+  }, [offline]);
 
   const value = useMemo(
-    () => ({ token, setToken, clearToken, offline, setOffline }),
-    [token, setToken, clearToken, offline, setOffline]
+    () => ({
+      token,
+      setToken,
+      clearToken,
+      offline,
+      setOffline,
+      profile,
+      profileLoading,
+      profileError,
+      refreshProfile,
+    }),
+    [
+      token,
+      setToken,
+      clearToken,
+      offline,
+      setOffline,
+      profile,
+      profileLoading,
+      profileError,
+      refreshProfile,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

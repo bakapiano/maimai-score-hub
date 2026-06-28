@@ -4,7 +4,7 @@
 
 ## 关键结论
 
-- **每个 bot 一个 BullMQ 队列**：队列名为 `dxnet-worker-jobs:<botFriendCode>`。
+- **每个 bot 一个 BullMQ 队列**：队列名为 `dxnet-worker-jobs-<botFriendCode>`。
 - **worker 只消费自己的 bot 队列**：bot A 的 job 不会被 bot B 的 worker 正常拿到。
 - **job 创建时必须绑定 `botUserFriendCode`**：不再存在“未绑定 job 进入公共队列后由 worker 抢占”的路径。
 - **MongoDB 只保存业务状态**：`jobs.executing` 已移除，投递状态由 BullMQ 的 `waiting/delayed/active/stalled/failed/completed` 管理。
@@ -29,7 +29,7 @@
 | 参数               |                          当前默认值 | 位置 / 来源                 | 含义                                           |
 | ------------------ | ----------------------------------: | --------------------------- | ---------------------------------------------- |
 | DXNet queue prefix |                 `dxnet-worker-jobs` | `DXNET_WORKER_QUEUE_PREFIX` | per-bot queue 前缀                             |
-| Queue name         | `dxnet-worker-jobs:<botFriendCode>` | `getDxnetWorkerQueueName()` | 某个 bot 的专属队列                            |
+| Queue name         | `dxnet-worker-jobs-<botFriendCode>` | `getDxnetWorkerQueueName()` | 某个 bot 的专属队列                            |
 | BullMQ lock        |             BullMQ 默认，通常 `30s` | 未显式配置 `lockDuration`   | worker active job 的 Redis lock                |
 | BullMQ lock 续约   |             BullMQ 默认，通常 `15s` | 未显式配置 `lockRenewTime`  | active job 存活时自动续锁                      |
 | 无可用 bot 重试    |                                `5s` | `BULLMQ_JOB_RETRY_DELAY_MS` | worker 暂不能执行时把 BullMQ job 延后          |
@@ -48,6 +48,8 @@
 | `get_full_friend_list`  | 通常绑定到目标 bot 自己；未传时兜底使用 `friendCode` 作为 bot code                                    |
 
 `pickAvailableCabinetBot()` 只选择 `available=true && cabinetUserId != null` 的 bot，并同样按 `friendCount + queued/processing in-flight` 最小排序。
+
+用户侧 `/me/dxnet-jobs/friendship` 会返回 `hasCabinetUserId` 布尔值，但不会暴露具体 `cabinetUserId`。前端看到 `isFriend=true` 或 `hasCabinetUserId=true` 时会直接创建 `update_score` job；后端创建 job 时通过 cabinet fast-path 调用 sdgb `addRival` 恢复好友关系。如果 addRival 失败，创建 job 返回 `code: "needs_friendship"`，前端再 fallback 创建 `send_friend_request` job。
 
 ## 后端创建与入队
 

@@ -415,6 +415,29 @@ export class QrLoginService {
     return result;
   }
 
+  async getRunningRivalNames(): Promise<string[]> {
+    const runningStatuses: QrLoginStatus[] = [
+      'pending',
+      'adding_rival',
+      'waiting_snapshot',
+    ];
+    const rows = await this.attemptModel
+      .find({
+        status: { $in: runningStatuses },
+        rivalName: { $type: 'string', $ne: '' },
+      })
+      .select('rivalName')
+      .lean();
+
+    return [
+      ...new Set(
+        rows
+          .map((row) => row.rivalName?.trim())
+          .filter((name): name is string => Boolean(name)),
+      ),
+    ];
+  }
+
   /** Standard maimai b50: top 15 new + top 35 old, sum of per-row ratings. */
   private async computeB50(
     music: SdgbWorkerMusicEntry[],

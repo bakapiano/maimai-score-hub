@@ -67,8 +67,8 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | GET  | `/me/sync/latest`                     | -                                       | 返回当前用户最近一次同步记录和 scores，可能为 `null`。                                      |
 | POST | `/me/sync/latest/exports/diving-fish` | -                                       | 创建异步 Diving Fish 导出任务，返回 `exportJobId`。要求用户已保存 `divingFishImportToken`。 |
 | POST | `/me/sync/latest/exports/lxns`        | -                                       | 创建异步 LXNS 导出任务，返回 `exportJobId`。要求用户已保存 `lxnsImportToken`。              |
-| GET  | `/me/prober-export-jobs/:exportJobId` | path: `exportJobId`                     | 查询当前用户自己的查分器导出任务结果。                                                      |
-| GET  | `/me/prober-export-jobs`              | query: `limit?`                         | 查询当前用户最近的查分器导出任务。                                                          |
+| GET  | `/me/sync/prober-export-jobs/:exportJobId` | path: `exportJobId`                     | 查询当前用户自己的查分器导出任务结果。                                                      |
+| GET  | `/me/sync/prober-export-jobs`              | query: `limit?`                         | 查询当前用户最近的查分器导出任务。                                                          |
 | GET  | `/me/score-exports/best50`            | -                                       | 生成 Best 50 PNG，响应 `Content-Type: image/png`，下载名 `best50.png`。                     |
 | GET  | `/me/score-exports/level`             | query: `level?`                         | 按等级生成成绩 PNG，下载名 `level-<level>.png`。                                            |
 | GET  | `/me/score-exports/version`           | query: `version?`, `minLevel?`, `plan?` | 按版本/牌子计划生成成绩 PNG。`plan` 支持 `jiang`、`ji`、`wuwu`、`shen`，非法值按 `jiang`。  |
@@ -82,7 +82,7 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | 方法 | 路径                           | 入参                                                                           | 说明                                                                                                                                 |
 | ---- | ------------------------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | POST | `/me/dxnet-jobs`               | body: `jobType? = "update_score" \| "send_friend_request"`, `friendshipJobId?` | 为当前用户创建成绩更新或好友关系 job；好友码从 JWT 中读取。创建 `update_score` 时若未确认好友关系会返回 `code: "needs_friendship"`。 |
-| GET  | `/me/dxnet-jobs/friendship`    | -                                                                              | 基于 Bot 好友列表快照判断当前用户是否已和可用 Bot 成为好友，返回推荐 Bot。                                                           |
+| GET  | `/me/dxnet-jobs/friendship`    | -                                                                              | 基于 Bot 好友列表快照判断当前用户是否已和可用 Bot 成为好友，返回推荐 Bot；对已绑定机台的用户只返回 `hasCabinetUserId: true`，不暴露具体机台 ID。 |
 | GET  | `/me/dxnet-jobs/active`        | -                                                                              | 查询当前用户正在排队或处理中的成绩更新相关 job，返回 `{ job }`。                                                                     |
 | GET  | `/me/dxnet-jobs/:jobId`        | path: `jobId`                                                                  | 按 id 查询当前用户自己的 job 详情。                                                                                                  |
 | POST | `/me/dxnet-jobs/:jobId/verify` | path: `jobId`                                                                  | 用户声明已完成外部动作，请后端立即验证当前用户自己的 job，返回 `{ job }`。                                                           |

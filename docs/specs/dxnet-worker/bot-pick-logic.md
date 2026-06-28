@@ -1,12 +1,13 @@
 # DXNet Bot Pick 逻辑
 
-本文档根据当前代码实现整理 DXNet job 创建时如何选择 `botUserFriendCode`。DXNet worker 已改为 per-bot named queue，因此 **job 创建前必须先决定 bot**，随后进入 `dxnet-worker-jobs:<botFriendCode>`。
+本文档根据当前代码实现整理 DXNet job 创建时如何选择 `botUserFriendCode`。DXNet worker 已改为 per-bot named queue，因此 **job 创建前必须先决定 bot**，随后进入 `dxnet-worker-jobs-<botFriendCode>`。
 
 ## 关键结论
 
 - **没有公共队列抢占分配**：普通 DXNet job 不再靠 worker 抢到后写入 bot；后端创建 job 时必须写入 `botUserFriendCode`。
 - **通用 pick 区分容量和负载**：`friendCount` 只作为好友容量约束和同负载 tie-breaker；实际负载看 `queued/processing` in-flight job 数。
 - **Cabinet 场景要求 bot 绑定 cabinet userId**：`pickAvailableCabinetBot()` 额外要求 `cabinetUserId != null`，同样会过滤好友数已满的 bot。
+- **用户侧 friendship 会暴露机台绑定布尔值**：`/me/dxnet-jobs/friendship` 返回 `hasCabinetUserId`，但不返回具体机台 ID；前端可据此直接创建 `update_score` 走 cabinet fast-path。
 - **`update_score` 优先选择已有好友关系的 bot**：如果某个可用 bot 的好友快照里已有目标用户，就直接绑定该 bot；否则才走 cabinet fast-path 或要求前置好友关系 job。
 - **pick 结果不会在 worker 侧重分配**：worker 只消费自己的 named queue；投递到错误 queue 会 fail，而不是换 bot。
 
@@ -149,6 +150,35 @@ available === true
 | `get_user_recent_event` | 必须由调用方传 bot；当前主要来自自动更新 FC/FS enrichment                                                         |
 | `get_full_friend_list`  | 通常调用方传 bot；未传时 `JobService.create()` 用 `friendCode` 作为 bot code，适用于“刷新某个 bot 自己的好友列表” |
 
+## 用户侧 friendship 与 cabinet fast-path
+
+前端点击“更新数据”前会调用：
+
+```http
+GET /api/v1/me/dxnet-jobs/friendship
+```
+
+响应包含：
+
+```json
+{
+  "isFriend": false,
+  "hasCabinetUserId": true,
+  "botFriendCode": null,
+  "recommendedBotFriendCode": "336560109012350"
+}
+```
+
+`hasCabinetUserId` 只表示当前用户是否已绑定机台，不暴露具体 `cabinetUserId`。
+
+前端逻辑：
+
+1. `isFriend=true`：直接创建 `update_score`。
+2. `hasCabinetUserId=true`：直接创建 `update_score`。后端创建 job 时执行 `tryCabinetFastPath()`，选择 cabinet bot 并调用 sdgb `addRival`。
+3. 两者都为 false：先创建 `send_friend_request`。
+
+如果第 2 种情况下 addRival 失败，后端仍返回 `needs_friendship`，前端 fallback 创建 `send_friend_request`。
+
 ## 与 named queue 的关系
 
 最终创建出的 MongoDB job 一定带 `botUserFriendCode`：
@@ -165,7 +195,7 @@ available === true
 然后后端 enqueue 到：
 
 ```ts
-dxnet-worker-jobs:<picked bot>
+dxnet-worker-jobs-<picked bot>
 ```
 
 worker 不会再改写 `botUserFriendCode`。如果某个 job 缺失 `botUserFriendCode`，或被投递到了不匹配的 bot queue，worker 会把这个业务 job 标记为 `failed`，因为这代表后端路由数据错误。

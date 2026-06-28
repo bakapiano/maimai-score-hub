@@ -64,8 +64,9 @@ export const backendTsRestApi: NonNullable<
   route,
   validateResponse,
 }) => {
-  const authHeaders: Record<string, string> = process.env.API_SHARED_SECRET
-    ? { "X-API-Secret": process.env.API_SHARED_SECRET }
+  const apiSecret = process.env.API_SHARED_SECRET || process.env.ADMIN_PASSWORD;
+  const authHeaders: Record<string, string> = apiSecret
+    ? { "X-API-Secret": apiSecret }
     : {};
 
   const result = await backendFetchWithRetry(path, {

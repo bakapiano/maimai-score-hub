@@ -8,7 +8,6 @@ import {
 import { Anchor, Box, Group, Loader, Stack, Tabs, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { syncApi } from "../api/appClient";
 
 import { AllScoresTab } from "./score/AllScoresTab";
 import { Best50Tab } from "./score/Best50Tab";
@@ -18,6 +17,7 @@ import { VersionScoresTab } from "./score/VersionScoresTab";
 import { useAuth } from "../providers/AuthProvider";
 import { useMusic } from "../providers/MusicProvider";
 import { cacheSyncLatest, getCachedSyncLatest } from "../utils/offlineCache";
+import { fetchLatestSync } from "../api/syncLatest";
 
 export default function ScorePage() {
   const { token, offline } = useAuth();
@@ -48,9 +48,11 @@ export default function ScorePage() {
     setError(null);
 
     try {
-      const latestRes = await syncApi.latest({
-        headers: { authorization: `Bearer ${token}` },
-      });
+      const latestRes = await fetchLatestSync<{
+        scores?: SyncScore[];
+        createdAt?: string;
+        updatedAt?: string;
+      }>(token);
 
       if (latestRes.status !== 200) {
         if (latestRes.status === 404) {
@@ -62,16 +64,8 @@ export default function ScorePage() {
         setError(`获取成绩失败 (HTTP ${latestRes.status})`);
         setScores([]);
         setLastSyncAt(null);
-      } else if (latestRes.body) {
-        const {
-          scores: syncScores,
-          createdAt,
-          updatedAt,
-        } = latestRes.body as {
-          scores?: SyncScore[];
-          createdAt?: string;
-          updatedAt?: string;
-        };
+      } else if (latestRes.data) {
+        const { scores: syncScores, createdAt, updatedAt } = latestRes.data;
         if (Array.isArray(syncScores)) {
           setScores(syncScores);
           // Cache for offline use

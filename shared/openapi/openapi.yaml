@@ -1721,6 +1721,8 @@ paths:
                 properties:
                   isFriend:
                     type: boolean
+                  hasCabinetUserId:
+                    type: boolean
                   botFriendCode:
                     type: string
                     nullable: true
@@ -1737,6 +1739,7 @@ paths:
                     type: string
                 required:
                   - isFriend
+                  - hasCabinetUserId
                   - botFriendCode
                   - recommendedBotFriendCode
                   - availableBotCount
@@ -2161,6 +2164,20 @@ paths:
           schema:
             type: string
       operationId: job.getActiveByBot
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+  /workers/dxnet/qr-login/rival-names:
+    get:
+      tags: *a5
+      parameters: []
+      operationId: job.getRunningQrLoginRivalNames
       responses:
         "200":
           description: "200"

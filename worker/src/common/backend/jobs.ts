@@ -122,6 +122,21 @@ export async function getActiveFriendCodes(
 }
 
 /**
+ * 获取正在 QR 登录慢路径中的玩家名。此时可能还没有 friendCode，
+ * 清理好友时需要按 name 暂时保留。
+ */
+export async function getRunningQrLoginRivalNames(): Promise<string[]> {
+  const response = await client.getRunningQrLoginRivalNames();
+  if (response.status !== 200) {
+    throw new Error(
+      `Failed to fetch running QR-login rival names. Status: ${response.status}`,
+    );
+  }
+
+  return response.body;
+}
+
+/**
  * 批量查询用户活跃度
  */
 export async function getUsersActivity(

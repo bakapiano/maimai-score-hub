@@ -179,6 +179,12 @@ sdgb.scanQr({ qrCode })
 
 `qr_login_attempts` 有 1 天 TTL，只用于短期登录进度追踪。
 
+运行中的二维码登录慢路径还会被 DXNet 好友清理保护：worker 通过
+`GET /api/v1/workers/dxnet/qr-login/rival-names` 读取 `pending`、
+`adding_rival`、`waiting_snapshot` 状态的 `rivalName` 列表。如果 Bot
+好友列表里某个好友的 `userName` 命中该列表，即使此时还没有反查出
+friendCode，cleanup 也会暂时保留它，避免在快照刷新前误删。
+
 ### 3. 前端轮询二维码 attempt
 
 前端把 `attemptId` 存到 `localStorage["pendingQrLoginAttemptId"]`，以便刷新页面后继续轮询同一个 attempt。

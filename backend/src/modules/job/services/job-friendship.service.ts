@@ -183,6 +183,7 @@ export class JobFriendshipService {
 
   async getFriendshipStatus(friendCode: string): Promise<{
     isFriend: boolean;
+    hasCabinetUserId: boolean;
     botFriendCode: string | null;
     recommendedBotFriendCode: string | null;
     availableBotCount: number;
@@ -200,11 +201,15 @@ export class JobFriendshipService {
     const snap = botFriendCode
       ? await this.botFriendSnapshot.get(botFriendCode)
       : null;
+    const user = await this.usersService.findByFriendCode(friendCode);
+    const hasCabinetUserId =
+      (user as { cabinetUserId?: number | null } | null)?.cabinetUserId != null;
     const recommendedBotFriendCode =
       botFriendCode ?? availableBots[0]?.friendCode ?? null;
 
     return {
       isFriend: !!botFriendCode,
+      hasCabinetUserId,
       botFriendCode,
       recommendedBotFriendCode,
       availableBotCount: availableBots.length,

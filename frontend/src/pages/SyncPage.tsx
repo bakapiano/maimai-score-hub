@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { JobResponse as JobStatus } from "@maimai-score-hub/shared";
 
 import { syncApi, usersApi } from "../api/appClient";
+import { fetchLatestSync } from "../api/syncLatest";
 import {
   JobApiError,
   createJob,
@@ -29,21 +30,13 @@ import {
   getJobById,
   verifyJob,
 } from "../api/jobClient";
-import { ProfileCard, type UserProfile } from "../components/ProfileCard";
+import { ProfileCard } from "../components/ProfileCard";
 import { CabinetBindingCard } from "../components/CabinetBindingCard";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
-import { useAuth } from "../providers/AuthProvider";
+import { useAuth, type AuthProfile } from "../providers/AuthProvider";
 import { useNavigate } from "react-router-dom";
 
-type UserProfileResponse = {
-  friendCode: string;
-  hasDivingFishImportToken?: boolean;
-  hasLxnsImportToken?: boolean;
-  profile: UserProfile | null;
-  hasCabinetUserId?: boolean;
-  autoUpdate?: boolean;
-  lastScoreHash?: string | null;
-};
+type UserProfileResponse = AuthProfile;
 
 type ExportTarget = "diving-fish" | "lxns";
 type ExportProviderKey = "divingFish" | "lxns";
@@ -159,14 +152,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   }
 
   if (path === "/api/v1/me/sync/latest" && method === "GET" && authorization) {
-    const res = await syncApi.latest({
-      headers: { authorization },
-    });
-    return {
-      ok: res.status === 200,
-      status: res.status,
-      data: (res.body ?? null) as T,
-    };
+    return await fetchLatestSync<T>(authorization.replace(/^Bearer\s+/i, ""));
   }
 
   if (
@@ -200,7 +186,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   }
 
   const exportJobMatch = path.match(
-    /^\/api\/v1\/me\/prober-export-jobs\/([^/]+)$/,
+    /^\/api\/v1\/me\/sync\/prober-export-jobs\/([^/]+)$/,
   );
   if (exportJobMatch && method === "GET" && authorization) {
     const res = await syncApi.getProberExportJob({
@@ -278,11 +264,18 @@ function SectionHeader({
 }
 
 export default function SyncPage() {
-  const { token, offline, setOffline } = useAuth();
+  const {
+    token,
+    offline,
+    setOffline,
+    profile,
+    profileLoading,
+    profileError: authProfileError,
+    refreshProfile,
+  } = useAuth();
   const navigate = useNavigate();
 
   // Profile state
-  const [profile, setProfile] = useState<UserProfileResponse | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
 
   // Last sync info
@@ -325,14 +318,14 @@ export default function SyncPage() {
 
   // Loading state
   const [loading, setLoading] = useState(true);
+  const effectiveProfileError = profileError ?? authProfileError;
+  const pageLoading = loading || profileLoading;
 
   // Fetch last sync info
-  const loadLastSync = useCallback(async () => {
+  const loadLastSync = useCallback(async (options: { force?: boolean } = {}) => {
     if (!token) return;
 
-    const res = await fetchJson<LastSyncInfo>("/api/v1/me/sync/latest", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await fetchLatestSync<LastSyncInfo>(token, options);
 
     if (res.ok && res.data) {
       setLastSync(res.data);
@@ -344,20 +337,21 @@ export default function SyncPage() {
 
   // Fetch profile
   const loadProfile = useCallback(async () => {
-    if (!token) return;
+    if (!token) return null;
 
     setProfileError(null);
 
-    const res = await fetchJson<UserProfileResponse>("/api/v1/me", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (res.ok && res.data) {
-      setProfile(res.data);
-    } else {
-      setProfileError(`加载失败 (HTTP ${res.status})`);
+    try {
+      const nextProfile = await refreshProfile({ force: true });
+      if (!nextProfile) {
+        setProfileError("加载失败");
+      }
+      return nextProfile;
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : "加载失败");
+      return null;
     }
-  }, [token]);
+  }, [token, refreshProfile]);
 
   // Load profile and last sync on mount
   useEffect(() => {
@@ -369,30 +363,26 @@ export default function SyncPage() {
       setLoading(true);
       setProfileError(null);
 
-      // Kick off all independent requests in parallel.
-      // Profile is needed for friendCode → active job lookup, but
-      // /api/v1/me/sync/latest has no data dependency on profile and
-      // were previously waiting in series — total wall time was the
-      // sum of all requests. Now profile + the other requests race;
-      // active-job lookup chains off profile (still serial there,
-      // but unavoidable since it needs friendCode).
-      const profilePromise = fetchJson<UserProfileResponse>("/api/v1/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const syncPromise = fetchJson<LastSyncInfo>("/api/v1/me/sync/latest", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // Kick off independent requests in parallel. Profile comes from
+      // AuthProvider so /me is deduped across the app and StrictMode.
+      const profilePromise = refreshProfile();
+      const syncPromise = fetchLatestSync<LastSyncInfo>(token);
 
-      const res = await profilePromise;
+      let loadedProfile: UserProfileResponse | null = null;
+      try {
+        loadedProfile = await profilePromise;
+      } catch (err) {
+        if (!cancelled) {
+          setProfileError(err instanceof Error ? err.message : "加载失败");
+        }
+      }
       if (cancelled) return;
 
-      if (res.ok && res.data) {
-        setProfile(res.data);
-
+      if (loadedProfile) {
         // Active-job lookup needs friendCode, so it chains off profile.
-        if (res.data.friendCode) {
+        if (loadedProfile.friendCode) {
           const activeJobRes = await getActiveJobByFriendCode(
-            res.data.friendCode,
+            loadedProfile.friendCode,
             token,
           );
           if (cancelled) return;
@@ -409,8 +399,6 @@ export default function SyncPage() {
             }
           }
         }
-      } else {
-        setProfileError(`加载失败 (HTTP ${res.status})`);
       }
 
       const syncRes = await syncPromise;
@@ -427,7 +415,7 @@ export default function SyncPage() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, refreshProfile]);
 
   // Save tokens (silent, returns success)
   // Only sends token fields that the user has actually entered a value for
@@ -496,7 +484,7 @@ export default function SyncPage() {
 
     try {
       const friendship = await getFriendshipStatus(token);
-      if (friendship.isFriend) {
+      if (friendship.isFriend || friendship.hasCabinetUserId) {
         await startUpdateScoreJob();
       } else {
         await startFriendshipJob();
@@ -549,12 +537,12 @@ export default function SyncPage() {
             }
             setSyncing(false);
             loadProfile();
-            loadLastSync();
+            loadLastSync({ force: true });
 
             // Refresh latest sync after a delay to pick up queued export results
             setTimeout(async () => {
               try {
-                await loadLastSync();
+                await loadLastSync({ force: true });
               } catch {
                 // ignore
               }
@@ -648,7 +636,7 @@ export default function SyncPage() {
     ]);
     for (let i = 0; i < 240; i++) {
       const res = await fetchJson<ProberExportJob>(
-        `/api/v1/me/prober-export-jobs/${encodeURIComponent(exportJobId)}`,
+        `/api/v1/me/sync/prober-export-jobs/${encodeURIComponent(exportJobId)}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -779,9 +767,11 @@ export default function SyncPage() {
       <Stack gap="xl" mx="auto" w="100%">
         {/* Profile Section */}
 
-        {profileError && <Alert color="red">{profileError}</Alert>}
+        {effectiveProfileError && (
+          <Alert color="red">{effectiveProfileError}</Alert>
+        )}
 
-        {loading && !profile?.profile && (
+        {pageLoading && !profile?.profile && (
           <Card withBorder padding="md" radius="md" h={160}>
             <Group justify="center" py="md" h={160}>
               <Loader size="sm" />
@@ -899,7 +889,7 @@ export default function SyncPage() {
             </Card>
           )}
 
-          {loading && (
+          {pageLoading && (
             <Card withBorder padding="md" radius="md">
               <Stack gap="sm" align="center">
                 <Loader size="sm" />
@@ -910,7 +900,7 @@ export default function SyncPage() {
             </Card>
           )}
 
-          {!loading && !lastSync && !syncStatus && (
+          {!pageLoading && !lastSync && !syncStatus && (
             <Card withBorder padding="md" radius="md">
               <Stack gap="sm" align="center">
                 <Text size="sm" c="dimmed" ta="center">
@@ -1116,11 +1106,6 @@ export default function SyncPage() {
             title="更新查分器"
             subtitle="配置 token 后，同步完成会自动导出到对应查分器"
           />
-
-          <Alert color="teal" variant="light">
-            已保存 token 的查分器会在每次成绩同步完成后自动更新；删除或清空
-            token 后将停止导出到对应查分器。
-          </Alert>
 
           {/* Diving-Fish Section */}
           <Card withBorder padding="md" radius="md">

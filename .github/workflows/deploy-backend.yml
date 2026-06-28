@@ -91,6 +91,39 @@ jobs:
             sudo docker builder prune --force --keep-storage=2GB || true
             sudo $COMPOSE_CMD build || { echo "❌ Build failed"; exit 1; }
 
+            # Bring stateful dependencies up before the rolling backend update.
+            # The backend rollout uses --no-deps to avoid touching healthy
+            # replicas, so newly added dependencies like Redis must be started
+            # explicitly here.
+            sudo $COMPOSE_CMD up -d mongo redis
+
+            wait_service_healthy() {
+              local service="$1"
+              for i in $(seq 1 30); do
+                local healthy
+                healthy=$(sudo $COMPOSE_CMD ps "$service" --format json 2>/dev/null \
+                  | grep -c '"Health":"healthy"' || true)
+                # Fallback for older compose versions whose --format json
+                # doesn't include Health: count via classic ps.
+                if [ "$healthy" -eq 0 ]; then
+                  healthy=$(sudo $COMPOSE_CMD ps "$service" 2>/dev/null \
+                    | grep -c "(healthy)" || true)
+                fi
+                echo "[wait] $service healthy=$healthy (attempt $i/30)"
+                if [ "$healthy" -ge 1 ]; then
+                  return 0
+                fi
+                sleep 5
+              done
+              return 1
+            }
+
+            if ! wait_service_healthy redis; then
+              echo "❌ Redis did not become healthy within 150s"
+              sudo $COMPOSE_CMD logs --tail=100 redis
+              exit 1
+            fi
+
             # ── Zero-downtime rolling update ────────────────────────
             # We keep 2 replicas behind nginx. To avoid the brief
             # 502 window the previous "scale=2 --force-recreate"

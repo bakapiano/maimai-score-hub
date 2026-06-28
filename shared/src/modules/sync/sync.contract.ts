@@ -32,14 +32,14 @@ export const syncContract = c.router({
   },
   getProberExportJob: {
     method: "GET",
-    path: "/me/prober-export-jobs/:exportJobId",
+    path: "/me/sync/prober-export-jobs/:exportJobId",
     headers: c.type<{ authorization: string }>(),
     pathParams: c.type<{ exportJobId: string }>(),
     responses: { 200: ProberExportJobSchema },
   },
   listProberExportJobs: {
     method: "GET",
-    path: "/me/prober-export-jobs",
+    path: "/me/sync/prober-export-jobs",
     headers: c.type<{ authorization: string }>(),
     query: c.type<{ limit?: string }>(),
     responses: { 200: ProberExportListResponseSchema },

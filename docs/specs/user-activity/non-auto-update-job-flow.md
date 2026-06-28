@@ -5,7 +5,7 @@
 ## 关键结论
 
 - **`update_score` 是唯一会写入成绩的 DXNet job 类型**：只有 `jobType="update_score"` 且 job `completed` 且有 `result` 时，后端才会写入 `syncs`。
-- **前端会先确认好友关系，再创建 `update_score`**：如果当前用户还不是可用 Bot 的好友，前端会先走好友关系建立流程；本文不展开该前置 job，只说明它完成后如何进入 `update_score`。
+- **前端会先确认好友关系 / 机台绑定状态，再创建 `update_score`**：如果当前用户已是可用 Bot 好友，或已绑定 `cabinetUserId`，前端会直接创建 `update_score`；否则才先走好友关系建立流程。
 - **后端不会把 `update_score` 自动改写成好友申请 job**：创建 `update_score` 时如果仍无法确认好友关系，会返回 `code: "needs_friendship"`。
 - **Job 状态以 MongoDB `jobs` 集合为准**：BullMQ 只负责分发 `{ jobId }`。
 - **“同步后自动导出”不是“自动更新”**：它是在一次普通 `update_score` 成功写入 sync 后，把最新成绩导出到 Diving-Fish / LXNS。
@@ -51,6 +51,7 @@ Authorization: Bearer <token>
 ```json
 {
   "isFriend": true,
+  "hasCabinetUserId": true,
   "botFriendCode": "336560109012350",
   "recommendedBotFriendCode": "336560109012350",
   "availableBotCount": 3,
@@ -59,7 +60,15 @@ Authorization: Bearer <token>
 }
 ```
 
-如果 `isFriend=true`，前端直接创建 `update_score`。如果 `isFriend=false`，前端会先让用户和 Bot 建立好友关系；该前置流程完成后，再用刚完成的 `friendshipJobId` 创建 `update_score`。
+`hasCabinetUserId` 只暴露布尔值，不暴露具体机台 ID。
+
+前端判断：
+
+1. `isFriend=true`：直接创建 `update_score`。
+2. `hasCabinetUserId=true`：也直接创建 `update_score`，让后端在创建 job 时通过 cabinet fast-path 调 sdgb `addRival` 恢复好友关系。
+3. 两者都为 false：先创建 `send_friend_request` 好友关系 job；该前置流程完成后，再用刚完成的 `friendshipJobId` 创建 `update_score`。
+
+如果第 2 种情况下 sdgb `addRival` 失败，后端创建 `update_score` 会返回 `code: "needs_friendship"`，前端 fallback 到 `send_friend_request`。
 
 ## 创建 update_score
 
@@ -113,7 +122,7 @@ Authorization: Bearer <token>
 }
 ```
 
-然后把 `{ jobId }` 加入该 bot 的 BullMQ named queue：`dxnet-worker-jobs:<botUserFriendCode>`。
+然后把 `{ jobId }` 加入该 bot 的 BullMQ named queue：`dxnet-worker-jobs-<botUserFriendCode>`。
 
 ## 后端派发与超时保护
 

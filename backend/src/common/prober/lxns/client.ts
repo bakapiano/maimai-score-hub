@@ -3,6 +3,9 @@ import type { LxnsScore } from './converter';
 
 const LXNS_ENDPOINT =
   'https://maimai.lxns.net/api/v0/user/maimai/player/scores';
+const LXNS_UPLOAD_TIMEOUT_MS = Number(
+  process.env.LXNS_UPLOAD_TIMEOUT_MS ?? 60_000,
+);
 
 type UploadResponse = {
   status: number;
@@ -25,6 +28,8 @@ export async function uploadLxnsScores(
       await new Promise((r) => setTimeout(r, backoffMs[attempt]));
     }
     let result: { ok: boolean; status: number; data: unknown };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), LXNS_UPLOAD_TIMEOUT_MS);
     try {
       const res = await fetch(LXNS_ENDPOINT, {
         method: 'POST',
@@ -33,6 +38,7 @@ export async function uploadLxnsScores(
           'X-User-Token': token,
         },
         body: JSON.stringify({ scores }),
+        signal: controller.signal,
       });
       const text = await res.text();
       let data: unknown = null;
@@ -45,6 +51,8 @@ export async function uploadLxnsScores(
     } catch (err) {
       lastErr = err;
       continue;
+    } finally {
+      clearTimeout(timeout);
     }
 
     if (result.ok) {

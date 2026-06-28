@@ -10,13 +10,16 @@ import { timingSafeEqual } from 'node:crypto';
 
 export const API_SHARED_SECRET_ENV = 'API_SHARED_SECRET';
 export const API_SHARED_SECRET_HEADER = 'x-api-secret';
+export const LEGACY_ADMIN_PASSWORD_ENV = 'ADMIN_PASSWORD';
 
 @Injectable()
 export class SharedSecretGuard implements CanActivate {
   constructor(private readonly config: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const configuredSecret = this.config.get<string>(API_SHARED_SECRET_ENV);
+    const configuredSecret =
+      this.config.get<string>(API_SHARED_SECRET_ENV) ||
+      this.config.get<string>(LEGACY_ADMIN_PASSWORD_ENV);
     if (!configuredSecret) {
       throw new UnauthorizedException('API shared secret is not configured');
     }

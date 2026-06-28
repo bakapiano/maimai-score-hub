@@ -35,6 +35,40 @@ services:
       retries: 5
       start_period: 30s
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - 'yes'
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - noeviction
+      - --requirepass
+      - '${REDIS_PASSWORD:?REDIS_PASSWORD must be set for production Redis}'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set for production Redis}
+    # Workers run on separate hosts and need this BullMQ Redis endpoint.
+    # Keep the published port restricted to worker IPs in the cloud firewall.
+    ports:
+      - '${REDIS_BIND:-0.0.0.0}:${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping | grep -q PONG',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   backend:
     build:
       context: ..
@@ -53,6 +87,8 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:9050/api/v1/health']
       interval: 10s
@@ -68,10 +104,10 @@ services:
       MONGO_PASSWORD: ${MONGO_PASSWORD:-example}
       MONGO_AUTH_SOURCE: ${MONGO_AUTH_SOURCE:-admin}
       REDIS_URL: ${REDIS_URL:-}
-      REDIS_HOST: ${REDIS_HOST:-127.0.0.1}
-      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       REDIS_DB: ${REDIS_DB:-0}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set for production Redis}
       REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-maimai:}
       BULLMQ_PREFIX: ${BULLMQ_PREFIX:-}
       DXNET_DISPATCH_SWEEP_INTERVAL_MS: ${DXNET_DISPATCH_SWEEP_INTERVAL_MS:-30000}
@@ -95,3 +131,4 @@ services:
 
 volumes:
   mongo_data:
+  redis_data:

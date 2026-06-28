@@ -74,7 +74,7 @@ FC/FS Enrichment 是 **change-driven**，不是 **tier-driven**：
 
 1. 检查单用户 cooldown，例如 30 分钟内最多一次。
 2. 选择可用 Bot。
-3. 通过 sdgb `addRival` 确保 Bot 与目标用户有 rival/好友关系。
+3. 通过 sdgb `addRival` 确保 Bot 与目标用户有 rival/好友关系；如果目标用户后续被 DXNet cleanup 从 Bot 好友列表移除，下次 enrichment 会再次通过 addRival 恢复。
 4. DXNet worker 请求好友详情 recent event 页面。
 5. 解析最近事件中的 FC/AP/FS/FDX，得到本次 recent event 返回的 FC/FS list。
 6. 只处理本次 enrichment 与上一次 enrichment 之间的事件；首次 enrichment 没有 since 时处理当前页面返回的全部 recent event。

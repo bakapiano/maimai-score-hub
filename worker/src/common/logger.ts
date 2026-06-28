@@ -73,13 +73,13 @@ export function startLogger(opts: LoggerOptions): void {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 10_000);
       try {
+        const apiSecret =
+          process.env.API_SHARED_SECRET || process.env.ADMIN_PASSWORD;
         await backendFetchWithRetry(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(process.env.API_SHARED_SECRET
-              ? { "X-API-Secret": process.env.API_SHARED_SECRET }
-              : {}),
+            ...(apiSecret ? { "X-API-Secret": apiSecret } : {}),
           },
           body: JSON.stringify({
             workerId: opts.workerId,

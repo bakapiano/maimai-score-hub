@@ -66,6 +66,7 @@ POST /workers/dxnet/users/activity
 3. `UsersService.getActivityByFriendCodes()` 只查询存在的用户，并只返回 `friendCode`、`lastActiveAt` 和 `cabinetUserId`。
 4. 响应里的 `lastActiveAt` 会转成 ISO 字符串；没有活跃时间则返回 `null`。`cabinetUserId` 有值表示该用户已经绑定机台 ID。
 5. 后端查不到的 friendCode 不会出现在响应数组里。因此 activity 响应里是否存在某个 friendCode，也同时承担用户存在性判断：响应里有这条记录表示这是注册用户；没有记录表示后端查无此人。
+6. worker 还会读取 `GET /workers/dxnet/qr-login/rival-names`。该接口从 `qr_login_attempts` 里返回正在运行的二维码登录慢路径玩家名（`pending`、`adding_rival`、`waiting_snapshot`），用于保护尚未解析出 friendCode 的 QR-login 好友。
 
 ## Bot 好友清理如何使用 lastActiveAt
 
@@ -83,19 +84,20 @@ POST /workers/dxnet/users/activity
 2. 调后端 `GET /workers/dxnet/bots/:botUserFriendCode/active-friend-codes` 获取该 bot 当前非终态 job 覆盖的 friendCode。后端筛选条件是同一个 `botUserFriendCode`，且 job `status` 不在 `completed`、`failed`、`canceled`。
 3. 取消不在活跃 job 列表里的已发送好友请求。
 4. 拒绝不在活跃 job 列表里的待接受好友请求。
-5. 对完整好友列表调用 `/workers/dxnet/users/activity`，再筛选要删除的好友。这个接口只返回后端已存在用户的记录，记录内容包含 `lastActiveAt` 和 `cabinetUserId`；因此 worker 既能判断活跃时间、是否能通过机台 `addRival` 恢复好友，也能通过“响应里有没有这条 friendCode”区分「注册用户但 `lastActiveAt` 为空」和「后端查无此人」。
+5. 对完整好友列表调用 `/workers/dxnet/users/activity`，再调用 `/workers/dxnet/qr-login/rival-names` 获取 QR-login name 保护名单，最后筛选要删除的好友。
 
 真正删除好友时，规则由 `selectInactiveFriends()` 决定：
 
 | 条件（按优先级） | 结果 |
 | --- | --- |
 | friendCode 正在该 bot 的活跃 job 列表里 | 保留 |
+| 好友 `userName` 命中正在运行的 QR-login `rivalName` | 保留；该流程可能还没解析出 friendCode |
 | 已绑定 `cabinetUserId` | 删除；之后需要时可通过机台 `addRival` 加回来 |
 | 有 `lastActiveAt`，且距当前时间超过 30 分钟 | 删除 |
 | 有 `lastActiveAt`，且距当前时间不超过 30 分钟 | 保留 |
 | activity 响应里有该 friendCode，但 `lastActiveAt` 为 `null` | 删除 |
 | 上述清理后 bot 好友数仍超过 50，且好友有可排序的 `lastActiveAt` | 按 `lastActiveAt` 从旧到新继续删除，直到剩余好友数不超过 50，或没有更多可排序候选 |
-| activity 响应里没有该 friendCode | 保守保留 |
+| activity 响应里没有该 friendCode | 删除；不再保守保留 unknown friend |
 
 删除动作调用 `client.friends.removeFriend(friendCode)`。单个好友删除失败只记录错误，不中断后续好友的清理。
 
@@ -103,4 +105,4 @@ POST /workers/dxnet/users/activity
 
 `lastActiveAt` 现在表示「最近一次成功登录或访问受保护后端接口的时间」，不是「最近一次完成同步」或「最近一次 DXNet 上有成绩变化」。
 
-Bot 清理用它判断注册用户是否还处于近期站内活跃期：活跃 job 永远优先保留；没有活跃 job 的注册用户，如果已绑定机台 ID、超过 30 分钟没有刷新 `lastActiveAt`，或从未刷新过，就会从 bot 好友列表移除。已绑定机台 ID 的用户被优先移除，是因为后续需要时可以通过 sdgb `addRival` 恢复好友关系。后端查不到的 friendCode 会保守保留，避免误删 bot 账号、外部用户或刚出现在 DXNet 好友列表但尚未进入本系统的数据；但当 bot 好友数超过 50 时，worker 会在可排序的已知用户里按 `lastActiveAt` 从旧到新额外淘汰，尽量把好友数压回不超过 50。
+Bot 清理用它判断注册用户是否还处于近期站内活跃期：活跃 job 永远优先保留；正在 QR-login 慢路径中的 `rivalName` 也会按好友名保留。没有活跃 job 且不在 QR-login 保护名单里的好友，如果已绑定机台 ID、超过 30 分钟没有刷新 `lastActiveAt`、从未刷新过，或后端查无此人，就会从 bot 好友列表移除。已绑定机台 ID 的用户被优先移除，是因为后续需要时可以通过 sdgb `addRival` 恢复好友关系；unknown friend 不再保守保留，以免长期占用 bot 好友容量。

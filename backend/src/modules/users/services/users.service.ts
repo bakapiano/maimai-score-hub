@@ -219,6 +219,15 @@ export class UsersService {
     return updated.toObject();
   }
 
+  async clearProberImportToken(
+    friendCode: string,
+    provider: 'divingFish' | 'lxns',
+  ): Promise<void> {
+    const field =
+      provider === 'divingFish' ? 'divingFishImportToken' : 'lxnsImportToken';
+    await this.userModel.updateOne({ friendCode }, { $set: { [field]: null } });
+  }
+
   async setAccountPassword(
     id: string,
     input: {
