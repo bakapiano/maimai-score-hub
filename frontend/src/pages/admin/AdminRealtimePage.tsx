@@ -7,7 +7,6 @@ import {
   SimpleGrid,
   Stack,
   Table,
-  Tabs,
   Text,
   Title,
 } from "@mantine/core";
@@ -25,10 +24,7 @@ import {
 } from "recharts";
 
 import {
-  type ActiveJob,
-  type ActiveJobsStats,
   type AdminEnvironment,
-  type BotStatus,
   getDefaultAdminEnvironment,
   useAdminContext,
 } from "./adminUtils";
@@ -139,8 +135,6 @@ export default function AdminRealtimePage() {
   const [data, setData] = useState<RealtimeOverview | null>(null);
   const [workerGroups, setWorkerGroups] =
     useState<RealtimeWorkerGroups | null>(null);
-  const [bots, setBots] = useState<BotStatus[]>([]);
-  const [activeJobs, setActiveJobs] = useState<ActiveJobsStats | null>(null);
   const [workerWindow, setWorkerWindow] = useState<"1h" | "6h" | "24h">("1h");
   const [loading, setLoading] = useState(false);
 
@@ -149,8 +143,7 @@ export default function AdminRealtimePage() {
     setLoading(true);
     try {
       const headers = { "x-api-secret": password };
-      const [overviewRes, workerGroupsRes, botsRes, activeJobsRes] =
-        await Promise.all([
+      const [overviewRes, workerGroupsRes] = await Promise.all([
         fetch(`/api/v1/admin/realtime/overview?env=${environment}`, {
           headers,
         }),
@@ -158,20 +151,12 @@ export default function AdminRealtimePage() {
           `/api/v1/admin/realtime/worker-groups?env=${environment}&window=${workerWindow}`,
           { headers },
         ),
-        fetch("/api/v1/admin/bots", { headers }),
-        fetch("/api/v1/admin/dxnet-jobs/active", { headers }),
       ]);
       if (overviewRes.ok) {
         setData((await overviewRes.json()) as RealtimeOverview);
       }
       if (workerGroupsRes.ok) {
         setWorkerGroups((await workerGroupsRes.json()) as RealtimeWorkerGroups);
-      }
-      if (botsRes.ok) {
-        setBots((await botsRes.json()) as BotStatus[]);
-      }
-      if (activeJobsRes.ok) {
-        setActiveJobs((await activeJobsRes.json()) as ActiveJobsStats);
       }
     } finally {
       setLoading(false);
@@ -218,94 +203,70 @@ export default function AdminRealtimePage() {
         </Group>
       </Group>
 
-      <Tabs defaultValue="overview" keepMounted={false}>
-        <Tabs.List>
-          <Tabs.Tab value="overview">总览</Tabs.Tab>
-          <Tabs.Tab value="dxnet">DXNet</Tabs.Tab>
-          <Tabs.Tab value="sdgb">SDGB</Tabs.Tab>
-          <Tabs.Tab value="prober_export">查分器导出</Tabs.Tab>
-        </Tabs.List>
-
-        <Tabs.Panel value="overview" pt="md">
-          <Stack gap="md">
-            <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
-              <MetricCard
-                label="ClickHouse"
-                value={
-                  clickhouse?.ping ? "正常" : clickhouse?.enabled ? "异常" : "关闭"
-                }
-                color={
-                  clickhouse?.ping
-                    ? "green"
-                    : clickhouse?.enabled
-                      ? "red"
-                      : "gray"
-                }
-              />
-              <MetricCard
-                label="可用 Bot"
-                value={`${data?.bots?.available ?? 0}/${data?.bots?.total ?? 0}`}
-                color={(data?.bots?.available ?? 0) > 0 ? "green" : "red"}
-              />
-              <MetricCard
-                label="可用 Cabinet Bot"
-                value={String(data?.bots?.cabinetAvailable ?? 0)}
-                color={(data?.bots?.cabinetAvailable ?? 0) > 0 ? "green" : "red"}
-              />
-              <MetricCard
-                label="ClickHouse 写入缓冲"
-                value={`${clickhouse?.bufferedRows ?? 0} 待写 / ${
-                  clickhouse?.droppedRows ?? 0
-                } 丢弃`}
-                color={(clickhouse?.droppedRows ?? 0) > 0 ? "red" : "blue"}
-              />
-            </SimpleGrid>
-
-            {clickhouse?.lastError && (
-              <Card withBorder>
-                <Text c="red" size="sm">
-                  ClickHouse 最近错误：{clickhouse.lastError}
-                </Text>
-              </Card>
+      <Stack gap="md">
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
+          <MetricCard
+            label="ClickHouse"
+            value={clickhouse?.ping ? "正常" : clickhouse?.enabled ? "异常" : "关闭"}
+            color={clickhouse?.ping ? "green" : clickhouse?.enabled ? "red" : "gray"}
+          />
+          <MetricCard
+            label="ClickHouse 写入缓冲"
+            value={`${clickhouse?.bufferedRows ?? 0} 待写 / ${
+              clickhouse?.droppedRows ?? 0
+            } 丢弃`}
+            color={(clickhouse?.droppedRows ?? 0) > 0 ? "red" : "blue"}
+          />
+          <MetricCard
+            label="今日外部调用类型"
+            value={String(data?.usageToday?.length ?? 0)}
+            color={(data?.usageToday?.length ?? 0) > 0 ? "blue" : "gray"}
+          />
+          <MetricCard
+            label="最近错误类型"
+            value={String(
+              (data?.recentErrors?.http?.length ?? 0) +
+                (data?.recentErrors?.externalApi?.length ?? 0),
             )}
+            color={
+              (data?.recentErrors?.http?.length ?? 0) +
+                (data?.recentErrors?.externalApi?.length ?? 0) >
+              0
+                ? "red"
+                : "gray"
+            }
+          />
+        </SimpleGrid>
 
-            <SimpleGrid cols={{ base: 1, lg: 2 }}>
-              <BotStatusCard bots={bots} />
-              <ActiveJobsCard activeJobs={activeJobs} />
-            </SimpleGrid>
+        {clickhouse?.lastError && (
+          <Card withBorder>
+            <Text c="red" size="sm">
+              ClickHouse 最近错误：{clickhouse.lastError}
+            </Text>
+          </Card>
+        )}
 
-            <SimpleGrid cols={{ base: 1, lg: 2 }}>
-              <QueueCard title="DXNet 队列" queue={data?.queues?.dxnet} />
-              <QueueCard title="SDGB 队列" queue={data?.queues?.sdgb} />
-            </SimpleGrid>
+        <SimpleGrid cols={{ base: 1, lg: 2 }}>
+          <RowsCard title="最近 15 分钟 HTTP 5xx" rows={data?.recentErrors?.http} />
+          <RowsCard
+            title="最近 15 分钟外部调用错误"
+            rows={data?.recentErrors?.externalApi}
+          />
+        </SimpleGrid>
 
-            <SimpleGrid cols={{ base: 1, lg: 2 }}>
-              <RowsCard
-                title="最近 15 分钟 HTTP 5xx"
-                rows={data?.recentErrors?.http}
-              />
-              <RowsCard
-                title="最近 15 分钟外部调用错误"
-                rows={data?.recentErrors?.externalApi}
-              />
-            </SimpleGrid>
-
-            <RowsCard title="今日外部调用量" rows={data?.usageToday} />
-          </Stack>
-        </Tabs.Panel>
+        <RowsCard title="今日外部调用量" rows={data?.usageToday} />
 
         {(["dxnet", "sdgb", "prober_export"] as WorkerKind[]).map((kind) => (
-          <Tabs.Panel key={kind} value={kind} pt="md">
-            <WorkerMonitorPanel
-              group={workerGroups?.groups.find(
-                (candidate) => candidate.workerKind === kind,
-              )}
-              window={workerWindow}
-              onWindowChange={setWorkerWindow}
-            />
-          </Tabs.Panel>
+          <WorkerMonitorPanel
+            key={kind}
+            group={workerGroups?.groups.find(
+              (candidate) => candidate.workerKind === kind,
+            )}
+            window={workerWindow}
+            onWindowChange={setWorkerWindow}
+          />
         ))}
-      </Tabs>
+      </Stack>
     </Stack>
   );
 }
@@ -328,166 +289,6 @@ function MetricCard({
         {value}
       </Badge>
     </Card>
-  );
-}
-
-function BotStatusCard({ bots }: { bots: BotStatus[] }) {
-  const sorted = [...bots].sort((a, b) => {
-    if (a.available !== b.available) {
-      return a.available ? -1 : 1;
-    }
-    return (a.remark ?? a.friendCode).localeCompare(b.remark ?? b.friendCode);
-  });
-
-  return (
-    <Card withBorder>
-      <Group justify="space-between" mb="sm">
-        <Title order={4}>Bot 状态</Title>
-        <Badge variant="light">
-          {sorted.filter((bot) => bot.available).length}/{sorted.length} 可用
-        </Badge>
-      </Group>
-      {!sorted.length ? (
-        <Text size="sm" c="dimmed">
-          暂无 Bot 状态
-        </Text>
-      ) : (
-        <Table.ScrollContainer minWidth={620}>
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Bot</Table.Th>
-                <Table.Th>状态</Table.Th>
-                <Table.Th>好友数</Table.Th>
-                <Table.Th>Cabinet</Table.Th>
-                <Table.Th>上报时间</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {sorted.map((bot) => (
-                <Table.Tr key={bot.friendCode}>
-                  <Table.Td>
-                    <Stack gap={0}>
-                      <Text size="sm" fw={600}>
-                        {bot.remark || bot.friendCode}
-                      </Text>
-                      {bot.remark && (
-                        <Text size="xs" c="dimmed" ff="monospace">
-                          {bot.friendCode}
-                        </Text>
-                      )}
-                    </Stack>
-                  </Table.Td>
-                  <Table.Td>
-                    <Badge color={bot.available ? "green" : "red"} variant="light">
-                      {bot.available ? "可用" : "不可用"}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>{bot.friendCount ?? "-"}</Table.Td>
-                  <Table.Td>
-                    <Badge
-                      color={bot.cabinetUserId ? "green" : "gray"}
-                      variant="light"
-                    >
-                      {bot.cabinetUserId ? "已绑定" : "未绑定"}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="xs" c="dimmed">
-                      {formatTime(bot.lastReportedAt)}
-                    </Text>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
-      )}
-    </Card>
-  );
-}
-
-function ActiveJobsCard({ activeJobs }: { activeJobs: ActiveJobsStats | null }) {
-  const jobs = activeJobs?.jobs ?? [];
-
-  return (
-    <Card withBorder>
-      <Group justify="space-between" mb="sm">
-        <Title order={4}>实时任务监控</Title>
-        <Group gap="xs">
-          <Badge color="yellow" variant="light">
-            排队 {activeJobs?.queuedCount ?? 0}
-          </Badge>
-          <Badge color="blue" variant="light">
-            处理中 {activeJobs?.processingCount ?? 0}
-          </Badge>
-        </Group>
-      </Group>
-      {!jobs.length ? (
-        <Text size="sm" c="dimmed">
-          当前没有活跃 DXNet 任务
-        </Text>
-      ) : (
-        <Table.ScrollContainer minWidth={720}>
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Job</Table.Th>
-                <Table.Th>用户</Table.Th>
-                <Table.Th>类型 / 阶段</Table.Th>
-                <Table.Th>Bot</Table.Th>
-                <Table.Th>状态</Table.Th>
-                <Table.Th>耗时</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {jobs.map((job) => (
-                <ActiveJobRow key={job.id} job={job} />
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
-      )}
-    </Card>
-  );
-}
-
-function ActiveJobRow({ job }: { job: ActiveJob }) {
-  return (
-    <Table.Tr>
-      <Table.Td>
-        <Text size="xs" ff="monospace">
-          {job.id.slice(0, 8)}
-        </Text>
-      </Table.Td>
-      <Table.Td>
-        <Text size="xs" ff="monospace">
-          {job.friendCode}
-        </Text>
-      </Table.Td>
-      <Table.Td>
-        <Stack gap={0}>
-          <Text size="sm">{job.jobType}</Text>
-          <Text size="xs" c="dimmed">
-            {job.stage}
-          </Text>
-        </Stack>
-      </Table.Td>
-      <Table.Td>
-        <Text size="xs" ff="monospace" c="dimmed">
-          {job.botUserFriendCode ?? "-"}
-        </Text>
-      </Table.Td>
-      <Table.Td>
-        <Badge
-          color={job.status === "processing" ? "blue" : "yellow"}
-          variant="light"
-        >
-          {job.status === "processing" ? "处理中" : "排队中"}
-        </Badge>
-      </Table.Td>
-      <Table.Td>{formatDuration(job.runningDuration)}</Table.Td>
-    </Table.Tr>
   );
 }
 
@@ -851,49 +652,6 @@ function RecentErrorsCard({ rows }: { rows: RecentWorkerError[] }) {
       )}
     </Card>
   );
-}
-
-function QueueCard({
-  title,
-  queue,
-}: {
-  title: string;
-  queue?: Record<string, number | null>;
-}) {
-  return (
-    <Card withBorder>
-      <Title order={4}>{title}</Title>
-      <Group mt="sm">
-        {Object.entries(queue ?? {}).map(([key, value]) => (
-          <Badge key={key} variant="light">
-            {formatQueueLabel(key)}：{formatQueueValue(key, value)}
-          </Badge>
-        ))}
-      </Group>
-    </Card>
-  );
-}
-
-function formatQueueLabel(key: string): string {
-  const labels: Record<string, string> = {
-    queued: "排队中",
-    processing: "处理中",
-    failed: "失败",
-    completed: "已完成",
-    oldestQueuedAgeSeconds: "最久排队",
-    oldestProcessingAgeSeconds: "最久处理",
-  };
-  return labels[key] ?? key;
-}
-
-function formatQueueValue(key: string, value: number | null): string {
-  if (value === null || value === undefined) {
-    return "-";
-  }
-  if (key.toLowerCase().includes("age") || key.toLowerCase().includes("seconds")) {
-    return formatSeconds(value);
-  }
-  return String(value);
 }
 
 function RowsCard({
