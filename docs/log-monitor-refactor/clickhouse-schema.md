@@ -9,6 +9,7 @@
 - 时间字段统一 `DateTime64(3, 'Asia/Shanghai')`
 - 分区按月：`PARTITION BY toYYYYMM(ts)`
 - 常用排序：低基数字段 + `ts`
+- 所有明细表都带 `environment LowCardinality(String)`，取值 `prod` / `dev`。prod/dev 共用 ClickHouse 实例时，所有 dashboard 查询必须显式过滤 environment。
 - raw HTML / large body 不进 ClickHouse，只保存 `artifactKey`
 - 用户标识使用明文 `friendCode`；用户确认 friendCode 不是敏感信息。
 - bot 标识使用明文 `botFriendCode`。
@@ -30,6 +31,7 @@ CREATE TABLE http_requests
   ts DateTime64(3, 'Asia/Shanghai'),
   traceId String,
   requestId String,
+  environment LowCardinality(String),
   service LowCardinality(String),
   instance LowCardinality(String),
   method LowCardinality(String),
@@ -47,7 +49,7 @@ CREATE TABLE http_requests
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
-ORDER BY (service, routeTemplate, method, ts)
+ORDER BY (environment, service, routeTemplate, method, ts)
 TTL ts + INTERVAL 180 DAY DELETE;
 ```
 
@@ -66,6 +68,7 @@ TTL ts + INTERVAL 180 DAY DELETE;
 CREATE TABLE frontend_rum
 (
   ts DateTime64(3, 'Asia/Shanghai'),
+  environment LowCardinality(String),
   sessionId String,
   friendCode String,
   routeTemplate LowCardinality(String),
@@ -89,7 +92,7 @@ CREATE TABLE frontend_rum
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
-ORDER BY (routeTemplate, ts)
+ORDER BY (environment, routeTemplate, ts)
 TTL ts + INTERVAL 180 DAY DELETE;
 ```
 
@@ -108,6 +111,7 @@ TTL ts + INTERVAL 180 DAY DELETE;
 CREATE TABLE analytics_events
 (
   ts DateTime64(3, 'Asia/Shanghai'),
+  environment LowCardinality(String),
   eventName LowCardinality(String),
   friendCode String,
   sessionId String,
@@ -118,7 +122,7 @@ CREATE TABLE analytics_events
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
-ORDER BY (eventName, ts)
+ORDER BY (environment, eventName, ts)
 TTL ts + INTERVAL 365 DAY DELETE;
 ```
 
@@ -152,6 +156,7 @@ DAU 定义：
 CREATE TABLE structured_logs
 (
   ts DateTime64(3, 'Asia/Shanghai'),
+  environment LowCardinality(String),
   service LowCardinality(String),
   instance LowCardinality(String),
   level LowCardinality(String),
@@ -168,7 +173,7 @@ CREATE TABLE structured_logs
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
-ORDER BY (service, level, ts)
+ORDER BY (environment, service, level, ts)
 TTL ts + INTERVAL 30 DAY DELETE;
 ```
 
@@ -187,6 +192,7 @@ CREATE TABLE external_api_calls
 (
   ts DateTime64(3, 'Asia/Shanghai'),
   traceId String,
+  environment LowCardinality(String),
   jobId String,
   workerKind LowCardinality(String),
   workerId LowCardinality(String),
@@ -206,7 +212,7 @@ CREATE TABLE external_api_calls
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
-ORDER BY (target, apiGroup, statusCode, ts)
+ORDER BY (environment, target, apiGroup, statusCode, ts)
 TTL ts + INTERVAL 90 DAY DELETE;
 ```
 
@@ -231,6 +237,7 @@ worker 生命周期和业务事件。
 CREATE TABLE worker_events
 (
   ts DateTime64(3, 'Asia/Shanghai'),
+  environment LowCardinality(String),
   service LowCardinality(String),
   workerKind LowCardinality(String),
   workerId LowCardinality(String),
@@ -244,7 +251,7 @@ CREATE TABLE worker_events
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
-ORDER BY (workerKind, eventName, ts)
+ORDER BY (environment, workerKind, eventName, ts)
 TTL ts + INTERVAL 180 DAY DELETE;
 ```
 
@@ -268,6 +275,7 @@ job 状态流转和 stage 变化。
 CREATE TABLE job_timeline_events
 (
   ts DateTime64(3, 'Asia/Shanghai'),
+  environment LowCardinality(String),
   jobId String,
   jobKind LowCardinality(String),
   jobType LowCardinality(String),
@@ -285,7 +293,7 @@ CREATE TABLE job_timeline_events
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
-ORDER BY (jobId, ts)
+ORDER BY (environment, jobId, ts)
 TTL ts + INTERVAL 180 DAY DELETE;
 ```
 
@@ -301,10 +309,11 @@ TTL ts + INTERVAL 180 DAY DELETE;
 CREATE MATERIALIZED VIEW api_stats_1m
 ENGINE = SummingMergeTree
 PARTITION BY toYYYYMM(bucket)
-ORDER BY (bucket, service, routeTemplate, method, statusClass)
+ORDER BY (bucket, environment, service, routeTemplate, method, statusClass)
 AS
 SELECT
   toStartOfMinute(ts) AS bucket,
+  environment,
   service,
   routeTemplate,
   method,
@@ -314,7 +323,7 @@ SELECT
   countIf(statusCode >= 400) AS clientOrServerErrors,
   sum(durationMs) AS durationSumMs
 FROM http_requests
-GROUP BY bucket, service, routeTemplate, method, statusClass;
+GROUP BY bucket, environment, service, routeTemplate, method, statusClass;
 ```
 
 精确 p95/p99 建议从明细表按窗口查，或后续改用 `AggregatingMergeTree` 保存 quantile state。
@@ -325,15 +334,16 @@ GROUP BY bucket, service, routeTemplate, method, statusClass;
 CREATE MATERIALIZED VIEW dau_daily
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(day)
-ORDER BY (day, eventName)
+ORDER BY (day, environment, eventName)
 AS
 SELECT
   toDate(ts) AS day,
+  environment,
   eventName,
   uniqState(friendCode) AS users
 FROM analytics_events
 WHERE friendCode != ''
-GROUP BY day, eventName;
+GROUP BY day, environment, eventName;
 ```
 
 ### `external_api_stats_5m`
@@ -342,10 +352,11 @@ GROUP BY day, eventName;
 CREATE MATERIALIZED VIEW external_api_stats_5m
 ENGINE = SummingMergeTree
 PARTITION BY toYYYYMM(bucket)
-ORDER BY (bucket, target, apiGroup, statusClass, errorClass)
+ORDER BY (bucket, environment, target, apiGroup, statusClass, errorClass)
 AS
 SELECT
   toStartOfInterval(ts, INTERVAL 5 MINUTE) AS bucket,
+  environment,
   target,
   apiGroup,
   statusClass,
@@ -354,7 +365,7 @@ SELECT
   sum(durationMs) AS durationSumMs,
   sum(bodySize) AS bodyBytes
 FROM external_api_calls
-GROUP BY bucket, target, apiGroup, statusClass, errorClass;
+GROUP BY bucket, environment, target, apiGroup, statusClass, errorClass;
 ```
 
 ## 查询示例
@@ -368,7 +379,8 @@ SELECT
   countIf(statusCode >= 500) AS server_errors,
   round(server_errors / total * 100, 2) AS error_rate
 FROM http_requests
-WHERE ts >= now() - INTERVAL 1 DAY
+WHERE environment = 'prod'
+  AND ts >= now() - INTERVAL 1 DAY
 GROUP BY routeTemplate
 ORDER BY server_errors DESC;
 ```
@@ -381,7 +393,8 @@ SELECT
   quantile(0.95)(durationMs) AS p95,
   quantile(0.99)(durationMs) AS p99
 FROM http_requests
-WHERE ts >= now() - INTERVAL 1 DAY
+WHERE environment = 'prod'
+  AND ts >= now() - INTERVAL 1 DAY
 GROUP BY routeTemplate
 ORDER BY p95 DESC;
 ```
@@ -394,6 +407,7 @@ SELECT
   uniqExact(friendCode) AS dau
 FROM analytics_events
 WHERE eventName = 'page_view'
+  AND environment = 'prod'
   AND friendCode != ''
 GROUP BY day
 ORDER BY day;
@@ -404,7 +418,8 @@ Job debug trace：
 ```sql
 SELECT *
 FROM external_api_calls
-WHERE jobId = {jobId:String}
+WHERE environment = {environment:String}
+  AND jobId = {jobId:String}
 ORDER BY ts ASC;
 ```
 

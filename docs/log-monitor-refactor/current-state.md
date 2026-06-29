@@ -30,11 +30,11 @@
 
 `worker_logs` 是 console line tail，本质是观测数据，不是业务事实。线上有 `1,933,769` 条，其中 `1,914,194` 条已经超过 schema 期望的 2h 保留时间。
 
-原因不是业务量失控，而是线上 `worker_logs.ts_1` index 没有 `expireAfterSeconds`。Mongoose 不会自动把已存在的普通索引改成 TTL 索引。
+线上 `worker_logs.ts_1` index 没有 `expireAfterSeconds`。这只是现状证据，用于说明新方案为什么不继续把观测日志写入 Mongo。
 
 ### 2. job API debug 保存了大响应体
 
-`job_api_logs` 线上有 `102,169` 条，逻辑大小 `6.96GB`。过去 24h 只新增 `9,412` 条，但历史超过 24h 的仍有 `92,757` 条，因为线上 `createdAt_1` index 同样没有 TTL。
+`job_api_logs` 线上有 `102,169` 条，逻辑大小 `6.96GB`。过去 24h 只新增 `9,412` 条，但历史超过 24h 的仍有 `92,757` 条。这个现状用于说明 raw body 入库成本。
 
 更大的问题是 schema 直接保存 `responseBody`。这让 debug 页面的一次排查成本变成 Mongo 存储和查询成本。
 

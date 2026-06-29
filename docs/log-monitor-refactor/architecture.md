@@ -209,6 +209,7 @@ breaking change 后推荐路径：
 
 ## 安全和基数控制
 
+- prod/dev 共用 101 ClickHouse 时，所有明细表、聚合表、admin 查询和 artifact key 都必须带 `environment`。
 - `friendCode` 和 `botFriendCode` 明文进入 ClickHouse，便于 admin 排障。
 - Mongo `_id` 默认不进入 ClickHouse。
 - token、cookie、secret、raw QR、raw body 禁止进入 ClickHouse。

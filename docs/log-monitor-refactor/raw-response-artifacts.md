@@ -48,12 +48,19 @@ inside artifact service:
 ```text
 /srv/maimai-observability/artifacts/
   raw-response/
-    2026/
-      06/
-        29/
-          job_<jobId>/
-            000001_maimai.friend.pages_200_a13f9c2e.html.gz
-            000002_maimai.friend.genre_vs_567_91ab02cd.html.gz
+    prod/
+      2026/
+        06/
+          29/
+            job_<jobId>/
+              000001_maimai.friend.pages_200_a13f9c2e.html.gz
+              000002_maimai.friend.genre_vs_567_91ab02cd.html.gz
+    dev/
+      2026/
+        06/
+          29/
+            job_<jobId>/
+              000001_maimai.friend.pages_200_a13f9c2e.html.gz
 ```
 
 文件名规则：
@@ -69,11 +76,12 @@ inside artifact service:
 - `jobId` 只允许安全字符。
 - `ext` 为 `html` / `json` / `txt`。
 - `artifactKey` 是相对路径，不是绝对路径。
+- `artifactKey` 必须带 environment 前缀，例如 `raw-response/prod/` 或 `raw-response/dev/`。
 
 ClickHouse `external_api_calls.artifactKey` 示例：
 
 ```text
-raw-response/2026/06/29/job_abc/000002_maimai.friend.genre_vs_567_91ab02cd.html.gz
+raw-response/prod/2026/06/29/job_abc/000002_maimai.friend.genre_vs_567_91ab02cd.html.gz
 ```
 
 ## 写入方式
@@ -103,6 +111,7 @@ Content-Type: application/json
 
 {
   "jobId": "...",
+  "environment": "prod",
   "workerId": "...",
   "botFriendCode": "...",
   "urlGroup": "maimai.friend.pages",
@@ -118,7 +127,7 @@ Content-Type: application/json
 
 ```json
 {
-  "artifactKey": "raw-response/2026/06/29/job_abc/000001_maimai.friend.pages_200_a13f9c2e.html.gz",
+  "artifactKey": "raw-response/prod/2026/06/29/job_abc/000001_maimai.friend.pages_200_a13f9c2e.html.gz",
   "storedBytes": 12345,
   "bodyHash": "sha256:..."
 }
@@ -159,7 +168,7 @@ backend 必须校验：
 
 - `artifactKey` 不能包含 `..`。
 - resolved path 必须在 artifacts root 下。
-- 只允许读取已知 prefix，例如 `raw-response/`。
+- 只允许读取已知 prefix，例如 `raw-response/prod/` 或 `raw-response/dev/`。
 
 前端预览：
 
@@ -205,6 +214,7 @@ TTL 清理：
 ```sql
 CREATE TABLE artifacts (
   artifactKey TEXT PRIMARY KEY,
+  environment TEXT,
   jobId TEXT,
   workerId TEXT,
   botFriendCode TEXT,
@@ -263,4 +273,3 @@ services:
 - 先让 worker 只上传 artifact metadata，admin 从 101 内网访问时读取。
 
 正式推荐加一条受限反向隧道，只暴露 artifact service 到 Server 5 可访问的地址，并用 shared secret 鉴权。
-

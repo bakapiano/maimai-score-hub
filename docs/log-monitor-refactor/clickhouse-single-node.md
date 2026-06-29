@@ -25,9 +25,11 @@ Server 5 当前已有 backend×2 + nginx + MongoDB，Mongo 容器约 `2.879GiB /
 
 | 阶段 | 机器 |
 | --- | --- |
-| PoC | Server 4 或临时小机器，2C / 4G / 100GB SSD |
-| 正式 | 独立机器，4C / 8G / 200GB+ SSD |
+| PoC | Server 4 / 101，2C / 4G / 100GB SSD |
+| 正式 | 101 或独立机器，4C / 8G / 200GB+ SSD |
 | 后续扩展 | 写入/查询压力明显升高后，再考虑副本、分片、Keeper |
+
+prod/dev 可以共用同一个 101 ClickHouse 实例；所有表必须带 `environment` 字段，admin/Grafana 查询必须显式过滤 `prod` 或 `dev`。详见 [dev-testing.md](./dev-testing.md)。
 
 ## Docker Compose 草案
 

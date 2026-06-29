@@ -42,7 +42,7 @@
 | `sdgb_jobs` | 86,747 |
 | `auto_update_runs` | 288 |
 
-TTL 漂移：
+现状观察：
 
 | Collection | schema 期望 | 线上实际 |
 | --- | --- | --- |
@@ -67,6 +67,8 @@ Redis      = BullMQ / lock / rate limit / heartbeat / 当前状态
 ClickHouse = 历史观测与分析仓库
 Artifact   = raw HTML / large body / debug dump
 ```
+
+prod 和 dev 可以共用 101 上的 ClickHouse / artifact service，但必须用 `environment = 'prod' | 'dev'` 隔离查询、看板和 artifact 路径；默认 admin 历史看板只查 prod。
 
 ## 技术选型
 
@@ -162,6 +164,7 @@ admin portal
 - [architecture.md](./architecture.md)
 - [clickhouse-schema.md](./clickhouse-schema.md)
 - [raw-response-artifacts.md](./raw-response-artifacts.md)
+- [dev-testing.md](./dev-testing.md)
 - [dashboards-alerts.md](./dashboards-alerts.md)
 - [clickhouse-single-node.md](./clickhouse-single-node.md)
 - [migration-plan.md](./migration-plan.md)

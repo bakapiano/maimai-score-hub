@@ -92,6 +92,8 @@ ClickHouse 最近窗口：
 
 数据源：ClickHouse。
 
+prod/dev 共用 ClickHouse 时，History 页面必须提供 environment selector；默认 `prod`，开发排查时显式切到 `dev`。
+
 ### 1. Product Analytics
 
 图表：
