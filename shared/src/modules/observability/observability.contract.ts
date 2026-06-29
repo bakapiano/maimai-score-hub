@@ -40,4 +40,12 @@ export const observabilityContract = c.router({
     body: ExternalApiCallBatchBodySchema,
     responses: { 201: ObservabilityIngestResponseSchema },
   },
+  ingestWorkerExternalApiCalls: {
+    method: "POST",
+    path: "/workers/:kind/external-api-calls",
+    headers: c.type<{ "x-api-secret": string }>(),
+    pathParams: z.object({ kind: z.string() }),
+    body: ExternalApiCallBatchBodySchema,
+    responses: { 201: ObservabilityIngestResponseSchema },
+  },
 });

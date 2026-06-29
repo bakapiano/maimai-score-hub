@@ -33,6 +33,7 @@ import { WorkerBotStatusController } from './workers/worker-bots.controller';
 import { WorkerDxnetApiCallsController } from './workers/worker-dxnet-api-calls.controller';
 import { WorkerDxnetJobsController } from './workers/worker-dxnet-jobs.controller';
 import { WorkerDxnetTempCacheController } from './workers/worker-dxnet-temp-cache.controller';
+import { WorkerExternalApiCallsController } from './workers/worker-external-api-calls.controller';
 import { WorkerLogIngestController } from './workers/worker-logs.controller';
 import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller';
 
@@ -72,6 +73,7 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
     WorkerDxnetApiCallsController,
     WorkerDxnetJobsController,
     WorkerDxnetTempCacheController,
+    WorkerExternalApiCallsController,
     WorkerLogIngestController,
     WorkerSdgbJobsController,
   ],

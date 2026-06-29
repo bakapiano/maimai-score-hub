@@ -109,6 +109,7 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | GET   | `/workers/dxnet/jobs/:jobId/cache/:diff/:type`               | path: `jobId`, `diff`, `type`                                                                                                          | 读取 `update_score` 临时缓存的 FriendVS 解析结果。缺失返回 400。                                          |
 | PUT   | `/workers/dxnet/jobs/:jobId/cache/:diff/:type`               | body: `songs: FriendVsSong[]`                                                                                                          | 写入临时缓存，返回 `{ success: true }`。                                                                  |
 | POST  | `/workers/dxnet/jobs/:jobId/api-calls`                       | body: `calls: ExternalApiCallEntry[]`                                                                                                  | worker 上报某 job 的外部 API metadata，写入 ClickHouse `external_api_calls`。                              |
+| POST  | `/workers/:kind/external-api-calls`                          | path: `kind`; body: `calls: ExternalApiCallEntry[]`                                                                                    | worker 上报非 job 绑定或通用外部 API metadata，供 sdgb-worker 等服务接入 ClickHouse。                       |
 
 ### SDGB Worker
 
@@ -124,6 +125,16 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | ---- | ----------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | POST | `/workers/logs/:kind/batches` | path: `kind = sdgb \| dxnet`; body: `workerId`, `entries: { ts, level, message }[]` | 批量上报 worker structured logs，写入 ClickHouse `structured_logs`，返回 `{ accepted }`。      |
 | POST | `/workers/bots/status`        | body: `bots: BotStatusReport[]`                                                     | DXNet worker 上报 bot 状态、好友数和可选好友列表快照；返回 `{ ok: true }`。                  |
+
+### 自动记录的外部依赖 metadata
+
+| target | 来源 | apiGroup / urlGroup 示例 |
+| --- | --- | --- |
+| `maimai_dxnet` | DXNet worker 页面请求、OAuth / home 请求 | `maimai.friend.genre_vs`、`maimai.friend.pages`、`maimai.auth` |
+| `diving_fish` | 登录 / profile / import token / 成绩上传 / 曲库 / 封面 | `diving_fish.login`、`diving_fish.update_records`、`diving_fish.music_data`、`diving_fish.cover` |
+| `lxns` | 成绩上传 / 曲库映射 / 封面 | `lxns.upload_scores`、`lxns.song_list`、`lxns.cover` |
+| `asset` | 成绩图渲染时远程头像 / icon / rank 图片 | `maimai.asset`、`diving_fish.asset`、`lxns.asset`、`remote.asset` |
+| `sdgb` | 预留给 sdgb-worker 通过 `/workers/:kind/external-api-calls` 上报 | `sdgb.get_rival_music`、`sdgb.get_user_map`、`sdgb.add_rival` |
 
 ## Admin API
 

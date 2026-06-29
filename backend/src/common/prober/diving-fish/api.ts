@@ -10,6 +10,8 @@
  * retry 救不了）。
  */
 
+import { observeFetch } from '../../observability/external-call-recorder';
+
 const BASE_URL = 'https://www.diving-fish.com/api/maimaidxprober';
 
 const DEFAULT_HEADERS = {
@@ -42,7 +44,17 @@ async function fetchWithRetry(
     }
     let res: Response;
     try {
-      res = await fetch(url, init);
+      res = await observeFetch(
+        {
+          target: 'diving_fish',
+          apiGroup: 'prober',
+          method: init.method?.toString() ?? 'GET',
+          urlGroup: classifyDivingFishUrl(url),
+          statusCode: 0,
+          durationMs: 0,
+        },
+        () => fetch(url, init),
+      );
     } catch (err) {
       lastErr = err;
       continue;
@@ -224,18 +236,32 @@ export async function uploadRecords(
     }
     let res: Response;
     try {
-      res = await fetch(`${BASE_URL}/player/update_records`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Import-Token': importToken,
+      res = await observeFetch(
+        {
+          target: 'diving_fish',
+          apiGroup: 'prober_export',
+          method: 'POST',
+          urlGroup: 'diving_fish.update_records',
+          statusCode: 0,
+          durationMs: 0,
+          bodySize: JSON.stringify(records).length,
+          attrs: { records: records.length },
         },
-        body: JSON.stringify(records),
-      });
+        () =>
+          fetch(`${BASE_URL}/player/update_records`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Import-Token': importToken,
+            },
+            body: JSON.stringify(records),
+          }),
+      );
     } catch (err) {
       lastErr = err;
       continue;
     }
+
     const text = await res.text();
     let data: unknown = null;
     try {
@@ -270,4 +296,20 @@ export async function uploadRecords(
   throw lastErr instanceof Error
     ? lastErr
     : new Error('Diving-fish upload failed after retries');
+}
+
+function classifyDivingFishUrl(url: string): string {
+  if (url.includes('/login')) {
+    return 'diving_fish.login';
+  }
+  if (url.includes('/player/profile')) {
+    return 'diving_fish.profile';
+  }
+  if (url.includes('/player/import_token')) {
+    return 'diving_fish.import_token';
+  }
+  if (url.includes('/music_data')) {
+    return 'diving_fish.music_data';
+  }
+  return 'diving_fish.other';
 }

@@ -134,6 +134,8 @@
 - `/observability/rum` 和 `/observability/events` 接收前端 RUM / analytics 批量上报。
 - `/workers/logs/:kind/batches` 接收 dxnet/sdgb structured logs 并写入 ClickHouse `structured_logs`。
 - `/workers/dxnet/jobs/:jobId/api-calls` 接收外部 API metadata 并写入 ClickHouse `external_api_calls`。
+- backend 内部外部依赖也写入 `external_api_calls`：Diving Fish、LXNS、曲库、封面下载、成绩图远程图片。
+- `/workers/:kind/external-api-calls` 提供通用 worker 外部调用上报入口，供 sdgb-worker 等 tracked/untracked worker 使用。
 - `JobService` / `SdgbJobService` 写入 ClickHouse `job_timeline_events`，Job Debug 不再依赖旧 Mongo/Redis debug logs。
 - ClickHouse 写入失败只丢弃 observability event，不阻塞业务主链路。
 

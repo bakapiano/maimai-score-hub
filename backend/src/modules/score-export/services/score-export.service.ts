@@ -33,6 +33,7 @@ import {
   renderLevelScoresImage,
   renderVersionScoresImage,
 } from '../rendering/score-export.render';
+import { observeFetch } from '../../../common/observability/external-call-recorder';
 
 const LEGACY_VERSION_KEYS = [
   'maimai',
@@ -432,7 +433,17 @@ export class ScoreExportService {
         () => controller.abort(),
         ScoreExportService.REMOTE_IMAGE_TIMEOUT_MS,
       );
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await observeFetch(
+        {
+          target: 'asset',
+          apiGroup: 'score_export',
+          method: 'GET',
+          urlGroup: classifyImageUrl(url),
+          statusCode: 0,
+          durationMs: 0,
+        },
+        () => fetch(url, { signal: controller.signal }),
+      );
       clearTimeout(timer);
 
       if (!res.ok) {
@@ -473,4 +484,17 @@ export class ScoreExportService {
       return null;
     }
   }
+}
+
+function classifyImageUrl(url: string): string {
+  if (url.includes('wahlap')) {
+    return 'maimai.asset';
+  }
+  if (url.includes('diving-fish')) {
+    return 'diving_fish.asset';
+  }
+  if (url.includes('lxns')) {
+    return 'lxns.asset';
+  }
+  return 'remote.asset';
 }

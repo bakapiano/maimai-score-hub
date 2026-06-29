@@ -7,6 +7,10 @@ import type {
   WorkerStructuredLogEntry,
 } from '@maimai-score-hub/shared';
 
+import {
+  setBackendExternalCallRecorder,
+  type BackendExternalCallInput,
+} from '../../../common/observability/external-call-recorder';
 import { ClickHouseService } from './clickhouse.service';
 import {
   getObservabilityEnvironment,
@@ -67,6 +71,9 @@ export class ObservabilityIngestService {
       config.get<string>('HOSTNAME') ||
       process.env.COMPUTERNAME ||
       'backend';
+    setBackendExternalCallRecorder((input) =>
+      this.recordBackendExternalApiCall(input),
+    );
   }
 
   recordHttpRequest(event: HttpRequestEvent): void {
@@ -201,6 +208,26 @@ export class ObservabilityIngestService {
     });
     this.clickhouse.insert('external_api_calls', rows);
     return { accepted: rows.length };
+  }
+
+  recordBackendExternalApiCall(input: BackendExternalCallInput): void {
+    this.recordExternalApiCalls({
+      workerKind: 'backend',
+      workerId: this.instance,
+      calls: [
+        {
+          target: input.target,
+          apiGroup: input.apiGroup,
+          method: input.method,
+          urlGroup: input.urlGroup,
+          statusCode: input.statusCode,
+          durationMs: input.durationMs,
+          bodySize: input.bodySize ?? null,
+          errorClass: input.errorClass,
+          attrs: input.attrs,
+        },
+      ],
+    });
   }
 
   recordJobTimelineEvent(event: JobTimelineEvent): void {

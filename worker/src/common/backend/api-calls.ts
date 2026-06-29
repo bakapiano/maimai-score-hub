@@ -30,7 +30,7 @@ interface ExternalApiCallMetadata {
   botFriendCode?: string | null;
 }
 
-interface ApiCallPayload {
+export interface ApiCallPayload {
   ts: string;
   target: string;
   apiGroup: string;
@@ -105,6 +105,26 @@ export async function flushExternalApiCalls(jobId: string): Promise<void> {
       `[ExternalApiCallClient] Error flushing calls for job ${jobId}:`,
       err,
     );
+  }
+}
+
+export async function reportWorkerExternalApiCalls(
+  kind: string,
+  calls: ApiCallPayload[],
+): Promise<void> {
+  if (calls.length === 0) return;
+  try {
+    const response = await client.ingestWorkerExternalApiCalls({
+      params: { kind },
+      body: { calls },
+    });
+    if (response.status !== 201) {
+      console.warn(
+        `[ExternalApiCallClient] Failed to report ${calls.length} ${kind} calls. Status: ${response.status}`,
+      );
+    }
+  } catch (err) {
+    console.warn(`[ExternalApiCallClient] Error reporting ${kind} calls:`, err);
   }
 }
 

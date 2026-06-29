@@ -195,6 +195,7 @@ breaking change 后推荐路径：
 | `POST /observability/events` | analytics event 批量上报 |
 | `POST /workers/logs/:kind/batches` | worker structured logs 批量上报 |
 | `POST /workers/dxnet/jobs/:jobId/api-calls` | external API metadata 批量上报 |
+| `POST /workers/:kind/external-api-calls` | 通用 worker external API metadata 批量上报，供 sdgb-worker 等服务接入 |
 | `GET /admin/realtime/overview` | 实时状态总览 |
 | `GET /admin/realtime/workers` | worker / bot / queue 当前状态 |
 | `GET /admin/history/api` | API 历史统计 |

@@ -3636,6 +3636,114 @@ paths:
                     minimum: 0
                 required:
                   - accepted
+  /workers/{kind}/external-api-calls:
+    post:
+      tags: *a10
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: observability.ingestWorkerExternalApiCalls
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                calls:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      ts:
+                        type: string
+                      traceId:
+                        type: string
+                      jobId:
+                        type: string
+                      workerKind:
+                        type: string
+                      workerId:
+                        type: string
+                      botFriendCode:
+                        type: string
+                      target:
+                        type: string
+                        minLength: 1
+                      apiGroup:
+                        type: string
+                        minLength: 1
+                      method:
+                        type: string
+                        minLength: 1
+                      urlGroup:
+                        type: string
+                        minLength: 1
+                      statusCode:
+                        type: integer
+                        minimum: 0
+                      durationMs:
+                        type: number
+                        minimum: 0
+                      bodySize:
+                        type: integer
+                        minimum: 0
+                        nullable: true
+                      bodyHash:
+                        type: string
+                      artifactKey:
+                        type: string
+                        nullable: true
+                      errorClass:
+                        type: string
+                      attrs:
+                        type: object
+                        additionalProperties:
+                          oneOf:
+                            - oneOf:
+                                - type: string
+                                - type: number
+                                - type: boolean
+                                - type: string
+                                  format: "null"
+                                  nullable: true
+                              nullable: true
+                            - type: array
+                              items:
+                                oneOf:
+                                  - type: string
+                                  - type: number
+                                  - type: boolean
+                                  - type: string
+                                    format: "null"
+                                    nullable: true
+                                nullable: true
+                          nullable: true
+                    required:
+                      - target
+                      - apiGroup
+                      - method
+                      - urlGroup
+                      - statusCode
+                  maxItems: 1000
+              required:
+                - calls
+      responses:
+        "201":
+          description: "201"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: integer
+                    minimum: 0
+                required:
+                  - accepted
 info:
   title: Maimai Score Hub API
   version: 1.0.0

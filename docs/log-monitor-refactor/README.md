@@ -10,7 +10,7 @@
 - backend `ObservabilityModule` 批量写入 ClickHouse。
 - backend HTTP interceptor 写 `http_requests`。
 - frontend 写 `frontend_rum` 和 `analytics_events`。
-- worker 写 `structured_logs` 和 `external_api_calls`。
+- worker 写 `structured_logs` 和 `external_api_calls`；backend 内部外部依赖也写 `external_api_calls`。
 - DXNet / SDGB job 状态变化写 `job_timeline_events`。
 - admin Realtime / History / Logs / Job Debug 查询 ClickHouse。
 - 旧 `WorkerLogsModule`、`JobApiLogService`、Redis Stream worker logs 和旧 `api-logs` endpoints 已删除。
@@ -18,6 +18,7 @@
 当前未实现：
 
 - worker/backend 自动上传 raw response artifact。artifact service 已部署并单独验收可写可读，但 `external_api_calls.artifactKey` 目前只有调用方显式传入时才有值。
+- sdgb-worker 协议调用的具体 metadata 需要在 top-level untracked `sdgb-worker/` 中调用 `/workers/:kind/external-api-calls` 接入；backend 已提供通用入口。
 - alert rules / subscriptions。
 - 成熟的 debug capture 开关、artifact viewer UI。
 
@@ -130,7 +131,7 @@ ClickHouse 保存：
 - frontend RUM / Web Vitals / JS error。
 - analytics events，用于 DAU、功能使用、转化。
 - worker structured logs。
-- external API call metadata。
+- external API call metadata：DXNet、Diving Fish、LXNS、曲库/封面、远程素材；sdgb-worker 通过通用 worker endpoint 接入。
 - job timeline events。
 - 聚合后的 materialized views。
 

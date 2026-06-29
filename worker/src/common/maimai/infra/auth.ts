@@ -2,6 +2,10 @@ import "./request-runtime.ts";
 
 import { CookieJar } from "tough-cookie";
 import makeFetchCookie from "fetch-cookie";
+import {
+  reportWorkerExternalApiCalls,
+  type ApiCallPayload,
+} from "../../backend/api-calls.ts";
 
 import { MAIMAI_URLS, WECHAT_USER_AGENT } from "../constants.ts";
 import type { GameType } from "../../types.ts";
@@ -24,7 +28,14 @@ export async function getAuthUrl(type: GameType): Promise<string> {
     throw new Error("unsupported type");
   }
 
+  const startedAt = Date.now();
   const res = await fetch(MAIMAI_URLS.auth(type));
+  void reportMaimaiAuthCall({
+    urlGroup: "maimai.oauth.authorize",
+    method: "GET",
+    statusCode: res.status,
+    durationMs: Date.now() - startedAt,
+  });
   return res.url.replace("redirect_uri=https", "redirect_uri=http");
 }
 
@@ -35,15 +46,53 @@ export async function getCookieByAuthUrl(authUrl: string): Promise<CookieJar> {
   const cj = new CookieJar();
   const fetchWithCookie = makeFetchCookie(global.fetch, cj);
 
-  await fetchWithCookie(authUrl, {
+  let startedAt = Date.now();
+  const authResponse = await fetchWithCookie(authUrl, {
     headers: OAUTH_CALLBACK_HEADERS,
   });
+  void reportMaimaiAuthCall({
+    urlGroup: "maimai.oauth.callback",
+    method: "GET",
+    statusCode: authResponse.status,
+    durationMs: Date.now() - startedAt,
+  });
 
-  await fetchWithCookie(`${MAIMAI_URLS.home}`, {
+  startedAt = Date.now();
+  const homeResponse = await fetchWithCookie(`${MAIMAI_URLS.home}`, {
     headers: MAIMAI_HOME_HEADERS,
+  });
+  void reportMaimaiAuthCall({
+    urlGroup: "maimai.home",
+    method: "GET",
+    statusCode: homeResponse.status,
+    durationMs: Date.now() - startedAt,
   });
 
   return cj;
+}
+
+function reportMaimaiAuthCall(input: {
+  urlGroup: string;
+  method: string;
+  statusCode: number;
+  durationMs: number;
+}): Promise<void> {
+  const call: ApiCallPayload = {
+    ts: new Date().toISOString(),
+    target: "maimai_dxnet",
+    apiGroup: "maimai.auth",
+    method: input.method,
+    urlGroup: input.urlGroup,
+    statusCode: input.statusCode,
+    durationMs: Math.max(0, Math.floor(input.durationMs)),
+    bodySize: null,
+    errorClass: input.statusCode >= 400 ? "http_error" : undefined,
+    workerKind: "dxnet",
+    workerId:
+      process.env.WORKER_ID || `dxnet-worker-${process.env.HOSTNAME || "unknown"}`,
+    botFriendCode: "",
+  };
+  return reportWorkerExternalApiCalls("dxnet", [call]);
 }
 
 function buildWechatNavigationHeaders({
