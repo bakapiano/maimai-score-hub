@@ -16,6 +16,7 @@ import {
   ObservabilityStatusSchema,
   ProberExportMetricsSchema,
   RealtimeOverviewSchema,
+  RealtimeWorkerGroupsSchema,
   ReportBotStatusBodySchema,
   SearchJobsQuerySchema,
   SearchJobsResponseSchema,
@@ -164,6 +165,16 @@ export const adminContract = c.router({
     headers: c.type<{ "x-api-secret": string }>(),
     query: z.object({ env: z.enum(["prod", "dev"]).optional() }),
     responses: { 200: RealtimeOverviewSchema },
+  },
+  getRealtimeWorkerGroups: {
+    method: "GET",
+    path: "/admin/realtime/worker-groups",
+    headers: c.type<{ "x-api-secret": string }>(),
+    query: z.object({
+      env: z.enum(["prod", "dev"]).optional(),
+      window: z.enum(["1h", "6h", "24h"]).optional(),
+    }),
+    responses: { 200: RealtimeWorkerGroupsSchema },
   },
   getHistoryApi: {
     method: "GET",

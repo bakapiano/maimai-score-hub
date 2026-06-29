@@ -87,6 +87,7 @@ export const AutoUpdateMetricsSchema = z.unknown();
 export const ProberExportMetricsSchema = z.unknown();
 export const ObservabilityStatusSchema = z.unknown();
 export const RealtimeOverviewSchema = z.unknown();
+export const RealtimeWorkerGroupsSchema = z.unknown();
 export const HistoryRowsSchema = z.array(z.unknown());
 export const HistoryLogWorkersSchema = z.array(
   z.object({

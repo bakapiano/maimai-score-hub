@@ -9,6 +9,10 @@ import {
 import { HttpObservabilityInterceptor } from './interceptors/http-observability.interceptor';
 import { JobEntity, JobSchema } from '../job/schemas/job.schema';
 import {
+  ProberExportJobEntity,
+  ProberExportJobSchema,
+} from '../prober-export/schemas/prober-export-job.schema';
+import {
   SdgbJobEntity,
   SdgbJobSchema,
 } from '../sdgb-worker/schemas/sdgb-job.schema';
@@ -23,6 +27,7 @@ import { ObservabilityQueryService } from './services/observability-query.servic
       { name: JobEntity.name, schema: JobSchema },
       { name: SdgbJobEntity.name, schema: SdgbJobSchema },
       { name: BotStatusEntity.name, schema: BotStatusSchema },
+      { name: ProberExportJobEntity.name, schema: ProberExportJobSchema },
     ]),
   ],
   providers: [

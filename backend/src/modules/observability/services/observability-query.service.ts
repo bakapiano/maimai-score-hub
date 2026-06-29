@@ -1,9 +1,12 @@
+/* eslint-disable max-lines */
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 
 import { BotStatusEntity } from '../../bots/schemas/bot-status.schema';
 import { JobEntity } from '../../job/schemas/job.schema';
+import { ProberExportJobEntity } from '../../prober-export/schemas/prober-export-job.schema';
+import { RedisService } from '../../../common/redis/redis.service';
 import { SdgbJobEntity } from '../../sdgb-worker/schemas/sdgb-job.schema';
 import { ClickHouseService } from './clickhouse.service';
 import {
@@ -12,6 +15,69 @@ import {
 } from './observability-env';
 
 type HistoryWindow = '24h' | '7d' | '30d';
+type WorkerKind = 'dxnet' | 'sdgb' | 'prober_export';
+type RealtimeWorkerWindow = '1h' | '6h' | '24h';
+
+type TerminalJob = {
+  jobType: string;
+  status: string;
+  error: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  durationMs: number;
+};
+
+type QueueRow = {
+  jobType: string;
+  queued: number;
+  processing: number;
+  delayed: number;
+  failed: number;
+  completed: number;
+  oldestQueuedAgeSeconds: number | null;
+};
+
+type ActiveWorkerJob = {
+  id: string;
+  jobType: string;
+  status: string;
+  stage: string | null;
+  workerId: string | null;
+  botFriendCode: string | null;
+  friendCode: string | null;
+  durationMs: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type WorkerGroup = {
+  workerKind: WorkerKind;
+  title: string;
+  workers: Array<Record<string, unknown>>;
+  queueByJobType: QueueRow[];
+  activeJobs: ActiveWorkerJob[];
+  successRateTrend: Array<{
+    bucket: string;
+    jobType: string;
+    completed: number;
+    failed: number;
+    total: number;
+    successRate: number;
+  }>;
+  durationTrend: Array<{
+    bucket: string;
+    jobType: string;
+    avgMs: number | null;
+    p50Ms: number | null;
+    p95Ms: number | null;
+  }>;
+  recentErrors: Array<{
+    jobType: string;
+    errorClass: string;
+    message: string;
+    count: number;
+  }>;
+};
 
 @Injectable()
 export class ObservabilityQueryService {
@@ -23,6 +89,9 @@ export class ObservabilityQueryService {
     private readonly sdgbJobModel: Model<SdgbJobEntity>,
     @InjectModel(BotStatusEntity.name)
     private readonly botStatusModel: Model<BotStatusEntity>,
+    @InjectModel(ProberExportJobEntity.name)
+    private readonly proberExportJobModel: Model<ProberExportJobEntity>,
+    private readonly redis: RedisService,
   ) {}
 
   async getStatus() {
@@ -100,6 +169,35 @@ export class ObservabilityQueryService {
         externalApi: recentExternalErrors,
       },
       usageToday,
+    };
+  }
+
+  async getRealtimeWorkerGroups(
+    environmentInput: unknown,
+    windowInput: unknown,
+  ): Promise<{
+    environment: ObservabilityEnvironment;
+    generatedAt: string;
+    window: RealtimeWorkerWindow;
+    groups: WorkerGroup[];
+  }> {
+    const environment = parseObservabilityEnvironment(environmentInput);
+    const window = parseRealtimeWorkerWindow(windowInput);
+    const now = new Date();
+    const since = new Date(now.getTime() - realtimeWindowMs(window));
+    const bucketMs = getTrendBucketMs(window);
+
+    const [dxnet, sdgb, proberExport] = await Promise.all([
+      this.buildDxnetWorkerGroup(now, since, bucketMs),
+      this.buildSdgbWorkerGroup(now, since, bucketMs),
+      this.buildProberExportWorkerGroup(now, since, bucketMs),
+    ]);
+
+    return {
+      environment,
+      generatedAt: now.toISOString(),
+      window,
+      groups: [dxnet, sdgb, proberExport],
     };
   }
 
@@ -414,6 +512,355 @@ export class ObservabilityQueryService {
       { environment },
     );
   }
+
+  private async buildDxnetWorkerGroup(
+    now: Date,
+    since: Date,
+    bucketMs: number,
+  ): Promise<WorkerGroup> {
+    const [bots, queueByJobType, activeJobs, terminalJobs] = await Promise.all([
+      this.botStatusModel
+        .find()
+        .sort({ available: -1, lastReportedAt: -1 })
+        .lean<BotStatusEntity[]>(),
+      this.getQueueByJobType({
+        model: this.jobModel,
+        typeField: 'jobType',
+        statuses: ['queued', 'processing', 'failed', 'completed'],
+        now,
+      }),
+      this.jobModel
+        .find({ status: { $in: ['queued', 'processing'] } })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .lean<JobEntity[]>(),
+      this.jobModel
+        .find({
+          status: { $in: ['completed', 'failed'] },
+          updatedAt: { $gte: since },
+        })
+        .select('jobType status error createdAt updatedAt updateScoreDuration')
+        .lean<JobEntity[]>(),
+    ]);
+
+    const normalizedTerminalJobs: TerminalJob[] = terminalJobs.map((job) => ({
+      jobType: job.jobType,
+      status: job.status,
+      error: job.error ?? null,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+      durationMs:
+        typeof job.updateScoreDuration === 'number' &&
+        Number.isFinite(job.updateScoreDuration)
+          ? Math.max(0, Math.floor(job.updateScoreDuration))
+          : Math.max(0, job.updatedAt.getTime() - job.createdAt.getTime()),
+    }));
+
+    return {
+      workerKind: 'dxnet',
+      title: 'DXNet Worker',
+      workers: bots.map((bot) => ({
+        workerId: bot.friendCode,
+        botFriendCode: bot.friendCode,
+        remark: bot.remark ?? null,
+        available: bot.available,
+        lastSeenAt: bot.lastReportedAt?.toISOString?.() ?? null,
+        friendCount: bot.friendCount ?? null,
+        cabinetUserId: bot.cabinetUserId ?? null,
+      })),
+      queueByJobType,
+      activeJobs: activeJobs.map((job) => ({
+        id: job.id,
+        jobType: job.jobType,
+        status: job.status,
+        stage: job.stage,
+        workerId: job.botUserFriendCode,
+        botFriendCode: job.botUserFriendCode,
+        friendCode: job.friendCode,
+        durationMs: now.getTime() - job.createdAt.getTime(),
+        createdAt: job.createdAt.toISOString(),
+        updatedAt: job.updatedAt.toISOString(),
+      })),
+      successRateTrend: buildSuccessRateTrend(
+        normalizedTerminalJobs,
+        since,
+        bucketMs,
+        isSuccessStatus,
+        isFailureStatus,
+      ),
+      durationTrend: buildDurationTrend(
+        normalizedTerminalJobs,
+        since,
+        bucketMs,
+      ),
+      recentErrors: buildRecentErrors(normalizedTerminalJobs),
+    };
+  }
+
+  private async buildSdgbWorkerGroup(
+    now: Date,
+    since: Date,
+    bucketMs: number,
+  ): Promise<WorkerGroup> {
+    const [workers, queueByJobType, activeJobs, terminalJobs] =
+      await Promise.all([
+        this.getSdgbWorkerStatuses(),
+        this.getQueueByJobType({
+          model: this.sdgbJobModel,
+          typeField: 'jobType',
+          statuses: ['queued', 'processing', 'failed', 'completed'],
+          now,
+        }),
+        this.sdgbJobModel
+          .find({ status: { $in: ['queued', 'processing'] } })
+          .sort({ createdAt: -1 })
+          .limit(100)
+          .lean<SdgbJobEntity[]>(),
+        this.sdgbJobModel
+          .find({
+            status: { $in: ['completed', 'failed'] },
+            updatedAt: { $gte: since },
+          })
+          .select('jobType status error createdAt updatedAt')
+          .lean<SdgbJobEntity[]>(),
+      ]);
+
+    const normalizedTerminalJobs: TerminalJob[] = terminalJobs.map((job) => ({
+      jobType: job.jobType,
+      status: job.status,
+      error: job.error ?? null,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+      durationMs: Math.max(
+        0,
+        job.updatedAt.getTime() - job.createdAt.getTime(),
+      ),
+    }));
+
+    return {
+      workerKind: 'sdgb',
+      title: 'SDGB Worker',
+      workers,
+      queueByJobType,
+      activeJobs: activeJobs.map((job) => ({
+        id: job.id,
+        jobType: job.jobType,
+        status: job.status,
+        stage: null,
+        workerId: null,
+        botFriendCode: null,
+        friendCode: null,
+        durationMs: now.getTime() - (job.claimedAt ?? job.createdAt).getTime(),
+        createdAt: job.createdAt.toISOString(),
+        updatedAt: job.updatedAt.toISOString(),
+      })),
+      successRateTrend: buildSuccessRateTrend(
+        normalizedTerminalJobs,
+        since,
+        bucketMs,
+        isSuccessStatus,
+        isFailureStatus,
+      ),
+      durationTrend: buildDurationTrend(
+        normalizedTerminalJobs,
+        since,
+        bucketMs,
+      ),
+      recentErrors: buildRecentErrors(normalizedTerminalJobs),
+    };
+  }
+
+  private async buildProberExportWorkerGroup(
+    now: Date,
+    since: Date,
+    bucketMs: number,
+  ): Promise<WorkerGroup> {
+    const [queueByJobType, activeJobs, terminalJobs] = await Promise.all([
+      this.getQueueByJobType({
+        model: this.proberExportJobModel,
+        typeField: 'trigger',
+        statuses: [
+          'queued',
+          'processing',
+          'failed',
+          'completed',
+          'partial_failed',
+          'skipped',
+        ],
+        now,
+      }),
+      this.proberExportJobModel
+        .find({ status: { $in: ['queued', 'processing'] } })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .lean<ProberExportJobEntity[]>(),
+      this.proberExportJobModel
+        .find({
+          status: { $in: ['completed', 'failed', 'partial_failed', 'skipped'] },
+          updatedAt: { $gte: since },
+        })
+        .select('trigger status error createdAt updatedAt completedAt')
+        .lean<ProberExportJobEntity[]>(),
+    ]);
+
+    const normalizedTerminalJobs: TerminalJob[] = terminalJobs.map((job) => ({
+      jobType: job.trigger,
+      status: job.status,
+      error: job.error ?? null,
+      createdAt: job.createdAt,
+      updatedAt: job.completedAt ?? job.updatedAt,
+      durationMs: Math.max(
+        0,
+        (job.completedAt ?? job.updatedAt).getTime() - job.createdAt.getTime(),
+      ),
+    }));
+
+    return {
+      workerKind: 'prober_export',
+      title: '查分器导出 Worker',
+      workers: [
+        {
+          workerId: 'prober-export-worker',
+          concurrency: Number(process.env.PROBER_EXPORT_CONCURRENCY ?? 1),
+        },
+      ],
+      queueByJobType,
+      activeJobs: activeJobs.map((job) => ({
+        id: job.id,
+        jobType: job.trigger,
+        status: job.status,
+        stage: job.targets.join(','),
+        workerId: 'prober-export-worker',
+        botFriendCode: null,
+        friendCode: job.friendCode,
+        durationMs: now.getTime() - (job.claimedAt ?? job.createdAt).getTime(),
+        createdAt: job.createdAt.toISOString(),
+        updatedAt: job.updatedAt.toISOString(),
+      })),
+      successRateTrend: buildSuccessRateTrend(
+        normalizedTerminalJobs,
+        since,
+        bucketMs,
+        (status) => status === 'completed' || status === 'skipped',
+        (status) => status === 'failed' || status === 'partial_failed',
+      ),
+      durationTrend: buildDurationTrend(
+        normalizedTerminalJobs,
+        since,
+        bucketMs,
+      ),
+      recentErrors: buildRecentErrors(normalizedTerminalJobs),
+    };
+  }
+
+  private async getQueueByJobType(input: {
+    model: Model<any>;
+    typeField: string;
+    statuses: string[];
+    now: Date;
+  }): Promise<QueueRow[]> {
+    const [counts, oldestQueuedRows] = await Promise.all([
+      input.model
+        .aggregate<{
+          _id: { jobType: string; status: string };
+          count: number;
+        }>([
+          { $match: { status: { $in: input.statuses } } },
+          {
+            $group: {
+              _id: {
+                jobType: `$${input.typeField}`,
+                status: '$status',
+              },
+              count: { $sum: 1 },
+            },
+          },
+        ])
+        .exec(),
+      input.model
+        .aggregate<{
+          _id: string;
+          oldestQueuedAt: Date;
+        }>([
+          { $match: { status: 'queued' } },
+          {
+            $group: {
+              _id: `$${input.typeField}`,
+              oldestQueuedAt: { $min: '$createdAt' },
+            },
+          },
+        ])
+        .exec(),
+    ]);
+
+    const rows = new Map<string, QueueRow>();
+    const ensure = (jobType: string): QueueRow => {
+      const key = jobType || 'unknown';
+      const existing = rows.get(key);
+      if (existing) {
+        return existing;
+      }
+      const next: QueueRow = {
+        jobType: key,
+        queued: 0,
+        processing: 0,
+        delayed: 0,
+        failed: 0,
+        completed: 0,
+        oldestQueuedAgeSeconds: null,
+      };
+      rows.set(key, next);
+      return next;
+    };
+
+    for (const count of counts) {
+      const row = ensure(count._id.jobType);
+      if (count._id.status in row) {
+        (row as unknown as Record<string, number>)[count._id.status] =
+          count.count;
+      }
+    }
+
+    for (const oldest of oldestQueuedRows) {
+      const row = ensure(oldest._id);
+      row.oldestQueuedAgeSeconds = ageSeconds(oldest.oldestQueuedAt, input.now);
+    }
+
+    return [...rows.values()].sort((a, b) =>
+      a.jobType.localeCompare(b.jobType),
+    );
+  }
+
+  private async getSdgbWorkerStatuses(): Promise<
+    Array<Record<string, unknown>>
+  > {
+    const keys = await this.redis.keys(this.redis.key('status:worker:sdgb:*'));
+    const rows: Array<Record<string, unknown>> = [];
+    for (const key of keys) {
+      const status = await this.redis.getJson<{
+        workerId?: string;
+        lastSeenAt?: string;
+        jobsClaimed?: number;
+      }>(key);
+      if (status?.workerId) {
+        rows.push({
+          workerId: status.workerId,
+          lastSeenAt: status.lastSeenAt ?? null,
+          jobsClaimed: status.jobsClaimed ?? 0,
+        });
+      }
+    }
+    return rows.sort((a, b) =>
+      getStringField(b, 'lastSeenAt').localeCompare(
+        getStringField(a, 'lastSeenAt'),
+      ),
+    );
+  }
+}
+
+function getStringField(row: Record<string, unknown>, key: string): string {
+  const value = row[key];
+  return typeof value === 'string' ? value : '';
 }
 
 function windowToInterval(input: unknown): string {
@@ -426,6 +873,193 @@ function windowToInterval(input: unknown): string {
     return '7 DAY';
   }
   return '1 DAY';
+}
+
+function parseRealtimeWorkerWindow(input: unknown): RealtimeWorkerWindow {
+  if (input === '6h' || input === '24h') {
+    return input;
+  }
+  return '1h';
+}
+
+function realtimeWindowMs(window: RealtimeWorkerWindow): number {
+  if (window === '24h') {
+    return 24 * 60 * 60 * 1000;
+  }
+  if (window === '6h') {
+    return 6 * 60 * 60 * 1000;
+  }
+  return 60 * 60 * 1000;
+}
+
+function getTrendBucketMs(window: RealtimeWorkerWindow): number {
+  if (window === '24h') {
+    return 60 * 60 * 1000;
+  }
+  if (window === '6h') {
+    return 15 * 60 * 1000;
+  }
+  return 5 * 60 * 1000;
+}
+
+function isSuccessStatus(status: string): boolean {
+  return status === 'completed';
+}
+
+function isFailureStatus(status: string): boolean {
+  return status === 'failed';
+}
+
+function buildSuccessRateTrend(
+  jobs: TerminalJob[],
+  since: Date,
+  bucketMs: number,
+  isSuccess: (status: string) => boolean,
+  isFailure: (status: string) => boolean,
+) {
+  const buckets = new Map<
+    string,
+    {
+      bucket: string;
+      jobType: string;
+      completed: number;
+      failed: number;
+      total: number;
+      successRate: number;
+    }
+  >();
+
+  for (const job of jobs) {
+    if (!isSuccess(job.status) && !isFailure(job.status)) {
+      continue;
+    }
+    const bucket = bucketIso(job.updatedAt, since, bucketMs);
+    const key = `${bucket}:${job.jobType}`;
+    const row = buckets.get(key) ?? {
+      bucket,
+      jobType: job.jobType,
+      completed: 0,
+      failed: 0,
+      total: 0,
+      successRate: 0,
+    };
+    if (isSuccess(job.status)) {
+      row.completed++;
+    }
+    if (isFailure(job.status)) {
+      row.failed++;
+    }
+    row.total++;
+    row.successRate =
+      row.total > 0 ? Math.round((row.completed / row.total) * 10000) / 100 : 0;
+    buckets.set(key, row);
+  }
+
+  return [...buckets.values()].sort(
+    (a, b) =>
+      a.bucket.localeCompare(b.bucket) || a.jobType.localeCompare(b.jobType),
+  );
+}
+
+function buildDurationTrend(
+  jobs: TerminalJob[],
+  since: Date,
+  bucketMs: number,
+) {
+  const buckets = new Map<
+    string,
+    { bucket: string; jobType: string; values: number[] }
+  >();
+  for (const job of jobs) {
+    const bucket = bucketIso(job.updatedAt, since, bucketMs);
+    const key = `${bucket}:${job.jobType}`;
+    const row = buckets.get(key) ?? {
+      bucket,
+      jobType: job.jobType,
+      values: [],
+    };
+    row.values.push(job.durationMs);
+    buckets.set(key, row);
+  }
+
+  return [...buckets.values()]
+    .map((row) => ({
+      bucket: row.bucket,
+      jobType: row.jobType,
+      avgMs:
+        row.values.length > 0
+          ? Math.round(
+              row.values.reduce((sum, value) => sum + value, 0) /
+                row.values.length,
+            )
+          : null,
+      p50Ms: percentile(row.values, 0.5),
+      p95Ms: percentile(row.values, 0.95),
+    }))
+    .sort(
+      (a, b) =>
+        a.bucket.localeCompare(b.bucket) || a.jobType.localeCompare(b.jobType),
+    );
+}
+
+function buildRecentErrors(jobs: TerminalJob[]) {
+  const errors = new Map<
+    string,
+    { jobType: string; errorClass: string; message: string; count: number }
+  >();
+  for (const job of jobs) {
+    if (!isFailureStatus(job.status) && job.status !== 'partial_failed') {
+      continue;
+    }
+    const message = job.error || 'unknown';
+    const errorClass = classifyError(message);
+    const key = `${job.jobType}:${errorClass}:${message}`;
+    const row = errors.get(key) ?? {
+      jobType: job.jobType,
+      errorClass,
+      message,
+      count: 0,
+    };
+    row.count++;
+    errors.set(key, row);
+  }
+  return [...errors.values()].sort((a, b) => b.count - a.count).slice(0, 20);
+}
+
+function bucketIso(date: Date, since: Date, bucketMs: number): string {
+  const bucket =
+    Math.floor((date.getTime() - since.getTime()) / bucketMs) * bucketMs +
+    since.getTime();
+  return new Date(bucket).toISOString();
+}
+
+function percentile(values: number[], p: number): number | null {
+  if (!values.length) {
+    return null;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil(sorted.length * p) - 1),
+  );
+  return Math.round(sorted[index]);
+}
+
+function classifyError(message: string): string {
+  const normalized = message.toLowerCase();
+  if (normalized.includes('567') || normalized.includes('限流')) {
+    return 'rate_limit_567';
+  }
+  if (normalized.includes('timeout') || normalized.includes('超时')) {
+    return 'timeout';
+  }
+  if (normalized.includes('cookie') || normalized.includes('login')) {
+    return 'auth';
+  }
+  if (normalized.includes('http')) {
+    return 'http_error';
+  }
+  return 'job_failed';
 }
 
 function ageSeconds(date: Date | undefined | null, now: Date): number | null {

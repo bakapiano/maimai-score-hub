@@ -2786,6 +2786,33 @@ paths:
             application/json:
               schema:
                 nullable: true
+  /admin/realtime/worker-groups:
+    get:
+      tags: *a6
+      parameters:
+        - name: env
+          in: query
+          schema:
+            type: string
+            enum:
+              - prod
+              - dev
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum:
+              - 1h
+              - 6h
+              - 24h
+      operationId: admin.getRealtimeWorkerGroups
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                nullable: true
   /admin/history/api:
     get:
       tags: *a6
