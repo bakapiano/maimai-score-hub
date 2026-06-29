@@ -4,6 +4,7 @@ import { AdminBotsController } from './admin/admin-bots.controller';
 import { AdminCatalogController } from './admin/admin-catalog.controller';
 import { AdminDashboardController } from './admin/admin-dashboard.controller';
 import { AdminDxnetJobsController } from './admin/admin-dxnet-jobs.controller';
+import { AdminObservabilityController } from './admin/admin-observability.controller';
 import { SharedSecretGuard } from '../common/guards/shared-secret.guard';
 import { AdminModule } from '../modules/admin/admin.module';
 import { AdminUsersController } from './admin/admin-users.controller';
@@ -21,6 +22,8 @@ import { MeScoreExportController } from './me/me-score-export.controller';
 import { MeSyncController } from './me/me-sync.controller';
 import { MusicCatalogController } from './catalog/music-catalog.controller';
 import { MusicModule } from '../modules/music/music.module';
+import { ObservabilityController } from './observability/observability.controller';
+import { ObservabilityModule } from '../modules/observability/observability.module';
 import { PublicStatisticsController } from './public/public-statistics.controller';
 import { ProberExportModule } from '../modules/prober-export/prober-export.module';
 import { ScoreExportModule } from '../modules/score-export/score-export.module';
@@ -44,6 +47,7 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
     CoverModule,
     JobModule,
     MusicModule,
+    ObservabilityModule,
     ProberExportModule,
     ScoreExportModule,
     SdgbWorkerModule,
@@ -59,11 +63,13 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
     MeSyncController,
     MusicCatalogController,
     CoverCatalogController,
+    ObservabilityController,
     PublicStatisticsController,
     AdminBotsController,
     AdminCatalogController,
     AdminDashboardController,
     AdminDxnetJobsController,
+    AdminObservabilityController,
     AdminUsersController,
     AdminWorkerLogsController,
     WorkerBotStatusController,

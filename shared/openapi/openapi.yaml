@@ -1049,7 +1049,7 @@ paths:
                   - exportJobId
                   - status
                   - job
-  /me/prober-export-jobs/{exportJobId}:
+  /me/sync/prober-export-jobs/{exportJobId}:
     get:
       tags: *a4
       parameters:
@@ -1184,7 +1184,7 @@ paths:
                   - createdAt
                   - updatedAt
                 additionalProperties: true
-  /me/prober-export-jobs:
+  /me/sync/prober-export-jobs:
     get:
       tags: *a4
       parameters: []
@@ -2824,6 +2824,222 @@ paths:
       responses:
         "201":
           description: "201"
+  /admin/observability/status:
+    get:
+      tags: *a6
+      parameters: []
+      operationId: admin.getObservabilityStatus
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                nullable: true
+  /admin/realtime/overview:
+    get:
+      tags: *a6
+      parameters:
+        - name: env
+          in: query
+          schema:
+            type: string
+            enum:
+              - prod
+              - dev
+      operationId: admin.getRealtimeOverview
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                nullable: true
+  /admin/history/api:
+    get:
+      tags: *a6
+      parameters:
+        - name: env
+          in: query
+          schema:
+            type: string
+            enum:
+              - prod
+              - dev
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum:
+              - 24h
+              - 7d
+              - 30d
+      operationId: admin.getHistoryApi
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  nullable: true
+  /admin/history/rum:
+    get:
+      tags: *a6
+      parameters:
+        - name: env
+          in: query
+          schema:
+            type: string
+            enum:
+              - prod
+              - dev
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum:
+              - 24h
+              - 7d
+              - 30d
+      operationId: admin.getHistoryRum
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  nullable: true
+  /admin/history/analytics:
+    get:
+      tags: *a6
+      parameters:
+        - name: env
+          in: query
+          schema:
+            type: string
+            enum:
+              - prod
+              - dev
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum:
+              - 24h
+              - 7d
+              - 30d
+      operationId: admin.getHistoryAnalytics
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  nullable: true
+  /admin/history/workers:
+    get:
+      tags: *a6
+      parameters:
+        - name: env
+          in: query
+          schema:
+            type: string
+            enum:
+              - prod
+              - dev
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum:
+              - 24h
+              - 7d
+              - 30d
+      operationId: admin.getHistoryWorkers
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  nullable: true
+  /admin/history/logs:
+    get:
+      tags: *a6
+      parameters:
+        - name: env
+          in: query
+          schema:
+            type: string
+            enum:
+              - prod
+              - dev
+        - name: service
+          in: query
+          schema:
+            type: string
+        - name: workerId
+          in: query
+          schema:
+            type: string
+        - name: level
+          in: query
+          schema:
+            type: string
+        - name: jobId
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: string
+      operationId: admin.getHistoryLogs
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  nullable: true
+  /admin/jobs/{jobId}/debug:
+    get:
+      tags: *a6
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: env
+          in: query
+          schema:
+            type: string
+            enum:
+              - prod
+              - dev
+      operationId: admin.getJobDebug
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                nullable: true
   /catalog/covers/{songId}:
     get:
       tags: &a7
@@ -3033,6 +3249,388 @@ paths:
                   - updatedAt
         "404":
           description: "404"
+  /observability/rum:
+    post:
+      tags: &a10
+        - observability
+      parameters: []
+      operationId: observability.ingestRum
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                events:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      ts:
+                        type: string
+                      sessionId:
+                        type: string
+                      friendCode:
+                        type: string
+                      routeTemplate:
+                        type: string
+                      pageUrlHash:
+                        type: string
+                      referrerHash:
+                        type: string
+                      browser:
+                        type: string
+                      os:
+                        type: string
+                      deviceType:
+                        type: string
+                      fcpMs:
+                        type: number
+                        minimum: 0
+                      lcpMs:
+                        type: number
+                        minimum: 0
+                      inpMs:
+                        type: number
+                        minimum: 0
+                      cls:
+                        type: number
+                        minimum: 0
+                      ttfbMs:
+                        type: number
+                        minimum: 0
+                      loadMs:
+                        type: number
+                        minimum: 0
+                      apiWaitMs:
+                        type: number
+                        minimum: 0
+                      jsError:
+                        type: boolean
+                      errorName:
+                        type: string
+                      errorMessageHash:
+                        type: string
+                      traceId:
+                        type: string
+                      attrs:
+                        type: object
+                        additionalProperties:
+                          oneOf:
+                            - oneOf:
+                                - type: string
+                                - type: number
+                                - type: boolean
+                                - type: string
+                                  format: "null"
+                                  nullable: true
+                              nullable: true
+                            - type: array
+                              items:
+                                oneOf:
+                                  - type: string
+                                  - type: number
+                                  - type: boolean
+                                  - type: string
+                                    format: "null"
+                                    nullable: true
+                                nullable: true
+                          nullable: true
+                    required:
+                      - routeTemplate
+                  maxItems: 200
+              required:
+                - events
+      responses:
+        "202":
+          description: "202"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: integer
+                    minimum: 0
+                required:
+                  - accepted
+  /observability/events:
+    post:
+      tags: *a10
+      parameters: []
+      operationId: observability.ingestEvents
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                events:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      ts:
+                        type: string
+                      eventName:
+                        type: string
+                        minLength: 1
+                        maxLength: 128
+                      friendCode:
+                        type: string
+                      sessionId:
+                        type: string
+                      routeTemplate:
+                        type: string
+                      source:
+                        type: string
+                      appVersion:
+                        type: string
+                      properties:
+                        type: object
+                        additionalProperties:
+                          oneOf:
+                            - oneOf:
+                                - type: string
+                                - type: number
+                                - type: boolean
+                                - type: string
+                                  format: "null"
+                                  nullable: true
+                              nullable: true
+                            - type: array
+                              items:
+                                oneOf:
+                                  - type: string
+                                  - type: number
+                                  - type: boolean
+                                  - type: string
+                                    format: "null"
+                                    nullable: true
+                                nullable: true
+                          nullable: true
+                    required:
+                      - eventName
+                  maxItems: 200
+              required:
+                - events
+      responses:
+        "202":
+          description: "202"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: integer
+                    minimum: 0
+                required:
+                  - accepted
+  /workers/logs/{kind}/batches:
+    post:
+      tags: *a10
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - dxnet
+              - sdgb
+      operationId: observability.ingestWorkerLogs
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workerId:
+                  type: string
+                entries:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      ts:
+                        type: string
+                      level:
+                        type: string
+                        enum:
+                          - log
+                          - warn
+                          - error
+                          - debug
+                          - info
+                      message:
+                        type: string
+                      traceId:
+                        type: string
+                      requestId:
+                        type: string
+                      jobId:
+                        type: string
+                      workerId:
+                        type: string
+                      botFriendCode:
+                        type: string
+                      eventName:
+                        type: string
+                      errorClass:
+                        type: string
+                      attrs:
+                        type: object
+                        additionalProperties:
+                          oneOf:
+                            - oneOf:
+                                - type: string
+                                - type: number
+                                - type: boolean
+                                - type: string
+                                  format: "null"
+                                  nullable: true
+                              nullable: true
+                            - type: array
+                              items:
+                                oneOf:
+                                  - type: string
+                                  - type: number
+                                  - type: boolean
+                                  - type: string
+                                    format: "null"
+                                    nullable: true
+                                nullable: true
+                          nullable: true
+                    required:
+                      - message
+                  maxItems: 1000
+              required:
+                - entries
+      responses:
+        "201":
+          description: "201"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: integer
+                    minimum: 0
+                required:
+                  - accepted
+  /workers/dxnet/jobs/{jobId}/api-calls:
+    post:
+      tags: *a10
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: observability.ingestExternalApiCalls
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                calls:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      ts:
+                        type: string
+                      traceId:
+                        type: string
+                      jobId:
+                        type: string
+                      workerKind:
+                        type: string
+                      workerId:
+                        type: string
+                      botFriendCode:
+                        type: string
+                      target:
+                        type: string
+                        minLength: 1
+                      apiGroup:
+                        type: string
+                        minLength: 1
+                      method:
+                        type: string
+                        minLength: 1
+                      urlGroup:
+                        type: string
+                        minLength: 1
+                      statusCode:
+                        type: integer
+                        minimum: 0
+                      durationMs:
+                        type: number
+                        minimum: 0
+                      bodySize:
+                        type: integer
+                        minimum: 0
+                        nullable: true
+                      bodyHash:
+                        type: string
+                      artifactKey:
+                        type: string
+                        nullable: true
+                      errorClass:
+                        type: string
+                      attrs:
+                        type: object
+                        additionalProperties:
+                          oneOf:
+                            - oneOf:
+                                - type: string
+                                - type: number
+                                - type: boolean
+                                - type: string
+                                  format: "null"
+                                  nullable: true
+                              nullable: true
+                            - type: array
+                              items:
+                                oneOf:
+                                  - type: string
+                                  - type: number
+                                  - type: boolean
+                                  - type: string
+                                    format: "null"
+                                    nullable: true
+                                nullable: true
+                          nullable: true
+                    required:
+                      - target
+                      - apiGroup
+                      - method
+                      - urlGroup
+                      - statusCode
+                  maxItems: 1000
+              required:
+                - calls
+      responses:
+        "201":
+          description: "201"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: integer
+                    minimum: 0
+                required:
+                  - accepted
 info:
   title: Maimai Score Hub API
   version: 1.0.0

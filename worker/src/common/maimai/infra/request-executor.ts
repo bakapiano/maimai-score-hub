@@ -45,10 +45,12 @@ export async function executeMaimaiPageRequest({
     let logStatusCode = 0;
     let logResponseBody: string | null = null;
     let logError: string | null = null;
+    let requestStartedAt = 0;
 
     try {
       await requestRuntime.waitForSlot(requestPriority);
 
+      requestStartedAt = Date.now();
       const response = await dxnetSession.runExclusive(
         () =>
           dxnetSession.send(requestPlan.url, {
@@ -128,6 +130,7 @@ export async function executeMaimaiPageRequest({
             url: requestPlan.url,
             method: requestPlan.init.method?.toString() ?? "GET",
             statusCode: logStatusCode,
+            durationMs: requestStartedAt ? Date.now() - requestStartedAt : 0,
             responseBody: logError
               ? `[Error] ${logError}\n\n${logResponseBody ?? ""}`
               : logResponseBody,

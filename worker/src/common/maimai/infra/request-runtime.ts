@@ -18,6 +18,7 @@ export interface RequestLogEntry {
   url: string;
   method: string;
   statusCode: number;
+  durationMs: number;
   responseBody: string | null;
 }
 

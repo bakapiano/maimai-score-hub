@@ -17,7 +17,6 @@ import { IconBug } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import {
-  type ApiLogEntry,
   type SearchJobResult,
   ERROR_CATEGORY_META,
   categorizeJobError,
@@ -25,6 +24,13 @@ import {
 } from "./adminUtils";
 import { adminApi } from "../../api/appClient";
 import { ScrollableTable } from "../../components/ScrollableTable";
+
+type JobDebugView = {
+  timeline: Array<Record<string, unknown>>;
+  externalApiCalls: Array<Record<string, unknown>>;
+  logs: Array<Record<string, unknown>>;
+  artifacts: string[];
+};
 
 export default function AdminJobDebugPage() {
   const { password } = useAdminContext();
@@ -40,8 +46,8 @@ export default function AdminJobDebugPage() {
   const [total, setTotal] = useState(0);
 
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const [apiLogs, setApiLogs] = useState<ApiLogEntry[]>([]);
-  const [apiLogsLoading, setApiLogsLoading] = useState(false);
+  const [jobDebug, setJobDebug] = useState<JobDebugView | null>(null);
+  const [jobDebugLoading, setJobDebugLoading] = useState(false);
 
   const searchJobs = useCallback(
     async (p = 1) => {
@@ -72,20 +78,19 @@ export default function AdminJobDebugPage() {
     [password, friendCode, status],
   );
 
-  const loadApiLogs = useCallback(
+  const loadJobDebug = useCallback(
     async (jobId: string) => {
       if (!password) return;
       setSelectedJobId(jobId);
-      setApiLogsLoading(true);
-      const res = await adminApi.getJobApiLogs({
+      setJobDebugLoading(true);
+      const res = await fetch(`/api/v1/admin/jobs/${jobId}/debug?env=prod`, {
         headers: { "x-api-secret": password },
-        params: { jobId },
       });
-      setApiLogsLoading(false);
-      if (res.status === 200) {
-        setApiLogs((res.body as ApiLogEntry[]) ?? []);
+      setJobDebugLoading(false);
+      if (res.ok) {
+        setJobDebug((await res.json()) as JobDebugView);
       } else {
-        setApiLogs([]);
+        setJobDebug(null);
       }
     },
     [password],
@@ -256,8 +261,8 @@ export default function AdminJobDebugPage() {
                         <Button
                           variant="subtle"
                           size="xs"
-                          onClick={() => loadApiLogs(job.id)}
-                          loading={apiLogsLoading && selectedJobId === job.id}
+                          onClick={() => loadJobDebug(job.id)}
+                          loading={jobDebugLoading && selectedJobId === job.id}
                         >
                           调试
                         </Button>
@@ -288,7 +293,7 @@ export default function AdminJobDebugPage() {
                   任务详情 (Job: {selectedJobId.slice(0, 8)}...)
                 </Text>
                 <Badge variant="light" size="sm">
-                  {apiLogs.length} 条 API 日志
+                  {(jobDebug?.externalApiCalls.length ?? 0).toLocaleString()} 条 API 调用
                 </Badge>
               </Group>
 
@@ -311,83 +316,38 @@ export default function AdminJobDebugPage() {
                 ) : null;
               })()}
 
-              {apiLogsLoading ? (
+              {jobDebugLoading ? (
                 <Text size="sm" c="dimmed">
                   加载中...
                 </Text>
-              ) : apiLogs.length > 0 ? (
-                <ScrollArea h={400}>
-                  <ScrollableTable striped highlightOnHover withTableBorder>
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th>时间</Table.Th>
-                        <Table.Th>方法</Table.Th>
-                        <Table.Th>URL</Table.Th>
-                        <Table.Th>状态码</Table.Th>
-                        <Table.Th>响应大小</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {apiLogs.map((log, idx) => (
-                        <Table.Tr key={idx}>
-                          <Table.Td>
-                            <Text size="xs" c="dimmed">
-                              {new Date(log.createdAt).toLocaleTimeString(
-                                "zh-CN",
-                                {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                  second: "2-digit",
-                                },
-                              )}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td>
-                            <Badge variant="outline" size="xs">
-                              {log.method}
-                            </Badge>
-                          </Table.Td>
-                          <Table.Td>
-                            <Text
-                              size="xs"
-                              ff="monospace"
-                              lineClamp={1}
-                              style={{ maxWidth: 300 }}
-                            >
-                              {log.url}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td>
-                            <Badge
-                              color={
-                                log.statusCode >= 200 && log.statusCode < 300
-                                  ? "green"
-                                  : log.statusCode >= 300 &&
-                                      log.statusCode < 400
-                                    ? "yellow"
-                                    : "red"
-                              }
-                              variant="light"
-                              size="xs"
-                            >
-                              {log.statusCode}
-                            </Badge>
-                          </Table.Td>
-                          <Table.Td>
-                            <Text size="xs" c="dimmed" ff="monospace">
-                              {log.bodySize == null
-                                ? "-"
-                                : `${log.bodySize.toLocaleString()} B`}
-                            </Text>
-                          </Table.Td>
-                        </Table.Tr>
-                      ))}
-                    </Table.Tbody>
-                  </ScrollableTable>
-                </ScrollArea>
+              ) : jobDebug ? (
+                <Stack gap="md">
+                  <DebugTable title="Timeline" rows={jobDebug.timeline} />
+                  <DebugTable
+                    title="External API calls"
+                    rows={jobDebug.externalApiCalls}
+                  />
+                  <DebugTable title="Structured logs" rows={jobDebug.logs} />
+                  <Card withBorder>
+                    <Text fw={600} size="sm" mb="xs">
+                      Artifacts
+                    </Text>
+                    {jobDebug.artifacts.length ? (
+                      <Stack gap={4}>
+                        {jobDebug.artifacts.map((artifact) => (
+                          <Code key={artifact}>{artifact}</Code>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Text size="sm" c="dimmed">
+                        暂无 artifact
+                      </Text>
+                    )}
+                  </Card>
+                </Stack>
               ) : (
                 <Text size="sm" c="dimmed" ta="center">
-                  暂无 API 调用日志（日志会在 24 小时后自动过期）
+                  暂无 ClickHouse debug 数据
                 </Text>
               )}
             </Stack>
@@ -402,4 +362,64 @@ export default function AdminJobDebugPage() {
       </Stack>
     </Card>
   );
+}
+
+function DebugTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<Record<string, unknown>>;
+}) {
+  const keys = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  return (
+    <Card withBorder padding="sm">
+      <Group justify="space-between" mb="xs">
+        <Text fw={600} size="sm">
+          {title}
+        </Text>
+        <Badge variant="light">{rows.length}</Badge>
+      </Group>
+      {!rows.length ? (
+        <Text size="sm" c="dimmed">
+          暂无数据
+        </Text>
+      ) : (
+        <ScrollArea h={260}>
+          <ScrollableTable striped highlightOnHover withTableBorder>
+            <Table.Thead>
+              <Table.Tr>
+                {keys.map((key) => (
+                  <Table.Th key={key}>{key}</Table.Th>
+                ))}
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.map((row, index) => (
+                <Table.Tr key={index}>
+                  {keys.map((key) => (
+                    <Table.Td key={key}>
+                      <Text size="xs" ff="monospace" lineClamp={2}>
+                        {formatCell(row[key])}
+                      </Text>
+                    </Table.Td>
+                  ))}
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </ScrollableTable>
+        </ScrollArea>
+      )}
+    </Card>
+  );
+}
+
+function formatCell(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
 }

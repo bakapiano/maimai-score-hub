@@ -29,7 +29,10 @@ export class JobHandler {
           requestPriority:
             this.session.job.priority ??
             getJobTypePriority(this.session.job.jobType ?? null),
-          onRequestLog: (entry) => recordApiLog(this.session.job.id, entry),
+          onRequestLog: (entry) =>
+            recordApiLog(this.session.job.id, entry, {
+              botFriendCode: this.session.job.botUserFriendCode,
+            }),
         },
         async () => {
           await prepareJob(this.session.ctx);

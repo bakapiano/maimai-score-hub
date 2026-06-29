@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 
 import { SharedSecretGuard } from '../../common/guards/shared-secret.guard';
+import { ObservabilityIngestService } from '../../modules/observability/services/observability-ingest.service';
 import {
   WorkerLogsService,
   type WorkerLogIngestEntry,
@@ -24,7 +25,10 @@ interface IngestBody {
  */
 @Controller('workers/logs')
 export class WorkerLogIngestController {
-  constructor(private readonly logs: WorkerLogsService) {}
+  constructor(
+    private readonly logs: WorkerLogsService,
+    private readonly observability: ObservabilityIngestService,
+  ) {}
 
   @Post(':kind/batches')
   @UseGuards(SharedSecretGuard)
@@ -42,10 +46,19 @@ export class WorkerLogIngestController {
     if (!Array.isArray(body.entries)) {
       throw new BadRequestException('entries must be an array');
     }
-    return this.logs.ingest(
+    const redisResult = await this.logs.ingest(
       kind,
       workerId,
       body.entries as WorkerLogIngestEntry[],
     );
+    const clickhouseResult = this.observability.recordStructuredLogs({
+      service: `${kind}-worker`,
+      workerKind: kind,
+      workerId,
+      entries: body.entries as WorkerLogIngestEntry[],
+    });
+    return {
+      accepted: Math.max(redisResult.accepted, clickhouseResult.accepted),
+    };
   }
 }

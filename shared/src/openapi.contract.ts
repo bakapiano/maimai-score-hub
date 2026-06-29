@@ -7,6 +7,7 @@ import {
   coverContract,
   jobContract,
   musicContract,
+  observabilityContract,
   scoreExportContract,
   sdgbWorkerContract,
   syncContract,
@@ -26,4 +27,5 @@ export const openApiContract = c.router({
   cover: coverContract,
   scoreExport: scoreExportContract,
   sdgbWorker: sdgbWorkerContract,
+  observability: observabilityContract,
 });

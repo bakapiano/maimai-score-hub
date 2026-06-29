@@ -28,6 +28,7 @@ import {
 } from './job.constants';
 import { JobFriendshipService } from './job-friendship.service';
 import { JobQueueService } from './job-queue.service';
+import { ObservabilityIngestService } from '../../observability/services/observability-ingest.service';
 import { toJobResponse } from './job-response.mapper';
 
 export interface RecentJobStats {
@@ -36,6 +37,30 @@ export interface RecentJobStats {
   failedCount: number;
   successRate: number;
   avgDuration: number | null;
+}
+
+function getDxnetTimelineEventName(input: {
+  statusChanged: boolean;
+  stageChanged: boolean;
+  delayed: boolean;
+  toStatus: JobStatus;
+}): string {
+  if (input.statusChanged) {
+    if (input.toStatus === 'processing') {
+      return 'picked';
+    }
+    if (['completed', 'failed', 'canceled'].includes(input.toStatus)) {
+      return input.toStatus;
+    }
+    return 'status_changed';
+  }
+  if (input.delayed) {
+    return 'delayed';
+  }
+  if (input.stageChanged) {
+    return 'stage_changed';
+  }
+  return 'patched';
 }
 
 // [TODO] Change this to 1min
@@ -55,6 +80,7 @@ export class JobService {
     private readonly proberExports: ProberExportService,
     private readonly jobQueue: JobQueueService,
     private readonly friendship: JobFriendshipService,
+    private readonly observability: ObservabilityIngestService,
   ) {}
 
   async create(input: {
@@ -190,6 +216,27 @@ export class JobService {
 
     const createdEntity = created.toObject() as JobEntity;
     await this.jobQueue.enqueueWorkerJob(createdEntity);
+    this.observability.recordJobTimelineEvent({
+      ts: now,
+      jobId: id,
+      jobKind: 'dxnet',
+      jobType: resolvedJobType,
+      eventName: 'created',
+      toStatus: 'queued',
+      toStage: resolvedStage,
+      botFriendCode: input.botUserFriendCode ?? null,
+      attrs: { priority },
+    });
+    this.observability.recordJobTimelineEvent({
+      ts: now,
+      jobId: id,
+      jobKind: 'dxnet',
+      jobType: resolvedJobType,
+      eventName: 'queued',
+      toStatus: 'queued',
+      toStage: resolvedStage,
+      botFriendCode: input.botUserFriendCode ?? null,
+    });
     return { jobId: id, job: toJobResponse(createdEntity) };
   }
 
@@ -262,7 +309,50 @@ export class JobService {
       jobId,
     );
 
-    return toJobResponse(updated.toObject() as JobEntity);
+    const updatedEntity = updated.toObject() as JobEntity;
+    this.recordPatchTimeline(existing as JobEntity, updatedEntity, body);
+
+    return toJobResponse(updatedEntity);
+  }
+
+  private recordPatchTimeline(
+    existing: JobEntity,
+    updated: JobEntity,
+    body: JobPatchBody,
+  ): void {
+    const statusChanged = existing.status !== updated.status;
+    const stageChanged = existing.stage !== updated.stage;
+    const delayed = body.runAt !== undefined && updated.runAt !== null;
+    if (!statusChanged && !stageChanged && !delayed) {
+      return;
+    }
+
+    const eventName = getDxnetTimelineEventName({
+      statusChanged,
+      stageChanged,
+      delayed,
+      toStatus: updated.status,
+    });
+    this.observability.recordJobTimelineEvent({
+      ts: updated.updatedAt,
+      jobId: updated.id,
+      jobKind: 'dxnet',
+      jobType: updated.jobType,
+      eventName,
+      fromStatus: statusChanged ? existing.status : null,
+      toStatus: statusChanged ? updated.status : null,
+      fromStage: stageChanged ? existing.stage : null,
+      toStage: stageChanged ? updated.stage : null,
+      botFriendCode: updated.botUserFriendCode,
+      durationMs: ['completed', 'failed', 'canceled'].includes(updated.status)
+        ? updated.updatedAt.getTime() - updated.createdAt.getTime()
+        : null,
+      errorClass: updated.status === 'failed' ? 'dxnet_job_failed' : null,
+      message: updated.error,
+      attrs: {
+        runAt: updated.runAt ? updated.runAt.toISOString() : '',
+      },
+    });
   }
 
   private buildPatchOperations(

@@ -23,6 +23,7 @@ import {
   SDGB_WORKER_QUEUE_NAME,
   createBullmqQueueOptions,
 } from '../../../common/bullmq/bullmq.config';
+import { ObservabilityIngestService } from '../../observability/services/observability-ingest.service';
 
 const WORKER_STALE_MS = Number(
   process.env.SDGB_WORKER_STALE_MS ?? 2 * 60 * 1000,
@@ -137,6 +138,16 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function getSdgbTimelineEventName(status: SdgbJobStatus): string {
+  if (status === 'processing') {
+    return 'picked';
+  }
+  if (status === 'completed' || status === 'failed') {
+    return status;
+  }
+  return 'status_changed';
+}
+
 @Injectable()
 export class SdgbJobService implements OnModuleDestroy {
   private readonly logger = new Logger(SdgbJobService.name);
@@ -147,6 +158,7 @@ export class SdgbJobService implements OnModuleDestroy {
     @InjectModel(SdgbJobEntity.name)
     private readonly model: Model<SdgbJobDocument>,
     private readonly redis: RedisService,
+    private readonly observability: ObservabilityIngestService,
     config: ConfigService,
   ) {
     this.sdgbQueue = new Queue<SdgbWorkerJobData>(SDGB_WORKER_QUEUE_NAME, {
@@ -195,6 +207,17 @@ export class SdgbJobService implements OnModuleDestroy {
         jobId: id,
       },
     );
+    this.observability.recordJobTimelineEvent({
+      ts: now,
+      jobId: id,
+      jobKind: 'sdgb',
+      jobType: input.jobType,
+      eventName: 'queued',
+      toStatus: 'queued',
+      attrs: {
+        requesterTag: input.requesterTag ?? '',
+      },
+    });
     return toView(doc.toObject() as SdgbJobEntity);
   }
 
@@ -375,6 +398,12 @@ export class SdgbJobService implements OnModuleDestroy {
     },
   ): Promise<SdgbJobView> {
     const now = new Date();
+    const existing = await this.model
+      .findOne({ id: jobId })
+      .lean<SdgbJobEntity>();
+    if (!existing) {
+      throw new NotFoundException('Sdgb job not found');
+    }
     const update: Record<string, unknown> = { updatedAt: now };
     if (body.status !== undefined) {
       update.status = body.status;
@@ -401,7 +430,25 @@ export class SdgbJobService implements OnModuleDestroy {
     if (!doc) {
       throw new NotFoundException('Sdgb job not found');
     }
-    return toView(doc.toObject() as SdgbJobEntity);
+    const updated = doc.toObject() as SdgbJobEntity;
+    if (body.status !== undefined && existing.status !== updated.status) {
+      this.observability.recordJobTimelineEvent({
+        ts: now,
+        jobId,
+        jobKind: 'sdgb',
+        jobType: updated.jobType,
+        eventName: getSdgbTimelineEventName(updated.status),
+        fromStatus: existing.status,
+        toStatus: updated.status,
+        durationMs:
+          updated.status === 'completed' || updated.status === 'failed'
+            ? now.getTime() - updated.createdAt.getTime()
+            : null,
+        errorClass: updated.status === 'failed' ? 'sdgb_job_failed' : null,
+        message: updated.error,
+      });
+    }
+    return toView(updated);
   }
 
   async reportWorkerStatus(
