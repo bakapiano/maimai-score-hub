@@ -7,6 +7,7 @@ import {
   SimpleGrid,
   Stack,
   Table,
+  Tabs,
   Text,
   Title,
 } from "@mantine/core";
@@ -203,70 +204,91 @@ export default function AdminRealtimePage() {
         </Group>
       </Group>
 
-      <Stack gap="md">
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
-          <MetricCard
-            label="ClickHouse"
-            value={clickhouse?.ping ? "正常" : clickhouse?.enabled ? "异常" : "关闭"}
-            color={clickhouse?.ping ? "green" : clickhouse?.enabled ? "red" : "gray"}
-          />
-          <MetricCard
-            label="ClickHouse 写入缓冲"
-            value={`${clickhouse?.bufferedRows ?? 0} 待写 / ${
-              clickhouse?.droppedRows ?? 0
-            } 丢弃`}
-            color={(clickhouse?.droppedRows ?? 0) > 0 ? "red" : "blue"}
-          />
-          <MetricCard
-            label="今日外部调用类型"
-            value={String(data?.usageToday?.length ?? 0)}
-            color={(data?.usageToday?.length ?? 0) > 0 ? "blue" : "gray"}
-          />
-          <MetricCard
-            label="最近错误类型"
-            value={String(
-              (data?.recentErrors?.http?.length ?? 0) +
-                (data?.recentErrors?.externalApi?.length ?? 0),
-            )}
-            color={
-              (data?.recentErrors?.http?.length ?? 0) +
-                (data?.recentErrors?.externalApi?.length ?? 0) >
-              0
-                ? "red"
-                : "gray"
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
+        <MetricCard
+          label="ClickHouse"
+          value={clickhouse?.ping ? "正常" : clickhouse?.enabled ? "异常" : "关闭"}
+          color={clickhouse?.ping ? "green" : clickhouse?.enabled ? "red" : "gray"}
+        />
+        <MetricCard
+          label="ClickHouse 写入缓冲"
+          value={`${clickhouse?.bufferedRows ?? 0} 待写 / ${
+            clickhouse?.droppedRows ?? 0
+          } 丢弃`}
+          color={(clickhouse?.droppedRows ?? 0) > 0 ? "red" : "blue"}
+        />
+        <MetricCard
+          label="今日外部调用类型"
+          value={String(data?.usageToday?.length ?? 0)}
+          color={(data?.usageToday?.length ?? 0) > 0 ? "blue" : "gray"}
+        />
+        <MetricCard
+          label="最近错误类型"
+          value={String(
+            (data?.recentErrors?.http?.length ?? 0) +
+              (data?.recentErrors?.externalApi?.length ?? 0),
+          )}
+          color={
+            (data?.recentErrors?.http?.length ?? 0) +
+              (data?.recentErrors?.externalApi?.length ?? 0) >
+            0
+              ? "red"
+              : "gray"
+          }
+        />
+      </SimpleGrid>
+
+      {clickhouse?.lastError && (
+        <Card withBorder>
+          <Text c="red" size="sm">
+            ClickHouse 最近错误：{clickhouse.lastError}
+          </Text>
+        </Card>
+      )}
+
+      <WorkerOverviewCard groups={workerGroups?.groups ?? []} />
+
+      <SimpleGrid cols={{ base: 1, lg: 2 }}>
+        <RowsCard title="最近 15 分钟 HTTP 5xx" rows={data?.recentErrors?.http} />
+        <RowsCard
+          title="最近 15 分钟外部调用错误"
+          rows={data?.recentErrors?.externalApi}
+        />
+      </SimpleGrid>
+
+      <Tabs defaultValue="dxnet" keepMounted={false}>
+        <Group justify="space-between" align="flex-end" mb="sm">
+          <Tabs.List>
+            <Tabs.Tab value="dxnet">DXNet 详情</Tabs.Tab>
+            <Tabs.Tab value="sdgb">SDGB 详情</Tabs.Tab>
+            <Tabs.Tab value="prober_export">查分器导出详情</Tabs.Tab>
+          </Tabs.List>
+          <Select
+            label="趋势窗口"
+            size="xs"
+            value={workerWindow}
+            onChange={(value) =>
+              setWorkerWindow(value === "6h" || value === "24h" ? value : "1h")
             }
+            data={[
+              { value: "1h", label: "近 1 小时" },
+              { value: "6h", label: "近 6 小时" },
+              { value: "24h", label: "近 24 小时" },
+            ]}
+            w={130}
           />
-        </SimpleGrid>
-
-        {clickhouse?.lastError && (
-          <Card withBorder>
-            <Text c="red" size="sm">
-              ClickHouse 最近错误：{clickhouse.lastError}
-            </Text>
-          </Card>
-        )}
-
-        <SimpleGrid cols={{ base: 1, lg: 2 }}>
-          <RowsCard title="最近 15 分钟 HTTP 5xx" rows={data?.recentErrors?.http} />
-          <RowsCard
-            title="最近 15 分钟外部调用错误"
-            rows={data?.recentErrors?.externalApi}
-          />
-        </SimpleGrid>
-
-        <RowsCard title="今日外部调用量" rows={data?.usageToday} />
+        </Group>
 
         {(["dxnet", "sdgb", "prober_export"] as WorkerKind[]).map((kind) => (
-          <WorkerMonitorPanel
-            key={kind}
-            group={workerGroups?.groups.find(
-              (candidate) => candidate.workerKind === kind,
-            )}
-            window={workerWindow}
-            onWindowChange={setWorkerWindow}
-          />
+          <Tabs.Panel key={kind} value={kind}>
+            <WorkerMonitorPanel
+              group={workerGroups?.groups.find(
+                (candidate) => candidate.workerKind === kind,
+              )}
+            />
+          </Tabs.Panel>
         ))}
-      </Stack>
+      </Tabs>
     </Stack>
   );
 }
@@ -292,14 +314,150 @@ function MetricCard({
   );
 }
 
+function WorkerOverviewCard({ groups }: { groups: WorkerGroup[] }) {
+  const rows = (["dxnet", "sdgb", "prober_export"] as WorkerKind[]).map(
+    (kind) =>
+      summarizeWorkerGroup(
+        groups.find((candidate) => candidate.workerKind === kind),
+        kind,
+      ),
+  );
+
+  return (
+    <Card withBorder>
+      <Group justify="space-between" mb="sm">
+        <Title order={4}>Worker 总览</Title>
+        <Text size="xs" c="dimmed">
+          一眼看异常：错误、积压、成功率和耗时
+        </Text>
+      </Group>
+      <Table.ScrollContainer minWidth={860}>
+        <Table striped highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Worker</Table.Th>
+              <Table.Th>状态</Table.Th>
+              <Table.Th>实例</Table.Th>
+              <Table.Th>排队 / 处理</Table.Th>
+              <Table.Th>最近成功率</Table.Th>
+              <Table.Th>p95 耗时</Table.Th>
+              <Table.Th>最近错误</Table.Th>
+              <Table.Th>活跃任务</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {rows.map((row) => (
+              <Table.Tr key={row.kind}>
+                <Table.Td>{row.title}</Table.Td>
+                <Table.Td>
+                  <Badge color={row.color} variant="light">
+                    {row.status}
+                  </Badge>
+                </Table.Td>
+                <Table.Td>{row.workerCount}</Table.Td>
+                <Table.Td>
+                  {row.queued} / {row.processing}
+                </Table.Td>
+                <Table.Td>
+                  <Badge color={row.successRateColor} variant="light">
+                    {row.successRateLabel}
+                  </Badge>
+                </Table.Td>
+                <Table.Td>{row.p95Label}</Table.Td>
+                <Table.Td>
+                  <Badge color={row.errorCount > 0 ? "red" : "gray"} variant="light">
+                    {row.errorCount}
+                  </Badge>
+                </Table.Td>
+                <Table.Td>{row.activeCount}</Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+    </Card>
+  );
+}
+
+function summarizeWorkerGroup(group: WorkerGroup | undefined, kind: WorkerKind) {
+  const title =
+    kind === "dxnet"
+      ? "DXNet"
+      : kind === "sdgb"
+        ? "SDGB"
+        : "查分器导出";
+  if (!group) {
+    return {
+      kind,
+      title,
+      status: "无数据",
+      color: "gray",
+      workerCount: 0,
+      queued: 0,
+      processing: 0,
+      successRateLabel: "-",
+      successRateColor: "gray",
+      p95Label: "-",
+      errorCount: 0,
+      activeCount: 0,
+    };
+  }
+  const queued = sumQueue(group.queueByJobType, "queued");
+  const processing = sumQueue(group.queueByJobType, "processing");
+  const errorCount = group.recentErrors.reduce((sum, row) => sum + row.count, 0);
+  const successTotals = group.successRateTrend.reduce(
+    (acc, row) => ({
+      completed: acc.completed + row.completed,
+      total: acc.total + row.total,
+    }),
+    { completed: 0, total: 0 },
+  );
+  const successRate =
+    successTotals.total > 0
+      ? Math.round((successTotals.completed / successTotals.total) * 100)
+      : null;
+  const p95Values = group.durationTrend
+    .map((row) => row.p95Ms)
+    .filter((value): value is number => typeof value === "number");
+  const maxP95 = p95Values.length ? Math.max(...p95Values) : null;
+  const status =
+    errorCount > 0
+      ? "异常"
+      : queued > 0
+        ? "积压"
+        : processing > 0
+          ? "处理中"
+          : "正常";
+  const color =
+    errorCount > 0 ? "red" : queued > 0 ? "yellow" : processing > 0 ? "blue" : "green";
+
+  return {
+    kind,
+    title,
+    status,
+    color,
+    workerCount: group.workers.length,
+    queued,
+    processing,
+    successRateLabel: successRate === null ? "-" : `${successRate}%`,
+    successRateColor:
+      successRate === null
+        ? "gray"
+        : successRate >= 95
+          ? "green"
+          : successRate >= 80
+            ? "yellow"
+            : "red",
+    p95Label: maxP95 === null ? "-" : formatDuration(maxP95),
+    errorCount,
+    activeCount: group.activeJobs.length,
+  };
+}
+
 function WorkerMonitorPanel({
   group,
-  window,
-  onWindowChange,
 }: {
   group: WorkerGroup | undefined;
-  window: "1h" | "6h" | "24h";
-  onWindowChange: (value: "1h" | "6h" | "24h") => void;
 }) {
   if (!group) {
     return (
@@ -313,28 +471,12 @@ function WorkerMonitorPanel({
 
   return (
     <Stack gap="md">
-      <Group justify="space-between">
-        <Stack gap={0}>
-          <Title order={3}>{group.title}</Title>
-          <Text size="sm" c="dimmed">
-            按 job type 展示队列、活跃任务、成功率趋势、耗时趋势和最近错误
-          </Text>
-        </Stack>
-        <Select
-          label="趋势窗口"
-          size="xs"
-          value={window}
-          onChange={(value) =>
-            onWindowChange(value === "6h" || value === "24h" ? value : "1h")
-          }
-          data={[
-            { value: "1h", label: "近 1 小时" },
-            { value: "6h", label: "近 6 小时" },
-            { value: "24h", label: "近 24 小时" },
-          ]}
-          w={130}
-        />
-      </Group>
+      <Stack gap={0}>
+        <Title order={3}>{group.title}</Title>
+        <Text size="sm" c="dimmed">
+          按 job type 展示队列、活跃任务、成功率趋势、耗时趋势和最近错误
+        </Text>
+      </Stack>
 
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
         <MetricCard
