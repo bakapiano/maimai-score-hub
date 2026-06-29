@@ -1,194 +1,295 @@
-# 迁移计划
+# Breaking Migration Plan
 
-目标是先止血，再统一模型，最后做 alert。
+目标：直接切到 ClickHouse 历史观测仓库 + Redis 运行态 + artifact raw body 的模型，重做 admin portal 指标口径。
 
 ## Phase 0: 线上止血
 
-### 0.1 停止保存 raw response body
+### 0.1 停止 raw response body 入 Mongo
 
-改 worker API log 上报：
+立刻改 worker API log 上报和后端接收：
 
 ```ts
 {
-  url,
+  urlGroup,
   method,
   statusCode,
   durationMs,
   bodySize,
   bodyHash?,
-  errorClass?
+  errorClass?,
+  artifactKey?
 }
 ```
 
-后端不再接受或持久化 `responseBody`。如果 shared contract 暂时兼容旧字段，也必须在后端丢弃。
+后端丢弃 `responseBody`。即使 shared contract 暂时兼容旧字段，也不再持久化。
 
-### 0.2 修复 TTL index 漂移
+### 0.2 清理旧 debug collections
 
 线上实际没有 TTL：
 
 - `worker_logs.ts_1`
 - `job_api_logs.createdAt_1`
 
-处理方式二选一：
+由于方案 breaking change，建议：
 
-1. 直接 drop debug collections：如果确认不需要历史 debug 内容，这是最干净的。
-2. drop 普通 index 后重建 TTL index：适合想保留最近窗口的情况。
+1. 备份必要样本。
+2. drop `worker_logs`。
+3. drop `job_api_logs`。
+4. 移除相关 Mongoose schema / model 注册，避免继续写入。
 
-注意：不能只改 Mongoose schema 后等待自动同步。已有普通 index 不会自动变成 TTL index。
+如果短期不敢 drop，至少 rename 到 `*_legacy_20260629`，并阻断新写入。
 
-### 0.3 加 Redis 基础设施
+### 0.3 保留 Mongo 业务表
 
-在 Server 5 backend compose 增加 Redis：
+不动：
 
-- `redis:7-alpine`
-- `appendonly yes`
-- `appendfsync everysec`
-- `maxmemory 512mb`
-- `maxmemory-policy noeviction`
-- password required
+- `jobs`
+- `sdgb_jobs`
+- `syncs`
+- `userentities`
+- `bot_statuses`
+- `auto_update_*`
 
-初期只有 backend 访问 Redis；worker 不直连 Redis，仍通过 backend HTTP 上报。
+这些仍是业务 source of truth。
 
-## Phase 1: 写入路径切换
+## Phase 1: ClickHouse 单体上线
 
-### 1.1 引入 ObservabilityModule
+### 1.1 部署 ClickHouse
 
-新增统一 facade：
+按 [clickhouse-single-node.md](./clickhouse-single-node.md) 部署单体。
 
-- `recordLog`
-- `recordJobTrace`
-- `incrementMetric`
-- `observeMetric`
+要求：
 
-旧 controller 保持兼容：
+- 不放 Server 5。
+- 不公网暴露。
+- 固定版本。
+- 单独数据 volume。
+- 创建写入用户和只读查询用户。
 
-- `POST /workers/logs/:kind/batches`
-- `POST /workers/dxnet/jobs/:jobId/api-logs`
-- `GET /admin/worker-logs`
-- `GET /admin/dxnet-jobs/:jobId/api-logs`
+### 1.2 建表
 
-但内部不再写 Mongo debug collection。
+按 [clickhouse-schema.md](./clickhouse-schema.md) 建：
 
-### 1.2 Worker logs 写 Redis Stream
+- `http_requests`
+- `frontend_rum`
+- `analytics_events`
+- `structured_logs`
+- `external_api_calls`
+- `worker_events`
+- `job_timeline_events`
+- `cost_events`
+- materialized views
 
-建议初始配置：
+### 1.3 backend ClickHouse client
 
-```text
-WORKER_LOG_STREAM_MAXLEN=100000
-WORKER_LOG_STREAM_MAX_SCAN=20000
+新增 `ClickHouseService`：
+
+- 批量 insert。
+- 1-5 秒 flush。
+- 每表单独 buffer。
+- 写入失败计数。
+- 可选 Redis capped buffer。
+
+业务主链路不能依赖 ClickHouse 成功。ClickHouse 不可用时降级为丢弃 observability events + alert。
+
+## Phase 2: 后端和 worker 埋点
+
+### 2.1 backend HTTP interceptor
+
+新增全局 interceptor 写 `http_requests`：
+
+- route template。
+- method。
+- statusCode。
+- durationMs。
+- responseBytes。
+- userIdHash。
+- traceId/requestId。
+
+替换 admin 里基于 `jobs` 粗算 API 访问量/latency 的页面。
+
+### 2.2 structured logger
+
+backend / worker / sdgb-worker 统一 JSON log：
+
+- service。
+- instance。
+- level。
+- message。
+- traceId。
+- jobId。
+- workerId。
+- eventName。
+- errorClass。
+
+写 `structured_logs`。console 仍输出，便于 docker logs。
+
+### 2.3 external API calls
+
+替换 `job_api_logs`：
+
+- worker 每个外部调用上报 metadata。
+- body 不上报；error/debug 时保存 artifact 后只上报 `artifactKey`。
+- admin job debug 从 ClickHouse 查 `external_api_calls`。
+
+### 2.4 job timeline
+
+在 `JobService`、worker PATCH、`SdgbJobService` 关键状态变更处写 `job_timeline_events`：
+
+- created。
+- queued。
+- picked。
+- stage_changed。
+- delayed。
+- completed。
+- failed。
+- canceled。
+
+## Phase 3: frontend RUM / analytics
+
+### 3.1 RUM SDK
+
+前端采集：
+
+- route。
+- FCP / LCP / INP / CLS / TTFB / loadMs。
+- JS error。
+- frontend fetch duration。
+- sessionId / userIdHash。
+
+批量上报 `/api/v1/observability/rum`。
+
+### 3.2 Product analytics
+
+先埋最小事件集：
+
+- `page_view`
+- `login_success`
+- `sync_started`
+- `sync_completed`
+- `sync_failed`
+- `cabinet_bind_started`
+- `cabinet_bind_completed`
+- `export_started`
+- `export_completed`
+- `auto_update_enabled`
+- `auto_update_disabled`
+
+DAU 从 `analytics_events` 计算，不从 token 或 Mongo user update 猜。
+
+## Phase 4: admin portal breaking redesign
+
+### 4.1 删除旧指标页面
+
+删除或重写：
+
+- 依赖 `worker_logs` grep 的 567 指标。
+- 依赖 `job_api_logs.responseBody` 的 API debug。
+- 用 `jobs` 临时聚合出来的伪 API latency。
+- 无明确口径的“实时统计”卡片。
+
+### 4.2 新增 Realtime
+
+页面：
+
+- System Health。
+- Worker & Bot。
+- Queue & Backlog。
+- Recent Errors。
+- Recent Cost。
+
+数据：
+
+- Mongo current state。
+- Redis runtime state。
+- ClickHouse 最近 5-15 分钟。
+
+### 4.3 新增 History
+
+页面：
+
+- Product Analytics。
+- Backend API。
+- Frontend RUM。
+- DXNet Worker。
+- SDGB / Auto Update。
+- Logs。
+
+数据全部来自 ClickHouse。
+
+### 4.4 新 Job Debug
+
+`GET /admin/jobs/:jobId/debug` 返回聚合视图：
+
+```ts
+{
+  job,
+  timeline,
+  externalApiCalls,
+  logs,
+  artifacts
+}
 ```
 
-按当前 24h 约 25 万行，100k 大致覆盖数小时到半天窗口；如果 Redis 512MB 压力低，再上调。
+Mongo + ClickHouse + artifact 组合查询。
 
-### 1.3 Job API trace 写 Redis
+## Phase 5: Alert
 
-建议配置：
+### 5.1 Mongo alert config
 
-```text
-API_DEBUG_TTL_SECONDS=86400
-API_DEBUG_MAX_ENTRIES=500
-```
+新增：
 
-只保存 metadata，不保存 body。
+- `alert_rules`
+- `alert_subscriptions`
+- `alert_events`
 
-## Phase 2: 看板指标化
+### 5.2 evaluator
 
-### 2.1 建 `monitor_metric_buckets`
+backend cron 每 30s：
 
-用 1m / 5m / 1h bucket 支撑看板。
+- realtime 规则读 Mongo/Redis。
+- historical 规则查 ClickHouse。
+- firing/resolved 写 Mongo。
+- 通知飞书/webhook。
 
-初始指标：
+### 5.3 初始规则
 
-- `dxnet.job.created`
-- `dxnet.job.completed`
-- `dxnet.job.failed`
-- `dxnet.api.status`
-- `dxnet.rate_limit.567`
-- `sdgb.job.completed`
-- `sdgb.job.failed`
-- `auto_update.rival.changed`
-- `auto_update.rival.no_change`
-- `auto_update.rival.failed`
-- `auto_update.queue_lag_ms`
-- `prober_export.completed`
-- `prober_export.failed`
+见 [dashboards-alerts.md](./dashboards-alerts.md)。
 
-### 2.2 替换日志 grep 指标
+## 回滚策略
 
-`AdminService.getAutoUpdateMetrics()` 中的 567 统计从 `worker_logs` grep 切换为 `dxnet.rate_limit.567` metric bucket。
+ClickHouse 是旁路系统，回滚不应影响业务：
 
-保留日志 tail 只作为 debug，不作为 dashboard source of truth。
+- ClickHouse down：停止写观测数据，业务继续。
+- frontend RUM down：丢弃事件。
+- external API metadata down：job 仍执行。
+- admin History 不可用：Realtime 仍可从 Mongo/Redis 看当前状态。
 
-### 2.3 Storage audit
+不能回滚到：
 
-新增 admin storage endpoint：
+- raw `responseBody` 写 Mongo。
+- worker_logs 写 Mongo。
 
-- collection stats
-- TTL index audit
-- Redis stream length
-- Redis memory
-
-这个 endpoint 是防止 debug 数据再次膨胀的看板基础。
-
-## Phase 3: Alert 订阅
-
-### 3.1 先内建轻量 rule evaluator
-
-backend cron 每 30s 评估：
-
-- Redis health
-- worker heartbeat
-- bot availability
-- Mongo memory/disk
-- 业务错误率
-- queue lag
-
-规则和事件存在 Mongo。
-
-### 3.2 接通知渠道
-
-先支持：
-
-- webhook
-- 飞书机器人
-
-通知必须带 admin deep link 和最近窗口摘要，不带 raw body。
-
-### 3.3 后续外接 Prometheus/Alertmanager
-
-当需要更多基础设施指标和成熟 silence/routing 时，再接：
-
-- Prometheus scrape backend `/metrics`
-- node-exporter / cAdvisor
-- Alertmanager
-
-当前阶段不把它作为前置依赖。
+如果确实需要临时排障，开启 artifact capture，而不是恢复旧入库路径。
 
 ## 验证清单
 
 上线前：
 
-- `npm run build` in `shared`
-- `npm run build` in `backend`
-- `npm run build` in `frontend`
-- worker API log 上报不再包含 `responseBody`
-- Redis down 时 backend 明确 fail fast 或降级；不要静默写回 Mongo raw logs
-- admin worker logs 页面能读 Redis Stream
-- job debug 页面能显示 Redis API trace metadata
-- storage audit 能发现 TTL index 是否缺失
+- ClickHouse `/ping` ok。
+- 建表和 MV 成功。
+- backend `http_requests` 有数据。
+- worker `external_api_calls` 有数据。
+- frontend `frontend_rum` 有数据。
+- `analytics_events` 能算 DAU。
+- job debug 能按 jobId 查 timeline / external calls / logs。
+- artifact 保存和 TTL 清理可用。
 
-上线后：
+上线后 24h：
 
-- `worker_logs` Mongo 不再增长。
-- `job_api_logs` Mongo 不再增长。
-- Redis stream length 受 `MAXLEN` 控制。
-- Mongo memory 不因 debug 页面查询出现明显抖动。
-- 24h 后检查 `monitor_metric_buckets` bucket 数量和索引大小。
-
-## 回滚策略
-
-- Phase 1 保留旧 GET API 响应 shape，前端可不回滚。
-- 如果 Redis 出问题，短期可以关闭 worker log ingest，保留业务主链路；不要回滚到 Mongo raw body。
-- API trace 可以临时只返回空数组，job debug 仍能看 `jobs` raw JSON。
-- 业务表和队列不依赖 debug storage，因此 log/monitor 回滚不应影响用户同步和自动更新。
+- Mongo `worker_logs` / `job_api_logs` 不再增长。
+- ClickHouse 各表 rows 增长符合预期。
+- ClickHouse disk 增长在预估范围内。
+- admin Realtime 和 History 页面口径可解释。
+- 旧 admin 指标页面移除或标记废弃。
 

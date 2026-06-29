@@ -1,19 +1,18 @@
 # 目标架构
 
-目标是把 log、trace、metric、alert 分层，避免所有 debug 数据都走各自 API 流入 Mongo。
+目标是把实时状态、历史分析、排障日志和 raw artifact 分层，避免所有 admin debug 数据都走各自 API 流入 Mongo。
 
-## 数据分类
+## 总体分层
 
-| 类型 | 例子 | 保留期 | 存储 |
-| --- | --- | --- | --- |
-| Business state | `jobs`、`sdgb_jobs`、`auto_update_runs`、`bot_statuses` | 1d / 7d / 30d / 永久，按业务定 | MongoDB |
-| Debug trace | 单个 job 的外部 API 调用序列 | 24h，按 job 限长 | Redis JSON/List |
-| Console tail | worker stdout/stderr 最近日志 | 最近 N 条或数小时 | Redis Stream |
-| Metrics | QPS、成功率、错误率、latency、queue lag、567 次数 | 聚合桶 30-90d | Redis buffer -> MongoDB |
-| Alert state | 规则、订阅、触发记录、静默状态 | 30-180d | MongoDB |
-| Debug artifact | 可选 HTML/JSON 响应体 gzip | 24h，按大小 cap | 本地 volume，后续可换对象存储 |
+| 层 | 负责 | 存储 |
+| --- | --- | --- |
+| Business source of truth | 用户、成绩、job 状态、bot 状态、自动更新状态 | MongoDB |
+| Runtime state | 队列、限流、锁、worker heartbeat、短期 cache | Redis |
+| Historical observability | API/RUM/analytics/logs/external calls/job events/cost events | ClickHouse |
+| Artifact | raw HTML、large JSON、debug dump | 本地 volume，后续对象存储 |
+| Alert config | 规则、订阅、silence、通知状态 | MongoDB |
 
-## ObservabilityModule
+## 新增 ObservabilityIngestModule
 
 新增 backend 模块：
 
@@ -21,167 +20,200 @@
 backend/src/modules/observability
   observability.module.ts
   services/
-    log-tail.service.ts
-    job-trace.service.ts
-    metric-buffer.service.ts
-    metric-bucket-writer.service.ts
-    alert-evaluator.service.ts
+    clickhouse.service.ts
+    observability-ingest.service.ts
     artifact.service.ts
+    worker-status.service.ts
+    alert-evaluator.service.ts
   schemas/
-    monitor-metric-bucket.schema.ts
-    monitor-alert-rule.schema.ts
-    monitor-alert-event.schema.ts
+    alert-rule.schema.ts
+    alert-subscription.schema.ts
+    alert-event.schema.ts
+  dto/
+    rum-event.dto.ts
+    analytics-event.dto.ts
+    worker-log.dto.ts
+    external-api-call.dto.ts
 ```
 
-统一提供内部接口：
+内部接口：
 
 ```ts
-recordLog(entry)
-recordJobTrace(jobId, traceEntry)
-incrementMetric(name, dimensions, value = 1)
-observeMetric(name, dimensions, value)
-recordAlertEvent(event)
+recordHttpRequest(event)
+recordFrontendRum(event)
+recordAnalyticsEvent(event)
+recordStructuredLog(event)
+recordExternalApiCall(event)
+recordWorkerEvent(event)
+recordJobTimelineEvent(event)
+recordCostEvent(event)
 saveArtifact(input)
+updateWorkerHeartbeat(status)
 ```
 
-旧 controller 可以先保留路径，但内部只调用 ObservabilityModule。这样前端和 worker API 不必一次性大改。
+## 写入路径
 
-## Redis key 设计
+### backend HTTP request
 
-| Key | 类型 | 用途 |
-| --- | --- | --- |
-| `maimai:logs:worker:dxnet` | Stream | DXNet worker 最近日志 |
-| `maimai:logs:worker:sdgb` | Stream | sdgb-worker 最近日志 |
-| `maimai:debug:api:{jobId}` | JSON/List | 单 job API trace，TTL 24h |
-| `maimai:metrics:buffer:{bucketStart}:{metric}:{dimHash}` | Hash | 当前 bucket 计数/耗时 buffer，TTL 2d |
-| `maimai:status:worker:{kind}:{workerId}` | JSON | worker 心跳、最近日志时间、处理计数，短 TTL |
+Nest 全局 interceptor 记录：
 
-Redis 只保存短期和可丢弃数据。Mongo 仍保存业务事实和聚合后指标。
+- `method`
+- route template，例如 `/api/v1/me/dxnet-jobs/:jobId`
+- `statusCode`
+- `durationMs`
+- `requestBytes` / `responseBytes`
+- `userIdHash`，如果有登录用户
+- `traceId` / `requestId`
 
-## Mongo 新集合
+真实 URL 不作为聚合维度，避免 `jobId`、query string 造成高基数。
 
-### `monitor_metric_buckets`
+### frontend RUM
 
-用于看板历史趋势，不保存 raw log。
+前端采集：
+
+- route。
+- FCP / LCP / INP / CLS / TTFB / page load。
+- JS error。
+- API fetch duration，可关联 `traceId`。
+- sessionId、userIdHash。
+
+通过 `POST /api/v1/observability/rum` 批量上报。
+
+### analytics event
+
+前端和后端共同上报产品事件：
+
+- `page_view`
+- `login_success`
+- `sync_started`
+- `sync_completed`
+- `cabinet_bind_started`
+- `cabinet_bind_completed`
+- `export_started`
+- `export_completed`
+- `auto_update_enabled`
+
+用于 DAU、功能使用、转化和留存。
+
+### worker structured logs
+
+worker 不再上报自由文本到 Mongo。统一为：
 
 ```ts
 {
-  bucketStart: Date;
-  bucketSizeSec: number;       // 60 / 300 / 3600
-  metric: string;              // e.g. sdgb.rival.count
-  dimensionsHash: string;      // stable hash of dimensions
-  dimensions: Record<string, string>;
-  count: number;
-  sum: number | null;
-  min: number | null;
-  max: number | null;
-  last: number | null;
-  updatedAt: Date;
+  ts,
+  service: "dxnet-worker" | "sdgb-worker",
+  instance,
+  level,
+  message,
+  traceId?,
+  jobId?,
+  workerId?,
+  botFriendCode?,
+  eventName?,
+  attrs?
 }
 ```
 
-索引：
+ClickHouse 保存历史日志。admin live tail 也优先查 ClickHouse 最近 15 分钟。
 
-- unique `{ metric: 1, bucketStart: 1, bucketSizeSec: 1, dimensionsHash: 1 }`
-- `{ metric: 1, bucketStart: -1 }`
-- `{ bucketStart: 1 }` TTL 90d
+### external API calls
 
-写入方式：
-
-1. 服务代码只写 Redis buffer，避免每个事件都打 Mongo。
-2. backend 定时 flush 最近 bucket 到 Mongo，用 `$inc` / `$min` / `$max`。
-3. admin 看板只查 Mongo 聚合桶和少量 Redis current-state。
-
-### `monitor_alert_rules`
+DXNet worker / sdgb-worker 上报 metadata：
 
 ```ts
 {
-  id: string;
-  name: string;
-  enabled: boolean;
-  severity: "info" | "warning" | "critical";
-  source: "metric" | "state";
-  metric?: string;
-  dimensions?: Record<string, string>;
-  windowSec: number;
-  comparator: ">" | ">=" | "<" | "<=" | "==" | "!=";
-  threshold: number;
-  forSec: number;              // condition must hold for this long
-  cooldownSec: number;
-  channels: string[];          // feishu/webhook/email etc.
-  createdAt: Date;
-  updatedAt: Date;
+  ts,
+  jobId,
+  workerId,
+  botFriendCode,
+  target: "maimai_dxnet" | "sdgb" | "diving_fish" | "lxns",
+  apiGroup,
+  method,
+  urlGroup,
+  statusCode,
+  durationMs,
+  bodySize,
+  bodyHash?,
+  artifactKey?,
+  errorClass?
 }
 ```
 
-### `monitor_alert_events`
+不保存 raw body。raw body 只进 artifact。
 
-记录触发、恢复、静默：
+### job timeline
 
-```ts
-{
-  id: string;
-  ruleId: string;
-  status: "firing" | "resolved" | "silenced";
-  severity: string;
-  message: string;
-  value: number | null;
-  startedAt: Date;
-  resolvedAt: Date | null;
-  lastNotifiedAt: Date | null;
-}
-```
+用结构化事件替代“看 raw job JSON 猜发生了什么”：
 
-TTL 可设 180d。
+- `created`
+- `queued`
+- `picked`
+- `stage_changed`
+- `delayed`
+- `completed`
+- `failed`
+- `canceled`
+- `retry_scheduled`
+
+job 当前状态仍在 Mongo，timeline 进 ClickHouse。
+
+## 查询路径
+
+### 实时监控
+
+admin 首页实时区只读：
+
+- Mongo：`bot_statuses`、active jobs、auto update due state。
+- Redis：worker heartbeat、BullMQ queue summary、rate-limit 状态、ClickHouse ingest buffer backlog。
+- ClickHouse：最近 5-15 分钟错误和 latency，用于趋势小图。
+
+### 历史分析
+
+admin 历史 tab 和 Grafana 查 ClickHouse：
+
+- DAU。
+- API QPS、latency、error rate。
+- frontend route performance。
+- worker / sdgb throughput。
+- external API success rate。
+- cost / quota trend。
+
+### Job Debug
+
+点开 job 时组合：
+
+1. Mongo `jobs` / `sdgb_jobs`：当前业务状态。
+2. ClickHouse `job_timeline_events`：状态流转。
+3. ClickHouse `external_api_calls`：外部 API trace。
+4. ClickHouse `structured_logs`：相关日志。
+5. artifact：可选 raw HTML。
 
 ## API 分层
 
-对外路径可以保持兼容，但语义统一：
+breaking change 后推荐路径：
 
-| API | 说明 |
+| API | 用途 |
 | --- | --- |
-| `POST /workers/logs/:kind/batches` | worker console tail，写 Redis Stream |
-| `POST /workers/dxnet/jobs/:jobId/api-logs` | job API trace metadata，写 Redis |
-| `GET /admin/worker-logs` | 读 Redis Stream 最近 tail |
-| `GET /admin/dxnet-jobs/:jobId/api-logs` | 读 Redis job trace |
-| `GET /admin/monitor/overview` | 读业务状态 + metric buckets |
-| `GET /admin/monitor/metrics` | 通用 metric 查询 |
-| `GET /admin/monitor/storage` | Mongo/Redis 存储与 TTL 状态 |
-| `GET/POST/PATCH /admin/alerts/rules` | alert rule 管理 |
-| `GET/POST/PATCH /admin/alerts/subscriptions` | 订阅管理 |
+| `POST /observability/rum` | frontend RUM 批量上报 |
+| `POST /observability/events` | analytics event 批量上报 |
+| `POST /workers/logs/:kind/batches` | worker structured logs 批量上报 |
+| `POST /workers/dxnet/jobs/:jobId/api-calls` | external API metadata 批量上报 |
+| `GET /admin/realtime/overview` | 实时状态总览 |
+| `GET /admin/realtime/workers` | worker / bot / queue 当前状态 |
+| `GET /admin/history/api` | API 历史统计 |
+| `GET /admin/history/rum` | 前端性能历史 |
+| `GET /admin/history/analytics` | DAU / 产品事件 |
+| `GET /admin/history/workers` | worker / sdgb 历史统计 |
+| `GET /admin/jobs/:jobId/debug` | job 组合调试视图 |
+| `GET/POST/PATCH /admin/alerts/*` | alert 管理 |
 
-## 指标从哪里来
+## 安全和基数控制
 
-### 直接业务事件
-
-在代码路径上直接打点，不从日志文本反推：
-
-| 指标 | 打点位置 |
-| --- | --- |
-| `dxnet.job.created/completed/failed` | `JobService.create()` / PATCH 完成路径 |
-| `dxnet.api.status` | worker HTTP client 上报 API trace 时顺带计数 |
-| `dxnet.rate_limit.567` | worker 识别状态码或错误分类后上报 |
-| `sdgb.job.created/completed/failed` | `SdgbJobService` |
-| `sdgb.api.latency_ms` | sdgb-worker patch result 或专门 metrics endpoint |
-| `auto_update.rival.changed/no_change/failed` | auto update scheduler |
-| `auto_update.queue_lag_ms` | due time 到开始处理的差值 |
-| `prober_export.completed/failed` | prober export worker |
-
-### 当前状态快照
-
-从业务表或 Redis current-state 读取：
-
-- active jobs / queue depth
-- bot available / lastReportedAt / friendCount
-- sdgb-worker heartbeat / claimed count
-- Mongo collection stats
-- Redis memory / stream length
-
-## 安全和隐私边界
-
-- 默认不保存 raw response body。
-- debug artifact 必须有 TTL、大小 cap 和显式开关。
-- metric dimensions 避免无限 cardinality；`friendCode`、`jobId` 不进入常规 metric dimensions，只作为 trace 查询字段。
-- admin API 继续走 shared secret / admin guard。
-- worker 上报只允许 shared secret，不把 Redis 端口暴露给 worker。
+- `friendCode`、用户 `_id` 只存 hash，不直接进入 ClickHouse。
+- route 必须是模板，不存无限路径。
+- `jobId` 可以作为排障字段，但不要作为常规聚合维度。
+- raw body 不进 ClickHouse。
+- logs `attrs` 限制大小，例如 4KB。
+- 前端 RUM 采样率可配，初始 100%，后续按流量下调。
 

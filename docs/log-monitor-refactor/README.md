@@ -1,6 +1,6 @@
-# Log / Monitor 重构方案总览
+# Log / Monitor / Analytics 重构方案总览
 
-本文档给出 admin debug、日志、监控看板和后续 alert 订阅的重构方案。
+本文档给出 admin portal、日志、线上实时监控、历史分析、ClickHouse 单体部署和后续 alert 订阅的重构方案。可以接受 breaking change，因此方案不保留现有“每个 debug 页面各自入库”的兼容包袱。
 
 ## 范围与基准
 
@@ -13,43 +13,60 @@
 
 ### 机器状态
 
-| 节点                       | 角色                                    | 当前状态                                                                                                                     |
-| -------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Server 5 `175.178.13.169`  | backend×2 + nginx + MongoDB 7           | 2 vCPU / 8GB RAM / 60GB disk；load `0.55 0.45 0.30`；内存 available `4.5GiB`；根盘 `17G/60G`；Mongo 容器 `2.879GiB / 3.5GiB` |
-| Server 1 `124.220.225.153` | DXNet worker                            | 2GB RAM；load 接近 0；根盘 `13G/50G`；worker 容器 up 2h                                                                      |
-| Server 2 `106.14.237.126`  | DXNet worker + public nginx             | 2GB RAM；available `1.1GiB`；根盘 `18G/40G`；worker 容器 up 4d                                                               |
-| Server 4 `192.168.1.101`   | DXNet worker + sdgb-worker + adb-worker | 16GB RAM；available `11GiB`；根盘 `66G/457G`；sdgb-worker up 3d，worker up 9d                                                |
-| Server 3 `20.2.80.144`     | frontend                                | 8GB RAM；根盘 `22G/29G`，磁盘偏紧；未取得 docker ps 权限，不作为本方案的服务端容量依据                                       |
+| 节点 | 角色 | 当前状态 |
+| --- | --- | --- |
+| Server 5 `175.178.13.169` | backend×2 + nginx + MongoDB 7 | 2 vCPU / 8GB RAM / 60GB disk；load `0.55 0.45 0.30`；内存 available `4.5GiB`；根盘 `17G/60G`；Mongo 容器 `2.879GiB / 3.5GiB` |
+| Server 1 `124.220.225.153` | DXNet worker | 2GB RAM；load 接近 0；根盘 `13G/50G`；worker 容器 up 2h |
+| Server 2 `106.14.237.126` | DXNet worker + public nginx | 2GB RAM；available `1.1GiB`；根盘 `18G/40G`；worker 容器 up 4d |
+| Server 4 `192.168.1.101` | DXNet worker + sdgb-worker + adb-worker | 16GB RAM；available `11GiB`；根盘 `66G/457G`；sdgb-worker up 3d，worker up 9d |
+| Server 3 `20.2.80.144` | frontend | 8GB RAM；根盘 `22G/29G`，磁盘偏紧；未取得 docker ps 权限，不作为本方案的服务端容量依据 |
 
 ### MongoDB 规模
 
-| Collection     |    文档数 | 逻辑大小 | storageSize | 说明                                            |
-| -------------- | --------: | -------: | ----------: | ----------------------------------------------- |
-| `job_api_logs` |   102,169 |   6.96GB |       953MB | admin job debug 的外部 API 响应体是主要体积来源 |
-| `sdgb_jobs`    |    86,870 |  10.50GB |      2.30GB | 24h 内约 86,747 条，TTL 1 天已生效              |
-| `worker_logs`  | 1,933,769 |    494MB |       116MB | 控制台日志火力高，且线上 TTL 没生效             |
-| `jobs`         |    13,549 |    804MB |       310MB | 7 天 TTL 已生效，业务 source of truth           |
-| `syncs`        |     5,958 |    983MB |       248MB | 用户成绩快照，永久数据                          |
-| `userentities` |     7,204 |    6.1MB |       3.8MB | 当前用户量基数                                  |
+| Collection | 文档数 | 逻辑大小 | storageSize | 说明 |
+| --- | ---: | ---: | ---: | --- |
+| `job_api_logs` | 102,169 | 6.96GB | 953MB | admin job debug 的外部 API 响应体是主要体积来源 |
+| `sdgb_jobs` | 86,870 | 10.50GB | 2.30GB | 24h 内约 86,747 条，TTL 1 天已生效 |
+| `worker_logs` | 1,933,769 | 494MB | 116MB | 控制台日志火力高，且线上 TTL 没生效 |
+| `jobs` | 13,549 | 804MB | 310MB | 7 天 TTL 已生效，业务 source of truth |
+| `syncs` | 5,958 | 983MB | 248MB | 用户成绩快照，永久数据 |
+| `userentities` | 7,204 | 6.1MB | 3.8MB | 当前用户量基数 |
 
 过去 24h 写入量：
 
-| 数据               | 24h 新增 |
-| ------------------ | -------: |
-| `worker_logs`      |  250,727 |
-| `job_api_logs`     |    9,412 |
-| `jobs`             |    2,319 |
-| `sdgb_jobs`        |   86,747 |
-| `auto_update_runs` |      288 |
+| 数据 | 24h 新增 |
+| --- | ---: |
+| `worker_logs` | 250,727 |
+| `job_api_logs` | 9,412 |
+| `jobs` | 2,319 |
+| `sdgb_jobs` | 86,747 |
+| `auto_update_runs` | 288 |
 
 TTL 漂移：
 
-| Collection     | schema 期望         | 线上实际                              |
-| -------------- | ------------------- | ------------------------------------- |
-| `worker_logs`  | `ts` 2h TTL         | 无 TTL index；`1,914,194` 条已超过 2h |
-| `job_api_logs` | `createdAt` 24h TTL | 无 TTL index；`92,757` 条已超过 24h   |
-| `sdgb_jobs`    | `createdAt` 1d TTL  | 已生效                                |
-| `jobs`         | `createdAt` 7d TTL  | 已生效                                |
+| Collection | schema 期望 | 线上实际 |
+| --- | --- | --- |
+| `worker_logs` | `ts` 2h TTL | 无 TTL index；`1,914,194` 条已超过 2h |
+| `job_api_logs` | `createdAt` 24h TTL | 无 TTL index；`92,757` 条已超过 24h |
+| `sdgb_jobs` | `createdAt` 1d TTL | 已生效 |
+| `jobs` | `createdAt` 7d TTL | 已生效 |
+
+## 重新定义目标
+
+现有 admin portal 的问题不是“缺一个日志搜索框”，而是三类需求混在一起：
+
+1. **线上实时监控**：现在是否健康，worker 是否在线，队列是否堆积，近 5-15 分钟是否异常，今天已经消耗多少调用/成本。
+2. **历史分析数据**：历史 DAU、每个 API 的访问量、p50/p95/p99 latency、错误率、前端 load time、RUM、功能使用趋势。
+3. **排障上下文**：点开一个 job 或一段时间，查看 worker log、外部 API 调用、错误和可选 raw HTML artifact。
+
+因此本方案的核心不是“上日志栈”，而是：
+
+```text
+MongoDB    = 业务 source of truth
+Redis      = BullMQ / lock / rate limit / heartbeat / 当前状态
+ClickHouse = 历史观测与分析仓库
+Artifact   = raw HTML / large body / debug dump
+```
 
 ## 技术选型
 
@@ -57,80 +74,95 @@ TTL 漂移：
 
 保留 MongoDB 作为下列数据的 source of truth：
 
-- `jobs`、`sdgb_jobs`、`auto_update_runs`、`auto_update_tasks`
-- `bot_statuses`、`syncs`、`userentities`
-- 后续低频、聚合后的 `monitor_metric_buckets`、`alert_rules`、`alert_events`
+- `users` / `syncs` / `jobs` / `sdgb_jobs`
+- `bot_statuses` / `auto_update_probe_states` / `auto_update_tasks`
+- alert rules、alert subscriptions、少量 admin 配置
 
-原因：
+MongoDB 不再保存：
 
-- 这些数据需要按业务字段查询、聚合、回溯和关联，Mongo 当前已经承载了这些模型。
-- 线上机器还有可用内存和磁盘，但 Mongo 容器已经接近 3.5GB cap 的 82%；继续塞 raw debug payload 会挤压业务查询。
-- 业务表已有 TTL 和索引经验，适合保存“低频事实”和“聚合结果”，不适合保存高频 console line 和大 HTML body。
+- worker console logs
+- job external API raw body
+- API access logs
+- frontend RUM
+- DAU / product analytics event
 
-### 2. Redis 承担短期日志、调试 trace 和运行态计数
+原因：线上 Mongo 容器已经到 `2.879GiB / 3.5GiB`，继续塞 raw debug payload 会挤压业务查询；历史统计也不应该从业务集合和日志文本里临时 grep 出来。
 
-新增或沿用当前 `dev` 已出现的 Redis 方向：
+### 2. Redis 缩回运行态组件
 
-- `logs:worker:{kind}`：Redis Stream，按 `MAXLEN` 保留最近 tail。
-- `debug:api:{jobId}`：Redis JSON/List，TTL 24h，按 job 保留 API 调用 metadata。
-- `monitor:buffer:*`：短窗口计数器/直方图 buffer，由 backend 周期 flush 到 Mongo 聚合桶。
-- `status:worker:{kind}:{workerId}`：worker 心跳/最近活跃状态，TTL 级别。
+Redis 保留：
 
-原因：
+- BullMQ 队列。
+- rate limit / token bucket。
+- distributed lock / leader election。
+- worker heartbeat / current status，TTL 级别。
+- job temp cache。
+- ClickHouse ingest buffer，可选，短期兜底。
 
-- 线上 `worker_logs` 24h 约 25 万行，主要用于“看最近发生了什么”，不是长期审计。
-- `job_api_logs` 的 debug 价值主要在最近 job；长期保存 raw body 的排障价值低、存储成本高。
-- Redis Stream / TTL key 能天然表达 ring buffer 和短生命周期，避免依赖 Mongo TTL index 变更是否成功。
-- 当前 Server 5 没有 Redis 容器；部署 Redis 是一个明确的基础设施变更，需要作为 migration step，而不是假设已经存在。
+Redis 不再作为历史日志或指标主存储。live log tail 也可以直接查 ClickHouse；如果 admin 需要毫秒级 tail，再补 Redis Stream，不作为第一阶段必需项。
 
-### 3. 不立刻引入 ClickHouse / Loki / Elasticsearch
+### 3. ClickHouse 单体作为历史观测仓库
 
-本阶段不建议上独立日志栈。
+ClickHouse 保存：
 
-原因：
+- backend HTTP request events。
+- frontend RUM / Web Vitals / JS error。
+- analytics events，用于 DAU、功能使用、转化。
+- worker structured logs。
+- external API call metadata。
+- job timeline events。
+- cost / quota events。
+- 聚合后的 materialized views。
 
-- 当前 raw log 量级是 `worker_logs` 约 25 万行/天、`job_api_logs` 约 9 千条/天，主要痛点不是搜索规模，而是存储边界混乱和 raw body 入库。
-- Server 5 是 2C/8G 单机 backend+Mongo，当前 Mongo 已吃到 2.9GB；再塞一套日志栈会增加运维和内存压力。
-- 当前需求重点是 admin 看板和可行动 alert，不是 30 天全文检索。
+当前规模不需要 ClickHouse 集群、Keeper 或 Kafka。单体 ClickHouse 足够覆盖 7-90 天观测数据和 admin/Grafana 查询。
 
-升级触发条件：
+不要放在 Server 5 上。Server 5 同时跑 backend×2 + Mongo；ClickHouse 应放独立小机器或 Server 4 PoC，正式建议独立 `4C / 8G / 200GB+ SSD` 起步。
 
-- 需要保留 7-30 天 raw console logs 并做全文搜索。
-- raw log 写入超过 5M 行/天，或者 Redis Stream tail 无法覆盖排障窗口。
-- 需要跨服务 trace 查询、采样、标签聚合，且 Mongo 聚合桶无法支撑。
-
-到那时再评估 ClickHouse 或 Loki；本方案先把事件模型和 ingestion facade 做清楚，后续可以换 sink。
-
-### 4. 大响应体改为按需 artifact
+### 4. raw HTML body 作为 artifact，不进 ClickHouse
 
 默认不保存 raw `responseBody`：
 
-- API trace 只保存 `method`、`url`、`statusCode`、`durationMs`、`bodySize`、`bodyHash`、`errorClass`、`createdAt`。
-- 需要查看 HTML 时，worker 或 backend 可在 debug 开关打开后保存 gzip artifact，TTL 24h，并限制单 job / 全局大小。
-- artifact store 初期可以是后端本地 volume；如果后续需要跨机长期保存，再迁到对象存储。
+- ClickHouse 只保存 `method`、`urlGroup`、`statusCode`、`durationMs`、`bodySize`、`bodyHash`、`artifactKey`、`errorClass`。
+- raw HTML / large JSON 保存为 gzip artifact，TTL 24h 或 7d，只在 error sample、debug mode 或手动 capture 时启用。
+- artifact store 初期可以是后端本地 volume；后续可迁对象存储。
 
-原因：
-
-- `job_api_logs` 当前平均文档约 68KB，线上 10 万条已经形成 6.96GB 逻辑数据。
-- 过去 24h top URL 主要是 maimai friend pages，单类 URL 就有 2-3 千万 bytes 级别响应体。
-- 大多数 dashboard 和 alert 只需要状态码、耗时、体积、错误分类，不需要 HTML 全文。
+原因：线上 `job_api_logs` 10 万条已经形成 6.96GB 逻辑数据。raw HTML 查询价值低、体积大、隐私风险高，不应当作为常规日志字段。
 
 ## 目标形态
 
-重构后 admin debug 不再是“每类调试信息各自写 API、各自进 DB”，而是统一为：
-
 ```text
-workers / backend services
-  -> ObservabilityModule
-       -> logs: recent tail in Redis Stream
-       -> traces: per-job short debug trace in Redis
-       -> metrics: buffered counters/histograms -> Mongo metric buckets
-       -> alerts: rules over metrics/current state -> notification sinks
+frontend
+  -> /api/v1/observability/rum
+  -> /api/v1/observability/events
+
+backend interceptor
+  -> http_requests
+  -> structured_logs
+
+worker / sdgb-worker
+  -> structured_logs
+  -> external_api_calls
+  -> worker_events
+  -> job_timeline_events
+
+Observability ingest service
+  -> batch insert ClickHouse
+  -> optional Redis ingest buffer
+  -> artifact storage for raw body
+
+admin portal
+  -> realtime endpoints from Redis/Mongo current state
+  -> history dashboards from ClickHouse
+  -> job debug from Mongo + ClickHouse + artifact
 ```
 
 详细设计见：
 
 - [current-state.md](./current-state.md)
+- [realtime-vs-history.md](./realtime-vs-history.md)
 - [architecture.md](./architecture.md)
+- [clickhouse-schema.md](./clickhouse-schema.md)
 - [dashboards-alerts.md](./dashboards-alerts.md)
+- [clickhouse-single-node.md](./clickhouse-single-node.md)
 - [migration-plan.md](./migration-plan.md)
+
