@@ -20,7 +20,6 @@ import {
   IconClockBolt,
   IconCloudUpload,
   IconDatabase,
-  IconListDetails,
   IconLogs,
   IconUsers,
 } from "@tabler/icons-react";
@@ -50,12 +49,6 @@ const adminPages: AdminPageMeta[] = [
     to: "/admin/history",
     icon: <IconChartBar size={18} />,
     color: "grape",
-  },
-  {
-    label: "任务/机器人",
-    to: "/admin/active-jobs",
-    icon: <IconListDetails size={18} />,
-    color: "blue",
   },
   {
     label: "自动更新监控",

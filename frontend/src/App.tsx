@@ -18,9 +18,6 @@ const SyncPage = lazy(() => import("./pages/SyncPage"));
 const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
 const AdminRealtimePage = lazy(() => import("./pages/admin/AdminRealtimePage"));
 const AdminHistoryPage = lazy(() => import("./pages/admin/AdminHistoryPage"));
-const AdminActiveJobsPage = lazy(
-  () => import("./pages/admin/AdminActiveJobsPage"),
-);
 const AdminAutoUpdatePage = lazy(
   () => import("./pages/admin/AdminAutoUpdatePage"),
 );
@@ -75,7 +72,6 @@ function App() {
                   <Route path="/admin" element={<AdminLayout />}>
                     <Route index element={<AdminRealtimePage />} />
                     <Route path="history" element={<AdminHistoryPage />} />
-                    <Route path="active-jobs" element={<AdminActiveJobsPage />} />
                     <Route path="auto-update" element={<AdminAutoUpdatePage />} />
                     <Route
                       path="prober-exports"

@@ -163,7 +163,10 @@ export const adminContract = c.router({
     method: "GET",
     path: "/admin/realtime/overview",
     headers: c.type<{ "x-api-secret": string }>(),
-    query: z.object({ env: z.enum(["prod", "dev"]).optional() }),
+    query: z.object({
+      env: z.enum(["prod", "dev"]).optional(),
+      recentMinutes: z.string().optional(),
+    }),
     responses: { 200: RealtimeOverviewSchema },
   },
   getRealtimeWorkerGroups: {
@@ -172,7 +175,7 @@ export const adminContract = c.router({
     headers: c.type<{ "x-api-secret": string }>(),
     query: z.object({
       env: z.enum(["prod", "dev"]).optional(),
-      window: z.enum(["1h", "6h", "24h"]).optional(),
+      window: z.enum(["15m", "1h", "6h", "24h"]).optional(),
     }),
     responses: { 200: RealtimeWorkerGroupsSchema },
   },

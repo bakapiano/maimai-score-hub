@@ -14,8 +14,11 @@ export class AdminObservabilityController {
   }
 
   @Get('realtime/overview')
-  getRealtimeOverview(@Query('env') env?: string) {
-    return this.observability.getRealtimeOverview(env);
+  getRealtimeOverview(
+    @Query('env') env?: string,
+    @Query('recentMinutes') recentMinutes?: string,
+  ) {
+    return this.observability.getRealtimeOverview(env, recentMinutes);
   }
 
   @Get('realtime/worker-groups')

@@ -2778,6 +2778,10 @@ paths:
             enum:
               - prod
               - dev
+        - name: recentMinutes
+          in: query
+          schema:
+            type: string
       operationId: admin.getRealtimeOverview
       responses:
         "200":
@@ -2802,6 +2806,7 @@ paths:
           schema:
             type: string
             enum:
+              - 15m
               - 1h
               - 6h
               - 24h

@@ -16,7 +16,7 @@ import {
 
 type HistoryWindow = '24h' | '7d' | '30d';
 type WorkerKind = 'dxnet' | 'sdgb' | 'prober_export';
-type RealtimeWorkerWindow = '1h' | '6h' | '24h';
+type RealtimeWorkerWindow = '15m' | '1h' | '6h' | '24h';
 
 type TerminalJob = {
   jobType: string;
@@ -102,8 +102,12 @@ export class ObservabilityQueryService {
     return { clickhouse: { ...status, ping } };
   }
 
-  async getRealtimeOverview(environmentInput: unknown) {
+  async getRealtimeOverview(
+    environmentInput: unknown,
+    recentMinutesInput?: unknown,
+  ) {
     const environment = parseObservabilityEnvironment(environmentInput);
+    const recentMinutes = clampRecentMinutes(recentMinutesInput);
     const now = new Date();
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
@@ -140,13 +144,14 @@ export class ObservabilityQueryService {
         .sort({ createdAt: 1 })
         .select('createdAt')
         .lean<SdgbJobEntity>(),
-      this.queryRecentHttpErrors(environment),
-      this.queryRecentExternalErrors(environment),
+      this.queryRecentHttpErrors(environment, recentMinutes),
+      this.queryRecentExternalErrors(environment, recentMinutes),
       this.queryUsageToday(environment),
     ]);
 
     return {
       environment,
+      recentMinutes,
       generatedAt: now.toISOString(),
       system: clickhouseStatus,
       bots: {
@@ -466,35 +471,41 @@ export class ObservabilityQueryService {
     return Object.fromEntries(pairs);
   }
 
-  private queryRecentHttpErrors(environment: ObservabilityEnvironment) {
+  private queryRecentHttpErrors(
+    environment: ObservabilityEnvironment,
+    recentMinutes: number,
+  ) {
     return this.clickhouse.query(
       `
       SELECT routeTemplate, statusCode, count() AS count
       FROM http_requests
       WHERE environment = {environment:String}
-        AND ts >= now() - INTERVAL 15 MINUTE
+        AND ts >= now() - toIntervalMinute({recentMinutes:UInt32})
         AND statusCode >= 500
       GROUP BY routeTemplate, statusCode
       ORDER BY count DESC
       LIMIT 20
       `,
-      { environment },
+      { environment, recentMinutes },
     );
   }
 
-  private queryRecentExternalErrors(environment: ObservabilityEnvironment) {
+  private queryRecentExternalErrors(
+    environment: ObservabilityEnvironment,
+    recentMinutes: number,
+  ) {
     return this.clickhouse.query(
       `
       SELECT target, apiGroup, statusCode, errorClass, count() AS count
       FROM external_api_calls
       WHERE environment = {environment:String}
-        AND ts >= now() - INTERVAL 15 MINUTE
+        AND ts >= now() - toIntervalMinute({recentMinutes:UInt32})
         AND (statusCode >= 400 OR errorClass != '')
       GROUP BY target, apiGroup, statusCode, errorClass
       ORDER BY count DESC
       LIMIT 20
       `,
-      { environment },
+      { environment, recentMinutes },
     );
   }
 
@@ -876,7 +887,7 @@ function windowToInterval(input: unknown): string {
 }
 
 function parseRealtimeWorkerWindow(input: unknown): RealtimeWorkerWindow {
-  if (input === '6h' || input === '24h') {
+  if (input === '15m' || input === '6h' || input === '24h') {
     return input;
   }
   return '1h';
@@ -889,6 +900,9 @@ function realtimeWindowMs(window: RealtimeWorkerWindow): number {
   if (window === '6h') {
     return 6 * 60 * 60 * 1000;
   }
+  if (window === '15m') {
+    return 15 * 60 * 1000;
+  }
   return 60 * 60 * 1000;
 }
 
@@ -898,6 +912,9 @@ function getTrendBucketMs(window: RealtimeWorkerWindow): number {
   }
   if (window === '6h') {
     return 15 * 60 * 1000;
+  }
+  if (window === '15m') {
+    return 60 * 1000;
   }
   return 5 * 60 * 1000;
 }
@@ -1074,4 +1091,11 @@ function clampSinceMinutes(input: unknown): number {
   return Number.isFinite(parsed)
     ? Math.min(7 * 24 * 60, Math.max(1, Math.floor(parsed)))
     : 60;
+}
+
+function clampRecentMinutes(input: unknown): number {
+  const parsed = Number(input);
+  return Number.isFinite(parsed)
+    ? Math.min(24 * 60, Math.max(1, Math.floor(parsed)))
+    : 15;
 }

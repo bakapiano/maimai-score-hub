@@ -32,6 +32,7 @@ import {
 
 type RealtimeOverview = {
   environment: string;
+  recentMinutes?: number;
   generatedAt: string;
   system?: {
     clickhouse?: {
@@ -64,7 +65,7 @@ type WorkerKind = "dxnet" | "sdgb" | "prober_export";
 type RealtimeWorkerGroups = {
   environment: string;
   generatedAt: string;
-  window: "1h" | "6h" | "24h";
+  window: RealtimeWindow;
   groups: WorkerGroup[];
 };
 
@@ -126,7 +127,16 @@ type RecentWorkerError = {
   count: number;
 };
 
+type RealtimeWindow = "15m" | "1h" | "6h" | "24h";
+
 const REFRESH_MS = 10_000;
+const WINDOW_OPTIONS: Array<{ value: RealtimeWindow; label: string; minutes: number }> =
+  [
+    { value: "15m", label: "近 15 分钟", minutes: 15 },
+    { value: "1h", label: "近 1 小时", minutes: 60 },
+    { value: "6h", label: "近 6 小时", minutes: 360 },
+    { value: "24h", label: "近 24 小时", minutes: 1440 },
+  ];
 
 export default function AdminRealtimePage() {
   const { password } = useAdminContext();
@@ -136,7 +146,7 @@ export default function AdminRealtimePage() {
   const [data, setData] = useState<RealtimeOverview | null>(null);
   const [workerGroups, setWorkerGroups] =
     useState<RealtimeWorkerGroups | null>(null);
-  const [workerWindow, setWorkerWindow] = useState<"1h" | "6h" | "24h">("1h");
+  const [recentWindow, setRecentWindow] = useState<RealtimeWindow>("1h");
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -144,12 +154,14 @@ export default function AdminRealtimePage() {
     setLoading(true);
     try {
       const headers = { "x-api-secret": password };
+      const recentMinutes = getWindowMinutes(recentWindow);
       const [overviewRes, workerGroupsRes] = await Promise.all([
-        fetch(`/api/v1/admin/realtime/overview?env=${environment}`, {
-          headers,
-        }),
         fetch(
-          `/api/v1/admin/realtime/worker-groups?env=${environment}&window=${workerWindow}`,
+          `/api/v1/admin/realtime/overview?env=${environment}&recentMinutes=${recentMinutes}`,
+          { headers },
+        ),
+        fetch(
+          `/api/v1/admin/realtime/worker-groups?env=${environment}&window=${recentWindow}`,
           { headers },
         ),
       ]);
@@ -162,7 +174,7 @@ export default function AdminRealtimePage() {
     } finally {
       setLoading(false);
     }
-  }, [environment, password, workerWindow]);
+  }, [environment, password, recentWindow]);
 
   useEffect(() => {
     void load();
@@ -192,6 +204,17 @@ export default function AdminRealtimePage() {
               { value: "prod", label: "prod" },
             ]}
             w={110}
+          />
+          <Select
+            label="最近窗口"
+            size="xs"
+            value={recentWindow}
+            onChange={(value) => setRecentWindow(parseRealtimeWindow(value))}
+            data={WINDOW_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+            w={130}
           />
           <Button
             leftSection={<IconRefresh size={16} />}
@@ -263,20 +286,9 @@ export default function AdminRealtimePage() {
             <Tabs.Tab value="sdgb">SDGB 详情</Tabs.Tab>
             <Tabs.Tab value="prober_export">查分器导出详情</Tabs.Tab>
           </Tabs.List>
-          <Select
-            label="趋势窗口"
-            size="xs"
-            value={workerWindow}
-            onChange={(value) =>
-              setWorkerWindow(value === "6h" || value === "24h" ? value : "1h")
-            }
-            data={[
-              { value: "1h", label: "近 1 小时" },
-              { value: "6h", label: "近 6 小时" },
-              { value: "24h", label: "近 24 小时" },
-            ]}
-            w={130}
-          />
+          <Text size="xs" c="dimmed">
+            详情趋势跟随最近窗口：{formatWindowLabel(recentWindow)}
+          </Text>
         </Group>
 
         {(["dxnet", "sdgb", "prober_export"] as WorkerKind[]).map((kind) => (
@@ -339,6 +351,7 @@ function WorkerOverviewCard({ groups }: { groups: WorkerGroup[] }) {
               <Table.Th>状态</Table.Th>
               <Table.Th>实例</Table.Th>
               <Table.Th>排队 / 处理</Table.Th>
+              <Table.Th>最近成功 / 失败</Table.Th>
               <Table.Th>最近成功率</Table.Th>
               <Table.Th>p95 耗时</Table.Th>
               <Table.Th>最近错误</Table.Th>
@@ -357,6 +370,9 @@ function WorkerOverviewCard({ groups }: { groups: WorkerGroup[] }) {
                 <Table.Td>{row.workerCount}</Table.Td>
                 <Table.Td>
                   {row.queued} / {row.processing}
+                </Table.Td>
+                <Table.Td>
+                  {row.recentSuccess} / {row.recentFailed}
                 </Table.Td>
                 <Table.Td>
                   <Badge color={row.successRateColor} variant="light">
@@ -397,6 +413,8 @@ function summarizeWorkerGroup(group: WorkerGroup | undefined, kind: WorkerKind) 
       processing: 0,
       successRateLabel: "-",
       successRateColor: "gray",
+      recentSuccess: 0,
+      recentFailed: 0,
       p95Label: "-",
       errorCount: 0,
       activeCount: 0,
@@ -408,9 +426,10 @@ function summarizeWorkerGroup(group: WorkerGroup | undefined, kind: WorkerKind) 
   const successTotals = group.successRateTrend.reduce(
     (acc, row) => ({
       completed: acc.completed + row.completed,
+      failed: acc.failed + row.failed,
       total: acc.total + row.total,
     }),
-    { completed: 0, total: 0 },
+    { completed: 0, failed: 0, total: 0 },
   );
   const successRate =
     successTotals.total > 0
@@ -448,6 +467,8 @@ function summarizeWorkerGroup(group: WorkerGroup | undefined, kind: WorkerKind) 
           : successRate >= 80
             ? "yellow"
             : "red",
+    recentSuccess: successTotals.completed,
+    recentFailed: successTotals.failed,
     p95Label: maxP95 === null ? "-" : formatDuration(maxP95),
     errorCount,
     activeCount: group.activeJobs.length,
@@ -506,7 +527,10 @@ function WorkerMonitorPanel({
         <WorkerInstancesCard rows={group.workers} />
       </SimpleGrid>
 
-      <ActiveWorkerJobsCard jobs={group.activeJobs} />
+      <SimpleGrid cols={{ base: 1, xl: 2 }}>
+        <ActiveWorkerJobsCard jobs={group.activeJobs} />
+        <RecentErrorsCard rows={group.recentErrors} />
+      </SimpleGrid>
 
       <SimpleGrid cols={{ base: 1, xl: 2 }}>
         <TrendCard
@@ -516,6 +540,10 @@ function WorkerMonitorPanel({
           valueLabel="成功率 %"
           unit="%"
         />
+        <CountTrendCard data={group.successRateTrend} />
+      </SimpleGrid>
+
+      <SimpleGrid cols={{ base: 1, xl: 2 }}>
         <TrendCard
           title="耗时趋势 p95"
           data={group.durationTrend}
@@ -524,8 +552,6 @@ function WorkerMonitorPanel({
           unit="ms"
         />
       </SimpleGrid>
-
-      <RecentErrorsCard rows={group.recentErrors} />
     </Stack>
   );
 }
@@ -610,7 +636,9 @@ function WorkerInstancesCard({ rows }: { rows: Array<Record<string, unknown>> })
                         {row.available ? "可用" : "不可用"}
                       </Badge>
                     ) : (
-                      <Badge variant="light">已上报</Badge>
+                      <Badge color={isWorkerAlive(row.lastSeenAt) ? "green" : "red"} variant="light">
+                        {isWorkerAlive(row.lastSeenAt) ? "在线" : "离线"}
+                      </Badge>
                     )}
                   </Table.Td>
                   <Table.Td>{formatTime(String(row.lastSeenAt ?? ""))}</Table.Td>
@@ -627,6 +655,80 @@ function WorkerInstancesCard({ rows }: { rows: Array<Record<string, unknown>> })
       )}
     </Card>
   );
+}
+
+function CountTrendCard({ data }: { data: SuccessRateTrendPoint[] }) {
+  const completed = toChartData(data, "completed").map((row) => ({
+    ...prefixChartKeys(row, "成功 "),
+  }));
+  const failed = toChartData(data, "failed").map((row) => ({
+    ...prefixChartKeys(row, "失败 "),
+  }));
+  const byBucket = new Map<string, Record<string, string | number | null>>();
+  for (const row of [...completed, ...failed]) {
+    const bucket = String(row.bucket);
+    byBucket.set(bucket, { ...(byBucket.get(bucket) ?? {}), ...row });
+  }
+  const chartData = [...byBucket.values()].sort((a, b) =>
+    String(a.bucket).localeCompare(String(b.bucket)),
+  );
+  const keys = Array.from(
+    new Set(
+      chartData.flatMap((row) =>
+        Object.keys(row).filter((key) => key !== "bucket" && key !== "bucketLabel"),
+      ),
+    ),
+  );
+  const colors = ["#40c057", "#fa5252", "#228be6", "#fab005", "#7950f2", "#15aabf"];
+
+  return (
+    <Card withBorder>
+      <Title order={4} mb="sm">
+        成功 / 失败数量趋势
+      </Title>
+      {!chartData.length || !keys.length ? (
+        <Text size="sm" c="dimmed">
+          暂无数量趋势数据
+        </Text>
+      ) : (
+        <ResponsiveContainer width="100%" height={260}>
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="bucketLabel" minTickGap={24} />
+            <YAxis allowDecimals={false} />
+            <Tooltip />
+            <Legend />
+            {keys.map((key, index) => (
+              <Line
+                key={key}
+                type="monotone"
+                dataKey={key}
+                stroke={colors[index % colors.length]}
+                dot={false}
+                strokeWidth={2}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </Card>
+  );
+}
+
+function prefixChartKeys(
+  row: Record<string, string | number | null>,
+  prefix: string,
+): Record<string, string | number | null> {
+  const next: Record<string, string | number | null> = {
+    bucket: row.bucket,
+    bucketLabel: row.bucketLabel,
+  };
+  for (const [key, value] of Object.entries(row)) {
+    if (key !== "bucket" && key !== "bucketLabel") {
+      next[`${prefix}${key}`] = value;
+    }
+  }
+  return next;
 }
 
 function ActiveWorkerJobsCard({ jobs }: { jobs: WorkerActiveJob[] }) {
@@ -855,6 +957,18 @@ function formatTime(value: string | null | undefined): string {
   });
 }
 
+function parseRealtimeWindow(value: string | null): RealtimeWindow {
+  return value === "15m" || value === "6h" || value === "24h" ? value : "1h";
+}
+
+function getWindowMinutes(value: RealtimeWindow): number {
+  return WINDOW_OPTIONS.find((option) => option.value === value)?.minutes ?? 60;
+}
+
+function formatWindowLabel(value: RealtimeWindow): string {
+  return WINDOW_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
 function sumQueue(
   rows: QueueByJobType[],
   key: "queued" | "processing" | "failed" | "completed",
@@ -876,6 +990,14 @@ function formatWorkerInfo(row: Record<string, unknown>): string {
     parts.push(`并发 ${String(row.concurrency)}`);
   }
   return parts.join(" · ") || "-";
+}
+
+function isWorkerAlive(value: unknown): boolean {
+  if (typeof value !== "string" || !value) {
+    return false;
+  }
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) && Date.now() - time < 5 * 60 * 1000;
 }
 
 function toChartData(
