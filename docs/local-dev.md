@@ -4,7 +4,8 @@ This project can run locally on Windows without Docker or WSL. The recommended s
 
 - MongoDB as a native Windows service
 - Redis-compatible Memurai as a native Windows process
-- backend / frontend / worker started with npm or VS Code tasks
+- backend / frontend / worker started with npm, VS Code tasks, or the PM2
+  local-dev supervisor
 
 ## Current Windows machine
 
@@ -55,7 +56,63 @@ The `ping` command should return:
 PONG
 ```
 
-## Backend `.env`
+## One-command local dev with PM2
+
+The repo includes a PM2-based local dev supervisor. It starts:
+
+- Memurai on `127.0.0.1:6379`
+- backend on `127.0.0.1:9050`
+- frontend on `127.0.0.1:3001`
+- Microsoft Dev Tunnel for frontend public access
+
+First-time setup:
+
+```powershell
+cd D:\maimaidx-prober-proxy-updater
+Copy-Item .env.local-dev.example .env.local-dev
+```
+
+Edit `.env.local-dev`:
+
+- Set `ADMIN_PASSWORD` / `API_SHARED_SECRET`.
+- Set `CLICKHOUSE_PASSWORD` to the 101 ClickHouse writer password.
+
+Start everything:
+
+```powershell
+npm run dev:local:start
+```
+
+Check status:
+
+```powershell
+npm run dev:local:status
+```
+
+Show logs:
+
+```powershell
+npm run dev:local:logs
+npm run dev:local:logs -- msh-backend
+npm run dev:local:logs -- msh-devtunnel
+```
+
+Stop everything managed by the supervisor:
+
+```powershell
+npm run dev:local:stop
+```
+
+Notes:
+
+- `start-local.ps1` builds `shared` and `backend` once, then starts backend
+  from `backend/dist/main.js`. This avoids repeatedly triggering
+  `prestart -> openapi:generate` just to boot local dev.
+- The scripts only stop PM2-managed processes. They do not kill unrelated
+  `node.exe` processes by name.
+- Dev Tunnel URL is printed in `msh-devtunnel` logs.
+
+## Manual backend `.env`
 
 Create or update `backend\.env`:
 
