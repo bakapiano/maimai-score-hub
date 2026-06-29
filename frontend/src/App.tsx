@@ -85,7 +85,7 @@ function App() {
                     <Route path="job-debug" element={<AdminJobDebugPage />} />
                     <Route path="users" element={<AdminUsersPage />} />
                     <Route
-                      path="worker-logs"
+                      path="history/logs"
                       element={<AdminWorkerLogsPage />}
                     />
                   </Route>

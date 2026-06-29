@@ -259,7 +259,6 @@ ALTER TABLE frontend_rum DELETE WHERE environment = 'dev' AND ts < now() - INTER
 ALTER TABLE analytics_events DELETE WHERE environment = 'dev' AND ts < now() - INTERVAL 30 DAY;
 ALTER TABLE structured_logs DELETE WHERE environment = 'dev' AND ts < now() - INTERVAL 7 DAY;
 ALTER TABLE external_api_calls DELETE WHERE environment = 'dev' AND ts < now() - INTERVAL 7 DAY;
-ALTER TABLE worker_events DELETE WHERE environment = 'dev' AND ts < now() - INTERVAL 7 DAY;
 ALTER TABLE job_timeline_events DELETE WHERE environment = 'dev' AND ts < now() - INTERVAL 7 DAY;
 ```
 

@@ -2,6 +2,25 @@
 
 本文档给出 admin portal、日志、线上实时监控、历史分析、ClickHouse 单体部署和后续 alert 订阅的重构方案。可以接受 breaking change，因此方案不保留现有“每个 debug 页面各自入库”的兼容包袱。
 
+## 当前实现状态（PR #8 / dev）
+
+已实现并在 dev smoke 通过：
+
+- 101 上部署 ClickHouse single node 和 artifact service。
+- backend `ObservabilityModule` 批量写入 ClickHouse。
+- backend HTTP interceptor 写 `http_requests`。
+- frontend 写 `frontend_rum` 和 `analytics_events`。
+- worker 写 `structured_logs` 和 `external_api_calls`。
+- DXNet / SDGB job 状态变化写 `job_timeline_events`。
+- admin Realtime / History / Logs / Job Debug 查询 ClickHouse。
+- 旧 `WorkerLogsModule`、`JobApiLogService`、Redis Stream worker logs 和旧 `api-logs` endpoints 已删除。
+
+当前未实现：
+
+- worker/backend 自动上传 raw response artifact。artifact service 已部署并单独验收可写可读，但 `external_api_calls.artifactKey` 目前只有调用方显式传入时才有值。
+- alert rules / subscriptions。
+- 成熟的 debug capture 开关、artifact viewer UI。
+
 ## 范围与基准
 
 - 用户口径说“线上 master”，但当前仓库没有 `master` / `origin/master`；本地 `origin/HEAD` 指向 `origin/main`。
@@ -121,11 +140,11 @@ ClickHouse 保存：
 
 ### 4. raw HTML body 作为 artifact，不进 ClickHouse
 
-默认不保存 raw `responseBody`：
+当前不保存 raw response body：
 
 - ClickHouse 只保存 `method`、`urlGroup`、`statusCode`、`durationMs`、`bodySize`、`bodyHash`、`artifactKey`、`errorClass`。
-- raw HTML / large JSON 保存为 gzip artifact，TTL 24h 或 7d，只在 error sample、debug mode 或手动 capture 时启用。
-- artifact store 第一阶段放在 101 机器的 `/srv/maimai-observability/artifacts`，通过内网 artifact service 写入和读取；后续可迁对象存储。
+- artifact service 已部署在 101 的 `/srv/maimai-observability/artifacts`，可通过 `POST /artifacts/raw-response` 写入 gzip artifact。
+- worker/backend 自动 error sample、debug mode、手动 capture 尚未接入；接入前 `artifactKey` 通常为空。
 
 原因：线上 `job_api_logs` 10 万条已经形成 6.96GB 逻辑数据。raw HTML 查询价值低、体积大、隐私风险高，不应当作为常规日志字段。
 
@@ -143,7 +162,6 @@ backend interceptor
 worker / sdgb-worker
   -> structured_logs
   -> external_api_calls
-  -> worker_events
   -> job_timeline_events
 
 Observability ingest service

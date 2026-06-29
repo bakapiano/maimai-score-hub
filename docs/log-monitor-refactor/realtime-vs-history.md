@@ -75,7 +75,6 @@ admin portal 需要拆成两个心智模型：**现在是否健康** 和 **历�
 | `frontend_rum` | Web Vitals、route load、JS error |
 | `structured_logs` | backend/worker/sdgb 历史日志 |
 | `external_api_calls` | DXNet/sdgb/prober 外部调用统计 |
-| `worker_events` | worker 生命周期、cookie、bot 状态事件 |
 | `job_timeline_events` | job 状态流转和排障 |
 
 ### 历史指标
@@ -94,7 +93,7 @@ admin portal 需要拆成两个心智模型：**现在是否健康** 和 **历�
 | external API status/latency | `external_api_calls` |
 | DXNet 567 count/rate | `external_api_calls.errorClass = 'rate_limit_567'` |
 | sdgb job throughput/error | `job_timeline_events` / `external_api_calls` |
-| auto update probe success/change/no-change | `worker_events` / `job_timeline_events` |
+| auto update probe success/change/no-change | `job_timeline_events` / `external_api_calls` |
 | external calls per day | `external_api_calls` |
 
 ## admin portal 重构

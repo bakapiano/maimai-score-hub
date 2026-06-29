@@ -229,44 +229,6 @@ TTL toDateTime(ts) + INTERVAL 90 DAY DELETE;
 - `diving_fish.export`
 - `lxns.export`
 
-## `worker_events`
-
-worker 生命周期和业务事件。
-
-```sql
-CREATE TABLE worker_events
-(
-  ts DateTime64(3, 'Asia/Shanghai'),
-  environment LowCardinality(String),
-  service LowCardinality(String),
-  workerKind LowCardinality(String),
-  workerId LowCardinality(String),
-  eventName LowCardinality(String),
-  jobId String,
-  botFriendCode String,
-  status LowCardinality(String),
-  durationMs UInt32,
-  errorClass LowCardinality(String),
-  attrs Map(String, String)
-)
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(ts)
-ORDER BY (environment, workerKind, eventName, ts)
-TTL toDateTime(ts) + INTERVAL 180 DAY DELETE;
-```
-
-事件示例：
-
-- `worker_started`
-- `worker_stopped`
-- `bot_cookie_expired`
-- `bot_status_reported`
-- `job_picked`
-- `job_completed`
-- `job_failed`
-- `auto_update_probe_completed`
-- `auto_update_probe_failed`
-
 ## `job_timeline_events`
 
 job 状态流转和 stage 变化。

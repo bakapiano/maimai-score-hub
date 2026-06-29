@@ -131,9 +131,9 @@ export default function AdminWorkerLogsPage() {
         <Group justify="space-between" align="center" wrap="wrap">
           <Group gap="xs">
             <IconLogs size={20} />
-            <Text fw={600}>Worker 日志</Text>
+            <Text fw={600}>历史日志</Text>
             <Text size="xs" c="dimmed">
-              共 {total} 条匹配，显示最新 {items.length}
+              ClickHouse structured_logs，共 {total} 条匹配，显示最新 {items.length}
             </Text>
           </Group>
           <Group gap="xs">

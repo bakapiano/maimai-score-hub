@@ -21,7 +21,8 @@ interface ExternalApiCallEntry {
   method: string;
   statusCode: number;
   durationMs: number;
-  responseBody: string | null;
+  bodySize: number | null;
+  errorClass?: string;
 }
 
 interface ExternalApiCallMetadata {
@@ -70,9 +71,8 @@ export function recordExternalApiCall(
     urlGroup: group.urlGroup,
     statusCode: entry.statusCode,
     durationMs: Math.max(0, Math.floor(entry.durationMs)),
-    bodySize:
-      typeof entry.responseBody === "string" ? entry.responseBody.length : null,
-    errorClass: getErrorClass(entry),
+    bodySize: entry.bodySize,
+    errorClass: entry.errorClass || undefined,
     workerKind: "dxnet",
     workerId: metadata.workerId || getWorkerId(),
     botFriendCode: metadata.botFriendCode || "",
@@ -144,17 +144,4 @@ function classifyDxnetUrl(url: string): { apiGroup: string; urlGroup: string } {
     return { apiGroup: "maimai.friend", urlGroup: "maimai.friend.pages" };
   }
   return { apiGroup: "maimai.dxnet", urlGroup: "maimai.dxnet.unknown" };
-}
-
-function getErrorClass(entry: ExternalApiCallEntry): string | undefined {
-  if (entry.statusCode === 567) {
-    return "rate_limit_567";
-  }
-  if (entry.responseBody?.startsWith("[Error]")) {
-    return "maimai_request_error";
-  }
-  if (entry.statusCode >= 400) {
-    return "http_error";
-  }
-  return undefined;
 }

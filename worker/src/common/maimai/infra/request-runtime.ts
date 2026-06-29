@@ -19,7 +19,8 @@ export interface RequestLogEntry {
   method: string;
   statusCode: number;
   durationMs: number;
-  responseBody: string | null;
+  bodySize: number | null;
+  errorClass?: string;
 }
 
 export interface RequestContext {

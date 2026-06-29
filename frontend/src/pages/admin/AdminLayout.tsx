@@ -88,8 +88,8 @@ const adminPages: AdminPageMeta[] = [
     color: "cyan",
   },
   {
-    label: "Worker 日志",
-    to: "/admin/worker-logs",
+    label: "历史日志",
+    to: "/admin/history/logs",
     icon: <IconLogs size={18} />,
     color: "teal",
   },

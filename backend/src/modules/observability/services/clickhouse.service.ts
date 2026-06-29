@@ -14,7 +14,6 @@ const CLICKHOUSE_TABLES = [
   'analytics_events',
   'structured_logs',
   'external_api_calls',
-  'worker_events',
   'job_timeline_events',
 ] as const;
 

@@ -44,7 +44,7 @@ export async function executeMaimaiPageRequest({
   for (let i = 0; i < requestPlan.retryCount; i++) {
     let logStatusCode = 0;
     let logResponseBody: string | null = null;
-    let logError: string | null = null;
+    let logErrorClass = "";
     let requestStartedAt = 0;
 
     try {
@@ -77,7 +77,7 @@ export async function executeMaimaiPageRequest({
       requestRuntime.resetFreezeBackoff();
       return page;
     } catch (e: unknown) {
-      logError = e instanceof Error ? e.message : String(e);
+      logErrorClass = getRequestErrorClass(e, logStatusCode);
 
       if (e instanceof MaimaiRateLimitedError) {
         rateLimitCount++;
@@ -131,9 +131,11 @@ export async function executeMaimaiPageRequest({
             method: requestPlan.init.method?.toString() ?? "GET",
             statusCode: logStatusCode,
             durationMs: requestStartedAt ? Date.now() - requestStartedAt : 0,
-            responseBody: logError
-              ? `[Error] ${logError}\n\n${logResponseBody ?? ""}`
-              : logResponseBody,
+            bodySize:
+              typeof logResponseBody === "string"
+                ? Buffer.byteLength(logResponseBody)
+                : null,
+            errorClass: logErrorClass,
           });
         } catch {
           // Best-effort logging; don't impact main request flow
@@ -143,4 +145,26 @@ export async function executeMaimaiPageRequest({
   }
 
   throw new Error("Unreachable");
+}
+
+function getRequestErrorClass(error: unknown, statusCode: number): string {
+  if (statusCode === 567 || error instanceof MaimaiRateLimitedError) {
+    return "rate_limit_567";
+  }
+  if (error instanceof CookieExpiredError) {
+    return "cookie_expired";
+  }
+  if (error instanceof NonRetryableError) {
+    return "non_retryable";
+  }
+  if (error instanceof Error && isTimeoutError(error)) {
+    return "timeout";
+  }
+  if (error) {
+    return "maimai_request_error";
+  }
+  if (statusCode >= 400) {
+    return "http_error";
+  }
+  return "";
 }

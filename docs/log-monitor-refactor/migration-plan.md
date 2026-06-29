@@ -25,7 +25,6 @@ prod/dev 共用同一套服务，但必须用 `environment` 隔离。详见 [dev
 - `analytics_events`
 - `structured_logs`
 - `external_api_calls`
-- `worker_events`
 - `job_timeline_events`
 - materialized views
 
@@ -84,7 +83,10 @@ backend / worker / sdgb-worker 统一 JSON log：
 - eventName。
 - errorClass。
 
-写 `structured_logs`。console 仍输出，便于 docker logs。
+写 `structured_logs`。console 仍输出，便于 docker logs。当前实现不单独建
+`worker_events` 表；worker 生命周期、job picked/completed/failed 等排障事件
+统一通过 `structured_logs` 和 `job_timeline_events` 表达，避免多一套未生产的
+事件表。
 
 ### 1.4 external API calls
 

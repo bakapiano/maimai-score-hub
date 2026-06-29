@@ -12,7 +12,7 @@
 | Artifact | raw HTML、large JSON、debug dump | 本地 volume，后续对象存储 |
 | Alert config | 规则、订阅、silence、通知状态 | MongoDB |
 
-## 新增 ObservabilityIngestModule
+## ObservabilityModule 当前实现
 
 新增 backend 模块：
 
@@ -22,18 +22,16 @@ backend/src/modules/observability
   services/
     clickhouse.service.ts
     observability-ingest.service.ts
-    artifact.service.ts
-    worker-status.service.ts
-    alert-evaluator.service.ts
-  schemas/
-    alert-rule.schema.ts
-    alert-subscription.schema.ts
-    alert-event.schema.ts
-  dto/
-    rum-event.dto.ts
-    analytics-event.dto.ts
-    worker-log.dto.ts
-    external-api-call.dto.ts
+    observability-query.service.ts
+    observability-env.ts
+  interceptors/
+    http-observability.interceptor.ts
+
+backend/src/api/observability
+  observability.controller.ts
+
+backend/src/api/admin
+  admin-observability.controller.ts
 ```
 
 内部接口：
@@ -44,11 +42,10 @@ recordFrontendRum(event)
 recordAnalyticsEvent(event)
 recordStructuredLog(event)
 recordExternalApiCall(event)
-recordWorkerEvent(event)
 recordJobTimelineEvent(event)
-saveArtifact(input)
-updateWorkerHeartbeat(status)
 ```
+
+当前没有单独的 `worker_events` 表；worker 生命周期、job picked/completed/failed 等排障上下文通过 `structured_logs` 和 `job_timeline_events` 表达。artifact service 已部署在 101，但自动 raw response capture 尚未接入 backend/worker。
 
 ## 写入路径
 

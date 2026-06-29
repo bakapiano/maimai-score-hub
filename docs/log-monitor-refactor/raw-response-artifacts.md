@@ -2,6 +2,24 @@
 
 raw HTML / large JSON response 不进 Mongo，也不进 ClickHouse。ClickHouse 只保存 metadata 和 `artifactKey`；原始响应体作为 gzip artifact 短期落盘。
 
+## 当前实现状态
+
+已实现：
+
+- 101 上的 artifact service。
+- `POST /artifacts/raw-response` 写 gzip 文件。
+- `GET /artifacts/{artifactKey}` 读取 gzip 文件。
+- shared secret 鉴权、路径前缀校验、body 大小限制、TTL/容量清理。
+
+尚未接入：
+
+- DXNet worker / backend 自动保存 error response。
+- 成功响应采样。
+- admin 临时 debug capture 开关。
+- admin artifact viewer UI。
+
+因此当前 ClickHouse `external_api_calls.artifactKey` 字段只有调用方显式传入时才会有值；正常 worker 外部调用 metadata 目前只写 `bodySize` / `errorClass` 等字段。
+
 ## 保存条件
 
 保存 raw response 的目标是排障，不是长期统计。

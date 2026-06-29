@@ -125,26 +125,6 @@ PARTITION BY toYYYYMM(ts)
 ORDER BY (environment, target, apiGroup, statusCode, ts)
 TTL toDateTime(ts) + INTERVAL 90 DAY DELETE;
 
-CREATE TABLE IF NOT EXISTS worker_events
-(
-  ts DateTime64(3, 'Asia/Shanghai'),
-  environment LowCardinality(String),
-  service LowCardinality(String),
-  workerKind LowCardinality(String),
-  workerId LowCardinality(String),
-  eventName LowCardinality(String),
-  jobId String,
-  botFriendCode String,
-  status LowCardinality(String),
-  durationMs UInt32,
-  errorClass LowCardinality(String),
-  attrs Map(String, String)
-)
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(ts)
-ORDER BY (environment, workerKind, eventName, ts)
-TTL toDateTime(ts) + INTERVAL 180 DAY DELETE;
-
 CREATE TABLE IF NOT EXISTS job_timeline_events
 (
   ts DateTime64(3, 'Asia/Shanghai'),
