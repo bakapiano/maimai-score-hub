@@ -41,7 +41,7 @@ admin portal 需要把“实时监控”和“历史分析”分开。现有页�
 
 Bot 表：
 
-- friendCode masked/hash。
+- friendCode。
 - remark。
 - available。
 - lastReportedAt。
@@ -71,9 +71,9 @@ ClickHouse 最近窗口：
 - sdgb failed。
 - prober export failed。
 
-### 5. Recent Cost / Usage
+### 5. Recent Usage / Upstream Pressure
 
-近期花费不一定是真实人民币成本，第一阶段先做“调用预算消耗”：
+外部 call 现在不收费，因此这里不展示“费用”，只展示调用量和上游压力：
 
 - today total external API calls。
 - today `sdgb.get_rival_music` calls。
@@ -81,8 +81,8 @@ ClickHouse 最近窗口：
 - today DXNet friend page calls。
 - today prober export calls。
 - 每小时调用趋势。
-
-后续如果外部服务有明确计费单价，再在 `cost_events.estimatedCost` 填真实金额。
+- DXNet 567 / 空响应趋势。
+- external API p95 latency。
 
 ## History Dashboard
 
@@ -256,4 +256,3 @@ ClickHouse structured logs 查询：
 6. alert events 存 Mongo，长期趋势可同步写 ClickHouse。
 
 后续如果需要成熟 silence/routing，再接 Prometheus/Alertmanager；不是第一阶段前置依赖。
-

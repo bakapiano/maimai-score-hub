@@ -10,7 +10,9 @@
 - 分区按月：`PARTITION BY toYYYYMM(ts)`
 - 常用排序：低基数字段 + `ts`
 - raw HTML / large body 不进 ClickHouse，只保存 `artifactKey`
-- 用户标识使用 `userIdHash`，不直接保存 friendCode 或 Mongo `_id`
+- 用户标识使用明文 `friendCode`；用户确认 friendCode 不是敏感信息。
+- bot 标识使用明文 `botFriendCode`。
+- Mongo `_id` 不进入 ClickHouse，除非后续有明确排障需求。
 - route 使用模板，不保存真实无限路径
 
 ```sql
@@ -37,7 +39,7 @@ CREATE TABLE http_requests
   durationMs UInt32,
   requestBytes UInt32,
   responseBytes UInt32,
-  userIdHash String,
+  friendCode String,
   ipHash String,
   userAgentHash String,
   errorClass LowCardinality(String),
@@ -65,7 +67,7 @@ CREATE TABLE frontend_rum
 (
   ts DateTime64(3, 'Asia/Shanghai'),
   sessionId String,
-  userIdHash String,
+  friendCode String,
   routeTemplate LowCardinality(String),
   pageUrlHash String,
   referrerHash String,
@@ -107,7 +109,7 @@ CREATE TABLE analytics_events
 (
   ts DateTime64(3, 'Asia/Shanghai'),
   eventName LowCardinality(String),
-  userIdHash String,
+  friendCode String,
   sessionId String,
   routeTemplate LowCardinality(String),
   source LowCardinality(String),
@@ -138,9 +140,9 @@ TTL ts + INTERVAL 365 DAY DELETE;
 
 DAU 定义：
 
-- `site_dau`: 当天有 `page_view` 的 distinct `userIdHash`。
-- `sync_dau`: 当天有 `sync_started` / `sync_completed` 的 distinct `userIdHash`。
-- `login_dau`: 当天有 `login_success` 的 distinct `userIdHash`。
+- `site_dau`: 当天有 `page_view` 的 distinct `friendCode`。
+- `sync_dau`: 当天有 `sync_started` / `sync_completed` 的 distinct `friendCode`。
+- `login_dau`: 当天有 `login_success` 的 distinct `friendCode`。
 
 ## `structured_logs`
 
@@ -159,7 +161,7 @@ CREATE TABLE structured_logs
   jobId String,
   workerKind LowCardinality(String),
   workerId LowCardinality(String),
-  botFriendCodeHash String,
+  botFriendCode String,
   eventName LowCardinality(String),
   errorClass LowCardinality(String),
   attrs Map(String, String)
@@ -188,7 +190,7 @@ CREATE TABLE external_api_calls
   jobId String,
   workerKind LowCardinality(String),
   workerId LowCardinality(String),
-  botFriendCodeHash String,
+  botFriendCode String,
   target LowCardinality(String),
   apiGroup LowCardinality(String),
   method LowCardinality(String),
@@ -234,7 +236,7 @@ CREATE TABLE worker_events
   workerId LowCardinality(String),
   eventName LowCardinality(String),
   jobId String,
-  botFriendCodeHash String,
+  botFriendCode String,
   status LowCardinality(String),
   durationMs UInt32,
   errorClass LowCardinality(String),
@@ -275,7 +277,7 @@ CREATE TABLE job_timeline_events
   fromStage LowCardinality(String),
   toStage LowCardinality(String),
   workerId LowCardinality(String),
-  botFriendCodeHash String,
+  botFriendCode String,
   durationMs UInt32,
   errorClass LowCardinality(String),
   message String,
@@ -288,38 +290,6 @@ TTL ts + INTERVAL 180 DAY DELETE;
 ```
 
 用于 job debug 页面按时间线展示。
-
-## `cost_events`
-
-近期花费、调用预算、外部 API 消耗。
-
-```sql
-CREATE TABLE cost_events
-(
-  ts DateTime64(3, 'Asia/Shanghai'),
-  source LowCardinality(String),
-  category LowCardinality(String),
-  unit LowCardinality(String),
-  quantity Float64,
-  estimatedCost Float64,
-  currency LowCardinality(String),
-  jobId String,
-  userIdHash String,
-  attrs Map(String, String)
-)
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(ts)
-ORDER BY (source, category, ts)
-TTL ts + INTERVAL 365 DAY DELETE;
-```
-
-第一阶段即使没有真实金额，也可以先记录调用量：
-
-- `sdgb.get_rival_music` quantity = 1。
-- `sdgb.get_user_map` quantity = 1。
-- `dxnet.friend_vs_page` quantity = 1。
-- `prober_export.diving_fish` quantity = 1。
-- `image_render.best50` quantity = 1。
 
 ## materialized views
 
@@ -360,9 +330,9 @@ AS
 SELECT
   toDate(ts) AS day,
   eventName,
-  uniqState(userIdHash) AS users
+  uniqState(friendCode) AS users
 FROM analytics_events
-WHERE userIdHash != ''
+WHERE friendCode != ''
 GROUP BY day, eventName;
 ```
 
@@ -421,10 +391,10 @@ DAU：
 ```sql
 SELECT
   toDate(ts) AS day,
-  uniqExact(userIdHash) AS dau
+  uniqExact(friendCode) AS dau
 FROM analytics_events
 WHERE eventName = 'page_view'
-  AND userIdHash != ''
+  AND friendCode != ''
 GROUP BY day
 ORDER BY day;
 ```
@@ -437,3 +407,26 @@ FROM external_api_calls
 WHERE jobId = {jobId:String}
 ORDER BY ts ASC;
 ```
+
+## 脱敏与禁止入库
+
+`friendCode` 和 `botFriendCode` 可以明文入 ClickHouse。其余敏感或高风险内容按下表处理：
+
+| 类型 | 字段/内容 | 处理 |
+| --- | --- | --- |
+| 密码 | 明文密码、`currentPassword`、`newPassword` | 永不记录 |
+| 密码 hash | `passwordHash` | 不进 ClickHouse / logs |
+| JWT | `Authorization: Bearer ...`、`netbot_token` | 只记录是否存在，不记录值 |
+| Admin/API secret | `ADMIN_PASSWORD`、`API_SHARED_SECRET`、`X-Admin-Password`、`X-API-Secret` | 永不记录 |
+| DB/Redis 密码 | `MONGO_PASSWORD`、`REDIS_PASSWORD`、ClickHouse password | 永不记录 |
+| 查分器 token | `divingFishImportToken`、`lxnsImportToken` | 永不记录 |
+| maimai cookie | `Cookie`、`Set-Cookie`、worker cookie jar | 永不记录 |
+| OAuth/recovery URL | ADB recovery URL、带登录态/跳转 token 的 URL | 不记录完整 URL，只记录 `urlGroup` |
+| QR 原文 | 机台二维码 raw payload、登录二维码内容 | 不进 ClickHouse；只在业务流程短期使用 |
+| raw HTML body | DXNet 页面 HTML、错误页面 HTML | 不进 ClickHouse；需要时进 artifact，短 TTL |
+| 大 JSON body | 外部 API 大响应、含用户成绩/个人信息 payload | 默认不进 ClickHouse；只存 `bodySize` / `bodyHash` / `artifactKey` |
+| 请求 header | `Cookie`、`Authorization`、secret header | 敏感 header 删除 |
+| IP 地址 | 客户端 IP | 存 `ipHash`，不存明文 |
+| User-Agent | 完整 UA | 默认存 `userAgentHash` 或粗分类 browser/os/device |
+| 错误堆栈 | 可能包含 token、URL、body 的 stack | scrub 后再记录 |
+| artifact 内容 | raw HTML / dump 文件 | admin-only，TTL，大小限制 |

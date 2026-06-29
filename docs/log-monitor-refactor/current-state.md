@@ -64,7 +64,7 @@
 - auto update metrics 一套聚合。
 - prober export metrics 一套聚合。
 
-它们都能工作，但没有统一的数据模型。后续新增 RUM、DAU、cost、alert 时，如果继续沿用这个模式，会继续积累无法解释的 admin 指标。
+它们都能工作，但没有统一的数据模型。后续新增 RUM、DAU、usage、alert 时，如果继续沿用这个模式，会继续积累无法解释的 admin 指标。
 
 ## Breaking change 后不保留的东西
 
@@ -81,4 +81,3 @@
 - `bot_statuses` 是 bot 可用性 source of truth。
 - admin 仍需要 job debug，但数据来源变成 Mongo + ClickHouse + artifact。
 - worker logs 仍有价值，但应进入 ClickHouse structured logs，而不是 Mongo。
-

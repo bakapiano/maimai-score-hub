@@ -30,7 +30,7 @@ admin portal 需要拆成两个心智模型：**现在是否健康** 和 **历�
 | BullMQ depth | queue counts | Redis |
 | rate-limit buckets | token bucket state | Redis |
 | recent errors | 最近 5-15m ClickHouse 查询 | ClickHouse |
-| recent cost | `cost_events` 最近 1h/24h | ClickHouse |
+| recent usage / upstream pressure | `external_api_calls` 最近 1h/24h | ClickHouse |
 
 ### 实时指标
 
@@ -50,7 +50,8 @@ admin portal 需要拆成两个心智模型：**现在是否健康** 和 **历�
 | `sdgb.queue_depth` | sdgb queued/processing |
 | `auto_update.due_backlog` | 到期但未处理的 probe state 数 |
 | `rate_limit.tokens_remaining` | 关键 API token bucket 剩余 |
-| `cost.estimated_today` | 今日估算成本或调用预算消耗 |
+| `usage.external_calls_today` | 今日外部调用量 |
+| `usage.upstream_error_rate` | 近期上游错误率 |
 
 ## 历史分析数据
 
@@ -76,13 +77,12 @@ admin portal 需要拆成两个心智模型：**现在是否健康** 和 **历�
 | `external_api_calls` | DXNet/sdgb/prober 外部调用统计 |
 | `worker_events` | worker 生命周期、cookie、bot 状态事件 |
 | `job_timeline_events` | job 状态流转和排障 |
-| `cost_events` | 调用成本、预算、外部 API 额度 |
 
 ### 历史指标
 
 | 指标 | 来源 |
 | --- | --- |
-| DAU / WAU / MAU | `analytics_events` distinct userIdHash |
+| DAU / WAU / MAU | `analytics_events` distinct `friendCode` |
 | route PV / UV | `analytics_events` |
 | API requests per route | `http_requests` |
 | API p50/p95/p99 latency | `http_requests` |
@@ -95,7 +95,7 @@ admin portal 需要拆成两个心智模型：**现在是否健康** 和 **历�
 | DXNet 567 count/rate | `external_api_calls.errorClass = 'rate_limit_567'` |
 | sdgb job throughput/error | `job_timeline_events` / `external_api_calls` |
 | auto update probe success/change/no-change | `worker_events` / `job_timeline_events` |
-| estimated cost per day | `cost_events` |
+| external calls per day | `external_api_calls` |
 
 ## admin portal 重构
 
@@ -107,7 +107,7 @@ admin portal 需要拆成两个心智模型：**现在是否健康** 和 **历�
    - 数据主要来自 Mongo/Redis current state + ClickHouse 最近窗口。
 
 2. **History**
-   - API、RUM、DAU、worker、external API、cost。
+   - API、RUM、DAU、worker、external API、usage。
    - 默认窗口 24h / 7d / 30d。
    - 数据来自 ClickHouse。
 
@@ -116,4 +116,3 @@ Job Debug 是第三类入口：
 - 当前状态来自 Mongo。
 - 时间线、日志、外部 API trace 来自 ClickHouse。
 - raw body 来自 artifact。
-

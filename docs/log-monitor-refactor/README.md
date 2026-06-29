@@ -55,7 +55,7 @@ TTL 漂移：
 
 现有 admin portal 的问题不是“缺一个日志搜索框”，而是三类需求混在一起：
 
-1. **线上实时监控**：现在是否健康，worker 是否在线，队列是否堆积，近 5-15 分钟是否异常，今天已经消耗多少调用/成本。
+1. **线上实时监控**：现在是否健康，worker 是否在线，队列是否堆积，近 5-15 分钟是否异常，今天外部调用量和上游压力如何。
 2. **历史分析数据**：历史 DAU、每个 API 的访问量、p50/p95/p99 latency、错误率、前端 load time、RUM、功能使用趋势。
 3. **排障上下文**：点开一个 job 或一段时间，查看 worker log、外部 API 调用、错误和可选 raw HTML artifact。
 
@@ -111,7 +111,6 @@ ClickHouse 保存：
 - worker structured logs。
 - external API call metadata。
 - job timeline events。
-- cost / quota events。
 - 聚合后的 materialized views。
 
 当前规模不需要 ClickHouse 集群、Keeper 或 Kafka。单体 ClickHouse 足够覆盖 7-90 天观测数据和 admin/Grafana 查询。
@@ -124,7 +123,7 @@ ClickHouse 保存：
 
 - ClickHouse 只保存 `method`、`urlGroup`、`statusCode`、`durationMs`、`bodySize`、`bodyHash`、`artifactKey`、`errorClass`。
 - raw HTML / large JSON 保存为 gzip artifact，TTL 24h 或 7d，只在 error sample、debug mode 或手动 capture 时启用。
-- artifact store 初期可以是后端本地 volume；后续可迁对象存储。
+- artifact store 第一阶段放在 101 机器的 `/srv/maimai-observability/artifacts`，通过内网 artifact service 写入和读取；后续可迁对象存储。
 
 原因：线上 `job_api_logs` 10 万条已经形成 6.96GB 逻辑数据。raw HTML 查询价值低、体积大、隐私风险高，不应当作为常规日志字段。
 
@@ -162,7 +161,7 @@ admin portal
 - [realtime-vs-history.md](./realtime-vs-history.md)
 - [architecture.md](./architecture.md)
 - [clickhouse-schema.md](./clickhouse-schema.md)
+- [raw-response-artifacts.md](./raw-response-artifacts.md)
 - [dashboards-alerts.md](./dashboards-alerts.md)
 - [clickhouse-single-node.md](./clickhouse-single-node.md)
 - [migration-plan.md](./migration-plan.md)
-

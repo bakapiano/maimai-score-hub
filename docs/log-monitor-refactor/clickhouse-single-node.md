@@ -12,7 +12,6 @@
 - worker structured logs。
 - external API calls。
 - job timeline。
-- cost events。
 
 不承载业务 source of truth，不影响用户同步主链路。
 
@@ -94,7 +93,6 @@ backend/worker/frontend
 | `worker_events` | 180d |
 | `job_timeline_events` | 180d |
 | `analytics_events` | 365d |
-| `cost_events` | 365d |
 | 聚合 MV | 365d 或更久 |
 
 保留策略用 ClickHouse TTL 表达，并定期检查 TTL 是否生效。
@@ -156,4 +154,3 @@ admin Storage 页面展示：
 - OpenTelemetry 全链路强制接入。
 - raw HTML 常规入库。
 - 用 ClickHouse 替代 Mongo 业务查询。
-

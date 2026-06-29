@@ -77,7 +77,6 @@
 - `external_api_calls`
 - `worker_events`
 - `job_timeline_events`
-- `cost_events`
 - materialized views
 
 ### 1.3 backend ClickHouse client
@@ -103,7 +102,7 @@
 - statusCode。
 - durationMs。
 - responseBytes。
-- userIdHash。
+- friendCode。
 - traceId/requestId。
 
 替换 admin 里基于 `jobs` 粗算 API 访问量/latency 的页面。
@@ -155,7 +154,7 @@ backend / worker / sdgb-worker 统一 JSON log：
 - FCP / LCP / INP / CLS / TTFB / loadMs。
 - JS error。
 - frontend fetch duration。
-- sessionId / userIdHash。
+- sessionId / friendCode。
 
 批量上报 `/api/v1/observability/rum`。
 
@@ -196,7 +195,7 @@ DAU 从 `analytics_events` 计算，不从 token 或 Mongo user update 猜。
 - Worker & Bot。
 - Queue & Backlog。
 - Recent Errors。
-- Recent Cost。
+- Recent Usage / Upstream Pressure。
 
 数据：
 
@@ -292,4 +291,3 @@ ClickHouse 是旁路系统，回滚不应影响业务：
 - ClickHouse disk 增长在预估范围内。
 - admin Realtime 和 History 页面口径可解释。
 - 旧 admin 指标页面移除或标记废弃。
-

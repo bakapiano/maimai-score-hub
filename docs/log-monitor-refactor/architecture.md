@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Business source of truth | 用户、成绩、job 状态、bot 状态、自动更新状态 | MongoDB |
 | Runtime state | 队列、限流、锁、worker heartbeat、短期 cache | Redis |
-| Historical observability | API/RUM/analytics/logs/external calls/job events/cost events | ClickHouse |
+| Historical observability | API/RUM/analytics/logs/external calls/job events | ClickHouse |
 | Artifact | raw HTML、large JSON、debug dump | 本地 volume，后续对象存储 |
 | Alert config | 规则、订阅、silence、通知状态 | MongoDB |
 
@@ -46,7 +46,6 @@ recordStructuredLog(event)
 recordExternalApiCall(event)
 recordWorkerEvent(event)
 recordJobTimelineEvent(event)
-recordCostEvent(event)
 saveArtifact(input)
 updateWorkerHeartbeat(status)
 ```
@@ -62,7 +61,7 @@ Nest 全局 interceptor 记录：
 - `statusCode`
 - `durationMs`
 - `requestBytes` / `responseBytes`
-- `userIdHash`，如果有登录用户
+- `friendCode`，如果有登录用户
 - `traceId` / `requestId`
 
 真实 URL 不作为聚合维度，避免 `jobId`、query string 造成高基数。
@@ -75,7 +74,7 @@ Nest 全局 interceptor 记录：
 - FCP / LCP / INP / CLS / TTFB / page load。
 - JS error。
 - API fetch duration，可关联 `traceId`。
-- sessionId、userIdHash。
+- sessionId、friendCode。
 
 通过 `POST /api/v1/observability/rum` 批量上报。
 
@@ -177,7 +176,7 @@ admin 历史 tab 和 Grafana 查 ClickHouse：
 - frontend route performance。
 - worker / sdgb throughput。
 - external API success rate。
-- cost / quota trend。
+- upstream usage / pressure trend。
 
 ### Job Debug
 
@@ -210,10 +209,11 @@ breaking change 后推荐路径：
 
 ## 安全和基数控制
 
-- `friendCode`、用户 `_id` 只存 hash，不直接进入 ClickHouse。
+- `friendCode` 和 `botFriendCode` 明文进入 ClickHouse，便于 admin 排障。
+- Mongo `_id` 默认不进入 ClickHouse。
+- token、cookie、secret、raw QR、raw body 禁止进入 ClickHouse。
 - route 必须是模板，不存无限路径。
 - `jobId` 可以作为排障字段，但不要作为常规聚合维度。
 - raw body 不进 ClickHouse。
 - logs `attrs` 限制大小，例如 4KB。
 - 前端 RUM 采样率可配，初始 100%，后续按流量下调。
-
