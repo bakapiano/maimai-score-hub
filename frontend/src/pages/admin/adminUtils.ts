@@ -187,3 +187,17 @@ export interface AdminOutletContext {
 export function useAdminContext() {
   return useOutletContext<AdminOutletContext>();
 }
+
+export type AdminEnvironment = "prod" | "dev";
+
+export function getDefaultAdminEnvironment(): AdminEnvironment {
+  if (typeof window === "undefined") {
+    return "prod";
+  }
+  const host = window.location.hostname;
+  return host === "localhost" ||
+    host === "127.0.0.1" ||
+    host.endsWith(".devtunnels.ms")
+    ? "dev"
+    : "prod";
+}

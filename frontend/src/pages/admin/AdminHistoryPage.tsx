@@ -12,7 +12,11 @@ import {
 import { IconRefresh } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
-import { useAdminContext } from "./adminUtils";
+import {
+  type AdminEnvironment,
+  getDefaultAdminEnvironment,
+  useAdminContext,
+} from "./adminUtils";
 
 type HistorySection = "api" | "rum" | "analytics" | "workers";
 type HistoryWindow = "24h" | "7d" | "30d";
@@ -26,7 +30,9 @@ const SECTION_LABELS: Record<HistorySection, string> = {
 
 export default function AdminHistoryPage() {
   const { password } = useAdminContext();
-  const [env, setEnv] = useState<"prod" | "dev">("prod");
+  const [env, setEnv] = useState<AdminEnvironment>(() =>
+    getDefaultAdminEnvironment(),
+  );
   const [windowValue, setWindowValue] = useState<HistoryWindow>("24h");
   const [section, setSection] = useState<HistorySection>("api");
   const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
@@ -59,7 +65,7 @@ export default function AdminHistoryPage() {
         <Stack gap={0}>
           <Title order={2}>History</Title>
           <Text size="sm" c="dimmed">
-            ClickHouse 历史分析；默认 prod，可显式切换 dev
+            ClickHouse 历史分析；本地和 devtunnel 默认 dev，生产默认 prod
           </Text>
         </Stack>
         <Button
@@ -75,7 +81,7 @@ export default function AdminHistoryPage() {
       <Card withBorder>
         <Group>
           <Select
-            label="Environment"
+            label="数据环境"
             value={env}
             onChange={(value) => setEnv(value === "dev" ? "dev" : "prod")}
             data={[

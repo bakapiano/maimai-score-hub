@@ -18,8 +18,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   type SearchJobResult,
+  type AdminEnvironment,
   ERROR_CATEGORY_META,
   categorizeJobError,
+  getDefaultAdminEnvironment,
   useAdminContext,
 } from "./adminUtils";
 import { adminApi } from "../../api/appClient";
@@ -34,6 +36,9 @@ type JobDebugView = {
 
 export default function AdminJobDebugPage() {
   const { password } = useAdminContext();
+  const [env, setEnv] = useState<AdminEnvironment>(() =>
+    getDefaultAdminEnvironment(),
+  );
 
   const [friendCode, setFriendCode] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -83,7 +88,7 @@ export default function AdminJobDebugPage() {
       if (!password) return;
       setSelectedJobId(jobId);
       setJobDebugLoading(true);
-      const res = await fetch(`/api/v1/admin/jobs/${jobId}/debug?env=prod`, {
+      const res = await fetch(`/api/v1/admin/jobs/${jobId}/debug?env=${env}`, {
         headers: { "x-api-secret": password },
       });
       setJobDebugLoading(false);
@@ -93,7 +98,7 @@ export default function AdminJobDebugPage() {
         setJobDebug(null);
       }
     },
-    [password],
+    [env, password],
   );
 
   // 进入页面时用默认 filter 加载数据
@@ -109,6 +114,17 @@ export default function AdminJobDebugPage() {
         <Group gap="xs">
           <IconBug size={20} />
           <Text fw={600}>任务调试</Text>
+          <Select
+            label="数据环境"
+            size="xs"
+            value={env}
+            onChange={(value) => setEnv(value === "prod" ? "prod" : "dev")}
+            data={[
+              { value: "dev", label: "dev" },
+              { value: "prod", label: "prod" },
+            ]}
+            w={110}
+          />
         </Group>
 
         <Group gap="sm" align="flex-end">

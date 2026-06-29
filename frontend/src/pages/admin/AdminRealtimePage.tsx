@@ -16,7 +16,9 @@ import { useCallback, useEffect, useState } from "react";
 import {
   type ActiveJob,
   type ActiveJobsStats,
+  type AdminEnvironment,
   type BotStatus,
+  getDefaultAdminEnvironment,
   useAdminContext,
 } from "./adminUtils";
 
@@ -53,8 +55,8 @@ const REFRESH_MS = 10_000;
 
 export default function AdminRealtimePage() {
   const { password } = useAdminContext();
-  const [environment, setEnvironment] = useState<"prod" | "dev">(() =>
-    getDefaultEnvironment(),
+  const [environment, setEnvironment] = useState<AdminEnvironment>(() =>
+    getDefaultAdminEnvironment(),
   );
   const [data, setData] = useState<RealtimeOverview | null>(null);
   const [bots, setBots] = useState<BotStatus[]>([]);
@@ -181,18 +183,6 @@ export default function AdminRealtimePage() {
       <RowsCard title="今日外部调用量" rows={data?.usageToday} />
     </Stack>
   );
-}
-
-function getDefaultEnvironment(): "prod" | "dev" {
-  if (typeof window === "undefined") {
-    return "prod";
-  }
-  const host = window.location.hostname;
-  return host === "localhost" ||
-    host === "127.0.0.1" ||
-    host.endsWith(".devtunnels.ms")
-    ? "dev"
-    : "prod";
 }
 
 function MetricCard({

@@ -14,7 +14,11 @@ import {
 import { IconLogs, IconRefresh } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useAdminContext } from "./adminUtils";
+import {
+  type AdminEnvironment,
+  getDefaultAdminEnvironment,
+  useAdminContext,
+} from "./adminUtils";
 import { ScrollableTable } from "../../components/ScrollableTable";
 
 interface WorkerLogRow {
@@ -42,6 +46,9 @@ const POLL_INTERVAL_MS = 3_000;
 
 export default function AdminWorkerLogsPage() {
   const { password } = useAdminContext();
+  const [env, setEnv] = useState<AdminEnvironment>(() =>
+    getDefaultAdminEnvironment(),
+  );
 
   const [workers, setWorkers] = useState<WorkerEntry[]>([]);
   const [filterKind, setFilterKind] = useState<string | null>(null);
@@ -64,7 +71,7 @@ export default function AdminWorkerLogsPage() {
 
   const loadWorkers = useCallback(async () => {
     if (!password) return;
-    const params = new URLSearchParams({ env: "prod" });
+    const params = new URLSearchParams({ env });
     if (sinceMinutes) params.set("sinceMinutes", sinceMinutes);
     const res = await fetch(`/api/v1/admin/history/log-workers?${params}`, {
       headers: { "x-api-secret": password },
@@ -73,14 +80,14 @@ export default function AdminWorkerLogsPage() {
     const body = (await res.json()) as WorkerEntry[];
     if (cancelled.current) return;
     setWorkers(body);
-  }, [password, sinceMinutes]);
+  }, [env, password, sinceMinutes]);
 
   const load = useCallback(async () => {
     if (!password) return;
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set("env", "prod");
+      params.set("env", env);
       if (filterKind) params.set("workerKind", filterKind);
       if (filterWorker) params.set("workerId", filterWorker);
       if (filterLevel) params.set("level", filterLevel);
@@ -103,6 +110,7 @@ export default function AdminWorkerLogsPage() {
     }
   }, [
     password,
+    env,
     filterKind,
     filterWorker,
     filterLevel,
@@ -137,6 +145,17 @@ export default function AdminWorkerLogsPage() {
             </Text>
           </Group>
           <Group gap="xs">
+            <Select
+              label="数据环境"
+              size="xs"
+              value={env}
+              onChange={(value) => setEnv(value === "prod" ? "prod" : "dev")}
+              data={[
+                { value: "dev", label: "dev" },
+                { value: "prod", label: "prod" },
+              ]}
+              w={110}
+            />
             <Switch
               label="自动刷新"
               size="sm"
