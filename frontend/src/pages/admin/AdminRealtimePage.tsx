@@ -358,12 +358,34 @@ function QueueCard({
       <Group mt="sm">
         {Object.entries(queue ?? {}).map(([key, value]) => (
           <Badge key={key} variant="light">
-            {key}: {value ?? "-"}
+            {formatQueueLabel(key)}：{formatQueueValue(key, value)}
           </Badge>
         ))}
       </Group>
     </Card>
   );
+}
+
+function formatQueueLabel(key: string): string {
+  const labels: Record<string, string> = {
+    queued: "排队中",
+    processing: "处理中",
+    failed: "失败",
+    completed: "已完成",
+    oldestQueuedAgeSeconds: "最久排队",
+    oldestProcessingAgeSeconds: "最久处理",
+  };
+  return labels[key] ?? key;
+}
+
+function formatQueueValue(key: string, value: number | null): string {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+  if (key.toLowerCase().includes("age") || key.toLowerCase().includes("seconds")) {
+    return formatSeconds(value);
+  }
+  return String(value);
 }
 
 function RowsCard({
@@ -429,7 +451,14 @@ function formatDuration(value: number | null | undefined): string {
   if (!Number.isFinite(value ?? NaN)) {
     return "-";
   }
-  const seconds = Math.max(0, Math.floor((value ?? 0) / 1000));
+  return formatSeconds(Math.max(0, Math.floor((value ?? 0) / 1000)));
+}
+
+function formatSeconds(value: number | null | undefined): string {
+  if (!Number.isFinite(value ?? NaN)) {
+    return "-";
+  }
+  const seconds = Math.max(0, Math.floor(value ?? 0));
   if (seconds < 60) {
     return `${seconds}s`;
   }
