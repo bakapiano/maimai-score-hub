@@ -3,6 +3,7 @@ import {
   Button,
   Card,
   Group,
+  Select,
   SimpleGrid,
   Stack,
   Table,
@@ -52,6 +53,9 @@ const REFRESH_MS = 10_000;
 
 export default function AdminRealtimePage() {
   const { password } = useAdminContext();
+  const [environment, setEnvironment] = useState<"prod" | "dev">(() =>
+    getDefaultEnvironment(),
+  );
   const [data, setData] = useState<RealtimeOverview | null>(null);
   const [bots, setBots] = useState<BotStatus[]>([]);
   const [activeJobs, setActiveJobs] = useState<ActiveJobsStats | null>(null);
@@ -63,7 +67,9 @@ export default function AdminRealtimePage() {
     try {
       const headers = { "x-api-secret": password };
       const [overviewRes, botsRes, activeJobsRes] = await Promise.all([
-        fetch("/api/v1/admin/realtime/overview?env=prod", { headers }),
+        fetch(`/api/v1/admin/realtime/overview?env=${environment}`, {
+          headers,
+        }),
         fetch("/api/v1/admin/bots", { headers }),
         fetch("/api/v1/admin/dxnet-jobs/active", { headers }),
       ]);
@@ -79,7 +85,7 @@ export default function AdminRealtimePage() {
     } finally {
       setLoading(false);
     }
-  }, [password]);
+  }, [environment, password]);
 
   useEffect(() => {
     void load();
@@ -98,14 +104,27 @@ export default function AdminRealtimePage() {
             当前健康状态、Bot 可用性、实时任务、队列和最近错误
           </Text>
         </Stack>
-        <Button
-          leftSection={<IconRefresh size={16} />}
-          onClick={() => void load()}
-          loading={loading}
-          variant="light"
-        >
-          刷新
-        </Button>
+        <Group align="flex-end">
+          <Select
+            label="数据环境"
+            size="xs"
+            value={environment}
+            onChange={(value) => setEnvironment(value === "prod" ? "prod" : "dev")}
+            data={[
+              { value: "dev", label: "dev" },
+              { value: "prod", label: "prod" },
+            ]}
+            w={110}
+          />
+          <Button
+            leftSection={<IconRefresh size={16} />}
+            onClick={() => void load()}
+            loading={loading}
+            variant="light"
+          >
+            刷新
+          </Button>
+        </Group>
       </Group>
 
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
@@ -162,6 +181,18 @@ export default function AdminRealtimePage() {
       <RowsCard title="今日外部调用量" rows={data?.usageToday} />
     </Stack>
   );
+}
+
+function getDefaultEnvironment(): "prod" | "dev" {
+  if (typeof window === "undefined") {
+    return "prod";
+  }
+  const host = window.location.hostname;
+  return host === "localhost" ||
+    host === "127.0.0.1" ||
+    host.endsWith(".devtunnels.ms")
+    ? "dev"
+    : "prod";
 }
 
 function MetricCard({
