@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import {
   SearchJobsQuerySchema,
   type SearchJobsQuery,
@@ -6,7 +6,6 @@ import {
 
 import { SharedSecretGuard } from '../../common/guards/shared-secret.guard';
 import { AdminJobQueryService } from '../../modules/admin/services/admin-job-query.service';
-import { JobApiLogService } from '../../modules/job/api-log/api-log.service';
 import { JobService } from '../../modules/job/services/job.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
@@ -15,7 +14,6 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 export class AdminDxnetJobsController {
   constructor(
     private readonly adminJobQueryService: AdminJobQueryService,
-    private readonly apiLogService: JobApiLogService,
     private readonly jobService: JobService,
   ) {}
 
@@ -34,11 +32,6 @@ export class AdminDxnetJobsController {
       page: query.page,
       pageSize: query.pageSize,
     });
-  }
-
-  @Get(':jobId/api-logs')
-  async getJobApiLogs(@Param('jobId') jobId: string) {
-    return await this.apiLogService.getLogsByJobId(jobId);
   }
 
   /**

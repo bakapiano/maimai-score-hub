@@ -7,13 +7,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createClient, type RedisClientType } from 'redis';
 
-export interface RedisStreamEntry {
-  id: string;
-  fields: Record<string, string>;
-}
-
-type RedisFieldValue = string | number | boolean | null | undefined;
-
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
@@ -79,42 +72,6 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client.keys(pattern);
   }
 
-  async xAddMaxLen(
-    streamKey: string,
-    fields: Record<string, RedisFieldValue>,
-    maxLen: number,
-  ): Promise<string> {
-    const args = ['XADD', streamKey];
-    if (Number.isFinite(maxLen) && maxLen > 0) {
-      args.push('MAXLEN', '~', String(Math.floor(maxLen)));
-    }
-    args.push('*');
-
-    for (const [key, value] of Object.entries(fields)) {
-      if (value === undefined) {
-        continue;
-      }
-      args.push(key, value === null ? '' : String(value));
-    }
-
-    return await this.client.sendCommand(args);
-  }
-
-  async xRevRange(
-    streamKey: string,
-    count: number,
-  ): Promise<RedisStreamEntry[]> {
-    const raw = await this.client.sendCommand([
-      'XREVRANGE',
-      streamKey,
-      '+',
-      '-',
-      'COUNT',
-      String(Math.max(1, Math.floor(count))),
-    ]);
-    return this.parseStreamEntries(raw);
-  }
-
   private getRedisUrl(): string {
     const explicit = this.config.get<string>('REDIS_URL');
     if (explicit) {
@@ -131,38 +88,5 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   private redactRedisUrl(url: string): string {
     return url.replace(/:\/\/:[^@]+@/, '://:<redacted>@');
-  }
-
-  private parseStreamEntries(raw: unknown): RedisStreamEntry[] {
-    if (!Array.isArray(raw)) {
-      return [];
-    }
-    const entries: RedisStreamEntry[] = [];
-
-    for (const row of raw) {
-      if (!Array.isArray(row) || row.length < 2) {
-        continue;
-      }
-      const rowItems = row as unknown[];
-      const id = String(rowItems[0]);
-      const payload: unknown = rowItems[1];
-      const fields: Record<string, string> = {};
-
-      if (Array.isArray(payload)) {
-        for (let i = 0; i + 1 < payload.length; i += 2) {
-          fields[String(payload[i])] = String(payload[i + 1]);
-        }
-      } else if (payload && typeof payload === 'object') {
-        for (const [key, value] of Object.entries(
-          payload as Record<string, unknown>,
-        )) {
-          fields[key] = String(value);
-        }
-      }
-
-      entries.push({ id, fields });
-    }
-
-    return entries;
   }
 }

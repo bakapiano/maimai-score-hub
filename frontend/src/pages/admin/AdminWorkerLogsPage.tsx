@@ -21,7 +21,7 @@ interface WorkerLogRow {
   workerKind: string;
   workerId: string;
   ts: string;
-  level: "log" | "warn" | "error";
+  level: "info" | "warn" | "error" | "debug";
   message: string;
 }
 
@@ -32,9 +32,10 @@ interface WorkerEntry {
 }
 
 const LEVEL_COLOR: Record<WorkerLogRow["level"], string> = {
-  log: "gray",
+  info: "gray",
   warn: "yellow",
   error: "red",
+  debug: "blue",
 };
 
 const POLL_INTERVAL_MS = 3_000;
@@ -63,20 +64,23 @@ export default function AdminWorkerLogsPage() {
 
   const loadWorkers = useCallback(async () => {
     if (!password) return;
-    const res = await fetch("/api/v1/admin/worker-logs/workers", {
+    const params = new URLSearchParams({ env: "prod" });
+    if (sinceMinutes) params.set("sinceMinutes", sinceMinutes);
+    const res = await fetch(`/api/v1/admin/history/log-workers?${params}`, {
       headers: { "x-api-secret": password },
     });
     if (!res.ok) return;
     const body = (await res.json()) as WorkerEntry[];
     if (cancelled.current) return;
     setWorkers(body);
-  }, [password]);
+  }, [password, sinceMinutes]);
 
   const load = useCallback(async () => {
     if (!password) return;
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      params.set("env", "prod");
       if (filterKind) params.set("workerKind", filterKind);
       if (filterWorker) params.set("workerId", filterWorker);
       if (filterLevel) params.set("level", filterLevel);
@@ -84,19 +88,16 @@ export default function AdminWorkerLogsPage() {
       if (sinceMinutes) params.set("sinceMinutes", sinceMinutes);
       params.set("limit", "500");
       const res = await fetch(
-        `/api/v1/admin/worker-logs?${params.toString()}`,
+        `/api/v1/admin/history/logs?${params.toString()}`,
         {
           headers: { "x-api-secret": password },
         },
       );
       if (!res.ok) return;
-      const body = (await res.json()) as {
-        items: WorkerLogRow[];
-        total: number;
-      };
+      const body = (await res.json()) as WorkerLogRow[];
       if (cancelled.current) return;
-      setItems(body.items);
-      setTotal(body.total);
+      setItems(body);
+      setTotal(body.length);
     } finally {
       setLoading(false);
     }
@@ -192,9 +193,10 @@ export default function AdminWorkerLogsPage() {
             onChange={setFilterLevel}
             clearable
             data={[
-              { value: "log", label: "log" },
+              { value: "info", label: "info" },
               { value: "warn", label: "warn" },
               { value: "error", label: "error" },
+              { value: "debug", label: "debug" },
             ]}
             w={110}
           />

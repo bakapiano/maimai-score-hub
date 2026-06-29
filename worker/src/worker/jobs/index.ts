@@ -1,9 +1,9 @@
 import type { Job } from "../../common/types.ts";
 import {
-  clearApiLogBuffer,
-  flushApiLogs,
-  recordApiLog,
-} from "../../common/backend/api-logs.ts";
+  clearExternalApiCallBuffer,
+  flushExternalApiCalls,
+  recordExternalApiCall,
+} from "../../common/backend/api-calls.ts";
 import { MaimaiClient } from "../../common/maimai/client.ts";
 import { CookieExpiredError } from "../../common/maimai/infra/errors.ts";
 import { JobSession } from "./job-session.ts";
@@ -30,7 +30,7 @@ export class JobHandler {
             this.session.job.priority ??
             getJobTypePriority(this.session.job.jobType ?? null),
           onRequestLog: (entry) =>
-            recordApiLog(this.session.job.id, entry, {
+            recordExternalApiCall(this.session.job.id, entry, {
               botFriendCode: this.session.job.botUserFriendCode,
             }),
         },
@@ -54,13 +54,13 @@ export class JobHandler {
     } finally {
       this.watchdog.stop();
 
-      await flushApiLogs(this.session.job.id).catch((err) => {
+      await flushExternalApiCalls(this.session.job.id).catch((err) => {
         console.warn(
-          `[JobHandler] Job ${this.session.job.id}: Failed to flush API logs`,
+          `[JobHandler] Job ${this.session.job.id}: Failed to flush external API calls`,
           err,
         );
       });
-      clearApiLogBuffer(this.session.job.id);
+      clearExternalApiCallBuffer(this.session.job.id);
     }
 
     this.cleanupFriendAfterComplete();

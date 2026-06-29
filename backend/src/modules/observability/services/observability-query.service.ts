@@ -201,22 +201,30 @@ export class ObservabilityQueryService {
   async getStructuredLogs(input: {
     environment?: unknown;
     service?: string;
+    workerKind?: string;
     workerId?: string;
     level?: string;
     jobId?: string;
     q?: string;
+    sinceMinutes?: unknown;
     limit?: unknown;
   }) {
     const environment = parseObservabilityEnvironment(input.environment);
     const limit = Math.min(2000, Math.max(1, Number(input.limit) || 500));
+    const sinceMinutes = clampSinceMinutes(input.sinceMinutes);
     const conditions = ['environment = {environment:String}'];
     const params: Record<string, string | number | boolean> = {
       environment,
       limit,
+      sinceMinutes,
     };
     if (input.service) {
       conditions.push('service = {service:String}');
       params.service = input.service;
+    }
+    if (input.workerKind) {
+      conditions.push('workerKind = {workerKind:String}');
+      params.workerKind = input.workerKind;
     }
     if (input.workerId) {
       conditions.push('workerId = {workerId:String}');
@@ -253,11 +261,35 @@ export class ObservabilityQueryService {
         attrs
       FROM structured_logs
       WHERE ${conditions.join(' AND ')}
-        AND ts >= now() - INTERVAL 7 DAY
+        AND ts >= now() - toIntervalMinute({sinceMinutes:UInt32})
       ORDER BY ts DESC
       LIMIT {limit:UInt32}
       `,
       params,
+    );
+  }
+
+  async getStructuredLogWorkers(input: {
+    environment?: unknown;
+    sinceMinutes?: unknown;
+  }) {
+    const environment = parseObservabilityEnvironment(input.environment);
+    const sinceMinutes = clampSinceMinutes(input.sinceMinutes);
+    return this.clickhouse.query(
+      `
+      SELECT
+        workerId,
+        workerKind,
+        max(ts) AS lastSeenAt
+      FROM structured_logs
+      WHERE environment = {environment:String}
+        AND ts >= now() - toIntervalMinute({sinceMinutes:UInt32})
+        AND workerId != ''
+      GROUP BY workerId, workerKind
+      ORDER BY lastSeenAt DESC
+      LIMIT 1000
+      `,
+      { environment, sinceMinutes },
     );
   }
 
@@ -401,4 +433,11 @@ function ageSeconds(date: Date | undefined | null, now: Date): number | null {
     return null;
   }
   return Math.max(0, Math.floor((now.getTime() - date.getTime()) / 1000));
+}
+
+function clampSinceMinutes(input: unknown): number {
+  const parsed = Number(input);
+  return Number.isFinite(parsed)
+    ? Math.min(7 * 24 * 60, Math.max(1, Math.floor(parsed)))
+    : 60;
 }

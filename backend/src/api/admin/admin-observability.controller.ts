@@ -48,20 +48,35 @@ export class AdminObservabilityController {
   getStructuredLogs(
     @Query('env') env?: string,
     @Query('service') service?: string,
+    @Query('workerKind') workerKind?: string,
     @Query('workerId') workerId?: string,
     @Query('level') level?: string,
     @Query('jobId') jobId?: string,
     @Query('q') q?: string,
+    @Query('sinceMinutes') sinceMinutes?: string,
     @Query('limit') limit?: string,
   ) {
     return this.observability.getStructuredLogs({
       environment: env,
       service,
+      workerKind,
       workerId,
       level,
       jobId,
       q,
+      sinceMinutes,
       limit,
+    });
+  }
+
+  @Get('history/log-workers')
+  getStructuredLogWorkers(
+    @Query('env') env?: string,
+    @Query('sinceMinutes') sinceMinutes?: string,
+  ) {
+    return this.observability.getStructuredLogWorkers({
+      environment: env,
+      sinceMinutes,
     });
   }
 

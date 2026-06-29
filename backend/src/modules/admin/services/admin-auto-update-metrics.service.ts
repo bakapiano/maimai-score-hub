@@ -1,11 +1,16 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 
-import { RedisService } from '../../../common/redis/redis.service';
 import { AutoUpdateRunEntity } from '../../auto-update/schemas/auto-update-run.schema';
 import { BotStatusEntity } from '../../bots/schemas/bot-status.schema';
 import { JobEntity } from '../../job/schemas/job.schema';
+import { ClickHouseService } from '../../observability/services/clickhouse.service';
+import {
+  getObservabilityEnvironment,
+  type ObservabilityEnvironment,
+} from '../../observability/services/observability-env';
 import { UserEntity } from '../../users/schemas/user.schema';
 
 type AutoUpdateWindowConfig = {
@@ -51,6 +56,8 @@ type AutoUpdateCurrentSnapshot = {
 
 @Injectable()
 export class AdminAutoUpdateMetricsService {
+  private readonly environment: ObservabilityEnvironment;
+
   constructor(
     @InjectModel(JobEntity.name)
     private readonly jobModel: Model<JobEntity>,
@@ -60,15 +67,18 @@ export class AdminAutoUpdateMetricsService {
     private readonly autoUpdateRunModel: Model<AutoUpdateRunEntity>,
     @InjectModel(UserEntity.name)
     private readonly userModel: Model<UserEntity>,
-    private readonly redis: RedisService,
-  ) {}
+    private readonly clickhouse: ClickHouseService,
+    config: ConfigService,
+  ) {
+    this.environment = getObservabilityEnvironment(config);
+  }
 
   /**
    * Aggregated dashboard for the auto-update subsystem. Returns:
    *   - timeline buckets: triggered / skippedHashUnchanged / skippedThrottled
    *     / failed counts per bucket (5min for 24h window, 1h for 7d window)
    *   - duration trend per bucket: avg, p50, p99 of updateScoreDuration
-   *   - 567 rate-limit hits per bucket (parsed from Redis worker log stream)
+   *   - 567 rate-limit hits per bucket (from ClickHouse external_api_calls)
    *   - "now" snapshot: queued + processing counts, per-bot inflight,
    *     active auto-update user count
    *   - capacity estimate: throughput vs current load
@@ -386,21 +396,28 @@ export class AdminAutoUpdateMetricsService {
     since: Date,
     bucketMs: number,
   ): Promise<Map<number, number>> {
-    const streamKey = this.redis.key('logs:worker:dxnet');
-    const rows = await this.redis.xRevRange(streamKey, 10_000);
-    const sinceMs = since.getTime();
+    const rows = await this.clickhouse.query<{ bucket: number; count: number }>(
+      `
+      SELECT
+        toUnixTimestamp(toStartOfInterval(ts, INTERVAL {bucketSeconds:UInt32} SECOND)) * 1000 AS bucket,
+        count() AS count
+      FROM external_api_calls
+      WHERE environment = {environment:String}
+        AND ts >= parseDateTime64BestEffort({since:String}, 3, 'Asia/Shanghai')
+        AND target = 'maimai_dxnet'
+        AND (statusCode = 567 OR errorClass = 'rate_limit_567')
+      GROUP BY bucket
+      ORDER BY bucket ASC
+      `,
+      {
+        environment: this.environment,
+        since: since.toISOString(),
+        bucketSeconds: Math.max(1, Math.floor(bucketMs / 1000)),
+      },
+    );
     const buckets = new Map<number, number>();
-
     for (const row of rows) {
-      const ts = row.fields.ts ? new Date(row.fields.ts).getTime() : NaN;
-      if (!Number.isFinite(ts) || ts < sinceMs) {
-        continue;
-      }
-      if (!row.fields.message?.includes('(567)')) {
-        continue;
-      }
-      const bucket = Math.floor(ts / bucketMs) * bucketMs;
-      buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1);
+      buckets.set(Number(row.bucket), Number(row.count));
     }
 
     return buckets;

@@ -1,6 +1,6 @@
 /**
- * Job API 调用日志客户端
- * 用于收集和批量上报 bot 的 API 调用日志到后端
+ * External API call metadata client.
+ * Buffers DXNet call metadata and reports it to backend/ClickHouse.
  */
 
 import { initClient } from "@ts-rest/core";
@@ -16,7 +16,7 @@ const client = initClient(observabilityContract as any, {
   api: backendTsRestApi,
 }) as any;
 
-interface ApiLogEntry {
+interface ExternalApiCallEntry {
   url: string;
   method: string;
   statusCode: number;
@@ -24,7 +24,7 @@ interface ApiLogEntry {
   responseBody: string | null;
 }
 
-interface ApiLogMetadata {
+interface ExternalApiCallMetadata {
   workerId?: string;
   botFriendCode?: string | null;
 }
@@ -50,10 +50,10 @@ const logBuffers = new Map<string, ApiCallPayload[]>();
 /**
  * 记录一条 API 调用日志
  */
-export function recordApiLog(
+export function recordExternalApiCall(
   jobId: string,
-  entry: ApiLogEntry,
-  metadata: ApiLogMetadata = {},
+  entry: ExternalApiCallEntry,
+  metadata: ExternalApiCallMetadata = {},
 ): void {
   let buffer = logBuffers.get(jobId);
   if (!buffer) {
@@ -82,7 +82,7 @@ export function recordApiLog(
 /**
  * 将缓冲区中的日志批量上报到后端
  */
-export async function flushApiLogs(jobId: string): Promise<void> {
+export async function flushExternalApiCalls(jobId: string): Promise<void> {
   const buffer = logBuffers.get(jobId);
   if (!buffer || buffer.length === 0) return;
 
@@ -97,18 +97,21 @@ export async function flushApiLogs(jobId: string): Promise<void> {
 
     if (response.status !== 201) {
       console.warn(
-        `[ApiLogClient] Failed to flush ${logs.length} logs for job ${jobId}. Status: ${response.status}`,
+        `[ExternalApiCallClient] Failed to flush ${logs.length} calls for job ${jobId}. Status: ${response.status}`,
       );
     }
   } catch (err) {
-    console.warn(`[ApiLogClient] Error flushing logs for job ${jobId}:`, err);
+    console.warn(
+      `[ExternalApiCallClient] Error flushing calls for job ${jobId}:`,
+      err,
+    );
   }
 }
 
 /**
  * 清理某个 job 的日志缓冲区
  */
-export function clearApiLogBuffer(jobId: string): void {
+export function clearExternalApiCallBuffer(jobId: string): void {
   logBuffers.delete(jobId);
 }
 
@@ -143,7 +146,7 @@ function classifyDxnetUrl(url: string): { apiGroup: string; urlGroup: string } {
   return { apiGroup: "maimai.dxnet", urlGroup: "maimai.dxnet.unknown" };
 }
 
-function getErrorClass(entry: ApiLogEntry): string | undefined {
+function getErrorClass(entry: ExternalApiCallEntry): string | undefined {
   if (entry.statusCode === 567) {
     return "rate_limit_567";
   }

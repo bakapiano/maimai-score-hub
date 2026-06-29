@@ -8,7 +8,6 @@ import { AdminObservabilityController } from './admin/admin-observability.contro
 import { SharedSecretGuard } from '../common/guards/shared-secret.guard';
 import { AdminModule } from '../modules/admin/admin.module';
 import { AdminUsersController } from './admin/admin-users.controller';
-import { AdminWorkerLogsController } from './admin/admin-worker-logs.controller';
 import { AuthController } from './auth/auth.controller';
 import { AuthModule } from '../modules/auth/auth.module';
 import { AutoUpdateModule } from '../modules/auto-update/auto-update.module';
@@ -31,11 +30,10 @@ import { SdgbWorkerModule } from '../modules/sdgb-worker/sdgb-worker.module';
 import { SyncModule } from '../modules/sync/sync.module';
 import { UsersModule } from '../modules/users/users.module';
 import { WorkerBotStatusController } from './workers/worker-bots.controller';
-import { WorkerDxnetApiLogController } from './workers/worker-dxnet-api-log.controller';
+import { WorkerDxnetApiCallsController } from './workers/worker-dxnet-api-calls.controller';
 import { WorkerDxnetJobsController } from './workers/worker-dxnet-jobs.controller';
 import { WorkerDxnetTempCacheController } from './workers/worker-dxnet-temp-cache.controller';
 import { WorkerLogIngestController } from './workers/worker-logs.controller';
-import { WorkerLogsModule } from '../modules/worker-logs/worker-logs.module';
 import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller';
 
 @Module({
@@ -53,7 +51,6 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
     SdgbWorkerModule,
     SyncModule,
     UsersModule,
-    WorkerLogsModule,
   ],
   controllers: [
     AuthController,
@@ -71,9 +68,8 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
     AdminDxnetJobsController,
     AdminObservabilityController,
     AdminUsersController,
-    AdminWorkerLogsController,
     WorkerBotStatusController,
-    WorkerDxnetApiLogController,
+    WorkerDxnetApiCallsController,
     WorkerDxnetJobsController,
     WorkerDxnetTempCacheController,
     WorkerLogIngestController,

@@ -105,14 +105,6 @@ export interface SearchJobResult {
   raw: Record<string, unknown>;
 }
 
-export interface ApiLogEntry {
-  url: string;
-  method: string;
-  statusCode: number;
-  bodySize: number | null;
-  createdAt: string;
-}
-
 // ── Constants ──
 
 export const API_SHARED_SECRET_KEY = "api_shared_secret";

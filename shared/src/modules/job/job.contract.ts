@@ -1,5 +1,4 @@
 import {
-  AddApiLogsBodySchema,
   TempCacheBodySchema,
   TempCacheResponseSchema,
 } from "./job-extra.schema";
@@ -135,15 +134,6 @@ export const jobContract = c.router({
       type: z.string(),
     }),
     body: TempCacheBodySchema,
-    responses: {
-      201: z.object({ success: z.boolean() }),
-    },
-  },
-  addApiLogs: {
-    method: "POST",
-    path: "/workers/dxnet/jobs/:jobId/api-logs",
-    pathParams: z.object({ jobId: z.string() }),
-    body: AddApiLogsBodySchema,
     responses: {
       201: z.object({ success: z.boolean() }),
     },

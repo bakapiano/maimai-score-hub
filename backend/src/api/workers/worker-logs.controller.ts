@@ -6,13 +6,10 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import type { WorkerStructuredLogEntry } from '@maimai-score-hub/shared';
 
 import { SharedSecretGuard } from '../../common/guards/shared-secret.guard';
 import { ObservabilityIngestService } from '../../modules/observability/services/observability-ingest.service';
-import {
-  WorkerLogsService,
-  type WorkerLogIngestEntry,
-} from '../../modules/worker-logs/services/worker-logs.service';
 
 interface IngestBody {
   workerId?: unknown;
@@ -25,14 +22,11 @@ interface IngestBody {
  */
 @Controller('workers/logs')
 export class WorkerLogIngestController {
-  constructor(
-    private readonly logs: WorkerLogsService,
-    private readonly observability: ObservabilityIngestService,
-  ) {}
+  constructor(private readonly observability: ObservabilityIngestService) {}
 
   @Post(':kind/batches')
   @UseGuards(SharedSecretGuard)
-  async ingest(@Param('kind') kind: string, @Body() body: IngestBody) {
+  ingest(@Param('kind') kind: string, @Body() body: IngestBody) {
     if (kind !== 'sdgb' && kind !== 'dxnet') {
       throw new BadRequestException('kind must be one of: sdgb, dxnet');
     }
@@ -46,19 +40,12 @@ export class WorkerLogIngestController {
     if (!Array.isArray(body.entries)) {
       throw new BadRequestException('entries must be an array');
     }
-    const redisResult = await this.logs.ingest(
-      kind,
-      workerId,
-      body.entries as WorkerLogIngestEntry[],
-    );
     const clickhouseResult = this.observability.recordStructuredLogs({
       service: `${kind}-worker`,
       workerKind: kind,
       workerId,
-      entries: body.entries as WorkerLogIngestEntry[],
+      entries: body.entries as WorkerStructuredLogEntry[],
     });
-    return {
-      accepted: Math.max(redisResult.accepted, clickhouseResult.accepted),
-    };
+    return clickhouseResult;
   }
 }

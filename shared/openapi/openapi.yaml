@@ -2367,56 +2367,6 @@ paths:
                     type: boolean
                 required:
                   - success
-  /workers/dxnet/jobs/{jobId}/api-logs:
-    post:
-      tags: *a5
-      parameters:
-        - name: jobId
-          in: path
-          required: true
-          schema:
-            type: string
-      operationId: job.addApiLogs
-      requestBody:
-        description: Body
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                logs:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      url:
-                        type: string
-                      method:
-                        type: string
-                      statusCode:
-                        type: number
-                      bodySize:
-                        type: integer
-                        minimum: 0
-                        nullable: true
-                    required:
-                      - url
-                      - method
-                      - statusCode
-              required:
-                - logs
-      responses:
-        "201":
-          description: "201"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                required:
-                  - success
   /catalog/music:
     get:
       tags:
@@ -2781,25 +2731,6 @@ paths:
       responses:
         "200":
           description: "200"
-  /admin/dxnet-jobs/{jobId}/api-logs:
-    get:
-      tags: *a6
-      parameters:
-        - name: jobId
-          in: path
-          required: true
-          schema:
-            type: string
-      operationId: admin.getJobApiLogs
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  nullable: true
   /admin/catalog/covers/sync:
     post:
       tags: *a6
@@ -2986,6 +2917,13 @@ paths:
           in: query
           schema:
             type: string
+        - name: workerKind
+          in: query
+          schema:
+            type: string
+            enum:
+              - dxnet
+              - sdgb
         - name: workerId
           in: query
           schema:
@@ -2999,6 +2937,10 @@ paths:
           schema:
             type: string
         - name: q
+          in: query
+          schema:
+            type: string
+        - name: sinceMinutes
           in: query
           schema:
             type: string
@@ -3016,6 +2958,42 @@ paths:
                 type: array
                 items:
                   nullable: true
+  /admin/history/log-workers:
+    get:
+      tags: *a6
+      parameters:
+        - name: env
+          in: query
+          schema:
+            type: string
+            enum:
+              - prod
+              - dev
+        - name: sinceMinutes
+          in: query
+          schema:
+            type: string
+      operationId: admin.getHistoryLogWorkers
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    workerId:
+                      type: string
+                    workerKind:
+                      type: string
+                    lastSeenAt:
+                      type: string
+                  required:
+                    - workerId
+                    - workerKind
+                    - lastSeenAt
   /admin/jobs/{jobId}/debug:
     get:
       tags: *a6
