@@ -73,6 +73,50 @@ module.exports = {
       max_restarts: 5,
     },
     {
+      name: "msh-worker",
+      script: process.execPath,
+      args: "--enable-source-maps --experimental-strip-types src/index.ts",
+      cwd: path.join(root, "worker"),
+      env: {
+        NODE_ENV: "dev",
+        WORKER_ID: "dxnet-worker-local-dev",
+        JOB_SERVICE_BASE_URL: "http://127.0.0.1:9050/",
+        REDIS_HOST: "127.0.0.1",
+        REDIS_PORT: "6379",
+        REDIS_DB: "0",
+        REDIS_KEY_PREFIX: "maimai:",
+        API_SHARED_SECRET:
+          env.API_SHARED_SECRET || env.ADMIN_PASSWORD || "change-me-local-admin",
+        ADMIN_PASSWORD:
+          env.ADMIN_PASSWORD || env.API_SHARED_SECRET || "change-me-local-admin",
+        ...env,
+      },
+      autorestart: true,
+      max_restarts: 5,
+    },
+    {
+      name: "msh-sdgb-worker",
+      script: process.execPath,
+      args: "--enable-source-maps --experimental-strip-types src/index.ts",
+      cwd: path.join(root, "sdgb-worker"),
+      env: {
+        NODE_ENV: "dev",
+        WORKER_ID: "sdgb-worker-local-dev",
+        BACKEND_URL: "http://127.0.0.1:9050",
+        REDIS_HOST: "127.0.0.1",
+        REDIS_PORT: "6379",
+        REDIS_DB: "0",
+        REDIS_KEY_PREFIX: "maimai:",
+        API_SHARED_SECRET:
+          env.API_SHARED_SECRET || env.ADMIN_PASSWORD || "change-me-local-admin",
+        ADMIN_PASSWORD:
+          env.ADMIN_PASSWORD || env.API_SHARED_SECRET || "change-me-local-admin",
+        ...env,
+      },
+      autorestart: true,
+      max_restarts: 5,
+    },
+    {
       name: "msh-devtunnel",
       script: "devtunnel.exe",
       args:

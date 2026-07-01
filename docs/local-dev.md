@@ -63,6 +63,8 @@ The repo includes a PM2-based local dev supervisor. It starts:
 - Memurai on `127.0.0.1:6379`
 - backend on `127.0.0.1:9050`
 - frontend on `127.0.0.1:3001`
+- DXNet worker (`msh-worker`) connected to local backend/Redis
+- sdgb-worker (`msh-sdgb-worker`) connected to local backend/Redis
 - Microsoft Dev Tunnel for frontend public access
 
 First-time setup:
@@ -108,6 +110,8 @@ Notes:
 - `start-local.ps1` builds `shared` and `backend` once, then starts backend
   from `backend/dist/main.js`. This avoids repeatedly triggering
   `prestart -> openapi:generate` just to boot local dev.
+- `sdgb-worker\` is still untracked and secret-bearing. The supervisor starts it
+  only if the directory and its dependencies exist on this machine.
 - The scripts only stop PM2-managed processes. They do not kill unrelated
   `node.exe` processes by name.
 - Dev Tunnel URL is printed in `msh-devtunnel` logs.
