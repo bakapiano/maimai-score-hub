@@ -136,6 +136,8 @@ jobs:
             upsert_env REDIS_KEY_PREFIX "maimai:"
             upsert_env BULLMQ_PREFIX ""
             upsert_env JOB_SERVICE_BASE_URL "https://api.maiscorehub.bakapiano.com/"
+            upsert_env DXNET_WORKER_CONCURRENCY "256"
+            upsert_env MAX_PROCESS_JOBS "256"
             printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
 
             # Worker 3 (101) has no public IP and goes through a great-firewall
@@ -160,6 +162,8 @@ jobs:
                 REDIS_KEY_PREFIX="maimai:" \
                 BULLMQ_PREFIX="" \
                 JOB_SERVICE_BASE_URL="https://api.maiscorehub.bakapiano.com/" \
+                DXNET_WORKER_CONCURRENCY="256" \
+                MAX_PROCESS_JOBS="256" \
                 docker-compose -f worker/docker-compose.yml up -d --build || exit 1
             else
               sudo env $EXTRA_ENV \
@@ -172,6 +176,8 @@ jobs:
                 REDIS_KEY_PREFIX="maimai:" \
                 BULLMQ_PREFIX="" \
                 JOB_SERVICE_BASE_URL="https://api.maiscorehub.bakapiano.com/" \
+                DXNET_WORKER_CONCURRENCY="256" \
+                MAX_PROCESS_JOBS="256" \
                 docker compose -f worker/docker-compose.yml up -d --build || exit 1
             fi
             sudo docker image prune -f
