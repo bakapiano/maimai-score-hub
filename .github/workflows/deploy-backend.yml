@@ -43,10 +43,11 @@ jobs:
           printf '%s\n' "$SSH_KEY" > ~/.ssh/backend_deploy_key
           chmod 600 ~/.ssh/backend_deploy_key
           timeout 30s ssh-keyscan -p "$BACKEND_PORT" "$BACKEND_HOST" >> ~/.ssh/known_hosts
-          timeout 120s scp -v -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
-            -P "$BACKEND_PORT" -i ~/.ssh/backend_deploy_key \
-            /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz \
-            "$BACKEND_USER@$BACKEND_HOST:/tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz"
+          timeout 180s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+            -p "$BACKEND_PORT" -i ~/.ssh/backend_deploy_key \
+            "$BACKEND_USER@$BACKEND_HOST" \
+            "cat > /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz" \
+            < /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz
 
       - name: Deploy via SSH
         timeout-minutes: 30

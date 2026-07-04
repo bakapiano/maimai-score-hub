@@ -21,8 +21,10 @@ jobs:
         run: |
           tar -czf /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz \
             frontend shared
+          ls -lh /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz
 
       - name: Upload source archive
+        timeout-minutes: 3
         env:
           FRONTEND_HOST: ${{ secrets.FRONTEND_HOST }}
           FRONTEND_USER: ${{ secrets.FRONTEND_USER }}
@@ -34,12 +36,15 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/frontend_deploy_key
           chmod 600 ~/.ssh/frontend_deploy_key
-          ssh-keyscan -p "$FRONTEND_PORT" "$FRONTEND_HOST" >> ~/.ssh/known_hosts
-          scp -P "$FRONTEND_PORT" -i ~/.ssh/frontend_deploy_key \
-            /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz \
-            "$FRONTEND_USER@$FRONTEND_HOST:/tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz"
+          timeout 30s ssh-keyscan -p "$FRONTEND_PORT" "$FRONTEND_HOST" >> ~/.ssh/known_hosts
+          timeout 180s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+            -p "$FRONTEND_PORT" -i ~/.ssh/frontend_deploy_key \
+            "$FRONTEND_USER@$FRONTEND_HOST" \
+            "cat > /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz" \
+            < /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz
 
       - name: Deploy via SSH
+        timeout-minutes: 30
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.FRONTEND_HOST }}

@@ -17,8 +17,10 @@ jobs:
         run: |
           tar -czf /tmp/maimai-observability-${GITHUB_SHA}.tgz \
             -C deploy/observability .
+          ls -lh /tmp/maimai-observability-${GITHUB_SHA}.tgz
 
       - name: Upload source archive
+        timeout-minutes: 3
         env:
           OBSERVABILITY_HOST: ${{ secrets.OBSERVABILITY_HOST || secrets.BACKEND_HOST }}
           OBSERVABILITY_USER: ${{ secrets.OBSERVABILITY_USER || secrets.BACKEND_USER }}
@@ -34,12 +36,15 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/observability_deploy_key
           chmod 600 ~/.ssh/observability_deploy_key
-          ssh-keyscan -p "$OBSERVABILITY_PORT" "$OBSERVABILITY_HOST" >> ~/.ssh/known_hosts
-          scp -P "$OBSERVABILITY_PORT" -i ~/.ssh/observability_deploy_key \
-            /tmp/maimai-observability-${GITHUB_SHA}.tgz \
-            "$OBSERVABILITY_USER@$OBSERVABILITY_HOST:/tmp/maimai-observability-${GITHUB_SHA}.tgz"
+          timeout 30s ssh-keyscan -p "$OBSERVABILITY_PORT" "$OBSERVABILITY_HOST" >> ~/.ssh/known_hosts
+          timeout 180s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+            -p "$OBSERVABILITY_PORT" -i ~/.ssh/observability_deploy_key \
+            "$OBSERVABILITY_USER@$OBSERVABILITY_HOST" \
+            "cat > /tmp/maimai-observability-${GITHUB_SHA}.tgz" \
+            < /tmp/maimai-observability-${GITHUB_SHA}.tgz
 
       - name: Deploy via SSH
+        timeout-minutes: 30
         uses: appleboy/ssh-action@v1.0.3
         env:
           CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
