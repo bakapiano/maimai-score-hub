@@ -15,6 +15,7 @@ import { IconLinkOff, IconUpload } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
+import { recordAnalyticsEvent } from "../utils/observability";
 
 /**
  * Cabinet (sdgb) binding + auto-update opt-in.
@@ -70,6 +71,9 @@ export function CabinetBindingCard({
   const submitBind = useCallback(
     async (formData: FormData | string) => {
       setBusy("bind");
+      recordAnalyticsEvent("cabinet_bind_started", {
+        inputType: typeof formData === "string" ? "text" : "image",
+      });
       try {
         const res = await fetch("/api/v1/me/cabinet", {
           method: "PUT",
@@ -93,6 +97,9 @@ export function CabinetBindingCard({
             title: "绑定成功",
             message: "二维码已绑定",
           });
+          recordAnalyticsEvent("cabinet_bind_completed", {
+            inputType: typeof formData === "string" ? "text" : "image",
+          });
           setQrText("");
           await refreshFromServer();
           return;
@@ -110,7 +117,13 @@ export function CabinetBindingCard({
           title: "绑定失败",
           message: json?.message ?? json?.error ?? `HTTP ${res.status}`,
         });
+        recordAnalyticsEvent("cabinet_bind_failed", {
+          statusCode: res.status,
+        });
       } catch (err) {
+        recordAnalyticsEvent("cabinet_bind_failed", {
+          errorClass: err instanceof Error ? err.name : "Error",
+        });
         notifications.show({
           color: "red",
           title: "绑定失败",
@@ -161,6 +174,9 @@ export function CabinetBindingCard({
           color: "green",
           message: enabled ? "自动更新已开启" : "自动更新已关闭",
         });
+        recordAnalyticsEvent(
+          enabled ? "auto_update_enabled" : "auto_update_disabled",
+        );
         onChanged?.();
       } else {
         notifications.show({
@@ -194,6 +210,7 @@ export function CabinetBindingCard({
         setHasCabinetUserId(false);
         setAutoUpdate(false);
         notifications.show({ color: "green", message: "已解绑" });
+        recordAnalyticsEvent("auto_update_disabled", { reason: "unbind" });
         onChanged?.();
       } else {
         notifications.show({

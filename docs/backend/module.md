@@ -15,7 +15,7 @@
 | ------------------ | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AppModule`        | `backend/src/app.module.ts`             | 后端根模块。加载全局配置、定时任务模块、MongoDB 连接、全局 Redis 模块和 `BackendApiModule`。                                                 |
 | `BackendApiModule` | `backend/src/api/backend-api.module.ts` | API 聚合模块。导入全部业务 module，注册 `/auth`、`/me`、`/catalog`、`/public`、`/workers`、`/admin` controller，并提供 `SharedSecretGuard`。 |
-| `RedisModule`      | `backend/src/common/redis`              | 全局 Redis 基础设施。封装 key prefix、JSON get/set、删除、keys、Redis Stream 写入与反向读取。                                                |
+| `RedisModule`      | `backend/src/common/redis`              | 全局 Redis 基础设施。封装 key prefix、JSON get/set、删除和 keys 查询；用于运行态缓存、队列、锁和 heartbeat，不保存历史日志。                 |
 
 ## 业务模块总览
 
@@ -32,7 +32,7 @@
 | `SdgbWorkerModule`  | `backend/src/modules/sdgb-worker`  | `SdgbJobService`、`SdgbJobDispatcher`                      | 机台协议 worker 的任务队列、调度和同步调用封装。                           |
 | `SyncModule`        | `backend/src/modules/sync`         | `SyncService`                                              | 成绩同步快照落库、成绩合并和导出到 prober。                                |
 | `UsersModule`       | `backend/src/modules/users`        | `UsersService`、`CabinetService`、`AccountDeletionService` | 用户资料、导入 token、机台绑定、自动更新状态和账号删除。                   |
-| `WorkerLogsModule`  | `backend/src/modules/worker-logs`  | `WorkerLogsService`                                        | worker 日志上报、查询、workerId 列表和日志指标聚合。                       |
+| `ObservabilityModule` | `backend/src/modules/observability` | `ClickHouseService`、`ObservabilityIngestService`、`ObservabilityQueryService` | ClickHouse 批量写入、RUM/analytics/structured logs/external API metadata、admin history/realtime 查询。 |
 
 ## 模块职责明细
 
@@ -84,7 +84,7 @@
 - `get_user_recent_event` 成功完成后会触发 `SyncService.mergeRecentEvents()` 合并 FC/FS；如曲名 + 难度匹配多个 musicId，会创建带 `diffsToScrape` 的 `update_score` fallback。
 - 支持机台绑定用户的 cabinet fast path：通过 sdgb 加 rival 先建立好友关系，再创建普通 `update_score` job。
 - `JobTempCacheService` 用 Redis 临时缓存 `update_score` 中间 FriendVS 解析结果。
-- `JobApiLogService` 用 Redis 保存 worker 外部 API 调用 metadata，供调试页面查看。
+- job timeline、worker 外部 API metadata 和相关 structured logs 写入 ClickHouse，由 admin Job Debug 组合查询。
 
 ### `MusicModule`
 
@@ -128,13 +128,16 @@
 - `AccountDeletionService` 删除账号时同步清理该用户的 sync 和 job 数据。
 - 其他模块通常通过好友码读取用户，通过用户 `_id` 更新设置。
 
-### `WorkerLogsModule`
+### `ObservabilityModule`
 
-- 接收 dxnet/sdgb worker 批量上报的控制台日志。
-- 日志写入 Redis Stream：`logs:worker:dxnet` / `logs:worker:sdgb`，按 `WORKER_LOG_STREAM_MAXLEN` 限长。
-- 支持按 worker 类型、workerId、level、关键字、时间窗口过滤日志。
-- 提供最近出现过的 workerId 列表，供管理后台筛选。
-- 提供按时间桶统计包含特定文本的日志数量，供限流等指标使用。
+- 后端 HTTP interceptor 记录 API route、status、duration、request/response bytes 和 trace/request id。
+- `/observability/rum` 和 `/observability/events` 接收前端 RUM / analytics 批量上报。
+- `/workers/logs/:kind/batches` 接收 dxnet/sdgb structured logs 并写入 ClickHouse `structured_logs`。
+- `/workers/dxnet/jobs/:jobId/api-calls` 接收外部 API metadata 并写入 ClickHouse `external_api_calls`。
+- backend 内部外部依赖也写入 `external_api_calls`：Diving Fish、LXNS、曲库、封面下载、成绩图远程图片。
+- `/workers/:kind/external-api-calls` 提供通用 worker 外部调用上报入口，供 sdgb-worker 等 tracked/untracked worker 使用。
+- `JobService` / `SdgbJobService` 写入 ClickHouse `job_timeline_events`，Job Debug 不再依赖旧 Mongo/Redis debug logs。
+- ClickHouse 写入失败只丢弃 observability event，不阻塞业务主链路。
 
 ## 常见修改定位
 
@@ -149,4 +152,4 @@
 | 成绩图导出                                                   | `ScoreExportModule`、`SyncModule`、`CoverModule`                  |
 | sdgb-worker 机台协议任务                                     | `SdgbWorkerModule`                                                |
 | 管理后台统计和运维动作                                       | `AdminModule` 以及被调用的具体业务模块                            |
-| worker 日志与调试信息                                        | `WorkerLogsModule`、`JobApiLogService`                            |
+| worker 日志、外部 API metadata、Job Debug 时间线              | `ObservabilityModule`                                              |

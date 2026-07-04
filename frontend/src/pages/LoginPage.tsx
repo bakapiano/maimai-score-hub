@@ -41,6 +41,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { hasOfflineData } from "../utils/offlineCache";
 import { AppFooter } from "../components/AppFooter";
 import { InstallAppButton } from "../components/InstallAppButton";
+import { recordAnalyticsEvent } from "../utils/observability";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 type LoginStatus = {
   status?: string;
@@ -98,6 +100,7 @@ function FriendCodeGuide() {
 }
 
 export default function LoginPage() {
+  useDocumentTitle("登陆");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { token, setToken, offline, setOffline } = useAuth();
@@ -313,6 +316,7 @@ export default function LoginPage() {
 
       if (data?.token) {
         setToken(data.token);
+        recordAnalyticsEvent("login_success", { method: "friend_code" });
         setPolling(false);
         try {
           localStorage.removeItem("pendingLoginJobId");
@@ -408,6 +412,7 @@ export default function LoginPage() {
       // Handle skipAuth mode - direct token response
       if (body.skipAuth) {
         setToken(String(body.token ?? ""));
+        recordAnalyticsEvent("login_success", { method: "skip_auth" });
         notifications.show({
           title: "登录成功",
           message: "已跳过验证直接登录",
@@ -486,6 +491,7 @@ export default function LoginPage() {
           }
         } catch {}
         setToken(String(res.body.token));
+        recordAnalyticsEvent("login_success", { method: "password" });
         setPasswordLoginPassword("");
         notifications.show({
           title: "登录成功",
@@ -887,6 +893,9 @@ export default function LoginPage() {
                         <QrLoginForm
                           onSuccess={(t) => {
                             setToken(t);
+                            recordAnalyticsEvent("login_success", {
+                              method: "qr",
+                            });
                             navigate("/");
                           }}
                           onBusyChange={setQrBusy}

@@ -3,6 +3,7 @@ import { json, urlencoded } from 'express';
 
 import type { AddressInfo } from 'net';
 import { AppModule } from './app.module';
+import { BackendLoggerService } from './modules/observability/services/backend-logger.service';
 import { NestFactory } from '@nestjs/core';
 import * as dns from 'node:dns';
 import { lookup as originalLookup } from 'node:dns';
@@ -57,7 +58,8 @@ function isRecoverableListenError(err: unknown): err is { code: string } {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(app.get(BackendLoggerService));
   // Match the legacy job-service payload size expectations (job result can be large)
   app.use(json({ limit: '100mb' }));
   app.use(urlencoded({ extended: true, limit: '100mb' }));

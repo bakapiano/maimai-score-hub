@@ -18,7 +18,9 @@ export interface RequestLogEntry {
   url: string;
   method: string;
   statusCode: number;
-  responseBody: string | null;
+  durationMs: number;
+  bodySize: number | null;
+  errorClass?: string;
 }
 
 export interface RequestContext {

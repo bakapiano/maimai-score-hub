@@ -33,6 +33,7 @@ import {
 import { ProfileCard } from "../components/ProfileCard";
 import { CabinetBindingCard } from "../components/CabinetBindingCard";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
+import { recordAnalyticsEvent } from "../utils/observability";
 import { useAuth, type AuthProfile } from "../providers/AuthProvider";
 import { useNavigate } from "react-router-dom";
 
@@ -481,6 +482,9 @@ export default function SyncPage() {
     setSyncError(null);
     setSyncStatus(null);
     chainedFriendshipJobIdRef.current = null;
+    recordAnalyticsEvent("sync_started", {
+      friendCode: profile.friendCode,
+    });
 
     try {
       const friendship = await getFriendshipStatus(token);
@@ -490,16 +494,18 @@ export default function SyncPage() {
         await startFriendshipJob();
       }
     } catch (error) {
+      let finalError: unknown = error;
       if (error instanceof JobApiError && error.code === "needs_friendship") {
         try {
           await startFriendshipJob();
           return;
         } catch (fallbackError) {
-          error = fallbackError;
+          finalError = fallbackError;
         }
       }
       setSyncing(false);
-      const errorMessage = error instanceof Error ? error.message : "未知错误";
+      const errorMessage =
+        finalError instanceof Error ? finalError.message : "未知错误";
       setSyncError(`创建同步任务失败: ${errorMessage}`);
     }
   }, [profile?.friendCode, token, startFriendshipJob, startUpdateScoreJob]);
@@ -536,6 +542,10 @@ export default function SyncPage() {
               return;
             }
             setSyncing(false);
+            recordAnalyticsEvent("sync_completed", {
+              jobId: job.id,
+              jobType: job.jobType,
+            });
             loadProfile();
             loadLastSync({ force: true });
 
@@ -549,6 +559,11 @@ export default function SyncPage() {
             }, 3000);
           } else {
             setSyncing(false);
+            recordAnalyticsEvent("sync_failed", {
+              jobId: job.id,
+              jobType: job.jobType,
+              status: job.status,
+            });
           }
         }
       } catch {
@@ -659,6 +674,7 @@ export default function SyncPage() {
   const queueExport = async (target: ExportTarget) => {
     if (!token) return;
     setExportLoading(target);
+    recordAnalyticsEvent("export_started", { provider: target });
     try {
       const saved = await saveTokens();
       if (!saved) {
@@ -703,7 +719,15 @@ export default function SyncPage() {
             : result?.message || `成绩已导出到 ${exportProviderName(target)}`,
         color: result?.status === "skipped" ? "yellow" : "green",
       });
+      recordAnalyticsEvent("export_completed", {
+        provider: target,
+        status: result?.status ?? job.status,
+      });
     } catch (error) {
+      recordAnalyticsEvent("export_failed", {
+        provider: target,
+        errorClass: error instanceof Error ? error.name : "Error",
+      });
       notifications.show({
         title: "导出失败",
         message: error instanceof Error ? error.message : "未知错误",

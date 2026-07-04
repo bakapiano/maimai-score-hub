@@ -50,7 +50,7 @@ CREATE TABLE http_requests
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
 ORDER BY (environment, service, routeTemplate, method, ts)
-TTL ts + INTERVAL 180 DAY DELETE;
+TTL toDateTime(ts) + INTERVAL 180 DAY DELETE;
 ```
 
 用于：
@@ -93,7 +93,7 @@ CREATE TABLE frontend_rum
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
 ORDER BY (environment, routeTemplate, ts)
-TTL ts + INTERVAL 180 DAY DELETE;
+TTL toDateTime(ts) + INTERVAL 180 DAY DELETE;
 ```
 
 用于：
@@ -123,7 +123,7 @@ CREATE TABLE analytics_events
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
 ORDER BY (environment, eventName, ts)
-TTL ts + INTERVAL 365 DAY DELETE;
+TTL toDateTime(ts) + INTERVAL 365 DAY DELETE;
 ```
 
 建议事件：
@@ -174,7 +174,7 @@ CREATE TABLE structured_logs
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
 ORDER BY (environment, service, level, ts)
-TTL ts + INTERVAL 30 DAY DELETE;
+TTL toDateTime(ts) + INTERVAL 30 DAY DELETE;
 ```
 
 用于：
@@ -213,7 +213,7 @@ CREATE TABLE external_api_calls
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
 ORDER BY (environment, target, apiGroup, statusCode, ts)
-TTL ts + INTERVAL 90 DAY DELETE;
+TTL toDateTime(ts) + INTERVAL 90 DAY DELETE;
 ```
 
 `urlGroup` 示例：
@@ -228,44 +228,6 @@ TTL ts + INTERVAL 90 DAY DELETE;
 - `sdgb.add_rival`
 - `diving_fish.export`
 - `lxns.export`
-
-## `worker_events`
-
-worker 生命周期和业务事件。
-
-```sql
-CREATE TABLE worker_events
-(
-  ts DateTime64(3, 'Asia/Shanghai'),
-  environment LowCardinality(String),
-  service LowCardinality(String),
-  workerKind LowCardinality(String),
-  workerId LowCardinality(String),
-  eventName LowCardinality(String),
-  jobId String,
-  botFriendCode String,
-  status LowCardinality(String),
-  durationMs UInt32,
-  errorClass LowCardinality(String),
-  attrs Map(String, String)
-)
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(ts)
-ORDER BY (environment, workerKind, eventName, ts)
-TTL ts + INTERVAL 180 DAY DELETE;
-```
-
-事件示例：
-
-- `worker_started`
-- `worker_stopped`
-- `bot_cookie_expired`
-- `bot_status_reported`
-- `job_picked`
-- `job_completed`
-- `job_failed`
-- `auto_update_probe_completed`
-- `auto_update_probe_failed`
 
 ## `job_timeline_events`
 
@@ -294,7 +256,7 @@ CREATE TABLE job_timeline_events
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
 ORDER BY (environment, jobId, ts)
-TTL ts + INTERVAL 180 DAY DELETE;
+TTL toDateTime(ts) + INTERVAL 180 DAY DELETE;
 ```
 
 用于 job debug 页面按时间线展示。

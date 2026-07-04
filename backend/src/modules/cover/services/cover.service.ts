@@ -16,6 +16,7 @@ import {
 import { getLxnsSongListUrl } from '../../../common/prober/lxns/transform';
 import type { LxnsApiResponse } from '../../../common/prober/lxns/transform';
 import type { DivingFishItem } from '../../../common/prober/diving-fish/transform';
+import { observeFetch } from '../../../common/observability/external-call-recorder';
 
 type SyncSummary = {
   total: number;
@@ -121,7 +122,17 @@ export class CoverService {
     this.logger.log('Fetching both sources to build ID mapping...');
 
     const [dfRaw, lxnsRaw] = await Promise.all([
-      fetch(DIVING_FISH_MUSIC_URL).then(async (r) => {
+      observeFetch(
+        {
+          target: 'diving_fish',
+          apiGroup: 'catalog',
+          method: 'GET',
+          urlGroup: 'diving_fish.music_data',
+          statusCode: 0,
+          durationMs: 0,
+        },
+        () => fetch(DIVING_FISH_MUSIC_URL),
+      ).then(async (r) => {
         if (!r.ok) {
           throw new Error(`diving-fish responded ${r.status}`);
         }
@@ -131,7 +142,17 @@ export class CoverService {
         }
         return payload as DivingFishItem[];
       }),
-      fetch(getLxnsSongListUrl()).then(async (r) => {
+      observeFetch(
+        {
+          target: 'lxns',
+          apiGroup: 'catalog',
+          method: 'GET',
+          urlGroup: 'lxns.song_list',
+          statusCode: 0,
+          durationMs: 0,
+        },
+        () => fetch(getLxnsSongListUrl()),
+      ).then(async (r) => {
         if (!r.ok) {
           throw new Error(`lxns responded ${r.status}`);
         }
@@ -420,7 +441,18 @@ export class CoverService {
     if (dfId) {
       const url = this.buildDivingFishUrl(dfId);
       try {
-        const res = await fetch(url);
+        const res = await observeFetch(
+          {
+            target: 'diving_fish',
+            apiGroup: 'cover',
+            method: 'GET',
+            urlGroup: 'diving_fish.cover',
+            statusCode: 0,
+            durationMs: 0,
+            attrs: { dbId },
+          },
+          () => fetch(url),
+        );
         if (res.ok) {
           return Buffer.from(await res.arrayBuffer());
         }
@@ -433,7 +465,18 @@ export class CoverService {
     if (lxId) {
       const url = this.buildLxnsUrl(lxId);
       try {
-        const res = await fetch(url);
+        const res = await observeFetch(
+          {
+            target: 'lxns',
+            apiGroup: 'cover',
+            method: 'GET',
+            urlGroup: 'lxns.cover',
+            statusCode: 0,
+            durationMs: 0,
+            attrs: { dbId },
+          },
+          () => fetch(url),
+        );
         const cacheControl = res.headers.get('cache-control');
         if (res.ok && cacheControl !== 'no-cache') {
           return Buffer.from(await res.arrayBuffer());

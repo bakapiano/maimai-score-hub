@@ -30,12 +30,10 @@
 
 下列短生命周期运行态数据不再由 MongoDB 管理：
 
-| Key 模式                                 | 保留期                                    | 用途                                      |
-| ---------------------------------------- | ----------------------------------------- | ----------------------------------------- |
-| `logs:worker:dxnet` / `logs:worker:sdgb` | `WORKER_LOG_STREAM_MAXLEN` 限长           | worker 控制台日志 Redis Stream            |
-| `status:worker:sdgb:{workerId}`          | 约 `SDGB_WORKER_STALE_MS * 2`             | sdgb-worker 心跳和处理计数                |
-| `cache:job-temp:{jobId}:{diff}:{type}`   | `JOB_TEMP_CACHE_TTL_SECONDS`，默认 1 小时 | `update_score` 中间结果缓存               |
-| `debug:api:{jobId}`                      | `API_DEBUG_TTL_SECONDS`，默认 24 小时     | worker API 调用 metadata，不保存 raw body |
+| Key 模式                               | 保留期                                    | 用途                         |
+| -------------------------------------- | ----------------------------------------- | ---------------------------- |
+| `status:worker:sdgb:{workerId}`        | 约 `SDGB_WORKER_STALE_MS * 2`             | sdgb-worker 心跳和处理计数   |
+| `cache:job-temp:{jobId}:{diff}:{type}` | `JOB_TEMP_CACHE_TTL_SECONDS`，默认 1 小时 | `update_score` 中间结果缓存  |
 
 ## Users
 

@@ -11,6 +11,7 @@ import {
   type LxnsApiResponse,
 } from '../../../common/prober/lxns/transform';
 import type { DivingFishItem } from '../../../common/prober/diving-fish/transform';
+import { observeFetch } from '../../../common/observability/external-call-recorder';
 
 const DIVING_FISH_MUSIC_URL =
   'https://www.diving-fish.com/api/maimaidxprober/music_data';
@@ -41,7 +42,17 @@ export class ProberExportMapService {
     this.logger.log('Building prober export map for diving-fish data source');
 
     const [dfRaw, lxnsRaw] = await Promise.all([
-      fetch(DIVING_FISH_MUSIC_URL).then(async (r) => {
+      observeFetch(
+        {
+          target: 'diving_fish',
+          apiGroup: 'catalog',
+          method: 'GET',
+          urlGroup: 'diving_fish.music_data',
+          statusCode: 0,
+          durationMs: 0,
+        },
+        () => fetch(DIVING_FISH_MUSIC_URL),
+      ).then(async (r) => {
         if (!r.ok) {
           throw new Error(`diving-fish responded ${r.status}`);
         }
@@ -51,7 +62,17 @@ export class ProberExportMapService {
         }
         return payload as DivingFishItem[];
       }),
-      fetch(getLxnsSongListUrl()).then(async (r) => {
+      observeFetch(
+        {
+          target: 'lxns',
+          apiGroup: 'catalog',
+          method: 'GET',
+          urlGroup: 'lxns.song_list',
+          statusCode: 0,
+          durationMs: 0,
+        },
+        () => fetch(getLxnsSongListUrl()),
+      ).then(async (r) => {
         if (!r.ok) {
           throw new Error(`lxns responded ${r.status}`);
         }

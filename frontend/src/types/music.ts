@@ -2,6 +2,7 @@ export type MusicChartPayload = {
   cid?: number;
   level?: string;
   detailLevel?: number | null;
+  notes?: unknown;
   charter?: string | null;
 };
 

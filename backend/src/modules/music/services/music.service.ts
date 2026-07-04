@@ -23,6 +23,7 @@ import {
   convertDivingFishItemToDocument,
   type DivingFishItem,
 } from '../../../common/prober/diving-fish/transform';
+import { observeFetch } from '../../../common/observability/external-call-recorder';
 
 const MUSIC_DATA_SOURCE = 'diving-fish';
 
@@ -41,7 +42,17 @@ export class MusicService implements OnModuleInit {
 
   private async fetchJson(url: string): Promise<ResponseLike> {
     if (typeof fetch === 'function') {
-      return fetch(url);
+      return observeFetch(
+        {
+          target: 'diving_fish',
+          apiGroup: 'catalog',
+          method: 'GET',
+          urlGroup: 'diving_fish.music_data',
+          statusCode: 0,
+          durationMs: 0,
+        },
+        () => fetch(url),
+      );
     }
 
     // Fallback for environments without global fetch (Node <18)

@@ -56,6 +56,7 @@ typings/
 
 # dotenv environment variables file
 .env
+.env.local-dev
 
 # next.js build output
 .next
@@ -97,7 +98,10 @@ ocr/scripts/training/
 # (deployed separately). Restrict to the root path so it doesn't shadow
 # backend/src/modules/sdgb-worker.
 /sdgb-worker
-# Local deployment scaffolding for sdgb-worker (compose + readme).
-/deploy
+# Local deployment scaffolding is ignored by default; keep observability Phase 0
+# deployment tracked because it contains no sdgb protocol secrets.
+/deploy/*
+!/deploy/observability/
+!/deploy/observability/**
 
 .playwright-mcp/.claude/

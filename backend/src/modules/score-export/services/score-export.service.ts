@@ -33,6 +33,7 @@ import {
   renderLevelScoresImage,
   renderVersionScoresImage,
 } from '../rendering/score-export.render';
+import { observeFetch } from '../../../common/observability/external-call-recorder';
 
 const LEGACY_VERSION_KEYS = [
   'maimai',
@@ -370,6 +371,8 @@ export class ScoreExportService {
     const music = musicMap.get(score.musicId);
     const chart =
       typeof score.cid === 'string' ? chartMap.get(score.cid) : null;
+    const dxScore = this.parseDxScore(score.dxScore);
+    const dxScoreMax = this.getDxScoreMax(chart);
     const detailLevelText =
       typeof chart?.detailLevel === 'number'
         ? chart.detailLevel.toFixed(1)
@@ -380,12 +383,102 @@ export class ScoreExportService {
       chartIndex: score.chartIndex,
       type: score.type,
       score: score.score ?? null,
+      dxScore: score.dxScore ?? null,
+      dxScoreMax,
+      dxStar:
+        dxScore !== null && dxScoreMax !== null && dxScoreMax > 0
+          ? this.getDxStar((dxScore / dxScoreMax) * 100)
+          : null,
       rating: score.rating ?? null,
       fc: score.fc ?? null,
       fs: score.fs ?? null,
       title: music?.title ?? 'Unknown Title',
       detailLevelText,
     };
+  }
+
+  private parseDxScore(value: string | null | undefined): number | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private getDxScoreMax(chart: ChartPayload | null | undefined): number | null {
+    const total = this.getNotesTotal(chart?.notes);
+    return total !== null ? total * 3 : null;
+  }
+
+  private getNotesTotal(notes: unknown): number | null {
+    if (Array.isArray(notes)) {
+      return this.sumNumericValues(notes);
+    }
+    if (!notes || typeof notes !== 'object') {
+      return null;
+    }
+
+    const record = notes as Record<string, unknown>;
+    const total = this.toFiniteNumber(record.total);
+    if (total !== null) {
+      return total;
+    }
+    if (record.notes !== undefined) {
+      const nested = this.getNotesTotal(record.notes);
+      if (nested !== null) {
+        return nested;
+      }
+    }
+
+    return this.sumNumericValues([
+      record.tap,
+      record.hold,
+      record.slide,
+      record.touch,
+      record.break,
+    ]);
+  }
+
+  private sumNumericValues(values: unknown[]): number | null {
+    let total = 0;
+    let found = false;
+    for (const value of values) {
+      const n = this.toFiniteNumber(value);
+      if (n !== null) {
+        total += n;
+        found = true;
+      }
+    }
+    return found ? total : null;
+  }
+
+  private toFiniteNumber(value: unknown): number | null {
+    const n =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+          ? Number(value)
+          : NaN;
+    return Number.isFinite(n) ? n : null;
+  }
+
+  private getDxStar(dxPercent: number): number {
+    if (dxPercent <= 85) {
+      return 0;
+    }
+    if (dxPercent <= 90) {
+      return 1;
+    }
+    if (dxPercent <= 93) {
+      return 2;
+    }
+    if (dxPercent <= 95) {
+      return 3;
+    }
+    if (dxPercent <= 97) {
+      return 4;
+    }
+    return 5;
   }
 
   private async loadCoverImage(
@@ -432,7 +525,17 @@ export class ScoreExportService {
         () => controller.abort(),
         ScoreExportService.REMOTE_IMAGE_TIMEOUT_MS,
       );
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await observeFetch(
+        {
+          target: 'asset',
+          apiGroup: 'score_export',
+          method: 'GET',
+          urlGroup: classifyImageUrl(url),
+          statusCode: 0,
+          durationMs: 0,
+        },
+        () => fetch(url, { signal: controller.signal }),
+      );
       clearTimeout(timer);
 
       if (!res.ok) {
@@ -473,4 +576,17 @@ export class ScoreExportService {
       return null;
     }
   }
+}
+
+function classifyImageUrl(url: string): string {
+  if (url.includes('wahlap')) {
+    return 'maimai.asset';
+  }
+  if (url.includes('diving-fish')) {
+    return 'diving_fish.asset';
+  }
+  if (url.includes('lxns')) {
+    return 'lxns.asset';
+  }
+  return 'remote.asset';
 }

@@ -15,9 +15,8 @@ import {
 } from "@mantine/core";
 import {
   IconBug,
+  IconChartBar,
   IconClock,
-  IconClockBolt,
-  IconCloudUpload,
   IconDatabase,
   IconLogs,
   IconUsers,
@@ -28,6 +27,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { adminApi } from "../../api/appClient";
 import { useApiSharedSecret } from "./adminUtils";
 import { useDisclosure } from "@mantine/hooks";
+import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 
 type AdminPageMeta = {
   label: string;
@@ -44,16 +44,10 @@ const adminPages: AdminPageMeta[] = [
     color: "orange",
   },
   {
-    label: "自动更新监控",
-    to: "/admin/auto-update",
-    icon: <IconClockBolt size={18} />,
-    color: "indigo",
-  },
-  {
-    label: "查分器导出",
-    to: "/admin/prober-exports",
-    icon: <IconCloudUpload size={18} />,
-    color: "teal",
+    label: "历史分析",
+    to: "/admin/history",
+    icon: <IconChartBar size={18} />,
+    color: "grape",
   },
   {
     label: "数据同步",
@@ -74,8 +68,8 @@ const adminPages: AdminPageMeta[] = [
     color: "cyan",
   },
   {
-    label: "Worker 日志",
-    to: "/admin/worker-logs",
+    label: "实时日志流",
+    to: "/admin/live-logs",
     icon: <IconLogs size={18} />,
     color: "teal",
   },
@@ -95,6 +89,8 @@ export default function AdminLayout() {
   // the `colorScheme === "dark"` style checks below.
   const colorScheme = useComputedColorScheme("light");
   const touchStartX = useRef<number | null>(null);
+  const currentPage = adminPages.find((page) => page.to === location.pathname);
+  useDocumentTitle(currentPage?.label ?? "管理后台");
 
   const verifyPassword = useCallback(async () => {
     if (!inputPassword.trim()) {

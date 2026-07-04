@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage";
 import { MantineProvider } from "@mantine/core";
 import { MusicProvider } from "./providers/MusicProvider";
 import { Notifications } from "@mantine/notifications";
+import { ObservabilityReporter } from "./components/ObservabilityReporter";
 import { PwaInstallProvider } from "./providers/PwaInstallProvider";
 
 // Lazy-loaded routes for code splitting
@@ -15,15 +16,8 @@ const HomePage = lazy(() => import("./pages/HomePage"));
 const ScorePage = lazy(() => import("./pages/ScorePage"));
 const SyncPage = lazy(() => import("./pages/SyncPage"));
 const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
-const AdminActiveJobsPage = lazy(
-  () => import("./pages/admin/AdminActiveJobsPage"),
-);
-const AdminAutoUpdatePage = lazy(
-  () => import("./pages/admin/AdminAutoUpdatePage"),
-);
-const AdminProberExportsPage = lazy(
-  () => import("./pages/admin/AdminProberExportsPage"),
-);
+const AdminRealtimePage = lazy(() => import("./pages/admin/AdminRealtimePage"));
+const AdminHistoryPage = lazy(() => import("./pages/admin/AdminHistoryPage"));
 const AdminJobDebugPage = lazy(() => import("./pages/admin/AdminJobDebugPage"));
 const AdminSyncPage = lazy(() => import("./pages/admin/AdminSyncPage"));
 const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage"));
@@ -65,22 +59,23 @@ function App() {
         <MusicProvider>
           <BrowserRouter>
             <AuthProvider>
+              <ObservabilityReporter />
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/admin" element={<AdminLayout />}>
-                    <Route index element={<AdminActiveJobsPage />} />
-                    <Route path="auto-update" element={<AdminAutoUpdatePage />} />
-                    <Route
-                      path="prober-exports"
-                      element={<AdminProberExportsPage />}
-                    />
+                    <Route index element={<AdminRealtimePage />} />
+                    <Route path="history" element={<AdminHistoryPage />} />
                     <Route path="sync" element={<AdminSyncPage />} />
                     <Route path="job-debug" element={<AdminJobDebugPage />} />
                     <Route path="users" element={<AdminUsersPage />} />
                     <Route
-                      path="worker-logs"
+                      path="live-logs"
                       element={<AdminWorkerLogsPage />}
+                    />
+                    <Route
+                      path="history/logs"
+                      element={<Navigate to="/admin/live-logs" replace />}
                     />
                   </Route>
                   <Route

@@ -95,6 +95,56 @@ ClickHouse 应返回：
 Ok.
 ```
 
+### Windows dev 连接 ClickHouse 配置
+
+本地 backend 负责把 frontend / worker 上报的数据批量写入 ClickHouse；
+frontend 和 worker 不直接连接 ClickHouse。
+
+`backend/.env` 建议：
+
+```text
+OBSERVABILITY_ENABLED=true
+OBSERVABILITY_ENV=dev
+OBSERVABILITY_INSTANCE=local-backend
+CLICKHOUSE_URL=http://192.168.1.101:8123
+CLICKHOUSE_DATABASE=maimai_observability
+CLICKHOUSE_USER=maimai_dev_writer
+CLICKHOUSE_PASSWORD=<dev writer password>
+CLICKHOUSE_FLUSH_INTERVAL_MS=3000
+CLICKHOUSE_MAX_BATCH_ROWS=1000
+CLICKHOUSE_MAX_BUFFERED_ROWS=50000
+```
+
+`worker/.env` 只需要连本地 backend：
+
+```text
+NODE_ENV=dev
+WORKER_ID=dxnet-worker-local
+JOB_SERVICE_BASE_URL=http://127.0.0.1:9050/
+API_SHARED_SECRET=<same as backend API_SHARED_SECRET or ADMIN_PASSWORD>
+```
+
+如果 Windows 到 `192.168.1.101:8123` 不直通，可以先开 SSH tunnel：
+
+```powershell
+ssh -N -L 8123:127.0.0.1:8123 bakapiano@192.168.1.101
+```
+
+然后把 backend 改成：
+
+```text
+CLICKHOUSE_URL=http://127.0.0.1:8123
+```
+
+验证当前 backend 写入状态：
+
+```powershell
+curl -H "x-api-secret: <secret>" http://127.0.0.1:9050/api/v1/admin/observability/status
+```
+
+返回里 `clickhouse.ping=true` 表示连接正常；`bufferedRows` 会在 flush
+间隔内短暂大于 0，`droppedRows` 应保持 0。
+
 ### 2. 建表
 
 只在 101 上执行一次 [clickhouse-schema.md](./clickhouse-schema.md) 的 DDL。
@@ -209,7 +259,6 @@ ALTER TABLE frontend_rum DELETE WHERE environment = 'dev' AND ts < now() - INTER
 ALTER TABLE analytics_events DELETE WHERE environment = 'dev' AND ts < now() - INTERVAL 30 DAY;
 ALTER TABLE structured_logs DELETE WHERE environment = 'dev' AND ts < now() - INTERVAL 7 DAY;
 ALTER TABLE external_api_calls DELETE WHERE environment = 'dev' AND ts < now() - INTERVAL 7 DAY;
-ALTER TABLE worker_events DELETE WHERE environment = 'dev' AND ts < now() - INTERVAL 7 DAY;
 ALTER TABLE job_timeline_events DELETE WHERE environment = 'dev' AND ts < now() - INTERVAL 7 DAY;
 ```
 
@@ -222,4 +271,3 @@ prod/dev 共用 ClickHouse 的风险主要是“查询忘记过滤 environment�
 - admin 所有历史查询必须显式接收 `environment`，默认 prod。
 - dev 成功 raw response 采样率可以比 prod 更高，但要限制总量。
 - prod/dev 使用不同 writer secret。
-

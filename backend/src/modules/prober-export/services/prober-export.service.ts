@@ -4,11 +4,12 @@ import {
   Logger,
   NotFoundException,
   OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Interval } from '@nestjs/schedule';
-import { Queue } from 'bullmq';
+import { Queue, QueueEvents } from 'bullmq';
 import { randomUUID } from 'crypto';
 import type { Model } from 'mongoose';
 
@@ -71,6 +72,15 @@ const STALE_MS = Number(process.env.PROBER_EXPORT_STALE_MS ?? 10 * 60 * 1000);
 const SWEEP_INTERVAL_MS = Number(
   process.env.PROBER_EXPORT_SWEEP_INTERVAL_MS ?? 30_000,
 );
+const ORPHAN_PROCESSING_MS = Number(
+  process.env.PROBER_EXPORT_ORPHAN_PROCESSING_MS ?? 30_000,
+);
+const TERMINAL_STATUSES: ProberExportStatus[] = [
+  'completed',
+  'partial_failed',
+  'failed',
+  'skipped',
+];
 
 function toView(doc: ProberExportJobEntity): ProberExportJobView {
   return {
@@ -116,9 +126,10 @@ function isInvalidTokenError(
 }
 
 @Injectable()
-export class ProberExportService implements OnModuleDestroy {
+export class ProberExportService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ProberExportService.name);
   private readonly queue: Queue<ProberExportJobData>;
+  private readonly queueEvents: QueueEvents;
   private sweepRunning = false;
 
   constructor(
@@ -128,14 +139,38 @@ export class ProberExportService implements OnModuleDestroy {
     private readonly syncs: SyncService,
     config: ConfigService,
   ) {
+    const queueOptions = createBullmqQueueOptions(config);
     this.queue = new Queue<ProberExportJobData>(PROBER_EXPORT_QUEUE_NAME, {
-      ...createBullmqQueueOptions(config),
+      ...queueOptions,
       defaultJobOptions: DEFAULT_WORKER_JOB_OPTIONS,
+    });
+    this.queueEvents = new QueueEvents(PROBER_EXPORT_QUEUE_NAME, queueOptions);
+  }
+
+  onModuleInit(): void {
+    this.queueEvents.on('failed', ({ jobId, failedReason }) => {
+      if (!jobId) {
+        return;
+      }
+      this.markBullmqJobFailed(jobId, failedReason).catch((err) => {
+        this.logger.warn(
+          `failed to mirror prober export BullMQ failure for ${jobId}: ${errorMessage(
+            err,
+          )}`,
+        );
+      });
+    });
+    this.queueEvents.on('stalled', ({ jobId }) => {
+      this.logger.warn(`Prober export BullMQ job stalled id=${jobId}`);
+    });
+    this.queueEvents.on('error', (err) => {
+      this.logger.warn(`Prober export queue events error: ${err.message}`);
     });
   }
 
   async onModuleDestroy(): Promise<void> {
     await this.queue.close();
+    await this.queueEvents.close();
   }
 
   async enqueueAutoExportForSync(input: {
@@ -297,6 +332,7 @@ export class ProberExportService implements OnModuleDestroy {
     try {
       const now = new Date();
       const staleBefore = new Date(now.getTime() - STALE_MS);
+      const orphanBefore = new Date(now.getTime() - ORPHAN_PROCESSING_MS);
       await this.model.updateMany(
         {
           status: 'processing',
@@ -310,6 +346,7 @@ export class ProberExportService implements OnModuleDestroy {
           },
         },
       );
+      await this.releaseProcessingOrphans(orphanBefore, now);
 
       const queued = await this.model
         .find({ status: 'queued' })
@@ -317,7 +354,7 @@ export class ProberExportService implements OnModuleDestroy {
         .limit(200)
         .select({ id: 1 })
         .lean<Array<{ id: string }>>();
-      await Promise.all(queued.map((job) => this.enqueueBullmq(job.id)));
+      await Promise.all(queued.map((job) => this.ensureBullmqJob(job.id)));
     } finally {
       this.sweepRunning = false;
     }
@@ -336,7 +373,7 @@ export class ProberExportService implements OnModuleDestroy {
       const existing = await this.findExisting(input);
       if (existing) {
         if (existing.status === 'queued') {
-          await this.enqueueBullmq(existing.id);
+          await this.ensureBullmqJob(existing.id);
         }
         return toView(existing);
       }
@@ -362,14 +399,32 @@ export class ProberExportService implements OnModuleDestroy {
         createdAt: now,
         updatedAt: now,
       });
-      await this.enqueueBullmq(id);
+      try {
+        await this.ensureBullmqJob(id);
+      } catch (err) {
+        const failedAt = new Date();
+        await this.model.updateOne(
+          { id, status: 'queued' },
+          {
+            $set: {
+              status: 'failed',
+              error: `failed to enqueue prober export BullMQ job: ${errorMessage(
+                err,
+              )}`,
+              completedAt: failedAt,
+              updatedAt: failedAt,
+            },
+          },
+        );
+        throw err;
+      }
       return toView(created.toObject() as ProberExportJobEntity);
     } catch (err) {
       if (input.idempotent && duplicateKey(err)) {
         const existing = await this.findExisting(input);
         if (existing) {
           if (existing.status === 'queued') {
-            await this.enqueueBullmq(existing.id);
+            await this.ensureBullmqJob(existing.id);
           }
           return toView(existing);
         }
@@ -404,6 +459,80 @@ export class ProberExportService implements OnModuleDestroy {
         jobId,
       },
     );
+  }
+
+  private async ensureBullmqJob(jobId: string): Promise<void> {
+    const existing = await this.queue.getJob(jobId);
+    if (existing) {
+      const state = await existing.getState();
+      if (state !== 'failed' && state !== 'completed') {
+        return;
+      }
+      await existing.remove();
+    }
+
+    await this.enqueueBullmq(jobId);
+  }
+
+  private async markBullmqJobFailed(
+    jobId: string,
+    failedReason?: string,
+  ): Promise<void> {
+    const now = new Date();
+    await this.model.updateOne(
+      { id: jobId, status: { $nin: TERMINAL_STATUSES } },
+      {
+        $set: {
+          status: 'failed',
+          error: failedReason || 'BullMQ job failed',
+          completedAt: now,
+          updatedAt: now,
+        },
+      },
+    );
+  }
+
+  private async releaseProcessingOrphans(
+    orphanBefore: Date,
+    now: Date,
+  ): Promise<void> {
+    const processing = await this.model
+      .find({ status: 'processing', claimedAt: { $lte: orphanBefore } })
+      .sort({ claimedAt: 1 })
+      .limit(200)
+      .select({ id: 1 })
+      .lean<Array<{ id: string }>>();
+
+    let released = 0;
+    for (const job of processing) {
+      const existing = await this.queue.getJob(job.id);
+      if (existing) {
+        const state = await existing.getState();
+        if (state !== 'failed' && state !== 'completed') {
+          continue;
+        }
+        await existing.remove();
+      }
+
+      const result = await this.model.updateOne(
+        { id: job.id, status: 'processing' },
+        {
+          $set: {
+            status: 'queued',
+            error: 'orphan export worker lock released',
+            claimedAt: null,
+            updatedAt: now,
+          },
+        },
+      );
+      if (result.modifiedCount > 0) {
+        released += 1;
+      }
+    }
+
+    if (released > 0) {
+      this.logger.warn(`released ${released} orphan prober export jobs`);
+    }
   }
 
   private resolveTargets(user: UserWithTokens): ProberExportProvider[] {

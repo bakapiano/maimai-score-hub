@@ -71,8 +71,8 @@ export function CompactMusicScoreCard({
               borderRadius: 6,
               background:
                 "linear-gradient(145deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))",
-              backdropFilter: "blur(2px)",
-              WebkitBackdropFilter: "blur(2px)",
+              backdropFilter: "blur(0.5px)",
+              WebkitBackdropFilter: "blur(0.5px)",
               border: "1px solid rgba(255,255,255,0.12)",
               boxShadow: "inset 0 1px 3px rgba(255,255,255,0.20)",
               pointerEvents: "none",

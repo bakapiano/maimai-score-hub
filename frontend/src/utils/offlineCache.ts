@@ -8,6 +8,7 @@ const CACHE_PREFIX = "offline_cache_";
 const KEYS = {
   profile: `${CACHE_PREFIX}profile`,
   syncLatest: `${CACHE_PREFIX}sync_latest`,
+  musicList: `${CACHE_PREFIX}music_list`,
 } as const;
 
 function safeGet<T>(key: string): T | null {
@@ -57,6 +58,29 @@ export function cacheSyncLatest(data: CachedSyncLatest): void {
 
 export function getCachedSyncLatest(): CachedSyncLatest | null {
   return safeGet<CachedSyncLatest>(KEYS.syncLatest);
+}
+
+// ── Music list cache ──
+
+export type CachedMusicList<T = unknown> = {
+  version: 1;
+  cachedAt: string;
+  items: T[];
+};
+
+export function cacheMusicList<T>(items: T[]): void {
+  safeSet(KEYS.musicList, {
+    version: 1,
+    cachedAt: new Date().toISOString(),
+    items,
+  } satisfies CachedMusicList<T>);
+}
+
+export function getCachedMusicList<T = unknown>(): T[] | null {
+  const cached = safeGet<CachedMusicList<T> | T[]>(KEYS.musicList);
+  if (Array.isArray(cached)) return cached;
+  if (cached && Array.isArray(cached.items)) return cached.items;
+  return null;
 }
 
 // ── Offline mode flag ──

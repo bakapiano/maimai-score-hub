@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import type { LxnsScore } from './converter';
+import { observeFetch } from '../../observability/external-call-recorder';
 
 const LXNS_ENDPOINT =
   'https://maimai.lxns.net/api/v0/user/maimai/player/scores';
@@ -29,17 +30,33 @@ export async function uploadLxnsScores(
     }
     let result: { ok: boolean; status: number; data: unknown };
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), LXNS_UPLOAD_TIMEOUT_MS);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      LXNS_UPLOAD_TIMEOUT_MS,
+    );
     try {
-      const res = await fetch(LXNS_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Token': token,
+      const res = await observeFetch(
+        {
+          target: 'lxns',
+          apiGroup: 'prober_export',
+          method: 'POST',
+          urlGroup: 'lxns.upload_scores',
+          statusCode: 0,
+          durationMs: 0,
+          bodySize: JSON.stringify({ scores }).length,
+          attrs: { scores: scores.length },
         },
-        body: JSON.stringify({ scores }),
-        signal: controller.signal,
-      });
+        () =>
+          fetch(LXNS_ENDPOINT, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-User-Token': token,
+            },
+            body: JSON.stringify({ scores }),
+            signal: controller.signal,
+          }),
+      );
       const text = await res.text();
       let data: unknown = null;
       try {

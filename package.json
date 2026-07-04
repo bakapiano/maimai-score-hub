@@ -2,10 +2,15 @@
   "name": "maimai-score-hub",
   "private": true,
   "scripts": {
-    "prepare": "husky"
+    "prepare": "husky",
+    "dev:local:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/start-local.ps1",
+    "dev:local:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/stop-local.ps1",
+    "dev:local:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/status-local.ps1",
+    "dev:local:logs": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/logs-local.ps1"
   },
   "devDependencies": {
     "husky": "^9.1.0",
-    "lint-staged": "^15.4.0"
+    "lint-staged": "^15.4.0",
+    "pm2": "^7.0.1"
   }
 }

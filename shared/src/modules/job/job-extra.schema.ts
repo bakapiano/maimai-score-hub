@@ -26,18 +26,6 @@ export const TempCacheResponseSchema = z.object({
   songs: z.array(FriendVsSongSchema),
 });
 
-export const ApiLogEntrySchema = z.object({
-  url: z.string(),
-  method: z.string(),
-  statusCode: z.number(),
-  bodySize: z.number().int().nonnegative().nullable().optional(),
-});
-
-export const AddApiLogsBodySchema = z.object({
-  logs: z.array(ApiLogEntrySchema),
-});
-
 export type TempCachePath = z.infer<typeof TempCachePathSchema>;
 export type FriendVsSong = z.infer<typeof FriendVsSongSchema>;
 export type TempCacheBody = z.infer<typeof TempCacheBodySchema>;
-export type AddApiLogsBody = z.infer<typeof AddApiLogsBodySchema>;

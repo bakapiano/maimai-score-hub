@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { BackendApiModule } from './api/backend-api.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ObservabilityModule } from './modules/observability/observability.module';
 import { RedisModule } from './common/redis/redis.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { createMongooseQueryTimeoutPlugin } from './common/mongoose-query-timeout.plugin';
@@ -104,6 +105,7 @@ function getPositiveInt(
       },
     }),
     RedisModule,
+    ObservabilityModule,
     BackendApiModule,
   ],
   controllers: [AppController],

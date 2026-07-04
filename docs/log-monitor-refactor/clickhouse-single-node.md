@@ -92,7 +92,6 @@ backend/worker/frontend
 | `external_api_calls` | 90d |
 | `http_requests` | 180d |
 | `frontend_rum` | 180d |
-| `worker_events` | 180d |
 | `job_timeline_events` | 180d |
 | `analytics_events` | 365d |
 | 聚合 MV | 365d 或更久 |

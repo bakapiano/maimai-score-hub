@@ -28,6 +28,7 @@ import { SettingsPanel } from "../components/SettingsPanel";
 import { AppFooter } from "../components/AppFooter";
 import { useAuth } from "../providers/AuthProvider";
 import { useDisclosure } from "@mantine/hooks";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { getCachedProfile } from "../utils/offlineCache";
 
 type PageMeta = {
@@ -94,6 +95,7 @@ export default function AuthedLayout() {
   const touchStartX = useRef<number | null>(null);
 
   const currentPage = pages.find((p) => p.to === location.pathname);
+  useDocumentTitle(currentPage?.title ?? null);
 
   const handleLogout = () => {
     if (offline) {
@@ -300,7 +302,6 @@ export default function AuthedLayout() {
               maxWidth: 838,
               margin: "0 auto",
               width: "100%",
-              overflowX: "hidden",
             }}
           >
             <Outlet context={{ openSettings }} />

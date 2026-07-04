@@ -25,8 +25,10 @@ import { AppFooter } from "../components/AppFooter";
 import { AppHeader } from "../components/AppHeader";
 import { AppShell } from "@mantine/core";
 import { useNavigate } from "react-router-dom";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 export default function AboutPage() {
+  useDocumentTitle("关于网站");
   const navigate = useNavigate();
 
   return (

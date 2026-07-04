@@ -108,7 +108,8 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | POST  | `/workers/dxnet/users/activity`                              | body: `friendCodes: string[]`                                                                                                          | 批量查询用户最近活跃时间和机台绑定状态，返回 `{ friendCode, lastActiveAt, cabinetUserId }[]`。            |
 | GET   | `/workers/dxnet/jobs/:jobId/cache/:diff/:type`               | path: `jobId`, `diff`, `type`                                                                                                          | 读取 `update_score` 临时缓存的 FriendVS 解析结果。缺失返回 400。                                          |
 | PUT   | `/workers/dxnet/jobs/:jobId/cache/:diff/:type`               | body: `songs: FriendVsSong[]`                                                                                                          | 写入临时缓存，返回 `{ success: true }`。                                                                  |
-| POST  | `/workers/dxnet/jobs/:jobId/api-logs`                        | body: `logs: { url, method, statusCode, responseBody? }[]`                                                                             | worker 上报某 job 的外部 API 调用日志。                                                                   |
+| POST  | `/workers/dxnet/jobs/:jobId/api-calls`                       | body: `calls: ExternalApiCallEntry[]`                                                                                                  | worker 上报某 job 的外部 API metadata，写入 ClickHouse `external_api_calls`。                              |
+| POST  | `/workers/:kind/external-api-calls`                          | path: `kind`; body: `calls: ExternalApiCallEntry[]`                                                                                    | worker 上报非 job 绑定或通用外部 API metadata，供 sdgb-worker 等服务接入 ClickHouse。                       |
 
 ### SDGB Worker
 
@@ -120,10 +121,20 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 ### Worker 日志与 Bot 心跳
 
-| 方法 | 路径                          | 入参                                                                                | 说明                                                                        |
-| ---- | ----------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| POST | `/workers/logs/:kind/batches` | path: `kind = sdgb \| dxnet`; body: `workerId`, `entries: { ts, level, message }[]` | 批量上报 worker 日志。非法单行会跳过，返回 `{ accepted }`。                 |
-| POST | `/workers/bots/status`        | body: `bots: BotStatusReport[]`                                                     | DXNet worker 上报 bot 状态、好友数和可选好友列表快照；返回 `{ ok: true }`。 |
+| 方法 | 路径                          | 入参                                                                                | 说明                                                                                         |
+| ---- | ----------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| POST | `/workers/logs/:kind/batches` | path: `kind = sdgb \| dxnet`; body: `workerId`, `entries: { ts, level, message }[]` | 批量上报 worker structured logs，写入 ClickHouse `structured_logs`，返回 `{ accepted }`。      |
+| POST | `/workers/bots/status`        | body: `bots: BotStatusReport[]`                                                     | DXNet worker 上报 bot 状态、好友数和可选好友列表快照；返回 `{ ok: true }`。                  |
+
+### 自动记录的外部依赖 metadata
+
+| target | 来源 | apiGroup / urlGroup 示例 |
+| --- | --- | --- |
+| `maimai_dxnet` | DXNet worker 页面请求、OAuth / home 请求 | `maimai.friend.genre_vs`、`maimai.friend.pages`、`maimai.auth` |
+| `diving_fish` | 登录 / profile / import token / 成绩上传 / 曲库 / 封面 | `diving_fish.login`、`diving_fish.update_records`、`diving_fish.music_data`、`diving_fish.cover` |
+| `lxns` | 成绩上传 / 曲库映射 / 封面 | `lxns.upload_scores`、`lxns.song_list`、`lxns.cover` |
+| `asset` | 成绩图渲染时远程头像 / icon / rank 图片 | `maimai.asset`、`diving_fish.asset`、`lxns.asset`、`remote.asset` |
+| `sdgb` | 预留给 sdgb-worker 通过 `/workers/:kind/external-api-calls` 上报 | `sdgb.get_rival_music`、`sdgb.get_user_map`、`sdgb.add_rival` |
 
 ## Admin API
 
@@ -135,22 +146,21 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | ---- | ---------------------------------------- | --------------------------------------- | -------------------------------------------- |
 | GET  | `/admin/dashboard/stats`                 | -                                       | 基础统计：用户数、曲目数、同步数、封面数等。 |
 | GET  | `/admin/dashboard/job-stats`             | -                                       | job 聚合统计。                               |
-| GET  | `/admin/dashboard/auto-update-metrics`   | query: `window? = 24h \| 7d`            | 自动更新聚合指标；默认 `24h`。               |
 | GET  | `/admin/dashboard/prober-export-metrics` | query: `window? = 24h \| 7d`            | 自动导出到 prober 的聚合指标；默认 `24h`。   |
 | GET  | `/admin/dashboard/job-trend`             | query: `hours?`，范围 1 到 720，默认 24 | job 趋势数据。                               |
 | GET  | `/admin/dashboard/job-error-stats`       | -                                       | job 错误统计。                               |
 
 ### 用户、任务与日志
 
-| 方法 | 路径                                | 入参                                                                         | 说明                                                                                                       |
-| ---- | ----------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| GET  | `/admin/users`                      | -                                                                            | 返回所有用户列表。                                                                                         |
-| GET  | `/admin/dxnet-jobs/active`          | -                                                                            | 返回当前活跃 DXNet jobs。                                                                                  |
-| GET  | `/admin/dxnet-jobs`                 | query: `friendCode?`, `status?`, `page`, `pageSize` 最大 100                 | 分页搜索 DXNet jobs。                                                                                      |
-| GET  | `/admin/dxnet-jobs/:jobId/api-logs` | path: `jobId`                                                                | 查询某 job 的 worker API 调用日志。                                                                        |
-| POST | `/admin/dxnet-jobs/cleanup`         | -                                                                            | 清理 7 天前的 jobs，返回 `{ ok: true, deletedCount }`。                                                    |
-| GET  | `/admin/worker-logs`                | query: `workerKind?`, `workerId?`, `level?`, `q?`, `sinceMinutes?`, `limit?` | 查询 worker 日志。`workerKind` 支持 `sdgb`/`dxnet`；`level` 支持 `log`/`warn`/`error`；默认查最近 1 小时。 |
-| GET  | `/admin/worker-logs/workers`        | -                                                                            | 返回最近出现过的 workerId、workerKind 和 lastSeenAt。                                                      |
+| 方法 | 路径                          | 入参                                                         | 说明                                                    |
+| ---- | ----------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
+| GET  | `/admin/users`                | -                                                            | 返回所有用户列表。                                      |
+| GET  | `/admin/dxnet-jobs/active`    | -                                                            | 返回当前活跃 DXNet jobs。                               |
+| GET  | `/admin/dxnet-jobs`           | query: `friendCode?`, `status?`, `page`, `pageSize` 最大 100 | 分页搜索 DXNet jobs。                                   |
+| POST | `/admin/dxnet-jobs/cleanup`   | -                                                            | 清理 7 天前的 jobs，返回 `{ ok: true, deletedCount }`。 |
+| GET  | `/admin/jobs/:jobId/debug`    | query: `env? = prod \| dev`                                  | Mongo job + ClickHouse timeline/API/logs 的组合调试视图。 |
+| GET  | `/admin/history/logs`         | query: `env?`, `service?`, `workerKind?`, `workerId?`, `level?`, `q?`, `sinceMinutes?`, `limit?` | 查询 ClickHouse structured logs，前端入口为 `/admin/live-logs`。 |
+| GET  | `/admin/history/log-workers`  | query: `env?`, `sinceMinutes?`                               | 返回 ClickHouse structured logs 中最近出现过的 workerId。 |
 
 ### 曲库与封面管理
 
@@ -176,7 +186,6 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 `/api/v1/swagger` 使用 `shared/openapi/openapi.yaml`。该文件覆盖了 shared contracts 中定义的大部分用户、worker、admin 和 catalog 接口，但下列 controller-only 接口当前不在 generated OpenAPI 中，或实现比 contract 多：
 
 - `POST /admin/bots/:friendCode/cabinet/bind-qr`
-- `/admin/worker-logs*`
 - `POST /workers/logs/:kind/batches`
 - `GET /workers/dxnet/jobs/:jobId`
 - `POST /workers/sdgb/jobs/heartbeat`

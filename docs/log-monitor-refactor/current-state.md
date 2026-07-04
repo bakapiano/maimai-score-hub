@@ -1,6 +1,6 @@
 # 当前实现与问题
 
-本文以线上 `main` 代码和 2026-06-29 线上只读数据为准。
+本文以线上 `main` 代码和 2026-06-29 线上只读数据为准，记录的是重构前的历史基线，不代表 PR #8 / dev 的当前实现。PR #8 已移除旧 `WorkerLogsModule`、`JobApiLogService`、Redis Stream worker logs 和旧 `api-logs` endpoints。
 
 ## 当前 admin debug 入口
 
