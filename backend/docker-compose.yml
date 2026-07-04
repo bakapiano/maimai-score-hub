@@ -116,6 +116,7 @@ services:
       MUSIC_DATA_URL: ${MUSIC_DATA_URL:-https://www.diving-fish.com/api/maimaidxprober/music_data}
       MUSIC_SYNC_CRON: ${MUSIC_SYNC_CRON:-0 */6 * * *}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-change-me-in-production}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       API_SHARED_SECRET: ${API_SHARED_SECRET:-}
       OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-false}
       OBSERVABILITY_ENV: ${OBSERVABILITY_ENV:-prod}

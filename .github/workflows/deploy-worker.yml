@@ -50,6 +50,10 @@ jobs:
       - name: Deploy to Worker Instance ${{ matrix.instance }}
         timeout-minutes: 30
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          API_SHARED_SECRET: ${{ secrets.API_SHARED_SECRET }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
         with:
           host: ${{ secrets[format('WORKER_{0}_HOST', matrix.instance)] }}
           username: ${{ secrets[format('WORKER_{0}_USER', matrix.instance)] }}
@@ -57,6 +61,7 @@ jobs:
           port: ${{ secrets[format('WORKER_{0}_PORT', matrix.instance)] }}
           key: ${{ secrets.SSH_KEY }}
           command_timeout: 30m
+          envs: ADMIN_PASSWORD,API_SHARED_SECRET,REDIS_PASSWORD
           script: |
             DEPLOY_PATH="${{ secrets[format('WORKER_{0}_PATH', matrix.instance)] }}"
             SOURCE_ARCHIVE="/tmp/maimai-score-hub-worker-${{ github.sha }}.tgz"
@@ -102,6 +107,29 @@ jobs:
               cp -a "$RUNTIME_DIR/worker/data" worker/data
             fi
             rm -rf "$RUNTIME_DIR"
+
+            upsert_env() {
+              local key="$1"
+              local value="$2"
+              local file="worker/.env"
+              if [ -z "$value" ]; then
+                return 0
+              fi
+              touch "$file"
+              local tmp
+              tmp="$(mktemp)"
+              awk -v key="$key" -v value="$value" '
+                BEGIN { done = 0 }
+                $0 ~ "^" key "=" { print key "=" value; done = 1; next }
+                { print }
+                END { if (!done) print key "=" value }
+              ' "$file" > "$tmp"
+              mv "$tmp" "$file"
+              chmod 600 "$file"
+            }
+            upsert_env ADMIN_PASSWORD "${ADMIN_PASSWORD:-}"
+            upsert_env API_SHARED_SECRET "${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}"
+            upsert_env REDIS_PASSWORD "${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}"
             printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
 
             # Worker 3 (101) has no public IP and goes through a great-firewall
@@ -116,9 +144,17 @@ jobs:
             # Cap docker build cache before build to avoid ENOSPC
             sudo docker builder prune --force --keep-storage=2GB || true
             if command -v docker-compose >/dev/null 2>&1; then
-              sudo env $EXTRA_ENV docker-compose -f worker/docker-compose.yml up -d --build || exit 1
+              sudo env $EXTRA_ENV \
+                ADMIN_PASSWORD="${ADMIN_PASSWORD:-}" \
+                API_SHARED_SECRET="${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}" \
+                REDIS_PASSWORD="${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}" \
+                docker-compose -f worker/docker-compose.yml up -d --build || exit 1
             else
-              sudo env $EXTRA_ENV docker compose -f worker/docker-compose.yml up -d --build || exit 1
+              sudo env $EXTRA_ENV \
+                ADMIN_PASSWORD="${ADMIN_PASSWORD:-}" \
+                API_SHARED_SECRET="${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}" \
+                REDIS_PASSWORD="${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}" \
+                docker compose -f worker/docker-compose.yml up -d --build || exit 1
             fi
             sudo docker image prune -f
             # Cap docker build cache so disks don't fill up

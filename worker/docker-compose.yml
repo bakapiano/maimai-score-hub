@@ -15,6 +15,7 @@ services:
       - FETCH_RETRY_COUNT=${FETCH_RETRY_COUNT:-3}
       - JOB_SERVICE_BASE_URL=${JOB_SERVICE_BASE_URL:-https://api.maiscorehub.bakapiano.com/}
       - API_SHARED_SECRET=${API_SHARED_SECRET:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - REDIS_URL=${REDIS_URL:-}
       - REDIS_HOST=${REDIS_HOST:-127.0.0.1}
       - REDIS_PORT=${REDIS_PORT:-6379}

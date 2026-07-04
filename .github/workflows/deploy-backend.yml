@@ -61,6 +61,9 @@ jobs:
         timeout-minutes: 30
         uses: appleboy/ssh-action@v1.0.3
         env:
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          API_SHARED_SECRET: ${{ secrets.API_SHARED_SECRET }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
           ARTIFACT_SHARED_SECRET: ${{ secrets.ARTIFACT_SHARED_SECRET }}
         with:
@@ -69,7 +72,7 @@ jobs:
           port: ${{ secrets.BACKEND_PORT }}
           key: ${{ secrets.SSH_KEY }}
           command_timeout: 30m
-          envs: CLICKHOUSE_PASSWORD,ARTIFACT_SHARED_SECRET
+          envs: ADMIN_PASSWORD,API_SHARED_SECRET,REDIS_PASSWORD,CLICKHOUSE_PASSWORD,ARTIFACT_SHARED_SECRET
           script: |
             DEPLOY_PATH="${{ secrets.BACKEND_PATH }}"
             SOURCE_ARCHIVE="/tmp/maimai-score-hub-backend-${{ github.sha }}.tgz"
@@ -148,12 +151,15 @@ jobs:
             upsert_env OBSERVABILITY_ENABLED "true"
             upsert_env OBSERVABILITY_ENV "prod"
             upsert_env OBSERVABILITY_INSTANCE "backend-server-5"
+            upsert_env ADMIN_PASSWORD "${ADMIN_PASSWORD:-}"
+            upsert_env API_SHARED_SECRET "${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}"
+            upsert_env REDIS_PASSWORD "${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}"
             upsert_env CLICKHOUSE_URL "http://host.docker.internal:8123"
             upsert_env CLICKHOUSE_DATABASE "maimai_observability"
             upsert_env CLICKHOUSE_USER "maimai_dev_writer"
-            upsert_env CLICKHOUSE_PASSWORD "${CLICKHOUSE_PASSWORD:-}"
+            upsert_env CLICKHOUSE_PASSWORD "${CLICKHOUSE_PASSWORD:-${ADMIN_PASSWORD:-}}"
             upsert_env ARTIFACT_SERVICE_URL "http://host.docker.internal:3901"
-            upsert_env ARTIFACT_SHARED_SECRET "${ARTIFACT_SHARED_SECRET:-}"
+            upsert_env ARTIFACT_SHARED_SECRET "${ARTIFACT_SHARED_SECRET:-${ADMIN_PASSWORD:-}}"
             printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
 
             cd backend
