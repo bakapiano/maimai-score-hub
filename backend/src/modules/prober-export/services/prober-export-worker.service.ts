@@ -36,7 +36,7 @@ export class ProberExportWorkerService
     private readonly exports: ProberExportService,
     private readonly config: ConfigService,
   ) {
-    this.concurrency = getPositiveInt(config, 'PROBER_EXPORT_CONCURRENCY', 1);
+    this.concurrency = getPositiveInt(config, 'PROBER_EXPORT_CONCURRENCY', 32);
   }
 
   onModuleInit(): void {
