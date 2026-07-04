@@ -27,8 +27,10 @@ jobs:
             --exclude='shared/dist' \
             --exclude='shared/node_modules' \
             backend shared package.json package-lock.json
+          ls -lh /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz
 
       - name: Upload source archive
+        timeout-minutes: 3
         env:
           BACKEND_HOST: ${{ secrets.BACKEND_HOST }}
           BACKEND_USER: ${{ secrets.BACKEND_USER }}
@@ -40,12 +42,14 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/backend_deploy_key
           chmod 600 ~/.ssh/backend_deploy_key
-          ssh-keyscan -p "$BACKEND_PORT" "$BACKEND_HOST" >> ~/.ssh/known_hosts
-          scp -P "$BACKEND_PORT" -i ~/.ssh/backend_deploy_key \
+          timeout 30s ssh-keyscan -p "$BACKEND_PORT" "$BACKEND_HOST" >> ~/.ssh/known_hosts
+          timeout 120s scp -v -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+            -P "$BACKEND_PORT" -i ~/.ssh/backend_deploy_key \
             /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz \
             "$BACKEND_USER@$BACKEND_HOST:/tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz"
 
       - name: Deploy via SSH
+        timeout-minutes: 30
         uses: appleboy/ssh-action@v1.0.3
         env:
           CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
