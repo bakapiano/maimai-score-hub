@@ -11,7 +11,10 @@ import {
 
 import { botManager } from "../common/bots/bot-manager.ts";
 import { getJob, updateJob } from "../common/backend/jobs.ts";
-import { createBullmqWorkerOptions } from "../common/bullmq.ts";
+import {
+  createBullmqWorkerOptions,
+  getDxnetWorkerConcurrency,
+} from "../common/bullmq.ts";
 import { WORKER_DEFAULTS } from "../common/config.ts";
 import type { Job, JobPatch } from "../common/types.ts";
 import { JobHandler } from "./jobs/index.ts";
@@ -83,7 +86,9 @@ export class Worker {
     );
 
     this.queueWorker.on("ready", () => {
-      console.log(`[Worker] BullMQ worker ready (queue=${nextQueueName})`);
+      console.log(
+        `[Worker] BullMQ worker ready (queue=${nextQueueName}, concurrency=${getDxnetWorkerConcurrency()})`,
+      );
     });
     this.queueWorker.on("error", (err) => {
       console.error("[Worker] BullMQ worker error:", err);

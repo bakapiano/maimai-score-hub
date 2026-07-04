@@ -40,5 +40,13 @@ export function createBullmqWorkerOptions(): WorkerOptions {
   return {
     connection: createBullmqConnection(),
     prefix: getBullmqPrefix(),
+    concurrency: getDxnetWorkerConcurrency(),
   };
+}
+
+export function getDxnetWorkerConcurrency(): number {
+  return Math.max(
+    1,
+    getInt("DXNET_WORKER_CONCURRENCY", getInt("MAX_PROCESS_JOBS", 1)),
+  );
 }
