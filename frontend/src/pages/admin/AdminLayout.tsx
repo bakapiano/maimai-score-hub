@@ -74,8 +74,8 @@ const adminPages: AdminPageMeta[] = [
     color: "cyan",
   },
   {
-    label: "历史日志",
-    to: "/admin/history/logs",
+    label: "实时日志流",
+    to: "/admin/live-logs",
     icon: <IconLogs size={18} />,
     color: "teal",
   },

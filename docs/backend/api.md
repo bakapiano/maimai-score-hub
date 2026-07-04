@@ -159,7 +159,7 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | GET  | `/admin/dxnet-jobs`           | query: `friendCode?`, `status?`, `page`, `pageSize` 最大 100 | 分页搜索 DXNet jobs。                                   |
 | POST | `/admin/dxnet-jobs/cleanup`   | -                                                            | 清理 7 天前的 jobs，返回 `{ ok: true, deletedCount }`。 |
 | GET  | `/admin/jobs/:jobId/debug`    | query: `env? = prod \| dev`                                  | Mongo job + ClickHouse timeline/API/logs 的组合调试视图。 |
-| GET  | `/admin/history/logs`         | query: `env?`, `workerKind?`, `workerId?`, `level?`, `q?`, `sinceMinutes?`, `limit?` | 查询 ClickHouse structured logs。 |
+| GET  | `/admin/history/logs`         | query: `env?`, `service?`, `workerKind?`, `workerId?`, `level?`, `q?`, `sinceMinutes?`, `limit?` | 查询 ClickHouse structured logs，前端入口为 `/admin/live-logs`。 |
 | GET  | `/admin/history/log-workers`  | query: `env?`, `sinceMinutes?`                               | 返回 ClickHouse structured logs 中最近出现过的 workerId。 |
 
 ### 曲库与封面管理

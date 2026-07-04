@@ -77,8 +77,12 @@ function App() {
                     <Route path="job-debug" element={<AdminJobDebugPage />} />
                     <Route path="users" element={<AdminUsersPage />} />
                     <Route
-                      path="history/logs"
+                      path="live-logs"
                       element={<AdminWorkerLogsPage />}
+                    />
+                    <Route
+                      path="history/logs"
+                      element={<Navigate to="/admin/live-logs" replace />}
                     />
                   </Route>
                   <Route
