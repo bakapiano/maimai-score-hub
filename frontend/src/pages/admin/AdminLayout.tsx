@@ -17,7 +17,6 @@ import {
   IconBug,
   IconChartBar,
   IconClock,
-  IconClockBolt,
   IconCloudUpload,
   IconDatabase,
   IconLogs,
@@ -49,12 +48,6 @@ const adminPages: AdminPageMeta[] = [
     to: "/admin/history",
     icon: <IconChartBar size={18} />,
     color: "grape",
-  },
-  {
-    label: "自动更新监控",
-    to: "/admin/auto-update",
-    icon: <IconClockBolt size={18} />,
-    color: "indigo",
   },
   {
     label: "查分器导出",

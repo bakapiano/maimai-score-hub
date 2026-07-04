@@ -5,7 +5,6 @@ import {
   ActiveJobsSchema,
   AdminStatsSchema,
   AdminUsersSchema,
-  AutoUpdateMetricsSchema,
   BotStatusItemSchema,
   JobErrorStatsSchema,
   JobStatsSchema,
@@ -38,13 +37,6 @@ export const adminContract = c.router({
     path: "/admin/dashboard/job-stats",
     headers: c.type<{ "x-api-secret": string }>(),
     responses: { 200: JobStatsSchema },
-  },
-  getAutoUpdateMetrics: {
-    method: "GET",
-    path: "/admin/dashboard/auto-update-metrics",
-    headers: c.type<{ "x-api-secret": string }>(),
-    query: z.object({ window: z.enum(["24h", "7d"]).optional() }),
-    responses: { 200: AutoUpdateMetricsSchema },
   },
   getProberExportMetrics: {
     method: "GET",

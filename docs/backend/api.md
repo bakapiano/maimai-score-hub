@@ -146,7 +146,6 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | ---- | ---------------------------------------- | --------------------------------------- | -------------------------------------------- |
 | GET  | `/admin/dashboard/stats`                 | -                                       | 基础统计：用户数、曲目数、同步数、封面数等。 |
 | GET  | `/admin/dashboard/job-stats`             | -                                       | job 聚合统计。                               |
-| GET  | `/admin/dashboard/auto-update-metrics`   | query: `window? = 24h \| 7d`            | 自动更新聚合指标；默认 `24h`。               |
 | GET  | `/admin/dashboard/prober-export-metrics` | query: `window? = 24h \| 7d`            | 自动导出到 prober 的聚合指标；默认 `24h`。   |
 | GET  | `/admin/dashboard/job-trend`             | query: `hours?`，范围 1 到 720，默认 24 | job 趋势数据。                               |
 | GET  | `/admin/dashboard/job-error-stats`       | -                                       | job 错误统计。                               |

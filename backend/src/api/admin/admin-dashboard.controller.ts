@@ -1,7 +1,6 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 
 import { SharedSecretGuard } from '../../common/guards/shared-secret.guard';
-import { AdminAutoUpdateMetricsService } from '../../modules/admin/services/admin-auto-update-metrics.service';
 import { AdminJobMetricsService } from '../../modules/admin/services/admin-job-metrics.service';
 import { AdminProberExportMetricsService } from '../../modules/admin/services/admin-prober-export-metrics.service';
 import { AdminSummaryService } from '../../modules/admin/services/admin-summary.service';
@@ -12,7 +11,6 @@ export class AdminDashboardController {
   constructor(
     private readonly summaryService: AdminSummaryService,
     private readonly jobMetricsService: AdminJobMetricsService,
-    private readonly autoUpdateMetricsService: AdminAutoUpdateMetricsService,
     private readonly proberExportMetricsService: AdminProberExportMetricsService,
   ) {}
 
@@ -24,16 +22,6 @@ export class AdminDashboardController {
   @Get('job-stats')
   async getJobStats() {
     return await this.jobMetricsService.getJobStats();
-  }
-
-  /**
-   * Aggregated dashboard for /admin/dashboard/auto-update-metrics.
-   * window: '24h' (5min buckets) or '7d' (1h buckets).
-   */
-  @Get('auto-update-metrics')
-  async getAutoUpdateMetrics(@Query('window') window?: string) {
-    const w: '24h' | '7d' = window === '7d' ? '7d' : '24h';
-    return this.autoUpdateMetricsService.getAutoUpdateMetrics(w);
   }
 
   /**

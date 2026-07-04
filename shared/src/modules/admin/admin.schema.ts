@@ -83,7 +83,6 @@ export const SearchJobsQuerySchema = z.object({
 });
 
 export const SearchJobsResponseSchema = z.unknown();
-export const AutoUpdateMetricsSchema = z.unknown();
 export const ProberExportMetricsSchema = z.unknown();
 export const ObservabilityStatusSchema = z.unknown();
 export const RealtimeOverviewSchema = z.unknown();

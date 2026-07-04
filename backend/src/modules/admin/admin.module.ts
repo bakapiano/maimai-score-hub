@@ -2,12 +2,6 @@ import { JobEntity, JobSchema } from '../job/schemas/job.schema';
 import { MusicEntity, MusicSchema } from '../music/schemas/music.schema';
 import { SyncEntity, SyncSchema } from '../sync/schemas/sync.schema';
 import { UserEntity, UserSchema } from '../users/schemas/user.schema';
-import {
-  AutoUpdateRunEntity,
-  AutoUpdateRunSchema,
-} from '../auto-update/schemas/auto-update-run.schema';
-
-import { AdminAutoUpdateMetricsService } from './services/admin-auto-update-metrics.service';
 import { AdminCatalogService } from './services/admin-catalog.service';
 import { AdminJobMetricsService } from './services/admin-job-metrics.service';
 import { AdminJobQueryService } from './services/admin-job-query.service';
@@ -39,7 +33,6 @@ import { UsersModule } from '../users/users.module';
       { name: JobEntity.name, schema: JobSchema },
       { name: ProberExportJobEntity.name, schema: ProberExportJobSchema },
       { name: BotStatusEntity.name, schema: BotStatusSchema },
-      { name: AutoUpdateRunEntity.name, schema: AutoUpdateRunSchema },
     ]),
     CoverModule,
     MusicModule,
@@ -48,7 +41,6 @@ import { UsersModule } from '../users/users.module';
     UsersModule,
   ],
   providers: [
-    AdminAutoUpdateMetricsService,
     AdminCatalogService,
     AdminJobMetricsService,
     AdminJobQueryService,
@@ -57,7 +49,6 @@ import { UsersModule } from '../users/users.module';
     AdminUsersService,
   ],
   exports: [
-    AdminAutoUpdateMetricsService,
     AdminCatalogService,
     AdminJobMetricsService,
     AdminJobQueryService,

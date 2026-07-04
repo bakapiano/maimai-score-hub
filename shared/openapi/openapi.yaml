@@ -2435,25 +2435,6 @@ paths:
             application/json:
               schema:
                 nullable: true
-  /admin/dashboard/auto-update-metrics:
-    get:
-      tags: *a6
-      parameters:
-        - name: window
-          in: query
-          schema:
-            type: string
-            enum:
-              - 24h
-              - 7d
-      operationId: admin.getAutoUpdateMetrics
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                nullable: true
   /admin/dashboard/prober-export-metrics:
     get:
       tags: *a6
