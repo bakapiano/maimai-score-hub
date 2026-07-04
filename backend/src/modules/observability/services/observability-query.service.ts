@@ -732,6 +732,8 @@ export class ObservabilityQueryService {
       workers: [
         {
           workerId: 'prober-export-worker',
+          alive: true,
+          lastSeenAt: now.toISOString(),
           concurrency: Number(process.env.PROBER_EXPORT_CONCURRENCY ?? 1),
         },
       ],

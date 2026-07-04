@@ -636,8 +636,11 @@ function WorkerInstancesCard({ rows }: { rows: Array<Record<string, unknown>> })
                         {row.available ? "可用" : "不可用"}
                       </Badge>
                     ) : (
-                      <Badge color={isWorkerAlive(row.lastSeenAt) ? "green" : "red"} variant="light">
-                        {isWorkerAlive(row.lastSeenAt) ? "在线" : "离线"}
+                      <Badge
+                        color={isWorkerAlive(row) ? "green" : "red"}
+                        variant="light"
+                      >
+                        {isWorkerAlive(row) ? "在线" : "离线"}
                       </Badge>
                     )}
                   </Table.Td>
@@ -992,7 +995,11 @@ function formatWorkerInfo(row: Record<string, unknown>): string {
   return parts.join(" · ") || "-";
 }
 
-function isWorkerAlive(value: unknown): boolean {
+function isWorkerAlive(row: Record<string, unknown>): boolean {
+  if (row.alive === true) {
+    return true;
+  }
+  const value = row.lastSeenAt;
   if (typeof value !== "string" || !value) {
     return false;
   }
