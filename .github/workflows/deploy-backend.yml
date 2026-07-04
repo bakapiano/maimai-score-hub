@@ -19,14 +19,22 @@ jobs:
 
       - name: Package source
         run: |
-          tar -czf /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz \
+          STAGING_DIR="$(mktemp -d)"
+          tar -cf - \
             --exclude='backend/.env' \
             --exclude='backend/covers' \
+            --exclude='backend/assets' \
             --exclude='backend/dist' \
             --exclude='backend/node_modules' \
             --exclude='shared/dist' \
             --exclude='shared/node_modules' \
-            backend shared package.json package-lock.json
+            backend shared package.json package-lock.json \
+            | tar -xf - -C "$STAGING_DIR"
+          mkdir -p "$STAGING_DIR/backend/assets/mai/pic"
+          cp backend/assets/mai/pic/UI_GAM_Gauge_DXScoreIcon_*.png \
+            "$STAGING_DIR/backend/assets/mai/pic/"
+          tar -czf /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz -C "$STAGING_DIR" .
+          rm -rf "$STAGING_DIR"
           ls -lh /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz
 
       - name: Upload source archive
@@ -114,6 +122,10 @@ jobs:
               mkdir -p "$RUNTIME_DIR/backend"
               cp -a backend/covers "$RUNTIME_DIR/backend/covers"
             fi
+            if [ -d backend/assets ]; then
+              mkdir -p "$RUNTIME_DIR/backend"
+              cp -a backend/assets "$RUNTIME_DIR/backend/assets"
+            fi
 
             rm -rf backend shared package.json package-lock.json
             tar -xzf "$SOURCE_ARCHIVE" -C "$DEPLOY_PATH"
@@ -124,6 +136,14 @@ jobs:
             if [ -d "$RUNTIME_DIR/backend/covers" ]; then
               rm -rf backend/covers
               cp -a "$RUNTIME_DIR/backend/covers" backend/covers
+            fi
+            if [ -d "$RUNTIME_DIR/backend/assets" ]; then
+              mkdir -p backend/assets
+              cp -a "$RUNTIME_DIR/backend/assets/." backend/assets/
+            fi
+            if [ ! -f backend/assets/fonts/ResourceHanRoundedCN-Bold.ttf ]; then
+              echo "❌ backend/assets/fonts/ResourceHanRoundedCN-Bold.ttf is missing; refusing to build incomplete backend image"
+              exit 1
             fi
             rm -rf "$RUNTIME_DIR"
 
