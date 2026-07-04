@@ -16,6 +16,7 @@ import {
   SdgbJobEntity,
   SdgbJobSchema,
 } from '../sdgb-worker/schemas/sdgb-job.schema';
+import { BackendLoggerService } from './services/backend-logger.service';
 import { ClickHouseService } from './services/clickhouse.service';
 import { ObservabilityIngestService } from './services/observability-ingest.service';
 import { ObservabilityQueryService } from './services/observability-query.service';
@@ -31,6 +32,7 @@ import { ObservabilityQueryService } from './services/observability-query.servic
     ]),
   ],
   providers: [
+    BackendLoggerService,
     ClickHouseService,
     ObservabilityIngestService,
     ObservabilityQueryService,
@@ -40,6 +42,7 @@ import { ObservabilityQueryService } from './services/observability-query.servic
     },
   ],
   exports: [
+    BackendLoggerService,
     ClickHouseService,
     ObservabilityIngestService,
     ObservabilityQueryService,
