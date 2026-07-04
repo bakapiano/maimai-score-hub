@@ -154,6 +154,7 @@ jobs:
             upsert_env ADMIN_PASSWORD "${ADMIN_PASSWORD:-}"
             upsert_env API_SHARED_SECRET "${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}"
             upsert_env REDIS_PASSWORD "${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}"
+            upsert_env DXNET_BOT_FRIEND_LIMIT "80"
             upsert_env CLICKHOUSE_URL "http://host.docker.internal:8123"
             upsert_env CLICKHOUSE_DATABASE "maimai_observability"
             upsert_env CLICKHOUSE_USER "maimai_dev_writer"

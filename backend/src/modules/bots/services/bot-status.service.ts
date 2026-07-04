@@ -15,7 +15,7 @@ export interface BotStatus {
 }
 
 const DXNET_BOT_FRIEND_LIMIT = (() => {
-  const parsed = Number(process.env.DXNET_BOT_FRIEND_LIMIT ?? 90);
+  const parsed = Number(process.env.DXNET_BOT_FRIEND_LIMIT ?? 80);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 90;
 })();
 
