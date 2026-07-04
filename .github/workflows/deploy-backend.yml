@@ -20,11 +20,13 @@ jobs:
       - name: Package source
         run: |
           tar -czf /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz \
-            --exclude=.git \
-            --exclude='**/node_modules' \
             --exclude='backend/.env' \
             --exclude='backend/covers' \
-            .
+            --exclude='backend/dist' \
+            --exclude='backend/node_modules' \
+            --exclude='shared/dist' \
+            --exclude='shared/node_modules' \
+            backend shared package.json package-lock.json
 
       - name: Upload source archive
         env:
@@ -108,11 +110,7 @@ jobs:
               cp -a backend/covers "$RUNTIME_DIR/backend/covers"
             fi
 
-            rm -rf \
-              .github automation backend deploy docs frontend scripts shared worker \
-              node_modules \
-              package.json package-lock.json ecosystem.local-dev.config.cjs \
-              CLAUDE.md README.md TODO.md .gitignore .env.local-dev.example
+            rm -rf backend shared package.json package-lock.json
             tar -xzf "$SOURCE_ARCHIVE" -C "$DEPLOY_PATH"
             rm -f "$SOURCE_ARCHIVE"
             if [ -f "$RUNTIME_DIR/backend/.env" ]; then
