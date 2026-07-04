@@ -74,6 +74,8 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     # Wait up to 60s for in-flight requests to drain on SIGTERM
     # (NestJS enableShutdownHooks closes the http server but lets
     # active connections finish).
@@ -115,6 +117,18 @@ services:
       MUSIC_SYNC_CRON: ${MUSIC_SYNC_CRON:-0 */6 * * *}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-change-me-in-production}
       API_SHARED_SECRET: ${API_SHARED_SECRET:-}
+      OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-false}
+      OBSERVABILITY_ENV: ${OBSERVABILITY_ENV:-prod}
+      OBSERVABILITY_INSTANCE: ${OBSERVABILITY_INSTANCE:-backend-server-5}
+      BACKEND_LOG_CLICKHOUSE_ENABLED: ${BACKEND_LOG_CLICKHOUSE_ENABLED:-true}
+      BACKEND_LOG_DEBUG_ENABLED: ${BACKEND_LOG_DEBUG_ENABLED:-false}
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://host.docker.internal:8123}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-maimai_observability}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-maimai_dev_writer}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_FLUSH_INTERVAL_MS: ${CLICKHOUSE_FLUSH_INTERVAL_MS:-3000}
+      CLICKHOUSE_MAX_BATCH_ROWS: ${CLICKHOUSE_MAX_BATCH_ROWS:-1000}
+      CLICKHOUSE_MAX_BUFFERED_ROWS: ${CLICKHOUSE_MAX_BUFFERED_ROWS:-50000}
     volumes:
       - ./covers:/app/backend/covers
 

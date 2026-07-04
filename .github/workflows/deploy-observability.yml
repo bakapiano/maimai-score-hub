@@ -1,0 +1,145 @@
+name: deploy observability
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-observability
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package observability source
+        run: |
+          tar -czf /tmp/maimai-observability-${GITHUB_SHA}.tgz \
+            -C deploy/observability .
+
+      - name: Upload source archive
+        env:
+          OBSERVABILITY_HOST: ${{ secrets.OBSERVABILITY_HOST || secrets.BACKEND_HOST }}
+          OBSERVABILITY_USER: ${{ secrets.OBSERVABILITY_USER || secrets.BACKEND_USER }}
+          OBSERVABILITY_PORT: ${{ secrets.OBSERVABILITY_PORT || secrets.BACKEND_PORT }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          set -euo pipefail
+          OBSERVABILITY_PORT="${OBSERVABILITY_PORT:-22}"
+          if [ -z "$OBSERVABILITY_HOST" ] || [ -z "$OBSERVABILITY_USER" ]; then
+            echo "❌ OBSERVABILITY_HOST/USER or BACKEND_HOST/USER secrets are required"
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/observability_deploy_key
+          chmod 600 ~/.ssh/observability_deploy_key
+          ssh-keyscan -p "$OBSERVABILITY_PORT" "$OBSERVABILITY_HOST" >> ~/.ssh/known_hosts
+          scp -P "$OBSERVABILITY_PORT" -i ~/.ssh/observability_deploy_key \
+            /tmp/maimai-observability-${GITHUB_SHA}.tgz \
+            "$OBSERVABILITY_USER@$OBSERVABILITY_HOST:/tmp/maimai-observability-${GITHUB_SHA}.tgz"
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
+          ARTIFACT_SHARED_SECRET: ${{ secrets.ARTIFACT_SHARED_SECRET }}
+          OBSERVABILITY_BUILD_PROXY: ${{ secrets.OBSERVABILITY_BUILD_PROXY }}
+        with:
+          host: ${{ secrets.OBSERVABILITY_HOST || secrets.BACKEND_HOST }}
+          username: ${{ secrets.OBSERVABILITY_USER || secrets.BACKEND_USER }}
+          port: ${{ secrets.OBSERVABILITY_PORT || secrets.BACKEND_PORT }}
+          key: ${{ secrets.SSH_KEY }}
+          command_timeout: 30m
+          envs: CLICKHOUSE_PASSWORD,ARTIFACT_SHARED_SECRET,OBSERVABILITY_BUILD_PROXY
+          script: |
+            set -euo pipefail
+
+            DEPLOY_PATH="${{ secrets.OBSERVABILITY_PATH || '/srv/maimai-observability' }}"
+            SOURCE_ARCHIVE="/tmp/maimai-observability-${{ github.sha }}.tgz"
+            if [ ! -f "$SOURCE_ARCHIVE" ]; then
+              echo "❌ Source archive not found: $SOURCE_ARCHIVE"
+              exit 1
+            fi
+
+            sudo mkdir -p "$DEPLOY_PATH"
+            sudo chown -R "$USER:$USER" "$DEPLOY_PATH" || true
+            cd "$DEPLOY_PATH"
+
+            RUNTIME_DIR="$(mktemp -d)"
+            if [ -f .env ]; then
+              cp -a .env "$RUNTIME_DIR/.env"
+            fi
+
+            rm -rf artifact-service clickhouse docker-compose.yml README.md .env.example
+            tar -xzf "$SOURCE_ARCHIVE" -C "$DEPLOY_PATH"
+            rm -f "$SOURCE_ARCHIVE"
+
+            if [ -f "$RUNTIME_DIR/.env" ]; then
+              cp -a "$RUNTIME_DIR/.env" .env
+            elif [ -n "${CLICKHOUSE_PASSWORD:-}" ] && [ -n "${ARTIFACT_SHARED_SECRET:-}" ]; then
+              {
+                printf 'CLICKHOUSE_PASSWORD=%s\n' "$CLICKHOUSE_PASSWORD"
+                printf 'ARTIFACT_SHARED_SECRET=%s\n' "$ARTIFACT_SHARED_SECRET"
+                printf 'RAW_RESPONSE_SUCCESS_SAMPLE_RATE=0.01\n'
+                printf 'RAW_RESPONSE_MAX_TOTAL_BYTES=21474836480\n'
+                printf 'RAW_RESPONSE_MAX_BODY_BYTES=2097152\n'
+              } > .env
+              chmod 600 .env
+            else
+              echo "❌ .env is missing and CLICKHOUSE_PASSWORD / ARTIFACT_SHARED_SECRET secrets are not configured"
+              exit 1
+            fi
+            rm -rf "$RUNTIME_DIR"
+
+            upsert_env() {
+              local key="$1"
+              local value="$2"
+              local file=".env"
+              if [ -z "$value" ]; then
+                return 0
+              fi
+              touch "$file"
+              local tmp
+              tmp="$(mktemp)"
+              awk -v key="$key" -v value="$value" '
+                BEGIN { done = 0 }
+                $0 ~ "^" key "=" { print key "=" value; done = 1; next }
+                { print }
+                END { if (!done) print key "=" value }
+              ' "$file" > "$tmp"
+              mv "$tmp" "$file"
+              chmod 600 "$file"
+            }
+            upsert_env CLICKHOUSE_PASSWORD "${CLICKHOUSE_PASSWORD:-}"
+            upsert_env ARTIFACT_SHARED_SECRET "${ARTIFACT_SHARED_SECRET:-}"
+
+            if command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
+            else
+              COMPOSE_CMD="docker compose"
+            fi
+
+            sudo docker builder prune --force --keep-storage=2GB || true
+            if [ -n "${OBSERVABILITY_BUILD_PROXY:-}" ]; then
+              sudo env $OBSERVABILITY_BUILD_PROXY $COMPOSE_CMD -f docker-compose.yml up -d --build
+            else
+              sudo $COMPOSE_CMD -f docker-compose.yml up -d --build
+            fi
+            sudo docker image prune -f
+            sudo docker builder prune --force --keep-storage=2GB || true
+
+            for i in $(seq 1 60); do
+              if curl -fsS http://127.0.0.1:8123/ping | grep -q 'Ok.' \
+                && curl -fsS http://127.0.0.1:3901/health >/dev/null; then
+                echo "✅ Observability deployment successful"
+                sudo $COMPOSE_CMD -f docker-compose.yml ps
+                exit 0
+              fi
+              echo "Observability health check attempt $i failed, retrying..."
+              sleep 5
+            done
+
+            echo "❌ Observability health check failed"
+            sudo $COMPOSE_CMD -f docker-compose.yml logs --tail=100
+            exit 1

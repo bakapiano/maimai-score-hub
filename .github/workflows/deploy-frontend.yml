@@ -1,12 +1,6 @@
 name: deploy frontend
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "frontend/**"
-      - "shared/**"
-      - ".github/workflows/deploy-frontend.yml"
   workflow_dispatch:
 
 concurrency:
@@ -50,7 +44,9 @@ jobs:
         with:
           host: ${{ secrets.FRONTEND_HOST }}
           username: ${{ secrets.FRONTEND_USER }}
+          port: ${{ secrets.FRONTEND_PORT }}
           key: ${{ secrets.SSH_KEY }}
+          command_timeout: 30m
           script: |
             DEPLOY_PATH="${{ secrets.FRONTEND_PATH }}"
             SOURCE_ARCHIVE="/tmp/maimai-score-hub-frontend-${{ github.sha }}.tgz"

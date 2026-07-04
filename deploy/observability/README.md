@@ -1,9 +1,10 @@
 # Observability deployment
 
-This directory is the Phase 0 single-node deployment for
+This directory is the single-node production deployment for
 `docs/log-monitor-refactor`.
 
-It runs on Server 4 / 101 under `/srv/maimai-observability`:
+It runs on Server 5 under `/srv/maimai-observability`, next to the backend
+host. The backend container reaches it through `host.docker.internal`:
 
 - ClickHouse HTTP on `8123`
 - ClickHouse native protocol on local-only `127.0.0.1:9000`
@@ -19,14 +20,14 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Windows dev backend can then use:
+Production backend can then use:
 
 ```text
 OBSERVABILITY_ENABLED=true
-OBSERVABILITY_ENV=dev
-CLICKHOUSE_URL=http://192.168.1.101:8123
+OBSERVABILITY_ENV=prod
+CLICKHOUSE_URL=http://host.docker.internal:8123
 CLICKHOUSE_DATABASE=maimai_observability
 CLICKHOUSE_USER=maimai_dev_writer
 CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
-ARTIFACT_SERVICE_URL=http://192.168.1.101:3901
+ARTIFACT_SERVICE_URL=http://host.docker.internal:3901
 ```

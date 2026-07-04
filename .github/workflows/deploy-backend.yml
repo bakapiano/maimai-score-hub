@@ -1,12 +1,6 @@
 name: deploy backend
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "backend/**"
-      - "shared/**"
-      - ".github/workflows/deploy-backend.yml"
   workflow_dispatch:
 
 concurrency:
@@ -51,12 +45,16 @@ jobs:
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
+          ARTIFACT_SHARED_SECRET: ${{ secrets.ARTIFACT_SHARED_SECRET }}
         with:
           host: ${{ secrets.BACKEND_HOST }}
           username: ${{ secrets.BACKEND_USER }}
           port: ${{ secrets.BACKEND_PORT }}
           key: ${{ secrets.SSH_KEY }}
           command_timeout: 30m
+          envs: CLICKHOUSE_PASSWORD,ARTIFACT_SHARED_SECRET
           script: |
             DEPLOY_PATH="${{ secrets.BACKEND_PATH }}"
             SOURCE_ARCHIVE="/tmp/maimai-score-hub-backend-${{ github.sha }}.tgz"
@@ -72,8 +70,61 @@ jobs:
             mkdir -p "$DEPLOY_PATH"
             cd "$DEPLOY_PATH"
             sudo chown -R "$USER:$USER" "$(pwd)" || true
+
+            RUNTIME_DIR="$(mktemp -d)"
+            if [ -f backend/.env ]; then
+              mkdir -p "$RUNTIME_DIR/backend"
+              cp -a backend/.env "$RUNTIME_DIR/backend/.env"
+            fi
+            if [ -d backend/covers ]; then
+              mkdir -p "$RUNTIME_DIR/backend"
+              cp -a backend/covers "$RUNTIME_DIR/backend/covers"
+            fi
+
+            rm -rf \
+              .github automation backend deploy docs frontend scripts shared worker \
+              node_modules \
+              package.json package-lock.json ecosystem.local-dev.config.cjs \
+              CLAUDE.md README.md TODO.md .gitignore .env.local-dev.example
             tar -xzf "$SOURCE_ARCHIVE" -C "$DEPLOY_PATH"
             rm -f "$SOURCE_ARCHIVE"
+            if [ -f "$RUNTIME_DIR/backend/.env" ]; then
+              cp -a "$RUNTIME_DIR/backend/.env" backend/.env
+            fi
+            if [ -d "$RUNTIME_DIR/backend/covers" ]; then
+              rm -rf backend/covers
+              cp -a "$RUNTIME_DIR/backend/covers" backend/covers
+            fi
+            rm -rf "$RUNTIME_DIR"
+
+            upsert_env() {
+              local key="$1"
+              local value="$2"
+              local file="backend/.env"
+              if [ -z "$value" ]; then
+                return 0
+              fi
+              touch "$file"
+              local tmp
+              tmp="$(mktemp)"
+              awk -v key="$key" -v value="$value" '
+                BEGIN { done = 0 }
+                $0 ~ "^" key "=" { print key "=" value; done = 1; next }
+                { print }
+                END { if (!done) print key "=" value }
+              ' "$file" > "$tmp"
+              mv "$tmp" "$file"
+              chmod 600 "$file"
+            }
+            upsert_env OBSERVABILITY_ENABLED "true"
+            upsert_env OBSERVABILITY_ENV "prod"
+            upsert_env OBSERVABILITY_INSTANCE "backend-server-5"
+            upsert_env CLICKHOUSE_URL "http://host.docker.internal:8123"
+            upsert_env CLICKHOUSE_DATABASE "maimai_observability"
+            upsert_env CLICKHOUSE_USER "maimai_dev_writer"
+            upsert_env CLICKHOUSE_PASSWORD "${CLICKHOUSE_PASSWORD:-}"
+            upsert_env ARTIFACT_SERVICE_URL "http://host.docker.internal:3901"
+            upsert_env ARTIFACT_SHARED_SECRET "${ARTIFACT_SHARED_SECRET:-}"
             printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
 
             # Build new image
@@ -89,7 +140,7 @@ jobs:
             # silently rebuilds from a stale layer or restarts the old
             # image — masking failures as "success").
             sudo docker builder prune --force --keep-storage=2GB || true
-            sudo $COMPOSE_CMD build || { echo "❌ Build failed"; exit 1; }
+            sudo $COMPOSE_CMD build backend || { echo "❌ Build failed"; exit 1; }
 
             # Bring stateful dependencies up before the rolling backend update.
             # The backend rollout uses --no-deps to avoid touching healthy
@@ -118,27 +169,17 @@ jobs:
               return 1
             }
 
+            if ! wait_service_healthy mongo; then
+              echo "❌ MongoDB did not become healthy within 150s"
+              sudo $COMPOSE_CMD logs --tail=100 mongo
+              exit 1
+            fi
+
             if ! wait_service_healthy redis; then
               echo "❌ Redis did not become healthy within 150s"
               sudo $COMPOSE_CMD logs --tail=100 redis
               exit 1
             fi
-
-            # ── Zero-downtime rolling update ────────────────────────
-            # We keep 2 replicas behind nginx. To avoid the brief
-            # 502 window the previous "scale=2 --force-recreate"
-            # caused (both replicas down at the same time), we:
-            #   1. scale 2→3 (the new container picks up the freshly-
-            #      built image; old 2 keep serving),
-            #   2. wait for the new container to report healthy,
-            #   3. scale back to 2 (compose drops the oldest container
-            #      first; SIGTERM gives 60s grace via stop_grace_period
-            #      so in-flight requests drain),
-            #   4. repeat once more so the second old container is also
-            #      replaced.
-            # nginx is configured with resolver+variable proxy_pass +
-            # proxy_next_upstream so any single-replica blip during
-            # the swap is invisible to clients.
 
             wait_until_all_healthy() {
               local target_n="$1"
@@ -161,49 +202,6 @@ jobs:
               return 1
             }
 
-            roll_one_replica() {
-              echo "── rolling one replica ──"
-              # Step A: bring up an extra container with the new image.
-              # --no-recreate keeps the existing 2 alive; the 3rd is
-              # built from the freshly-built image we made above.
-              sudo $COMPOSE_CMD up -d --no-deps --no-recreate --scale backend=3 backend
-              echo "Waiting for 3 healthy backend containers..."
-              if ! wait_until_all_healthy 3; then
-                echo "❌ New replica did not become healthy within 150s"
-                sudo $COMPOSE_CMD logs --tail=100 backend
-                exit 1
-              fi
-              # Step B: explicitly stop the OLDEST container (by
-              # creation time). compose's own scale-down picks the
-              # highest-numbered container, which is the NEW one we
-              # just added — exactly the opposite of what we want.
-              # Sort by .Created ascending and pick the first.
-              local oldest_id
-              oldest_id=$(sudo $COMPOSE_CMD ps -q backend \
-                | xargs -r sudo docker inspect \
-                    --format '{{.Created}} {{.Id}}' \
-                | sort \
-                | head -1 \
-                | awk '{print $2}')
-              if [ -z "$oldest_id" ]; then
-                echo "❌ Could not identify oldest container"
-                exit 1
-              fi
-              echo "Stopping oldest container $oldest_id (graceful, up to 60s)..."
-              sudo docker stop --time=60 "$oldest_id"
-              sudo docker rm "$oldest_id"
-              # compose now has 2 containers; sync desired-state to
-              # avoid stale runtime metadata.
-              sudo $COMPOSE_CMD up -d --no-deps --no-recreate --scale backend=2 backend
-              echo "Scaled back to 2; waiting for new state to settle..."
-              sleep 5
-              if ! wait_until_all_healthy 2; then
-                echo "❌ After scale-down, fewer than 2 healthy"
-                sudo $COMPOSE_CMD logs --tail=100 backend
-                exit 1
-              fi
-            }
-
             # Clean up any unhealthy containers from previous failed deployments
             UNHEALTHY_IDS=$(sudo $COMPOSE_CMD ps -q backend | xargs -r sudo docker inspect --format '{{if eq .State.Health.Status "unhealthy"}}{{.Id}}{{end}}' | grep -v '^$' || true)
             if [ -n "$UNHEALTHY_IDS" ]; then
@@ -211,14 +209,22 @@ jobs:
               echo "$UNHEALTHY_IDS" | xargs -r sudo docker rm -f
             fi
 
-            # Replace replica #1, then #2.
-            roll_one_replica
-            roll_one_replica
+            # Downtime is acceptable for this deployment. Recreate all backend
+            # replicas together so old workers/backend code never mix with the
+            # BullMQ/refactored API version.
+            sudo $COMPOSE_CMD stop backend || true
+            sudo $COMPOSE_CMD up -d --no-deps --force-recreate --scale backend=2 backend
+            if ! wait_until_all_healthy 2; then
+              echo "❌ Backend did not become healthy within 150s"
+              sudo $COMPOSE_CMD logs --tail=100 backend
+              exit 1
+            fi
+            sudo $COMPOSE_CMD up -d nginx
 
             # Final state check via nginx (the public path users hit)
             for i in 1 2 3 4 5; do
-              if curl -fsS http://localhost:8090/api/health; then
-                echo "✅ Deployment successful — rolling complete"
+              if curl -fsS http://localhost:8090/api/v1/health; then
+                echo "✅ Deployment successful"
                 sudo $COMPOSE_CMD ps backend
                 # Clean up dangling images
                 sudo docker image prune -f
