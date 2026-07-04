@@ -238,16 +238,42 @@ jobs:
               echo "$UNHEALTHY_IDS" | xargs -r sudo docker rm -f
             fi
 
-            # Downtime is acceptable for this deployment. Recreate all backend
-            # replicas together so old workers/backend code never mix with the
-            # BullMQ/refactored API version.
-            sudo $COMPOSE_CMD stop backend || true
-            sudo $COMPOSE_CMD up -d --no-deps --force-recreate --scale backend=2 backend
-            if ! wait_until_all_healthy 2; then
-              echo "❌ Backend did not become healthy within 150s"
-              sudo $COMPOSE_CMD logs --tail=100 backend
-              exit 1
-            fi
+            roll_one_replica() {
+              echo "── rolling one replica ──"
+              sudo $COMPOSE_CMD up -d --no-deps --no-recreate --scale backend=3 backend
+              echo "Waiting for 3 healthy backend containers..."
+              if ! wait_until_all_healthy 3; then
+                echo "❌ New replica did not become healthy within 150s"
+                sudo $COMPOSE_CMD logs --tail=100 backend
+                exit 1
+              fi
+
+              local oldest_id
+              oldest_id=$(sudo $COMPOSE_CMD ps -q backend \
+                | xargs -r sudo docker inspect \
+                    --format '{{.Created}} {{.Id}}' \
+                | sort \
+                | head -1 \
+                | awk '{print $2}')
+              if [ -z "$oldest_id" ]; then
+                echo "❌ Could not identify oldest backend container"
+                exit 1
+              fi
+              echo "Stopping oldest backend container $oldest_id..."
+              sudo docker stop --time=60 "$oldest_id"
+              sudo docker rm "$oldest_id"
+
+              sudo $COMPOSE_CMD up -d --no-deps --no-recreate --scale backend=2 backend
+              sleep 5
+              if ! wait_until_all_healthy 2; then
+                echo "❌ After scale-down, fewer than 2 healthy backend containers"
+                sudo $COMPOSE_CMD logs --tail=100 backend
+                exit 1
+              fi
+            }
+
+            roll_one_replica
+            roll_one_replica
             sudo $COMPOSE_CMD up -d nginx
 
             # Final state check via nginx (the public path users hit)
