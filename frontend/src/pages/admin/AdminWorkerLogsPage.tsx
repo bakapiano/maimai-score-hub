@@ -22,11 +22,16 @@ import {
 import { ScrollableTable } from "../../components/ScrollableTable";
 
 interface WorkerLogRow {
+  service: string;
+  instance: string;
   workerKind: string;
   workerId: string;
   ts: string;
   level: "info" | "warn" | "error" | "debug";
   message: string;
+  jobId?: string;
+  eventName?: string;
+  errorClass?: string;
 }
 
 interface WorkerEntry {
@@ -51,12 +56,13 @@ export default function AdminWorkerLogsPage() {
   );
 
   const [workers, setWorkers] = useState<WorkerEntry[]>([]);
+  const [filterService, setFilterService] = useState<string | null>(null);
   const [filterKind, setFilterKind] = useState<string | null>(null);
   const [filterWorker, setFilterWorker] = useState<string | null>(null);
   const [filterLevel, setFilterLevel] = useState<string | null>(null);
   const [filterQ, setFilterQ] = useState("");
   const [filterQDebounced, setFilterQDebounced] = useState("");
-  const [sinceMinutes, setSinceMinutes] = useState<string | null>("60");
+  const [sinceMinutes, setSinceMinutes] = useState<string | null>("15");
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   useEffect(() => {
@@ -88,6 +94,7 @@ export default function AdminWorkerLogsPage() {
     try {
       const params = new URLSearchParams();
       params.set("env", env);
+      if (filterService) params.set("service", filterService);
       if (filterKind) params.set("workerKind", filterKind);
       if (filterWorker) params.set("workerId", filterWorker);
       if (filterLevel) params.set("level", filterLevel);
@@ -111,6 +118,7 @@ export default function AdminWorkerLogsPage() {
   }, [
     password,
     env,
+    filterService,
     filterKind,
     filterWorker,
     filterLevel,
@@ -139,9 +147,10 @@ export default function AdminWorkerLogsPage() {
         <Group justify="space-between" align="center" wrap="wrap">
           <Group gap="xs">
             <IconLogs size={20} />
-            <Text fw={600}>历史日志</Text>
+            <Text fw={600}>实时日志流</Text>
             <Text size="xs" c="dimmed">
-              ClickHouse structured_logs，共 {total} 条匹配，显示最新 {items.length}
+              ClickHouse structured_logs，统一展示 backend / dxnet / sdgb 日志流；
+              共 {total} 条匹配，显示最新 {items.length}
             </Text>
           </Group>
           <Group gap="xs">
@@ -182,11 +191,26 @@ export default function AdminWorkerLogsPage() {
         <Group gap="xs" wrap="wrap">
           <Select
             size="xs"
-            placeholder="类型"
+            placeholder="service"
+            value={filterService}
+            onChange={setFilterService}
+            clearable
+            searchable
+            data={[
+              { value: "backend", label: "backend" },
+              { value: "dxnet-worker", label: "dxnet-worker" },
+              { value: "sdgb-worker", label: "sdgb-worker" },
+            ]}
+            w={150}
+          />
+          <Select
+            size="xs"
+            placeholder="kind"
             value={filterKind}
             onChange={setFilterKind}
             clearable
             data={[
+              { value: "backend", label: "backend" },
               { value: "sdgb", label: "sdgb" },
               { value: "dxnet", label: "dxnet" },
             ]}
@@ -249,15 +273,18 @@ export default function AdminWorkerLogsPage() {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th w={170}>时间</Table.Th>
-                <Table.Th w={70}>kind</Table.Th>
-                <Table.Th w={210}>workerId</Table.Th>
+                <Table.Th w={120}>service</Table.Th>
+                <Table.Th w={80}>kind</Table.Th>
+                <Table.Th w={210}>instance</Table.Th>
                 <Table.Th w={70}>级别</Table.Th>
+                <Table.Th w={140}>context</Table.Th>
+                <Table.Th w={110}>job</Table.Th>
                 <Table.Th>message</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {items.map((row, idx) => (
-                <Table.Tr key={`${row.ts}-${row.workerId}-${idx}`}>
+                <Table.Tr key={`${row.ts}-${row.service}-${row.workerId}-${idx}`}>
                   <Table.Td>
                     <Text size="xs" c="dimmed" ff="monospace">
                       {new Date(row.ts).toLocaleTimeString("zh-CN", {
@@ -274,13 +301,18 @@ export default function AdminWorkerLogsPage() {
                     </Text>
                   </Table.Td>
                   <Table.Td>
+                    <Badge size="xs" variant="light" color={serviceColor(row.service)}>
+                      {row.service || "-"}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
                     <Badge size="xs" variant="light">
-                      {row.workerKind}
+                      {row.workerKind || "-"}
                     </Badge>
                   </Table.Td>
                   <Table.Td>
                     <Text size="xs" ff="monospace" c="dimmed">
-                      {row.workerId}
+                      {row.workerId || row.instance || "-"}
                     </Text>
                   </Table.Td>
                   <Table.Td>
@@ -291,6 +323,16 @@ export default function AdminWorkerLogsPage() {
                     >
                       {row.level}
                     </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs" c="dimmed" lineClamp={1}>
+                      {row.eventName || row.errorClass || "-"}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs" ff="monospace" c="dimmed" lineClamp={1}>
+                      {row.jobId ? row.jobId.slice(0, 8) : "-"}
+                    </Text>
                   </Table.Td>
                   <Table.Td>
                     <Text
@@ -309,7 +351,7 @@ export default function AdminWorkerLogsPage() {
               ))}
               {items.length === 0 && (
                 <Table.Tr>
-                  <Table.Td colSpan={5}>
+                  <Table.Td colSpan={8}>
                     <Text size="sm" c="dimmed" ta="center">
                       暂无符合条件的日志
                     </Text>
@@ -322,4 +364,11 @@ export default function AdminWorkerLogsPage() {
       </Card>
     </Stack>
   );
+}
+
+function serviceColor(service: string): string {
+  if (service === "backend") return "blue";
+  if (service === "dxnet-worker") return "orange";
+  if (service === "sdgb-worker") return "grape";
+  return "gray";
 }

@@ -218,7 +218,7 @@ export const adminContract = c.router({
     query: z.object({
       env: z.enum(["prod", "dev"]).optional(),
       service: z.string().optional(),
-      workerKind: z.enum(["dxnet", "sdgb"]).optional(),
+      workerKind: z.enum(["backend", "dxnet", "sdgb", "prober_export"]).optional(),
       workerId: z.string().optional(),
       level: z.string().optional(),
       jobId: z.string().optional(),
