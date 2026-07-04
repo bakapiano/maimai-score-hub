@@ -4,6 +4,7 @@ import {
   type CanvasImage,
   loadFcAsset,
   loadFsAsset,
+  loadDxScoreIconAsset,
   loadRankAsset,
   loadTypeAsset,
 } from './score-export.assets';
@@ -91,9 +92,26 @@ async function drawCard(
 
   const ds = card.detailLevelText;
   const ra = typeof card.rating === 'number' ? Math.round(card.rating) : '-';
+  const dxScoreText =
+    card.dxScore && card.dxScoreMax
+      ? `${card.dxScore}/${card.dxScoreMax}`
+      : (card.dxScore ?? null);
   ctx.font = `bold 15px ${FONT_FAMILY}`;
   ctx.textBaseline = 'middle';
-  drawStrokedText(ctx, `${ds} → ${ra}`, textX, y + 65, textColor, '#000', 2);
+  ctx.textAlign = 'left';
+  drawStrokedText(
+    ctx,
+    truncateText(ctx, `${ds} → ${ra}`, dxScoreText ? 112 : textMaxW),
+    textX,
+    y + 65,
+    textColor,
+    '#000',
+    2,
+  );
+  if (dxScoreText) {
+    ctx.textAlign = 'center';
+    drawStrokedText(ctx, dxScoreText, x + 219, y + 65, textColor, '#000', 2);
+  }
 
   const typeImg = await loadTypeAsset(card.type);
   if (typeImg) {
@@ -158,6 +176,13 @@ async function drawCard(
         '#000',
         2,
       );
+    }
+  }
+
+  if (card.dxStar && card.dxStar > 0) {
+    const dxStarImg = await loadDxScoreIconAsset(card.dxStar);
+    if (dxStarImg) {
+      ctx.drawImage(dxStarImg, x + 217, y + 80, 47, 26);
     }
   }
 

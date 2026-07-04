@@ -6,8 +6,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import {
+  cacheMusicList,
+  getCachedMusicList,
+} from "../utils/offlineCache";
 
 type MusicContextValue = {
   musics: MusicRow[];
@@ -23,29 +28,74 @@ type MusicContextValue = {
 
 const MusicContext = createContext<MusicContextValue | undefined>(undefined);
 
+let musicListRequest: Promise<MusicRow[]> | null = null;
+
+function areMusicListsEqual(a: MusicRow[], b: MusicRow[]) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
+async function requestMusicList() {
+  if (!musicListRequest) {
+    const nextRequest: Promise<MusicRow[]> = musicApi
+      .listAll({})
+      .then((res: { status: number; body?: unknown }) => {
+        if (res.status !== 200 || !Array.isArray(res.body)) {
+          throw new Error(`获取曲库失败 (HTTP ${res.status})`);
+        }
+        return res.body as MusicRow[];
+      })
+      .finally(() => {
+        if (musicListRequest === nextRequest) {
+          musicListRequest = null;
+        }
+      });
+
+    musicListRequest = nextRequest;
+  }
+
+  return musicListRequest;
+}
+
 export function MusicProvider({ children }: { children: React.ReactNode }) {
-  const [musics, setMusics] = useState<MusicRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [initialCachedMusics] = useState<MusicRow[] | null>(() =>
+    getCachedMusicList<MusicRow>(),
+  );
+  const [musics, setMusics] = useState<MusicRow[]>(
+    () => initialCachedMusics ?? [],
+  );
+  const musicsRef = useRef<MusicRow[]>(initialCachedMusics ?? []);
+  const [loading, setLoading] = useState(() => initialCachedMusics === null);
   const [error, setError] = useState<string | null>(null);
 
   const loadMusics = useCallback(async () => {
-    setLoading(true);
+    if (musicsRef.current.length === 0) {
+      setLoading(true);
+    }
     setError(null);
+
     try {
-      const res = await musicApi.listAll({});
-      if (res.status === 200 && Array.isArray(res.body)) {
-        setMusics(res.body as MusicRow[]);
-      } else {
-        setError(`获取曲库失败 (HTTP ${res.status})`);
-        setMusics([]);
-      }
+      const nextMusics = await requestMusicList();
+      cacheMusicList(nextMusics);
+      setMusics((current) =>
+        areMusicListsEqual(current, nextMusics) ? current : nextMusics,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "获取曲库失败");
-      setMusics([]);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    musicsRef.current = musics;
+  }, [musics]);
 
   useEffect(() => {
     loadMusics();

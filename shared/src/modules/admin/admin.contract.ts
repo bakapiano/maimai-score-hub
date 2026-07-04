@@ -13,7 +13,6 @@ import {
   HistoryLogWorkersSchema,
   JobDebugSchema,
   ObservabilityStatusSchema,
-  ProberExportMetricsSchema,
   RealtimeOverviewSchema,
   RealtimeWorkerGroupsSchema,
   ReportBotStatusBodySchema,
@@ -37,13 +36,6 @@ export const adminContract = c.router({
     path: "/admin/dashboard/job-stats",
     headers: c.type<{ "x-api-secret": string }>(),
     responses: { 200: JobStatsSchema },
-  },
-  getProberExportMetrics: {
-    method: "GET",
-    path: "/admin/dashboard/prober-export-metrics",
-    headers: c.type<{ "x-api-secret": string }>(),
-    query: z.object({ window: z.enum(["24h", "7d"]).optional() }),
-    responses: { 200: ProberExportMetricsSchema },
   },
   getJobTrend: {
     method: "GET",

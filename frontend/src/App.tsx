@@ -18,9 +18,6 @@ const SyncPage = lazy(() => import("./pages/SyncPage"));
 const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
 const AdminRealtimePage = lazy(() => import("./pages/admin/AdminRealtimePage"));
 const AdminHistoryPage = lazy(() => import("./pages/admin/AdminHistoryPage"));
-const AdminProberExportsPage = lazy(
-  () => import("./pages/admin/AdminProberExportsPage"),
-);
 const AdminJobDebugPage = lazy(() => import("./pages/admin/AdminJobDebugPage"));
 const AdminSyncPage = lazy(() => import("./pages/admin/AdminSyncPage"));
 const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage"));
@@ -69,10 +66,6 @@ function App() {
                   <Route path="/admin" element={<AdminLayout />}>
                     <Route index element={<AdminRealtimePage />} />
                     <Route path="history" element={<AdminHistoryPage />} />
-                    <Route
-                      path="prober-exports"
-                      element={<AdminProberExportsPage />}
-                    />
                     <Route path="sync" element={<AdminSyncPage />} />
                     <Route path="job-debug" element={<AdminJobDebugPage />} />
                     <Route path="users" element={<AdminUsersPage />} />

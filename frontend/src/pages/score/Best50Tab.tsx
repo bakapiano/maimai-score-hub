@@ -1,9 +1,11 @@
 import {
   Badge,
+  Box,
   Button,
   Card,
   Divider,
   Group,
+  Modal,
   Stack,
   Text,
   Title,
@@ -13,11 +15,16 @@ import {
   type DetailedMusicScoreCardProps,
 } from "../../components/MusicScoreCard";
 
-import { IconTrophy, IconDownload } from "@tabler/icons-react";
+import {
+  Best50ExportStyleCardPreview,
+  Best50ExportStyleView,
+} from "./Best50ExportStyleView";
+import { IconTrophy, IconDownload, IconSettings } from "@tabler/icons-react";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
+import type { MusicChartPayload, MusicRow } from "../../types/music";
 import type { SyncScore } from "../../types/syncScore";
 import { downloadBlob } from "../../utils/downloadBlob";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useMusic } from "../../providers/MusicProvider";
 import { useAuth } from "../../providers/AuthProvider";
 
@@ -78,6 +85,31 @@ type Best50TabProps = {
   loading: boolean;
 };
 
+type Best50ViewMode = "cards" | "export";
+type ChartLookup = MusicChartPayload & {
+  musicId: string;
+  chartIndex: number;
+};
+
+const B50_VIEW_MODE_STORAGE_KEY = "score_b50_view_mode";
+
+function readInitialViewMode(): Best50ViewMode {
+  try {
+    const cached = localStorage.getItem(B50_VIEW_MODE_STORAGE_KEY);
+    return cached === "cards" || cached === "export" ? cached : "export";
+  } catch {
+    return "export";
+  }
+}
+
+function persistViewMode(mode: Best50ViewMode) {
+  try {
+    localStorage.setItem(B50_VIEW_MODE_STORAGE_KEY, mode);
+  } catch {
+    // ignore storage failures
+  }
+}
+
 export function Best50Tab({ scores, loading }: Best50TabProps) {
   const { musicMap, chartMap } = useMusic();
   const { token } = useAuth();
@@ -88,6 +120,13 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
   const [selectedScore, setSelectedScore] =
     useState<DetailedMusicScoreCardProps | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [viewMode, setViewMode] =
+    useState<Best50ViewMode>(readInitialViewMode);
+  const [styleModalOpened, setStyleModalOpened] = useState(false);
+
+  const sampleScore = ratingSummary
+    ? (ratingSummary.newTop[0] ?? ratingSummary.oldTop[0] ?? null)
+    : null;
 
   const handleScoreClick = (
     score: SyncScore,
@@ -147,6 +186,12 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
     }
   };
 
+  const handleViewModeSelect = (mode: Best50ViewMode) => {
+    setViewMode(mode);
+    persistViewMode(mode);
+    setStyleModalOpened(false);
+  };
+
   return (
     <Stack gap="md">
       <ScoreDetailModal
@@ -154,179 +199,353 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
         onClose={() => setModalOpened(false)}
         scoreData={selectedScore}
       />
-      <Group justify="space-between" align="center">
+      <Modal
+        opened={styleModalOpened}
+        onClose={() => setStyleModalOpened(false)}
+        title="B50 样式"
+        centered
+        size="lg"
+      >
+        <Box
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: 12,
+          }}
+        >
+          <StyleChoice
+            label="卡片"
+            active={viewMode === "export"}
+            onSelect={() => handleViewModeSelect("export")}
+          >
+            {sampleScore ? (
+              <Best50ExportStyleCardPreview
+                score={sampleScore}
+                musicMap={musicMap}
+                chartMap={chartMap}
+              />
+            ) : (
+              <Text c="dimmed" size="sm">
+                暂无示例
+              </Text>
+            )}
+          </StyleChoice>
+
+          <StyleChoice
+            label="单图"
+            active={viewMode === "cards"}
+            onSelect={() => handleViewModeSelect("cards")}
+          >
+            {sampleScore ? (
+              <CompactMusicScoreCardPreview
+                score={sampleScore}
+                musicMap={musicMap}
+                chartMap={chartMap}
+              />
+            ) : (
+              <Text c="dimmed" size="sm">
+                暂无示例
+              </Text>
+            )}
+          </StyleChoice>
+        </Box>
+      </Modal>
+      <Group justify="space-between" align="center" wrap="wrap">
         <Title size="h3" order={4}>
           Best 50
         </Title>
-        <Button
-          size="xs"
-          variant="default"
-          leftSection={<IconDownload size={14} />}
-          onClick={handleExport}
-          loading={exporting}
-          disabled={!token}
-        >
-          导出图片
-        </Button>
+        <Group gap="xs" wrap="nowrap">
+          <Button
+            size="xs"
+            variant="default"
+            leftSection={<IconSettings size={14} />}
+            onClick={() => setStyleModalOpened(true)}
+            disabled={!ratingSummary}
+          >
+            样式
+          </Button>
+          <Button
+            size="xs"
+            variant="default"
+            leftSection={<IconDownload size={14} />}
+            onClick={handleExport}
+            loading={exporting}
+            disabled={!token}
+          >
+            导出图片
+          </Button>
+        </Group>
       </Group>
-      <Card withBorder shadow="none" padding="lg" radius="md">
-        {ratingSummary ? (
-          <Group justify="space-between" align="center" wrap="wrap">
-            <Stack gap={4}>
-              <Group gap={6} align="center">
-                <IconTrophy size={14} color="var(--mantine-color-dimmed)" />
-                <Text size="xs" tt="uppercase" fw={600} c="dimmed">
-                  Rating
-                </Text>
-              </Group>
-              <Text
-                size="xl"
-                fw={700}
-                variant="gradient"
-                gradient={{ from: "blue", to: "grape", deg: 90 }}
-              >
-                {ratingSummary.totalSum.toFixed(0)}
-              </Text>
-            </Stack>
-
-            <Group gap="xl">
-              <Stack gap={4} align="center">
-                <Text size="xs" c="dimmed" fw={500}>
-                  B35
-                </Text>
-                <Badge size="lg" variant="light" radius="sm">
-                  {ratingSummary.oldSum.toFixed(0)}
-                </Badge>
-                <Group gap={4}>
-                  <Text size="xs" c="dimmed">
-                    {ratingSummary.oldMax?.toFixed(0) ?? "-"} ~{" "}
-                    {ratingSummary.oldMin?.toFixed(0) ?? "-"}
-                  </Text>
-                </Group>
-              </Stack>
-              <Stack gap={4} align="center">
-                <Text size="xs" c="dimmed" fw={500}>
-                  B15
-                </Text>
-                <Badge size="lg" color="teal" variant="light" radius="sm">
-                  {ratingSummary.newSum.toFixed(0)}
-                </Badge>
-                <Group gap={4}>
-                  <Text size="xs" c="dimmed">
-                    {ratingSummary.newMax?.toFixed(0) ?? "-"} ~{" "}
-                    {ratingSummary.newMin?.toFixed(0) ?? "-"}
-                  </Text>
-                </Group>
-              </Stack>
-            </Group>
-          </Group>
-        ) : (
-          <Group justify="center" py="xs">
-            <Text c="dimmed" size="sm">
-              {loading ? "加载中..." : "暂无 rating 数据"}
-            </Text>
-          </Group>
-        )}
-      </Card>
 
       {ratingSummary ? (
         <Stack gap="lg">
-          <Stack gap={8}>
-            <Title size="h3" order={5}>
-              现版本 Best 15
-            </Title>
-            <Group
-              gap="sm"
-              align="stretch"
-              wrap="wrap"
-              style={{ width: "100%" }}
-            >
-              {ratingSummary.newTop.slice(0, 15).map((score, idx) => {
-                const music = musicMap.get(score.musicId);
-                const chart =
-                  score.cid != null ? chartMap.get(score.cid) : undefined;
-                return (
-                  <div
-                    key={`new-${score.musicId}-${score.type}-${score.chartIndex}`}
-                    style={{ cursor: "pointer" }}
-                    onClick={() => handleScoreClick(score, idx + 1, true)}
-                  >
-                    <CompactMusicScoreCard
-                      musicId={score.musicId}
-                      chartIndex={score.chartIndex}
-                      type={score.type}
-                      rating={score.rating ?? null}
-                      score={score.score || null}
-                      fs={score.fs || null}
-                      fc={score.fc || null}
-                      chartPayload={chart || null}
-                      songMetadata={music || null}
-                      bpm={
-                        typeof music?.bpm === "number"
-                          ? music.bpm
-                          : parseInt(music?.bpm as string) || null
-                      }
-                      noteDesigner={chart?.charter || null}
-                    />
-                  </div>
-                );
-              })}
-              {ratingSummary.newTop.length === 0 && (
-                <Text c="dimmed">暂无新曲</Text>
-              )}
-            </Group>
-          </Stack>
+          <Best50RatingCard ratingSummary={ratingSummary} />
+          {viewMode === "export" ? (
+            <Best50ExportStyleView
+              ratingSummary={ratingSummary}
+              musicMap={musicMap}
+              chartMap={chartMap}
+              onScoreClick={handleScoreClick}
+            />
+          ) : (
+            <>
+              <Stack gap={8}>
+                <Title size="h3" order={5}>
+                  现版本 Best 15
+                </Title>
+                <Group
+                  gap="sm"
+                  align="stretch"
+                  wrap="wrap"
+                  style={{ width: "100%" }}
+                >
+                  {ratingSummary.newTop.slice(0, 15).map((score, idx) => {
+                    const music = musicMap.get(score.musicId);
+                    const chart =
+                      score.cid != null ? chartMap.get(score.cid) : undefined;
+                    return (
+                      <div
+                        key={`new-${score.musicId}-${score.type}-${score.chartIndex}`}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => handleScoreClick(score, idx + 1, true)}
+                      >
+                        <CompactMusicScoreCard
+                          musicId={score.musicId}
+                          chartIndex={score.chartIndex}
+                          type={score.type}
+                          rating={score.rating ?? null}
+                          score={score.score || null}
+                          fs={score.fs || null}
+                          fc={score.fc || null}
+                          chartPayload={chart || null}
+                          songMetadata={music || null}
+                          bpm={
+                            typeof music?.bpm === "number"
+                              ? music.bpm
+                              : parseInt(music?.bpm as string) || null
+                          }
+                          noteDesigner={chart?.charter || null}
+                        />
+                      </div>
+                    );
+                  })}
+                  {ratingSummary.newTop.length === 0 && (
+                    <Text c="dimmed">暂无新曲</Text>
+                  )}
+                </Group>
+              </Stack>
 
-          <Stack gap={8}>
-            <Divider />
-            <Title size={"h3"} order={5}>
-              旧版本 Best 35
-            </Title>
-            <Group
-              gap="sm"
-              align="stretch"
-              wrap="wrap"
-              style={{ width: "100%" }}
-            >
-              {ratingSummary.oldTop.slice(0, 35).map((score, idx) => {
-                const music = musicMap.get(score.musicId);
-                const chart =
-                  score.cid != null ? chartMap.get(score.cid) : undefined;
-                return (
-                  <div
-                    key={`old-${score.musicId}-${score.type}-${score.chartIndex}`}
-                    style={{ cursor: "pointer" }}
-                    onClick={() => handleScoreClick(score, idx + 1, false)}
-                  >
-                    <CompactMusicScoreCard
-                      musicId={score.musicId}
-                      chartIndex={score.chartIndex}
-                      type={score.type}
-                      rating={score.rating ?? null}
-                      score={score.score || null}
-                      fs={score.fs || null}
-                      fc={score.fc || null}
-                      chartPayload={chart || null}
-                      songMetadata={music || null}
-                      bpm={
-                        typeof music?.bpm === "number"
-                          ? music.bpm
-                          : parseInt(music?.bpm as string) || null
-                      }
-                      noteDesigner={chart?.charter || null}
-                    />
-                  </div>
-                );
-              })}
-              {ratingSummary.oldTop.length === 0 && (
-                <Text c="dimmed">暂无旧曲</Text>
-              )}
-            </Group>
-          </Stack>
+              <Stack gap={8}>
+                <Divider />
+                <Title size={"h3"} order={5}>
+                  旧版本 Best 35
+                </Title>
+                <Group
+                  gap="sm"
+                  align="stretch"
+                  wrap="wrap"
+                  style={{ width: "100%" }}
+                >
+                  {ratingSummary.oldTop.slice(0, 35).map((score, idx) => {
+                    const music = musicMap.get(score.musicId);
+                    const chart =
+                      score.cid != null ? chartMap.get(score.cid) : undefined;
+                    return (
+                      <div
+                        key={`old-${score.musicId}-${score.type}-${score.chartIndex}`}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => handleScoreClick(score, idx + 1, false)}
+                      >
+                        <CompactMusicScoreCard
+                          musicId={score.musicId}
+                          chartIndex={score.chartIndex}
+                          type={score.type}
+                          rating={score.rating ?? null}
+                          score={score.score || null}
+                          fs={score.fs || null}
+                          fc={score.fc || null}
+                          chartPayload={chart || null}
+                          songMetadata={music || null}
+                          bpm={
+                            typeof music?.bpm === "number"
+                              ? music.bpm
+                              : parseInt(music?.bpm as string) || null
+                          }
+                          noteDesigner={chart?.charter || null}
+                        />
+                      </div>
+                    );
+                  })}
+                  {ratingSummary.oldTop.length === 0 && (
+                    <Text c="dimmed">暂无旧曲</Text>
+                  )}
+                </Group>
+              </Stack>
+            </>
+          )}
         </Stack>
       ) : (
-        !loading && <Text c="dimmed">暂无 B50 数据</Text>
+        <Card withBorder shadow="none" padding="lg" radius="md">
+          <Group justify="center" py="xs">
+            <Text c="dimmed" size="sm">
+              {loading ? "加载中..." : "暂无 B50 数据"}
+            </Text>
+          </Group>
+        </Card>
       )}
     </Stack>
+  );
+}
+
+function Best50RatingCard({
+  ratingSummary,
+}: {
+  ratingSummary: RatingSummary;
+}) {
+  return (
+    <Card withBorder shadow="none" padding="lg" radius="md">
+      <Group justify="space-between" align="center" wrap="wrap">
+        <Stack gap={4}>
+          <Group gap={6} align="center">
+            <IconTrophy size={14} color="var(--mantine-color-dimmed)" />
+            <Text size="xs" tt="uppercase" fw={600} c="dimmed">
+              Rating
+            </Text>
+          </Group>
+          <Text
+            size="xl"
+            fw={700}
+            variant="gradient"
+            gradient={{ from: "blue", to: "grape", deg: 90 }}
+          >
+            {ratingSummary.totalSum.toFixed(0)}
+          </Text>
+        </Stack>
+
+        <Group gap="xl">
+          <Stack gap={4} align="center">
+            <Text size="xs" c="dimmed" fw={500}>
+              B35
+            </Text>
+            <Badge size="lg" variant="light" radius="sm">
+              {ratingSummary.oldSum.toFixed(0)}
+            </Badge>
+            <Group gap={4}>
+              <Text size="xs" c="dimmed">
+                {ratingSummary.oldMax?.toFixed(0) ?? "-"} ~{" "}
+                {ratingSummary.oldMin?.toFixed(0) ?? "-"}
+              </Text>
+            </Group>
+          </Stack>
+          <Stack gap={4} align="center">
+            <Text size="xs" c="dimmed" fw={500}>
+              B15
+            </Text>
+            <Badge size="lg" color="teal" variant="light" radius="sm">
+              {ratingSummary.newSum.toFixed(0)}
+            </Badge>
+            <Group gap={4}>
+              <Text size="xs" c="dimmed">
+                {ratingSummary.newMax?.toFixed(0) ?? "-"} ~{" "}
+                {ratingSummary.newMin?.toFixed(0) ?? "-"}
+              </Text>
+            </Group>
+          </Stack>
+        </Group>
+      </Group>
+    </Card>
+  );
+}
+
+type StyleChoiceProps = {
+  label: string;
+  active: boolean;
+  children: ReactNode;
+  onSelect: () => void;
+};
+
+function StyleChoice({ label, active, children, onSelect }: StyleChoiceProps) {
+  return (
+    <Box
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        minWidth: 0,
+        padding: 12,
+        borderRadius: 8,
+        border: active
+          ? "2px solid var(--mantine-color-blue-6)"
+          : "1px solid var(--mantine-color-default-border)",
+        background: active
+          ? "var(--mantine-color-blue-light)"
+          : "var(--mantine-color-body)",
+        cursor: "pointer",
+      }}
+    >
+      <Group justify="space-between" align="center" gap="xs">
+        <Text fw={700} size="sm">
+          {label}
+        </Text>
+        {active ? (
+          <Badge size="sm" variant="filled">
+            当前
+          </Badge>
+        ) : null}
+      </Group>
+      <Box
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: 132,
+          overflow: "hidden",
+        }}
+      >
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
+function CompactMusicScoreCardPreview({
+  score,
+  musicMap,
+  chartMap,
+}: {
+  score: SyncScore;
+  musicMap: Map<string, MusicRow>;
+  chartMap: Map<number, ChartLookup>;
+}) {
+  const music = musicMap.get(score.musicId);
+  const chart = score.cid != null ? chartMap.get(score.cid) : undefined;
+
+  return (
+    <CompactMusicScoreCard
+      musicId={score.musicId}
+      chartIndex={score.chartIndex}
+      type={score.type}
+      rating={score.rating ?? null}
+      score={score.score || null}
+      fs={score.fs || null}
+      fc={score.fc || null}
+      chartPayload={chart || null}
+      songMetadata={music || null}
+      bpm={
+        typeof music?.bpm === "number"
+          ? music.bpm
+          : parseInt(music?.bpm as string) || null
+      }
+      noteDesigner={chart?.charter || null}
+    />
   );
 }

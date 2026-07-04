@@ -45,6 +45,9 @@ export type CompactCard = {
   chartIndex: number;
   type: string;
   score: string | null;
+  dxScore: string | null;
+  dxScoreMax: number | null;
+  dxStar: number | null;
   rating: number | null;
   fc: string | null;
   fs: string | null;

@@ -5,7 +5,6 @@ import { UserEntity, UserSchema } from '../users/schemas/user.schema';
 import { AdminCatalogService } from './services/admin-catalog.service';
 import { AdminJobMetricsService } from './services/admin-job-metrics.service';
 import { AdminJobQueryService } from './services/admin-job-query.service';
-import { AdminProberExportMetricsService } from './services/admin-prober-export-metrics.service';
 import { AdminSummaryService } from './services/admin-summary.service';
 import { AdminUsersService } from './services/admin-users.service';
 import {
@@ -17,10 +16,6 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MusicModule } from '../music/music.module';
 import { JobModule } from '../job/job.module';
-import {
-  ProberExportJobEntity,
-  ProberExportJobSchema,
-} from '../prober-export/schemas/prober-export-job.schema';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { UsersModule } from '../users/users.module';
 
@@ -31,7 +26,6 @@ import { UsersModule } from '../users/users.module';
       { name: MusicEntity.name, schema: MusicSchema },
       { name: SyncEntity.name, schema: SyncSchema },
       { name: JobEntity.name, schema: JobSchema },
-      { name: ProberExportJobEntity.name, schema: ProberExportJobSchema },
       { name: BotStatusEntity.name, schema: BotStatusSchema },
     ]),
     CoverModule,
@@ -44,7 +38,6 @@ import { UsersModule } from '../users/users.module';
     AdminCatalogService,
     AdminJobMetricsService,
     AdminJobQueryService,
-    AdminProberExportMetricsService,
     AdminSummaryService,
     AdminUsersService,
   ],
@@ -52,7 +45,6 @@ import { UsersModule } from '../users/users.module';
     AdminCatalogService,
     AdminJobMetricsService,
     AdminJobQueryService,
-    AdminProberExportMetricsService,
     AdminSummaryService,
     AdminUsersService,
   ],

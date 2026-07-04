@@ -1,0 +1,274 @@
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  font-family:
+    "Resource Han Rounded CN", "Torus", "PingFang SC", "Noto Sans CJK SC",
+    sans-serif;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 28px;
+}
+
+.sectionTitle {
+  color: rgba(0, 0, 0, 0.82);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  -webkit-text-stroke: 3px #fff;
+  paint-order: stroke fill;
+}
+
+.sectionRating {
+  color: rgba(0, 0, 0, 0.72);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  -webkit-text-stroke: 2px #fff;
+  paint-order: stroke fill;
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 252px), 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.singleCardPreview {
+  width: min(100%, 264px);
+}
+
+.card {
+  container-type: inline-size;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 264 / 109;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 18%;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.16);
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  pointer-events: none;
+}
+
+.cardBg,
+.cover,
+.typeBadge,
+.rankBadge,
+.fcBadge,
+.fsBadge {
+  position: absolute;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.cardBg {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.coverFallback,
+.cover {
+  left: 4.545%;
+  top: 11.009%;
+  width: 28.409%;
+  height: 68.807%;
+}
+
+.coverFallback {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1f2937;
+  color: #e2e8f0;
+  font-size: clamp(8px, 3.8cqw, 10px);
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.cover {
+  object-fit: cover;
+}
+
+.cardText {
+  position: absolute;
+  left: 35.227%;
+  width: 61.742%;
+  overflow: hidden;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.cardTitle {
+  top: 3.67%;
+  height: 18.349%;
+  font-size: clamp(11px, 5.3cqw, 16px);
+  line-height: 1.4;
+}
+
+.scoreText {
+  top: 22.018%;
+  height: 25.688%;
+  font-size: clamp(16px, 8.33cqw, 24px);
+  line-height: 1.25;
+}
+
+.detailText {
+  top: 49.541%;
+  height: 20.183%;
+  width: 42.424%;
+  font-size: clamp(12px, 5.68cqw, 17px);
+  line-height: 1.45;
+}
+
+.dxScoreText {
+  position: absolute;
+  left: 67.424%;
+  top: 49.541%;
+  width: 29.545%;
+  height: 20.183%;
+  overflow: hidden;
+  font-size: clamp(10px, 4.4cqw, 15px);
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.typeBadge {
+  left: 19.318%;
+  top: 83.486%;
+  width: 14.015%;
+  height: 12.844%;
+}
+
+.rankBadge {
+  left: 34.848%;
+  top: 71.56%;
+  width: 23.864%;
+  height: 25.688%;
+}
+
+.fcBadge {
+  left: 58.333%;
+  top: 70.642%;
+  width: 12.879%;
+  height: 31.193%;
+}
+
+.fsBadge {
+  left: 70.076%;
+  top: 70.642%;
+  width: 12.879%;
+  height: 31.193%;
+}
+
+.fallbackBadge {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: clamp(8px, 3.79cqw, 10px);
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  text-shadow:
+    -1px -1px #000,
+    1px -1px #000,
+    -1px 1px #000,
+    1px 1px #000;
+  pointer-events: none;
+}
+
+.rankFallback {
+  left: 34.848%;
+  top: 71.56%;
+  width: 23.864%;
+  height: 25.688%;
+}
+
+.fcFallback {
+  left: 58.333%;
+  top: 70.642%;
+  width: 12.879%;
+  height: 31.193%;
+}
+
+.fsFallback {
+  left: 70.076%;
+  top: 70.642%;
+  width: 12.879%;
+  height: 31.193%;
+}
+
+.dxStarIcon {
+  position: absolute;
+  left: 82.197%;
+  top: 73.394%;
+  width: 17.803%;
+  height: 23.853%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.musicId {
+  position: absolute;
+  left: 0;
+  top: 82.569%;
+  width: 19.697%;
+  height: 16.514%;
+  overflow: hidden;
+  font-size: clamp(10px, 4.92cqw, 15px);
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+@media (max-width: 520px) {
+  .cardGrid {
+    grid-template-columns: 1fr;
+  }
+}

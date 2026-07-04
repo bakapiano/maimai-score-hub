@@ -108,3 +108,12 @@ export async function loadRankAsset(rank: string): Promise<CanvasImage | null> {
 export async function loadTypeAsset(type: string): Promise<CanvasImage | null> {
   return loadAsset(type === 'dx' ? 'DX.png' : 'SD.png');
 }
+
+export async function loadDxScoreIconAsset(
+  stars: number,
+): Promise<CanvasImage | null> {
+  if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
+    return null;
+  }
+  return loadAsset(`UI_GAM_Gauge_DXScoreIcon_0${stars}.png`);
+}

@@ -215,7 +215,24 @@ export class JobService {
     });
 
     const createdEntity = created.toObject() as JobEntity;
-    await this.jobQueue.enqueueWorkerJob(createdEntity);
+    try {
+      await this.jobQueue.enqueueWorkerJob(createdEntity);
+    } catch (err) {
+      await this.jobModel.updateOne(
+        { id, status: 'queued' },
+        {
+          $set: {
+            status: 'failed',
+            runAt: null,
+            error: `failed to enqueue dxnet BullMQ job: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+            updatedAt: new Date(),
+          },
+        },
+      );
+      throw err;
+    }
     this.observability.recordJobTimelineEvent({
       ts: now,
       jobId: id,

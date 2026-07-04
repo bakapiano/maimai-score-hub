@@ -2435,25 +2435,6 @@ paths:
             application/json:
               schema:
                 nullable: true
-  /admin/dashboard/prober-export-metrics:
-    get:
-      tags: *a6
-      parameters:
-        - name: window
-          in: query
-          schema:
-            type: string
-            enum:
-              - 24h
-              - 7d
-      operationId: admin.getProberExportMetrics
-      responses:
-        "200":
-          description: "200"
-          content:
-            application/json:
-              schema:
-                nullable: true
   /admin/dashboard/job-trend:
     get:
       tags: *a6
@@ -2935,8 +2916,10 @@ paths:
           schema:
             type: string
             enum:
+              - backend
               - dxnet
               - sdgb
+              - prober_export
         - name: workerId
           in: query
           schema:

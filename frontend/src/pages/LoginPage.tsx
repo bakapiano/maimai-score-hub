@@ -42,6 +42,7 @@ import { hasOfflineData } from "../utils/offlineCache";
 import { AppFooter } from "../components/AppFooter";
 import { InstallAppButton } from "../components/InstallAppButton";
 import { recordAnalyticsEvent } from "../utils/observability";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 type LoginStatus = {
   status?: string;
@@ -99,6 +100,7 @@ function FriendCodeGuide() {
 }
 
 export default function LoginPage() {
+  useDocumentTitle("登陆");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { token, setToken, offline, setOffline } = useAuth();

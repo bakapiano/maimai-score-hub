@@ -1,6 +1,5 @@
-/* Always reserve space for vertical scrollbar to prevent layout shift when modals open */
+/* Reserve scrollbar space when needed without forcing an always-visible bar. */
 html {
-  overflow-y: scroll;
   scrollbar-gutter: stable;
 }
 

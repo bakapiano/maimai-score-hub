@@ -3,6 +3,7 @@
 export interface ChartPayload {
   level?: string;
   detailLevel?: number | null;
+  notes?: unknown;
   charter?: string | null;
 }
 

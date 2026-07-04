@@ -17,7 +17,6 @@ import {
   IconBug,
   IconChartBar,
   IconClock,
-  IconCloudUpload,
   IconDatabase,
   IconLogs,
   IconUsers,
@@ -28,6 +27,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { adminApi } from "../../api/appClient";
 import { useApiSharedSecret } from "./adminUtils";
 import { useDisclosure } from "@mantine/hooks";
+import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 
 type AdminPageMeta = {
   label: string;
@@ -48,12 +48,6 @@ const adminPages: AdminPageMeta[] = [
     to: "/admin/history",
     icon: <IconChartBar size={18} />,
     color: "grape",
-  },
-  {
-    label: "查分器导出",
-    to: "/admin/prober-exports",
-    icon: <IconCloudUpload size={18} />,
-    color: "teal",
   },
   {
     label: "数据同步",
@@ -95,6 +89,8 @@ export default function AdminLayout() {
   // the `colorScheme === "dark"` style checks below.
   const colorScheme = useComputedColorScheme("light");
   const touchStartX = useRef<number | null>(null);
+  const currentPage = adminPages.find((page) => page.to === location.pathname);
+  useDocumentTitle(currentPage?.label ?? "管理后台");
 
   const verifyPassword = useCallback(async () => {
     if (!inputPassword.trim()) {

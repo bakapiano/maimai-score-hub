@@ -3,12 +3,13 @@ import {
   Logger,
   NotFoundException,
   OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
 import type { Model } from 'mongoose';
-import { Queue } from 'bullmq';
+import { Queue, QueueEvents } from 'bullmq';
 import type { SdgbWorkerJobData } from '@maimai-score-hub/shared';
 
 import {
@@ -35,6 +36,24 @@ const SDGB_JOB_TYPES: SdgbJobType[] = [
   'get_user_map',
   'add_rival',
 ];
+const TERMINAL_STATUSES: SdgbJobStatus[] = ['completed', 'failed'];
+
+function getPositiveInt(
+  config: ConfigService,
+  key: string,
+  fallback: number,
+): number {
+  const raw = config.get<string | number>(key);
+  if (raw === null || raw === undefined || raw === '') {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 export interface SdgbJobView {
   id: string;
@@ -149,10 +168,17 @@ function getSdgbTimelineEventName(status: SdgbJobStatus): string {
 }
 
 @Injectable()
-export class SdgbJobService implements OnModuleDestroy {
+export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SdgbJobService.name);
   private readonly sdgbQueue: Queue<SdgbWorkerJobData>;
+  private readonly sdgbQueueEvents: QueueEvents;
   private readonly workerStatusTtlSeconds: number;
+  private readonly queueRepairIntervalMs: number;
+  private readonly queueRepairStartupDelayMs: number;
+  private readonly queueRepairMinAgeMs: number;
+  private readonly queueRepairBatchSize: number;
+  private queueRepairInterval: NodeJS.Timeout | null = null;
+  private queueRepairStartupTimer: NodeJS.Timeout | null = null;
 
   constructor(
     @InjectModel(SdgbJobEntity.name)
@@ -161,18 +187,64 @@ export class SdgbJobService implements OnModuleDestroy {
     private readonly observability: ObservabilityIngestService,
     config: ConfigService,
   ) {
+    const queueOptions = createBullmqQueueOptions(config);
     this.sdgbQueue = new Queue<SdgbWorkerJobData>(SDGB_WORKER_QUEUE_NAME, {
-      ...createBullmqQueueOptions(config),
+      ...queueOptions,
       defaultJobOptions: DEFAULT_WORKER_JOB_OPTIONS,
     });
+    this.sdgbQueueEvents = new QueueEvents(SDGB_WORKER_QUEUE_NAME, queueOptions);
     this.workerStatusTtlSeconds = Math.max(
       1,
       Math.floor(WORKER_STALE_MS / 1000) * 2,
     );
+    this.queueRepairIntervalMs = getPositiveInt(
+      config,
+      'SDGB_QUEUE_REPAIR_INTERVAL_MS',
+      60_000,
+    );
+    this.queueRepairStartupDelayMs = getPositiveInt(
+      config,
+      'SDGB_QUEUE_REPAIR_STARTUP_DELAY_MS',
+      15_000,
+    );
+    this.queueRepairMinAgeMs = getPositiveInt(
+      config,
+      'SDGB_QUEUE_REPAIR_MIN_AGE_MS',
+      30_000,
+    );
+    this.queueRepairBatchSize = getPositiveInt(
+      config,
+      'SDGB_QUEUE_REPAIR_BATCH_SIZE',
+      100,
+    );
+  }
+
+  async onModuleInit(): Promise<void> {
+    this.ensureSdgbQueueEvents();
+    this.queueRepairStartupTimer = setTimeout(() => {
+      this.queueRepairStartupTimer = null;
+      void this.repairMissingQueuedJobs().catch((err) => {
+        this.logger.warn(`initial sdgb queue repair failed: ${errorMessage(err)}`);
+      });
+      this.queueRepairInterval = setInterval(() => {
+        void this.repairMissingQueuedJobs().catch((err) => {
+          this.logger.warn(`sdgb queue repair failed: ${errorMessage(err)}`);
+        });
+      }, this.queueRepairIntervalMs);
+    }, this.queueRepairStartupDelayMs);
   }
 
   async onModuleDestroy(): Promise<void> {
+    if (this.queueRepairStartupTimer) {
+      clearTimeout(this.queueRepairStartupTimer);
+      this.queueRepairStartupTimer = null;
+    }
+    if (this.queueRepairInterval) {
+      clearInterval(this.queueRepairInterval);
+      this.queueRepairInterval = null;
+    }
     await this.sdgbQueue.close();
+    await this.sdgbQueueEvents.close();
   }
 
   /**
@@ -200,13 +272,22 @@ export class SdgbJobService implements OnModuleDestroy {
       createdAt: now,
       updatedAt: now,
     });
-    await this.sdgbQueue.add(
-      'sdgb-job',
-      { jobId: id },
-      {
-        jobId: id,
-      },
-    );
+    try {
+      await this.addBullmqJob(id);
+    } catch (err) {
+      const message = `failed to enqueue sdgb BullMQ job: ${errorMessage(err)}`;
+      await this.model.updateOne(
+        { id, status: 'queued' },
+        {
+          $set: {
+            status: 'failed',
+            error: message,
+            updatedAt: new Date(),
+          },
+        },
+      );
+      throw err;
+    }
     this.observability.recordJobTimelineEvent({
       ts: now,
       jobId: id,
@@ -524,5 +605,89 @@ export class SdgbJobService implements OnModuleDestroy {
 
   private workerStatusKey(workerId: string): string {
     return this.redis.key(`status:worker:sdgb:${workerId}`);
+  }
+
+  private async addBullmqJob(jobId: string): Promise<void> {
+    await this.sdgbQueue.add(
+      'sdgb-job',
+      { jobId },
+      {
+        jobId,
+      },
+    );
+  }
+
+  private ensureSdgbQueueEvents(): void {
+    this.sdgbQueueEvents.on('failed', ({ jobId, failedReason }) => {
+      if (!jobId) {
+        return;
+      }
+      this.markBullmqJobFailed(jobId, failedReason).catch((err) => {
+        this.logger.warn(
+          `failed to mirror sdgb BullMQ failure for ${jobId}: ${errorMessage(
+            err,
+          )}`,
+        );
+      });
+    });
+    this.sdgbQueueEvents.on('stalled', ({ jobId }) => {
+      this.logger.warn(`SDGB BullMQ job stalled job=${jobId}`);
+    });
+    this.sdgbQueueEvents.on('error', (err) => {
+      this.logger.warn(`SDGB BullMQ queue events error: ${err.message}`);
+    });
+  }
+
+  private async markBullmqJobFailed(
+    jobId: string,
+    failedReason?: string,
+  ): Promise<void> {
+    await this.model.updateOne(
+      { id: jobId, status: { $nin: TERMINAL_STATUSES } },
+      {
+        $set: {
+          status: 'failed',
+          executing: false,
+          error: failedReason || 'BullMQ job failed',
+          updatedAt: new Date(),
+        },
+      },
+    );
+  }
+
+  private async repairMissingQueuedJobs(): Promise<void> {
+    const cutoff = new Date(Date.now() - this.queueRepairMinAgeMs);
+    const jobs = await this.model
+      .find({ status: 'queued', createdAt: { $lte: cutoff } })
+      .sort({ createdAt: 1 })
+      .limit(this.queueRepairBatchSize)
+      .lean<SdgbJobEntity[]>();
+
+    let repaired = 0;
+    for (const job of jobs) {
+      const existing = await this.sdgbQueue.getJob(job.id);
+      if (existing) {
+        const state = await existing.getState();
+        if (state !== 'failed' && state !== 'completed') {
+          continue;
+        }
+        await existing.remove();
+      }
+
+      try {
+        await this.addBullmqJob(job.id);
+        repaired += 1;
+      } catch (err) {
+        this.logger.warn(
+          `failed to repair missing sdgb BullMQ job ${job.id}: ${errorMessage(
+            err,
+          )}`,
+        );
+      }
+    }
+
+    if (repaired > 0) {
+      this.logger.warn(`repaired ${repaired} missing sdgb BullMQ jobs`);
+    }
   }
 }
