@@ -71,6 +71,33 @@ jobs:
             cd "$DEPLOY_PATH"
             sudo chown -R "$USER:$USER" "$(pwd)" || true
 
+            if command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
+            else
+              COMPOSE_CMD="docker compose"
+            fi
+
+            if [ -f backend/docker-compose.yml ]; then
+              BACKUP_DIR="$DEPLOY_PATH/backups/mongo"
+              BACKUP_FILE="$BACKUP_DIR/mongo-predeploy-${{ github.sha }}-$(date -u +%Y%m%dT%H%M%SZ).archive.gz"
+              mkdir -p "$BACKUP_DIR"
+              echo "Creating MongoDB backup at $BACKUP_FILE"
+              (
+                cd backend
+                sudo $COMPOSE_CMD exec -T mongo sh -lc \
+                  'mongodump --archive --gzip --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin'
+              ) > "$BACKUP_FILE"
+              if [ ! -s "$BACKUP_FILE" ]; then
+                echo "❌ MongoDB backup was not created or is empty"
+                rm -f "$BACKUP_FILE"
+                exit 1
+              fi
+              chmod 600 "$BACKUP_FILE"
+              echo "✅ MongoDB backup created: $BACKUP_FILE"
+            else
+              echo "No existing backend/docker-compose.yml found; skipping pre-deploy MongoDB backup"
+            fi
+
             RUNTIME_DIR="$(mktemp -d)"
             if [ -f backend/.env ]; then
               mkdir -p "$RUNTIME_DIR/backend"
@@ -126,13 +153,6 @@ jobs:
             upsert_env ARTIFACT_SERVICE_URL "http://host.docker.internal:3901"
             upsert_env ARTIFACT_SHARED_SECRET "${ARTIFACT_SHARED_SECRET:-}"
             printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
-
-            # Build new image
-            if command -v docker-compose >/dev/null 2>&1; then
-              COMPOSE_CMD="docker-compose"
-            else
-              COMPOSE_CMD="docker compose"
-            fi
 
             cd backend
             # Cap docker build cache BEFORE build (backend host has a
