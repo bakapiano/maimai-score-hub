@@ -44,11 +44,11 @@
 [] 前端添加 eslint check
 
 07/04
-现在的 bot pick 逻辑会导致 job 倾泻到 负载最低的那个 bot 上
-考虑 平均分配
+[]现在的 bot pick 逻辑会导致 job 倾泻到 负载最低的那个 bot 上
+[]考虑 平均分配
 
 07/05
-目前 get_user_recent_event path 已经关闭止血
+[]目前 get_user_recent_event path 已经关闭止血
 
 get_user_recent event 很容易用 add rival 把好友数量撑爆到100
 
@@ -60,3 +60,5 @@ get_user_recent event 很容易用 add rival 把好友数量撑爆到100
 量是否在安全范围内 来决定是执行 还是 delay 一段时间
 
     如果要执行，自己call sdgb worker add rival，而不是 先 add rival 再去 queue job
+
+[] 前端 fc > fc+ > ap > ap+ 统计数量的时候计数有问题
