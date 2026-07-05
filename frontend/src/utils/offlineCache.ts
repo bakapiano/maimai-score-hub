@@ -34,6 +34,7 @@ function safeSet(key: string, value: unknown): void {
 export type CachedProfile = {
   avatarUrl: string | null;
   username: string | null;
+  friendCode?: string | null;
 };
 
 export function cacheProfile(profile: CachedProfile): void {
@@ -47,9 +48,14 @@ export function getCachedProfile(): CachedProfile | null {
 // ── Sync/Latest cache ──
 
 export type CachedSyncLatest = {
+  id?: string;
   scores: unknown[];
   createdAt?: string;
   updatedAt?: string;
+  autoExportResult?: {
+    divingFish?: { status: string; message?: string } | null;
+    lxns?: { status: string; message?: string } | null;
+  } | null;
 };
 
 export function cacheSyncLatest(data: CachedSyncLatest): void {
@@ -94,7 +100,9 @@ export function setOfflineMode(enabled: boolean): void {
     } else {
       localStorage.removeItem(OFFLINE_KEY);
     }
-  } catch {}
+  } catch {
+    // localStorage may be unavailable in private mode.
+  }
 }
 
 export function isOfflineMode(): boolean {

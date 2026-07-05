@@ -161,6 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           cacheProfile({
             avatarUrl: nextProfile.profile.avatarUrl,
             username: nextProfile.profile.username,
+            friendCode: nextProfile.friendCode,
           });
         }
 

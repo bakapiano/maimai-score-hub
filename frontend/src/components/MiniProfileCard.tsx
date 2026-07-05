@@ -1,5 +1,6 @@
 import { Avatar, Group, Menu, Text, UnstyledButton } from "@mantine/core";
 import { IconCopy, IconLogin, IconLogout } from "@tabler/icons-react";
+import type { SyntheticEvent } from "react";
 
 import { normalizeMaimaiImgUrl } from "../utils/maimaiImages";
 import { notifications } from "@mantine/notifications";
@@ -18,6 +19,23 @@ type HeaderProps = Props & {
   onLogout?: () => void;
   offline?: boolean;
 };
+
+const AVATAR_PLACEHOLDER_SRC = "/avatar-placeholder.svg";
+
+function getAvatarSrc(profile: MiniProfile | null) {
+  return profile?.avatarUrl
+    ? normalizeMaimaiImgUrl(profile.avatarUrl)
+    : AVATAR_PLACEHOLDER_SRC;
+}
+
+function handleAvatarImageError(event: SyntheticEvent<HTMLImageElement>) {
+  const img = event.currentTarget;
+  const placeholderUrl = new URL(AVATAR_PLACEHOLDER_SRC, window.location.origin)
+    .href;
+  if (img.src !== placeholderUrl) {
+    img.src = AVATAR_PLACEHOLDER_SRC;
+  }
+}
 
 // Compact version for header with dropdown menu
 export function HeaderProfileCard({ profile, onLogout, offline }: HeaderProps) {
@@ -40,16 +58,13 @@ export function HeaderProfileCard({ profile, onLogout, offline }: HeaderProps) {
                 {profile?.username ?? "离线模式"}
               </Text>
               <Avatar
-                src={
-                  profile?.avatarUrl
-                    ? normalizeMaimaiImgUrl(profile.avatarUrl)
-                    : "/avatar-placeholder.svg"
-                }
+                src={getAvatarSrc(profile)}
                 alt={profile?.username ?? "avatar"}
                 size={36}
                 radius="0"
                 imageProps={{
                   referrerPolicy: "no-referrer",
+                  onError: handleAvatarImageError,
                   style: { transformOrigin: "center" },
                 }}
               />
@@ -91,16 +106,13 @@ export function HeaderProfileCard({ profile, onLogout, offline }: HeaderProps) {
               {profile?.username ?? "我的账号"}
             </Text>
             <Avatar
-              src={
-                profile?.avatarUrl
-                  ? normalizeMaimaiImgUrl(profile.avatarUrl)
-                  : "/avatar-placeholder.svg"
-              }
+              src={getAvatarSrc(profile)}
               alt={profile?.username ?? "avatar"}
               size={36}
               radius="0"
               imageProps={{
                 referrerPolicy: "no-referrer",
+                onError: handleAvatarImageError,
                 style: { transformOrigin: "center" },
               }}
             />

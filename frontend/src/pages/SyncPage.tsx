@@ -22,6 +22,7 @@ import type { JobResponse as JobStatus } from "@maimai-score-hub/shared";
 
 import { syncApi, usersApi } from "../api/appClient";
 import { fetchLatestSync } from "../api/syncLatest";
+import { cacheSyncLatest, getCachedSyncLatest } from "../utils/offlineCache";
 import {
   JobApiError,
   createJob,
@@ -218,6 +219,42 @@ function formatDate(dateString: string) {
   });
 }
 
+function normalizeLastSync(
+  data: Partial<LastSyncInfo> | null | undefined,
+): LastSyncInfo | null {
+  if (!data) return null;
+
+  const createdAt = data.createdAt ?? data.updatedAt;
+  const updatedAt = data.updatedAt ?? data.createdAt;
+  if (!createdAt || !updatedAt) return null;
+
+  return {
+    id: data.id ?? "cached-latest-sync",
+    createdAt,
+    updatedAt,
+    scores: Array.isArray(data.scores) ? data.scores : [],
+    autoExportResult: data.autoExportResult ?? null,
+  };
+}
+
+function readCachedLastSync(): LastSyncInfo | null {
+  return normalizeLastSync(getCachedSyncLatest());
+}
+
+function rememberLastSync(data: Partial<LastSyncInfo> | null | undefined) {
+  const normalized = normalizeLastSync(data);
+  if (!normalized) return null;
+
+  cacheSyncLatest({
+    id: normalized.id,
+    scores: normalized.scores,
+    createdAt: normalized.createdAt,
+    updatedAt: normalized.updatedAt,
+    autoExportResult: normalized.autoExportResult,
+  });
+  return normalized;
+}
+
 /**
  * Section heading used at the top level of SyncPage. Keeps the visual
  * rhythm consistent across "同步成绩 / 神秘二维码绑定 /
@@ -280,7 +317,9 @@ export default function SyncPage() {
   const [profileError, setProfileError] = useState<string | null>(null);
 
   // Last sync info
-  const [lastSync, setLastSync] = useState<LastSyncInfo | null>(null);
+  const [lastSync, setLastSync] = useState<LastSyncInfo | null>(() =>
+    readCachedLastSync(),
+  );
 
   // Token settings
   const [divingFishToken, setDivingFishToken] = useState("");
@@ -328,11 +367,13 @@ export default function SyncPage() {
 
     const res = await fetchLatestSync<LastSyncInfo>(token, options);
 
-    if (res.ok && res.data) {
-      setLastSync(res.data);
+    const nextLastSync = res.ok ? rememberLastSync(res.data) : null;
+    if (res.ok && nextLastSync) {
+      setLastSync(nextLastSync);
     } else {
-      // No sync found is normal, just don't set lastSync
-      setLastSync(null);
+      // Keep the last known sync visible across transient mobile resume
+      // failures. A real first-time no-sync user still has no cached value.
+      setLastSync((current) => current ?? readCachedLastSync());
     }
   }, [token]);
 
@@ -404,8 +445,11 @@ export default function SyncPage() {
 
       const syncRes = await syncPromise;
       if (cancelled) return;
-      if (syncRes.ok && syncRes.data) {
-        setLastSync(syncRes.data);
+      const nextLastSync = syncRes.ok ? rememberLastSync(syncRes.data) : null;
+      if (syncRes.ok && nextLastSync) {
+        setLastSync(nextLastSync);
+      } else {
+        setLastSync((current) => current ?? readCachedLastSync());
       }
 
       setLoading(false);

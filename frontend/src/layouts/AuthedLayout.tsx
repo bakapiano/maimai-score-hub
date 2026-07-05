@@ -19,7 +19,7 @@ import {
   IconSettings,
 } from "@tabler/icons-react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 
 import { type MiniProfile } from "../components/MiniProfileCard";
 import { AppHeader } from "../components/AppHeader";
@@ -77,6 +77,30 @@ const pages: PageMeta[] = [
   },
 ];
 
+function readLastFriendCode() {
+  try {
+    return localStorage.getItem("lastFriendCode");
+  } catch {
+    return null;
+  }
+}
+
+function readCachedMiniProfile(friendCode?: string | null): MiniProfile | null {
+  const cached = getCachedProfile();
+  if (!cached) return null;
+
+  const knownFriendCode = friendCode ?? readLastFriendCode();
+  if (
+    cached.friendCode &&
+    knownFriendCode &&
+    cached.friendCode !== knownFriendCode
+  ) {
+    return null;
+  }
+
+  return { avatarUrl: cached.avatarUrl, username: cached.username };
+}
+
 export default function AuthedLayout() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -89,8 +113,9 @@ export default function AuthedLayout() {
   // the RESOLVED scheme — useComputedColorScheme resolves "auto" against
   // prefers-color-scheme so dark-mode-via-system works correctly.
   const colorScheme = useComputedColorScheme("light");
-  const [offlineProfile, setOfflineProfile] = useState<MiniProfile | null>(
-    null,
+  const cachedProfile = useMemo(
+    () => readCachedMiniProfile(authProfile?.friendCode),
+    [authProfile?.friendCode],
   );
   const touchStartX = useRef<number | null>(null);
 
@@ -105,30 +130,19 @@ export default function AuthedLayout() {
     navigate("/login", { replace: true });
   };
 
-  useEffect(() => {
-    if (!offline) {
-      setOfflineProfile(null);
-      return;
-    }
-
-    const cached = getCachedProfile();
-    setOfflineProfile(
-      cached
-        ? { avatarUrl: cached.avatarUrl, username: cached.username }
-        : null,
-    );
-  }, [offline]);
-
   const profile: MiniProfile | null = offline
-    ? offlineProfile
+    ? cachedProfile
     : authProfile?.profile
       ? {
           avatarUrl: authProfile.profile.avatarUrl,
           username: authProfile.profile.username,
         }
       : authProfile
-        ? { avatarUrl: null, username: authProfile.username ?? null }
-        : null;
+        ? {
+            avatarUrl: cachedProfile?.avatarUrl ?? null,
+            username: authProfile.username ?? cachedProfile?.username ?? null,
+          }
+        : cachedProfile;
 
   const headerBg =
     colorScheme === "dark"

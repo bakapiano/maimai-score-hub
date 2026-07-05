@@ -44,10 +44,12 @@ export async function fetchLatestSync<T>(
       data: (res.body ?? null) as unknown,
     }))
     .then((result: LatestSyncResult<unknown>) => {
-      latestSyncCache.set(token, {
-        value: result,
-        expiresAt: Date.now() + LATEST_SYNC_CACHE_TTL_MS,
-      });
+      if (result.status === 200) {
+        latestSyncCache.set(token, {
+          value: result,
+          expiresAt: Date.now() + LATEST_SYNC_CACHE_TTL_MS,
+        });
+      }
       return result;
     })
     .finally(() => {

@@ -6,7 +6,7 @@ import {
   IconTrophy,
 } from "@tabler/icons-react";
 import { Anchor, Box, Group, Loader, Stack, Tabs, Text } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { AllScoresTab } from "./score/AllScoresTab";
@@ -19,78 +19,128 @@ import { useMusic } from "../providers/MusicProvider";
 import { cacheSyncLatest, getCachedSyncLatest } from "../utils/offlineCache";
 import { fetchLatestSync } from "../api/syncLatest";
 
+function readCachedScores() {
+  const cached = getCachedSyncLatest();
+  if (!cached) return null;
+
+  return {
+    scores: Array.isArray(cached.scores) ? (cached.scores as SyncScore[]) : [],
+    lastSyncAt: cached.createdAt ?? cached.updatedAt ?? null,
+  };
+}
+
 export default function ScorePage() {
   const { token, offline } = useAuth();
   const { musics } = useMusic();
-  const [scores, setScores] = useState<SyncScore[]>([]);
-  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+  const [initialCachedSync] = useState(() => readCachedScores());
+  const [scores, setScores] = useState<SyncScore[]>(
+    () => initialCachedSync?.scores ?? [],
+  );
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(
+    () => initialCachedSync?.lastSyncAt ?? null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasSync = Boolean(lastSyncAt) || scores.length > 0;
+  const hasSyncRef = useRef(hasSync);
 
-  const loadScores = async () => {
+  useEffect(() => {
+    hasSyncRef.current = hasSync;
+  }, [hasSync]);
+
+  const applyCachedScores = useCallback(() => {
+    const cached = readCachedScores();
+    if (!cached) return false;
+
+    setScores(cached.scores);
+    setLastSyncAt(cached.lastSyncAt);
+    return true;
+  }, []);
+
+  const clearScoresIfEmpty = useCallback(() => {
+    if (hasSyncRef.current) return;
+    setScores([]);
+    setLastSyncAt(null);
+  }, []);
+
+  const loadScores = useCallback(async (options: { force?: boolean } = {}) => {
     // Offline mode: load from cache
     if (offline) {
-      const cached = getCachedSyncLatest();
-      if (cached) {
-        setScores((cached.scores ?? []) as SyncScore[]);
-        setLastSyncAt(cached.createdAt ?? cached.updatedAt ?? null);
-      } else {
-        setScores([]);
-        setLastSyncAt(null);
-      }
+      if (!applyCachedScores()) clearScoresIfEmpty();
       return;
     }
 
     if (!token) return;
 
-    setLoading(true);
+    setLoading(!hasSyncRef.current);
     setError(null);
 
     try {
       const latestRes = await fetchLatestSync<{
+        id?: string;
         scores?: SyncScore[];
         createdAt?: string;
         updatedAt?: string;
-      }>(token);
+      }>(token, options);
 
       if (latestRes.status !== 200) {
         if (latestRes.status === 404) {
           setError(null);
-          setScores([]);
-          setLastSyncAt(null);
+          if (!applyCachedScores()) clearScoresIfEmpty();
           return;
         }
-        setError(`获取成绩失败 (HTTP ${latestRes.status})`);
-        setScores([]);
-        setLastSyncAt(null);
+        if (!hasSyncRef.current) {
+          setError(`获取成绩失败 (HTTP ${latestRes.status})`);
+        }
+        if (!applyCachedScores()) clearScoresIfEmpty();
       } else if (latestRes.data) {
-        const { scores: syncScores, createdAt, updatedAt } = latestRes.data;
+        const { id, scores: syncScores, createdAt, updatedAt } = latestRes.data;
         if (Array.isArray(syncScores)) {
           setScores(syncScores);
           // Cache for offline use
-          cacheSyncLatest({ scores: syncScores, createdAt, updatedAt });
+          cacheSyncLatest({ id, scores: syncScores, createdAt, updatedAt });
         } else {
           setScores([]);
         }
         setLastSyncAt(createdAt ?? updatedAt ?? null);
       } else {
-        setScores([]);
-        setLastSyncAt(null);
+        clearScoresIfEmpty();
       }
     } catch (err) {
-      setError((err as Error)?.message ?? "请求失败");
-      setScores([]);
-      setLastSyncAt(null);
+      if (!hasSyncRef.current) {
+        setError((err as Error)?.message ?? "请求失败");
+      }
+      if (!applyCachedScores()) clearScoresIfEmpty();
     } finally {
       setLoading(false);
     }
-  };
+  }, [applyCachedScores, clearScoresIfEmpty, offline, token]);
 
   useEffect(() => {
-    loadScores();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, offline]);
+    void loadScores();
+  }, [loadScores]);
+
+  useEffect(() => {
+    if (!token || offline) return;
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadScores({ force: true });
+      }
+    };
+    const refreshFromPageCache = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        void loadScores({ force: true });
+      }
+    };
+
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("pageshow", refreshFromPageCache);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("pageshow", refreshFromPageCache);
+    };
+  }, [loadScores, offline, token]);
 
   if (loading) {
     return (
