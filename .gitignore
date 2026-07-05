@@ -73,6 +73,7 @@ backend/covers/
 
 # backend dist
 backend/dist
+admin/dist
 shared/dist
 worker/dist
 
