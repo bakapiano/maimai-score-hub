@@ -55,6 +55,7 @@ jobs:
           API_SHARED_SECRET: ${{ secrets.API_SHARED_SECRET }}
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          WORKER_JOB_SERVICE_BASE_URL: ${{ secrets.WORKER_JOB_SERVICE_BASE_URL }}
         with:
           host: ${{ secrets[format('WORKER_{0}_HOST', matrix.instance)] }}
           username: ${{ secrets[format('WORKER_{0}_USER', matrix.instance)] }}
@@ -62,7 +63,7 @@ jobs:
           port: ${{ secrets[format('WORKER_{0}_PORT', matrix.instance)] }}
           key: ${{ secrets.SSH_KEY }}
           command_timeout: 30m
-          envs: ADMIN_PASSWORD,API_SHARED_SECRET,REDIS_PASSWORD,REDIS_HOST
+          envs: ADMIN_PASSWORD,API_SHARED_SECRET,REDIS_PASSWORD,REDIS_HOST,WORKER_JOB_SERVICE_BASE_URL
           script: |
             DEPLOY_PATH="${{ secrets[format('WORKER_{0}_PATH', matrix.instance)] }}"
             SOURCE_ARCHIVE="/tmp/maimai-score-hub-worker-${{ github.sha }}.tgz"
@@ -72,6 +73,10 @@ jobs:
             fi
             if [ -z "${REDIS_HOST:-}" ]; then
               echo "❌ REDIS_HOST secret is required"
+              exit 1
+            fi
+            if [ -z "${WORKER_JOB_SERVICE_BASE_URL:-}" ]; then
+              echo "❌ WORKER_JOB_SERVICE_BASE_URL secret is required"
               exit 1
             fi
             if [ ! -f "$SOURCE_ARCHIVE" ]; then
@@ -140,7 +145,8 @@ jobs:
             upsert_env REDIS_DB "0"
             upsert_env REDIS_KEY_PREFIX "maimai:"
             upsert_env BULLMQ_PREFIX ""
-            upsert_env JOB_SERVICE_BASE_URL "https://api.maiscorehub.bakapiano.com/"
+            upsert_env NODE_ENV "production"
+            upsert_env JOB_SERVICE_BASE_URL "${WORKER_JOB_SERVICE_BASE_URL:-}"
             upsert_env DXNET_WORKER_CONCURRENCY "256"
             upsert_env MAX_PROCESS_JOBS "256"
             printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
@@ -166,7 +172,8 @@ jobs:
                 REDIS_DB="0" \
                 REDIS_KEY_PREFIX="maimai:" \
                 BULLMQ_PREFIX="" \
-                JOB_SERVICE_BASE_URL="https://api.maiscorehub.bakapiano.com/" \
+                NODE_ENV="production" \
+                JOB_SERVICE_BASE_URL="${WORKER_JOB_SERVICE_BASE_URL:-}" \
                 DXNET_WORKER_CONCURRENCY="256" \
                 MAX_PROCESS_JOBS="256" \
                 docker-compose -f worker/docker-compose.yml up -d --build || exit 1
@@ -180,7 +187,8 @@ jobs:
                 REDIS_DB="0" \
                 REDIS_KEY_PREFIX="maimai:" \
                 BULLMQ_PREFIX="" \
-                JOB_SERVICE_BASE_URL="https://api.maiscorehub.bakapiano.com/" \
+                NODE_ENV="production" \
+                JOB_SERVICE_BASE_URL="${WORKER_JOB_SERVICE_BASE_URL:-}" \
                 DXNET_WORKER_CONCURRENCY="256" \
                 MAX_PROCESS_JOBS="256" \
                 docker compose -f worker/docker-compose.yml up -d --build || exit 1
