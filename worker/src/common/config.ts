@@ -65,6 +65,11 @@ export const WORKER_DEFAULTS = {
   cookieHealthCheckIntervalMs: 60 * 1000,
   /** Bot 状态上报间隔 (ms) - 默认 1 分钟 */
   botStatusReportIntervalMs: 60_000,
+  /** Bot 好友列表快照刷新间隔 (ms) - 默认 5 分钟 */
+  botFriendListRefreshIntervalMs: getEnvInt(
+    "BOT_FRIEND_LIST_REFRESH_INTERVAL_MS",
+    5 * 60_000,
+  ),
   /** BullMQ job 因 bot 暂不可用而延后重试的时间 (ms) */
   queueRetryDelayMs: getEnvInt("BULLMQ_JOB_RETRY_DELAY_MS", 5_000),
 } as const;

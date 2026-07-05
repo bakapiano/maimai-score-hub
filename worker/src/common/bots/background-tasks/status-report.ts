@@ -16,7 +16,7 @@ interface BotStatusPayload {
 }
 
 const FRIEND_LIST_RECENT_MS = Number(
-  process.env.BOT_FRIEND_LIST_RECENT_MS ?? 60_000,
+  process.env.BOT_FRIEND_LIST_RECENT_MS ?? 5 * 60_000,
 );
 const FRIEND_LIST_CHANGE_REPORT_DEBOUNCE_MS = Number(
   process.env.BOT_FRIEND_LIST_CHANGE_REPORT_DEBOUNCE_MS ?? 1_000,
@@ -28,7 +28,18 @@ export function createBotStatusReportTask(manager: BotManager): PeriodicTask {
   return {
     name: "BotStatusReport",
     intervalMs: WORKER_DEFAULTS.botStatusReportIntervalMs,
-    run: () => reportBotStatus(manager),
+    run: () => reportBotHeartbeat(manager),
+    runImmediately: true,
+  };
+}
+
+export function createBotFriendListRefreshTask(
+  manager: BotManager,
+): PeriodicTask {
+  return {
+    name: "BotFriendListRefresh",
+    intervalMs: WORKER_DEFAULTS.botFriendListRefreshIntervalMs,
+    run: () => refreshBotFriendList(manager),
     runImmediately: true,
   };
 }
@@ -51,7 +62,7 @@ export function bindBotStatusChangeReportScheduler(
     if (running) return;
     running = true;
     pending = false;
-    reportBotStatus(manager, { onlyIfSnapshotChanged: true })
+    reportBotSnapshot(manager, { onlyIfSnapshotChanged: true })
       .catch((err) => {
         console.error("[BotStatusReport] Change report failed:", err);
       })
@@ -72,10 +83,7 @@ export function bindBotStatusChangeReportScheduler(
   };
 }
 
-export async function reportBotStatus(
-  manager: BotManager,
-  options: { onlyIfSnapshotChanged?: boolean } = {},
-): Promise<void> {
+export async function reportBotHeartbeat(manager: BotManager): Promise<void> {
   const bot = manager.getBot();
   if (!bot) return;
 
@@ -87,8 +95,39 @@ export async function reportBotStatus(
   }
 
   const snapshot = getFriendListSnapshot(manager);
+  await postStatus(
+    snapshot
+      ? buildHeartbeatFromSnapshot(bot, snapshot)
+      : { friendCode: bot.friendCode, available: true },
+  );
+}
+
+export async function reportBotSnapshot(
+  manager: BotManager,
+  options: { onlyIfSnapshotChanged?: boolean } = {},
+): Promise<void> {
+  const bot = manager.getBot();
+  if (!bot) return;
+
+  if (bot.expired) {
+    lastReportedSnapshotKeys.set(manager, null);
+    return;
+  }
+
+  const snapshot = getFriendListSnapshot(manager);
+  if (!snapshot) {
+    return;
+  }
+
+  await postSnapshotStatus(manager, bot, snapshot, options);
+}
+
+export async function refreshBotFriendList(manager: BotManager): Promise<void> {
+  const bot = manager.getBot();
+  if (!bot || bot.expired) return;
+
+  const snapshot = getFriendListSnapshot(manager);
   if (snapshot && isRecent(snapshot.updatedAt)) {
-    await postSnapshotStatus(manager, bot, snapshot, options);
     return;
   }
 
@@ -99,13 +138,9 @@ export async function reportBotStatus(
       friends: list,
       updatedAt: new Date(),
     };
-    await postSnapshotStatus(manager, bot, refreshed, options);
-  } catch {
-    await postStatus(
-      snapshot
-        ? buildStatusFromSnapshot(bot, snapshot)
-        : { friendCode: bot.friendCode, available: true },
-    );
+    await postSnapshotStatus(manager, bot, refreshed, {});
+  } catch (err) {
+    console.warn("[BotFriendListRefresh] Refresh failed:", err);
   }
 }
 
@@ -156,6 +191,18 @@ function buildStatusFromSnapshot(
     friendCount: list.length,
     friendsUpdatedAt: snapshot.updatedAt.toISOString(),
     friends: list.map(toBotStatusFriend),
+  };
+}
+
+function buildHeartbeatFromSnapshot(
+  bot: ManagedBot,
+  snapshot: { friends: FriendInfo[]; updatedAt: Date },
+): BotStatusPayload {
+  return {
+    friendCode: bot.friendCode,
+    available: true,
+    friendCount: snapshot.friends.length,
+    friendsUpdatedAt: snapshot.updatedAt.toISOString(),
   };
 }
 

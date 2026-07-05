@@ -147,8 +147,8 @@ jobs:
             upsert_env BULLMQ_PREFIX ""
             upsert_env NODE_ENV "production"
             upsert_env JOB_SERVICE_BASE_URL "${WORKER_JOB_SERVICE_BASE_URL:-}"
-            upsert_env DXNET_WORKER_CONCURRENCY "256"
-            upsert_env MAX_PROCESS_JOBS "256"
+            upsert_env DXNET_WORKER_CONCURRENCY "16"
+            upsert_env MAX_PROCESS_JOBS "16"
             printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
 
             # Worker 3 (101) has no public IP and goes through a great-firewall
@@ -174,8 +174,8 @@ jobs:
                 BULLMQ_PREFIX="" \
                 NODE_ENV="production" \
                 JOB_SERVICE_BASE_URL="${WORKER_JOB_SERVICE_BASE_URL:-}" \
-                DXNET_WORKER_CONCURRENCY="256" \
-                MAX_PROCESS_JOBS="256" \
+                DXNET_WORKER_CONCURRENCY="16" \
+                MAX_PROCESS_JOBS="16" \
                 docker-compose -f worker/docker-compose.yml up -d --build || exit 1
             else
               sudo env $EXTRA_ENV \
@@ -189,8 +189,8 @@ jobs:
                 BULLMQ_PREFIX="" \
                 NODE_ENV="production" \
                 JOB_SERVICE_BASE_URL="${WORKER_JOB_SERVICE_BASE_URL:-}" \
-                DXNET_WORKER_CONCURRENCY="256" \
-                MAX_PROCESS_JOBS="256" \
+                DXNET_WORKER_CONCURRENCY="16" \
+                MAX_PROCESS_JOBS="16" \
                 docker compose -f worker/docker-compose.yml up -d --build || exit 1
             fi
             sudo docker image prune -f

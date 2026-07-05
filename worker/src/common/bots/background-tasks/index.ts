@@ -7,6 +7,7 @@ import {
 import { createCleanupFriendsTask } from "./cleanup-friends.ts";
 import {
   bindBotStatusChangeReportScheduler,
+  createBotFriendListRefreshTask,
   createBotStatusReportTask,
 } from "./status-report.ts";
 import { createHealthCheckTask } from "./health-check.ts";
@@ -28,6 +29,7 @@ export function startBotBackgroundTasks(manager: BotManager): StopTask[] {
     createBotPeriodicSaveTask(manager),
     createHealthCheckTask(manager),
     createBotStatusReportTask(manager),
+    createBotFriendListRefreshTask(manager),
     createCleanupFriendsTask(manager),
   ].map(startPeriodicTask);
 
