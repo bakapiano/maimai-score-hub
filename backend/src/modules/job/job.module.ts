@@ -2,6 +2,7 @@ import { JobEntity, JobSchema } from './schemas/job.schema';
 import { Module, forwardRef } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
+import { AutoUpdateModule } from '../auto-update/auto-update.module';
 import { BotsModule } from '../bots/bots.module';
 import { JobFriendshipService } from './services/job-friendship.service';
 import { JobQueueService } from './services/job-queue.service';
@@ -22,6 +23,7 @@ import { UsersModule } from '../users/users.module';
     forwardRef(() => SyncModule),
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
+    forwardRef(() => AutoUpdateModule),
   ],
   providers: [
     JobService,

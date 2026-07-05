@@ -6,10 +6,11 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 import { SyncService } from '../../sync/services/sync.service';
 import type { RecentFcFsEvent } from '../../sync/services/sync.service';
+import { AutoUpdateActivityService } from '../../auto-update/services/auto-update-activity.service';
 import { JobTempCacheService } from '../cache/temp-cache.service';
 import { ProberExportService } from '../../prober-export/services/prober-export.service';
 import type {
@@ -81,6 +82,7 @@ export class JobService {
     private readonly jobQueue: JobQueueService,
     private readonly friendship: JobFriendshipService,
     private readonly observability: ObservabilityIngestService,
+    private readonly autoUpdateActivity: AutoUpdateActivityService,
   ) {}
 
   async create(input: {
@@ -93,6 +95,7 @@ export class JobService {
     context?: Record<string, unknown> | null;
     removeFriendAfterComplete?: boolean;
     cancelActiveJobs?: boolean;
+    runAt?: Date | string | null;
   }) {
     const id = randomUUID();
     const now = new Date();
@@ -209,7 +212,12 @@ export class JobService {
       diffsToScrape: input.diffsToScrape ?? null,
       context: input.context ?? null,
       removeFriendAfterComplete: input.removeFriendAfterComplete ?? false,
-      runAt: null,
+      runAt:
+        input.runAt === undefined || input.runAt === null
+          ? null
+          : input.runAt instanceof Date
+            ? input.runAt
+            : this.parseIsoDate(input.runAt, 'runAt'),
       createdAt: now,
       updatedAt: now,
     });
@@ -606,18 +614,15 @@ export class JobService {
       friendCode: updated.friendCode,
       sourceId: jobId,
       events: events as RecentFcFsEvent[],
-      since: this.parseRecentEventSince(context?.recentEventSince),
     });
     this.enqueueFcfsAutoExport(updated, jobId, mergeResult);
-    await this.scheduleAmbiguousFcfsFallback(updated, jobId, mergeResult);
-  }
-
-  private parseRecentEventSince(value: unknown): Date | null {
-    if (typeof value !== 'string') {
-      return null;
+    if (context?.autoUpdateFcfs === true) {
+      await this.autoUpdateActivity.recordRecentEventFingerprint({
+        friendCode: updated.friendCode,
+        fingerprint: this.recentEventFingerprint(events),
+        at: updated.updatedAt,
+      });
     }
-    const since = new Date(value);
-    return Number.isNaN(since.getTime()) ? null : since;
   }
 
   private enqueueFcfsAutoExport(
@@ -649,41 +654,21 @@ export class JobService {
       });
   }
 
-  private async scheduleAmbiguousFcfsFallback(
-    updated: JobEntity,
-    jobId: string,
-    mergeResult: {
-      ambiguousDiffs: number[];
-    },
-  ): Promise<void> {
-    if (
-      updated.context?.autoUpdateFcfs !== true ||
-      mergeResult.ambiguousDiffs.length === 0 ||
-      !updated.botUserFriendCode
-    ) {
-      return;
-    }
-    const fallback = await this.create({
-      friendCode: updated.friendCode,
-      jobType: 'update_score',
-      botUserFriendCode: updated.botUserFriendCode,
-      friendshipReady: true,
-      diffsToScrape: mergeResult.ambiguousDiffs,
-      removeFriendAfterComplete: true,
-      cancelActiveJobs: false,
-      context: {
-        source: 'fcfs_ambiguous_recent_event',
-        recentEventJobId: jobId,
-        ambiguousDiffs: mergeResult.ambiguousDiffs,
-      },
+  private recentEventFingerprint(events: unknown[]): string {
+    const rows = events.map((event) => {
+      if (!event || typeof event !== 'object') {
+        return ['', '', '', '', ''];
+      }
+      const row = event as Record<string, unknown>;
+      return [
+        typeof row.time === 'string' ? row.time : '',
+        typeof row.songName === 'string' ? row.songName : '',
+        typeof row.difficulty === 'string' ? row.difficulty : '',
+        typeof row.fc === 'string' ? row.fc : '',
+        typeof row.fs === 'string' ? row.fs : '',
+      ];
     });
-    this.logger.log(
-      `Scheduled ambiguous FC/FS fallback update_score job ${fallback.jobId} for fc=${updated.friendCode} diffs=[${mergeResult.ambiguousDiffs.join(',')}]`,
-    );
-    await this.jobModel.updateOne(
-      { id: jobId },
-      { $set: { removeFriendAfterComplete: false } },
-    );
+    return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
   }
 
   async getActiveFriendCodesByBot(
@@ -708,6 +693,24 @@ export class JobService {
       .findOne({
         friendCode,
         jobType: { $in: ['update_score', 'send_friend_request'] },
+        status: { $in: ['queued', 'processing'] },
+      })
+      .sort({ createdAt: -1 });
+
+    if (!job) {
+      return null;
+    }
+
+    return toJobResponse(job.toObject() as JobEntity);
+  }
+
+  async getActiveUpdateScoreByFriendCode(
+    friendCode: string,
+  ): Promise<JobResponse | null> {
+    const job = await this.jobModel
+      .findOne({
+        friendCode,
+        jobType: 'update_score',
         status: { $in: ['queued', 'processing'] },
       })
       .sort({ createdAt: -1 });

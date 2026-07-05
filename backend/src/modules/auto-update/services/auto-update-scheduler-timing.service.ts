@@ -57,6 +57,9 @@ export class AutoUpdateSchedulerTimingService {
   readonly rivalTimeoutMs: number;
   readonly mapTimeoutMs: number;
   readonly recentEventCooldownMs: number;
+  readonly recentEventDelayMs: number;
+  readonly settledFullUpdateDelayMs: number;
+  readonly settledFullUpdateRetryMs: number;
   readonly mapHotIntervalMs: number;
   readonly mapWarmIntervalMs: number;
   readonly mapColdIntervalMs: number;
@@ -122,6 +125,21 @@ export class AutoUpdateSchedulerTimingService {
       config,
       'AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS',
       30 * MINUTE,
+    );
+    this.recentEventDelayMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_RECENT_EVENT_DELAY_MS',
+      3 * MINUTE,
+    );
+    this.settledFullUpdateDelayMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS',
+      45 * MINUTE,
+    );
+    this.settledFullUpdateRetryMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS',
+      10 * MINUTE,
     );
     this.mapHotIntervalMs = getPositiveInt(
       config,

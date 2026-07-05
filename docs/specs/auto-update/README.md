@@ -39,18 +39,20 @@
 
 ## Phase 1 当前参数
 
-| 项                           | 当前代码默认                                                                                |
-| ---------------------------- | ------------------------------------------------------------------------------------------- |
-| 活跃分层                     | hot / warm / cold 三档                                                                      |
-| hot rival score probe        | 10 分钟                                                                                     |
-| warm rival score probe       | 30 分钟                                                                                     |
-| cold rival score probe       | 1 小时                                                                                      |
-| map auxiliary probe          | hot 30 分钟；warm/cold 1 小时                                                               |
-| recent event 单用户 cooldown | 30 分钟                                                                                     |
-| rival score probe 执行控制   | 每轮最多 480 个 due state，scheduler 并发 4                                                 |
-| map auxiliary 执行控制       | 每轮最多 120 个 due state，scheduler 并发 2                                                 |
-| FC/FS enrichment 执行控制    | 单用户 cooldown + 生成 DXNet `get_user_recent_event` job；无全局 qps token bucket           |
-| sdgb 执行模型                | backend enqueue BullMQ `sdgb-worker-jobs`；sdgb-worker 多并发消费并按 API token bucket 限流 |
+| 项                           | 当前代码默认                                                                                                    |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 活跃分层                     | hot / warm / cold 三档                                                                                          |
+| hot rival score probe        | 10 分钟                                                                                                         |
+| warm rival score probe       | 30 分钟                                                                                                         |
+| cold rival score probe       | 1 小时                                                                                                          |
+| map auxiliary probe          | hot 30 分钟；warm/cold 1 小时                                                                                   |
+| recent event 单用户 cooldown | 30 分钟                                                                                                         |
+| recent event 执行延迟        | 3 分钟                                                                                                          |
+| stable full update debounce  | 45 分钟                                                                                                         |
+| rival score probe 执行控制   | 每轮最多 480 个 due state，scheduler 并发 4                                                                     |
+| map auxiliary 执行控制       | 每轮最多 120 个 due state，scheduler 并发 2                                                                     |
+| FC/FS enrichment 执行控制    | 单用户 cooldown；cooldown 内合并为 pending，到期生成 DXNet `get_user_recent_event` job；无全局 qps token bucket |
+| sdgb 执行模型                | backend enqueue BullMQ `sdgb-worker-jobs`；sdgb-worker 多并发消费并按 API token bucket 限流                     |
 
 ## 10k 用户主链路 QPS 估算
 
@@ -79,5 +81,6 @@ hot / 600 + warm / 1800 + cold / 3600
 | `pipeline-design.md`     | rival score probe / map auxiliary / FCFS enrichment 三链路设计                  |
 | `rate-limits.md`         | 当前执行控制、sdgb-worker token bucket 和仍未实现的 DXNet recent event 全局限流 |
 | `data-model.md`          | 当前状态表、任务日志表、关键字段                                                |
+| `settled-full-update.md` | 稳定后全量 `update_score` 的 debounce 代码事实                                  |
 | `metrics-and-rollout.md` | 压测、指标、breaking cutover 和参数收敛                                         |
 | `phase1-code-facts.md`   | 当前 Phase 1 已实现代码事实                                                     |

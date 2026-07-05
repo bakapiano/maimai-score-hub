@@ -109,18 +109,6 @@ function pickHigherNumeric(a: string | null, b: string | null): string | null {
   return numScore(b) > numScore(a) ? b : a;
 }
 
-function parseRecentEventTime(value: string): Date | null {
-  const match = /^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})$/.exec(
-    value.trim(),
-  );
-  if (!match) {
-    return null;
-  }
-  const [, year, month, day, hour, minute] = match;
-  const parsed = new Date(`${year}-${month}-${day}T${hour}:${minute}:00+08:00`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
 /**
  * Merge two score snapshots for the same (musicId, chartIndex), keeping
  * the better of each per-attempt field. Identity fields (musicId, cid,
@@ -227,16 +215,13 @@ export class SyncService {
     friendCode: string;
     sourceId: string;
     events: RecentFcFsEvent[];
-    since?: Date | null;
   }): Promise<{
     eventCount: number;
     matchedCount: number;
-    ambiguousCount: number;
-    ambiguousDiffs: number[];
     updatedCount: number;
     syncId: string | null;
   }> {
-    const events = this.filterRecentEventsSince(input.events, input.since);
+    const events = input.events;
     const previous = await this.syncModel
       .findOne({ friendCode: input.friendCode })
       .sort({ createdAt: -1 })
@@ -248,8 +233,6 @@ export class SyncService {
       return {
         eventCount: input.events.length,
         matchedCount: 0,
-        ambiguousCount: 0,
-        ambiguousDiffs: [],
         updatedCount: 0,
         syncId: null,
       };
@@ -257,9 +240,7 @@ export class SyncService {
 
     const { byTitle } = await this.getMusicCache();
     let matchedCount = 0;
-    let ambiguousCount = 0;
     let updatedCount = 0;
-    const ambiguousDiffs = new Set<number>();
     for (const event of events) {
       const songName =
         typeof event.songName === 'string' ? event.songName.trim() : '';
@@ -282,15 +263,10 @@ export class SyncService {
         (score) =>
           score.chartIndex === chartIndex && candidateIds.has(score.musicId),
       );
-      if (matches.length > 1) {
-        ambiguousCount++;
-        ambiguousDiffs.add(chartIndex);
+      if (matches.length !== 1) {
         continue;
       }
       const score = matches[0];
-      if (!score) {
-        continue;
-      }
 
       matchedCount++;
       const nextFc =
@@ -312,8 +288,6 @@ export class SyncService {
       return {
         eventCount: events.length,
         matchedCount,
-        ambiguousCount,
-        ambiguousDiffs: [...ambiguousDiffs].sort((a, b) => a - b),
         updatedCount,
         syncId: previous?.id ?? null,
       };
@@ -330,27 +304,9 @@ export class SyncService {
     return {
       eventCount: events.length,
       matchedCount,
-      ambiguousCount,
-      ambiguousDiffs: [...ambiguousDiffs].sort((a, b) => a - b),
       updatedCount,
       syncId: (sync.toObject() as SyncEntity).id,
     };
-  }
-
-  private filterRecentEventsSince(
-    events: RecentFcFsEvent[],
-    since: Date | null | undefined,
-  ): RecentFcFsEvent[] {
-    if (!since) {
-      return events;
-    }
-    return events.filter((event) => {
-      const parsed =
-        typeof event.time === 'string'
-          ? parseRecentEventTime(event.time)
-          : null;
-      return parsed ? parsed.getTime() > since.getTime() : false;
-    });
   }
 
   async getLatestWithScores(friendCode: string) {
@@ -559,8 +515,7 @@ export class SyncService {
   ): ChartPayload | undefined {
     return Array.isArray(music.charts)
       ? (music.charts[chartIndex === 10 ? 0 : chartIndex] as
-          | ChartPayload
-          | undefined)
+          ChartPayload | undefined)
       : undefined;
   }
 
@@ -611,8 +566,7 @@ export class SyncService {
         const chartIndex = detail.level;
         const chart = Array.isArray(music.charts)
           ? (music.charts[chartIndex === 10 ? 0 : chartIndex] as
-              | ChartPayload
-              | undefined)
+              ChartPayload | undefined)
           : undefined;
         if (!chart || chart.cid === undefined || chart.cid === null) {
           continue;

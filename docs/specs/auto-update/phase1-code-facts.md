@@ -15,12 +15,12 @@
 - sdgb-worker 已支持 `get_user_map` jobType，对应 `GetUserMapApi`。
 - sdgb-worker 已改为 BullMQ consumer，消费 `sdgb-worker-jobs`，不再调用 `/workers/sdgb/jobs/next` 拉取。
 - sdgb-worker 已实现 global + per-API token bucket，并支持按 job type 并发上限。
-- FC/FS enrichment 已接入自动调度：由 rival hash 变化或 map delta 触发，先 `addRival`，再创建 DXNet `get_user_recent_event` job。
+- FC/FS enrichment 已接入自动调度：由 rival hash 变化或 map delta 请求触发；如果 recent event cooldown 未到，会在 `auto_update_probe_states` 记录 pending 并到期补跑；实际执行时先 `addRival`，再创建 DXNet `get_user_recent_event` job。
 - Worker `get_user_recent_event` handler 已实现，会请求好友详情 recent event 页面并把解析出的 events PATCH 回后端。
 - `JobService.patch()` 会在 `get_user_recent_event` 完成后调用 `SyncService.mergeRecentEvents()`，把本次 FC/FS list 直接与用户当前成绩按 rank 合并。
-- FC/FS enrichment 会通过 job context 记录 `recentEventSince`，只处理两次 enrichment 之间的 recent event。
-- 如果 recent event 的 `songName + difficulty` 匹配到多个 musicId，后端会创建一个带 `diffsToScrape` 的 `update_score` fallback；worker 只抓 ambiguous 对应难度。
-- `update_score` 支持 `diffsToScrape` 字段，自动更新 fallback 可按指定难度抓 Friend VS。
+- FC/FS enrichment 不使用 `recentEventSince` 过滤；如果 recent event 的 `songName + difficulty` 在当前成绩里无法唯一定位 score，会跳过该条 event，不触发 fallback。
+- recent event fingerprint 变化会记录 activity signal，并把稳定后全量 `update_score` 预约到 activity 后 45 分钟。
+- `update_score` 支持 `diffsToScrape` 字段；稳定后全量更新传 `diffsToScrape=null`，走 worker 默认全难度。
 - music 表在 `SyncService` 内做 5 分钟缓存，避免每个用户 probe 都全表查询。
 - 初次迁移到新状态表时，会按 friendCode 做 deterministic offset，把首次 probe 分散到 cold interval 内，避免 cutover 后所有用户同时到期。
 
@@ -45,24 +45,27 @@
 
 ## Phase 1 调度参数
 
-| 配置                                   |          默认 |
-| -------------------------------------- | ------------: |
-| `AUTO_UPDATE_CRON`                     | `*/1 * * * *` |
-| `AUTO_UPDATE_HOT_INTERVAL_MS`          |       10 分钟 |
-| `AUTO_UPDATE_WARM_INTERVAL_MS`         |       30 分钟 |
-| `AUTO_UPDATE_COLD_INTERVAL_MS`         |        1 小时 |
-| `AUTO_UPDATE_HOT_SESSION_MS`           |       90 分钟 |
-| `AUTO_UPDATE_WARM_MAX_IDLE_MS`         |          7 天 |
-| `AUTO_UPDATE_RIVAL_BATCH_LIMIT`        |           480 |
-| `AUTO_UPDATE_RIVAL_CONCURRENCY`        |             4 |
-| `AUTO_UPDATE_RIVAL_TIMEOUT_MS`         |        120 秒 |
-| `AUTO_UPDATE_MAP_BATCH_LIMIT`          |           120 |
-| `AUTO_UPDATE_MAP_CONCURRENCY`          |             2 |
-| `AUTO_UPDATE_MAP_TIMEOUT_MS`           |         60 秒 |
-| `AUTO_UPDATE_MAP_HOT_INTERVAL_MS`      |       30 分钟 |
-| `AUTO_UPDATE_MAP_WARM_INTERVAL_MS`     |        1 小时 |
-| `AUTO_UPDATE_MAP_COLD_INTERVAL_MS`     |        1 小时 |
-| `AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS` |       30 分钟 |
+| 配置                                       |          默认 |
+| ------------------------------------------ | ------------: |
+| `AUTO_UPDATE_CRON`                         | `*/1 * * * *` |
+| `AUTO_UPDATE_HOT_INTERVAL_MS`              |       10 分钟 |
+| `AUTO_UPDATE_WARM_INTERVAL_MS`             |       30 分钟 |
+| `AUTO_UPDATE_COLD_INTERVAL_MS`             |        1 小时 |
+| `AUTO_UPDATE_HOT_SESSION_MS`               |       90 分钟 |
+| `AUTO_UPDATE_WARM_MAX_IDLE_MS`             |          7 天 |
+| `AUTO_UPDATE_RIVAL_BATCH_LIMIT`            |           480 |
+| `AUTO_UPDATE_RIVAL_CONCURRENCY`            |             4 |
+| `AUTO_UPDATE_RIVAL_TIMEOUT_MS`             |        120 秒 |
+| `AUTO_UPDATE_MAP_BATCH_LIMIT`              |           120 |
+| `AUTO_UPDATE_MAP_CONCURRENCY`              |             2 |
+| `AUTO_UPDATE_MAP_TIMEOUT_MS`               |         60 秒 |
+| `AUTO_UPDATE_MAP_HOT_INTERVAL_MS`          |       30 分钟 |
+| `AUTO_UPDATE_MAP_WARM_INTERVAL_MS`         |        1 小时 |
+| `AUTO_UPDATE_MAP_COLD_INTERVAL_MS`         |        1 小时 |
+| `AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS`     |       30 分钟 |
+| `AUTO_UPDATE_RECENT_EVENT_DELAY_MS`        |        3 分钟 |
+| `AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS` |       45 分钟 |
+| `AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS` |       10 分钟 |
 
 sdgb-worker:
 
@@ -110,19 +113,27 @@ due map auxiliary probe
   -> fingerprint changed:
        lastMapDeltaAt=now
        tier=hot
-       enqueue FC/FS enrichment if cooldown passed
+       request FC/FS enrichment; if cooldown not due, record pending
        nextRivalProbeAt=now if rival interval already elapsed
   -> fingerprint unchanged:
        decay tier by lastScoreChangedAt / lastMapDeltaAt
        nextMapProbeAt=now+mapInterval(tier)
 
 FC/FS enrichment
+  -> if cooldown not due: record pendingRecentEventReason / pendingRecentEventRequestedAt
+  -> when pending is due: execute once and clear pending on success
   -> sdgb.addRival(botCabinetUserId, cabinetUserId)
   -> create DXNet get_user_recent_event job
   -> worker fetches recent events
   -> JobService merges returned FC/FS list into current sync
-  -> if ambiguous title+difficulty exists:
-       create update_score job with diffsToScrape=[ambiguous difficulties]
+  -> if recent event fingerprint changed:
+       record activity signal and delay pending full update_score by 45min
+
+Settled full update
+  -> any rival/map/recent activity signal sets pendingFullUpdateAt=now+45min
+  -> if more activity appears before due, delay pendingFullUpdateAt again
+  -> when due, create update_score with diffsToScrape=null
+  -> if an active update_score already exists, clear pending without creating a duplicate
 ```
 
 ## 写入语义

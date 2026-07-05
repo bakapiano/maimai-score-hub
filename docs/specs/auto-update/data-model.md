@@ -6,31 +6,37 @@
 
 一人一行。
 
-| 字段                      | 含义                                                       |
-| ------------------------- | ---------------------------------------------------------- |
-| `friendCode`              | 用户好友码                                                 |
-| `cabinetUserId`           | 机台用户 ID                                                |
-| `enabled`                 | 当前是否仍开启自动更新                                     |
-| `tier`                    | `hot` / `warm` / `cold`                                    |
-| `lastRivalHash`           | 最近一次成功写入成绩对应的 rival hash                      |
-| `lastRivalProbeAt`        | 最近一次 rival score probe 时间                            |
-| `nextRivalProbeAt`        | 下一次允许 rival score probe 的时间                        |
-| `lastScoreChangedAt`      | 最近一次 rival hash 变化时间                               |
-| `mapFingerprint`          | 最近一次 `GetUserMapApi` 计算出的 fingerprint              |
-| `mapDistanceSum`          | 可选，所有 map distance 聚合值                             |
-| `lastMapProbeAt`          | 最近一次 map auxiliary 时间                                |
-| `lastMapDeltaAt`          | 最近一次 map 变化时间                                      |
-| `nextMapProbeAt`          | 下一次允许 map auxiliary 的时间                            |
-| `lastRecentEventAt`       | 最近一次 FC/FS recent event 补全时间                       |
-| `nextRecentEventAt`       | 下一次允许 recent event 的时间                             |
-| `rivalErrorCount`         | rival score probe 连续错误数                               |
-| `mapErrorCount`           | map auxiliary 连续错误数                                   |
-| `recentErrorCount`        | recent event 连续错误数                                    |
-| `backoffUntil`            | 当前主链路退避到期时间                                     |
-| `habitMultiplier`         | Phase 2 预留，用户习惯画像给出的调度倍率；Phase 1 固定为 1 |
-| `loadMultiplier`          | 全局负载给出的调度倍率；可选                               |
-| `schedulerVersion`        | 调度策略版本，用于统计、排查和后续策略迁移                 |
-| `createdAt` / `updatedAt` | Mongoose timestamps                                        |
+| 字段                            | 含义                                                       |
+| ------------------------------- | ---------------------------------------------------------- |
+| `friendCode`                    | 用户好友码                                                 |
+| `cabinetUserId`                 | 机台用户 ID                                                |
+| `enabled`                       | 当前是否仍开启自动更新                                     |
+| `tier`                          | `hot` / `warm` / `cold`                                    |
+| `lastRivalHash`                 | 最近一次成功写入成绩对应的 rival hash                      |
+| `lastRivalProbeAt`              | 最近一次 rival score probe 时间                            |
+| `nextRivalProbeAt`              | 下一次允许 rival score probe 的时间                        |
+| `lastScoreChangedAt`            | 最近一次 rival hash 变化时间                               |
+| `mapFingerprint`                | 最近一次 `GetUserMapApi` 计算出的 fingerprint              |
+| `mapDistanceSum`                | 可选，所有 map distance 聚合值                             |
+| `lastMapProbeAt`                | 最近一次 map auxiliary 时间                                |
+| `lastMapDeltaAt`                | 最近一次 map 变化时间                                      |
+| `nextMapProbeAt`                | 下一次允许 map auxiliary 的时间                            |
+| `lastRecentEventAt`             | 最近一次 FC/FS recent event 补全时间                       |
+| `nextRecentEventAt`             | 下一次允许 recent event 的时间                             |
+| `lastAutoUpdateActivityAt`      | 最近一次通过 rival/map/recent event 观测到活动信号的时间   |
+| `pendingFullUpdateAt`           | 稳定后全量 `update_score` 的预约执行时间                   |
+| `lastRecentEventFingerprint`    | 最近一次 FC/FS enrichment 返回的 recent event fingerprint  |
+| `pendingRecentEventReason`      | cooldown / retry 期间挂起的一次 FC/FS enrichment 原因      |
+| `pendingRecentEventRequestedAt` | 最近一次 pending FC/FS enrichment 触发时间                 |
+| `pendingRecentEventCount`       | cooldown 期间合并过的 FC/FS enrichment 触发次数            |
+| `rivalErrorCount`               | rival score probe 连续错误数                               |
+| `mapErrorCount`                 | map auxiliary 连续错误数                                   |
+| `recentErrorCount`              | recent event 连续错误数                                    |
+| `backoffUntil`                  | 当前主链路退避到期时间                                     |
+| `habitMultiplier`               | Phase 2 预留，用户习惯画像给出的调度倍率；Phase 1 固定为 1 |
+| `loadMultiplier`                | 全局负载给出的调度倍率；可选                               |
+| `schedulerVersion`              | 调度策略版本，用于统计、排查和后续策略迁移                 |
+| `createdAt` / `updatedAt`       | Mongoose timestamps                                        |
 
 当前索引：
 
@@ -40,6 +46,8 @@
 { enabled: 1, nextRivalProbeAt: 1, tier: 1 }
 { enabled: 1, nextMapProbeAt: 1, tier: 1 }
 { nextRecentEventAt: 1 }
+{ enabled: 1, pendingRecentEventReason: 1, nextRecentEventAt: 1 }
+{ enabled: 1, pendingFullUpdateAt: 1 }
 ```
 
 ## `auto_update_play_habits`
@@ -102,10 +110,11 @@ FC/FS：
 
 - 来自 FC/FS enrichment。
 - `get_user_recent_event` 每次返回的 FC/FS list 直接与用户当前成绩合并。
-- 不需要保存并 diff 上一次 recent event 结果；只使用 `recentEventSince` 过滤“两次 enrichment 之间”的事件。
+- 不使用 `recentEventSince` 过滤，也不保存 recent event 历史 diff；每次返回的 recent event list 都可参与本次合并。
+- 如果 rival hash / map delta 在 recent event cooldown 内触发 FC/FS enrichment，不丢弃信号；写入 pending 状态，并在 `nextRecentEventAt` 到期后补跑一次。pending 等待期间不推进 `lastRecentEventAt`。
 - 只按 rank 升级，不降级；如果本次 list 没有某首歌，不代表要清空现有 FC/FS。
-- 如果 `songName + difficulty` 在当前成绩里匹配到多个 musicId，则不直接写入，返回 ambiguous difficulty。
-- ambiguous difficulty 会触发一个 `update_score` fallback，job 带 `diffsToScrape`，worker 只抓指定难度。
+- 如果 `songName + difficulty` 在当前成绩里匹配到 0 个或多个 score，则跳过该条 event，不做 musicId 消歧，也不触发 `update_score` fallback。
+- recent event fingerprint 变化会记录 activity signal，并把稳定后全量 `update_score` 延后到 activity 后 45 分钟。
 
 Rank：
 
@@ -212,7 +221,7 @@ Recent event 设计为 change-driven，不对 hot 用户定时全量扫。按 2 
 | 30/min | 4.32 万/天理论上限 |
 | 36/min | 5.18 万/天理论上限 |
 
-实际会低于上限，因为有单用户 30min cooldown，且只由 rival hash change、map score-silent change、手动触发产生。
+实际会低于上限，因为有单用户 30min cooldown，且只由 rival hash change、map score-silent change、手动触发产生。cooldown 内的多次触发会合并为 `auto_update_probe_states` 上的一次 pending FC/FS enrichment，到期后补跑一次。
 
 FC/FS 写入只合并当前成绩，不保存 recent event 历史 diff。建议 task 文档只保存：
 

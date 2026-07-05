@@ -19,19 +19,19 @@
 
 ## 业务模块总览
 
-| Module              | 路径                               | 导出服务                                                   | 负责功能摘要                                                               |
-| ------------------- | ---------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `AdminModule`       | `backend/src/modules/admin`        | `AdminSummaryService`、`AdminJobMetricsService` 等         | 管理后台聚合查询与运维动作入口。                                           |
-| `AuthModule`        | `backend/src/modules/auth`         | `AuthService`、`AuthGuard`、`QrLoginService`               | 登录、JWT 校验、好友请求登录和机台二维码登录。                             |
-| `AutoUpdateModule`  | `backend/src/modules/auto-update`  | `AutoUpdateSchedulerService`                               | Rival-first 自动更新调度、Map auxiliary、FC/FS enrichment 触发和失败退避。 |
-| `BotsModule`        | `backend/src/modules/bots`         | `BotStatusService`、`BotFriendSnapshotService`             | DXNet bot 状态、好友快照、可用性选择和不可用任务清理。                     |
-| `CoverModule`       | `backend/src/modules/cover`        | `CoverService`                                             | 本地封面文件查找、同步、格式变体生成和封面数量统计。                       |
-| `JobModule`         | `backend/src/modules/job`          | `JobService`、`JobFriendshipService`、`JobQueueService` 等 | DXNet worker 任务队列与任务生命周期。                                      |
-| `MusicModule`       | `backend/src/modules/music`        | `MusicService`                                             | 曲库数据、曲库来源配置、曲库定时同步和曲库缓存。                           |
-| `ScoreExportModule` | `backend/src/modules/score-export` | `ScoreExportService`                                       | 将同步成绩渲染为 PNG 图片。                                                |
-| `SdgbWorkerModule`  | `backend/src/modules/sdgb-worker`  | `SdgbJobService`、`SdgbJobDispatcher`                      | 机台协议 worker 的任务队列、调度和同步调用封装。                           |
-| `SyncModule`        | `backend/src/modules/sync`         | `SyncService`                                              | 成绩同步快照落库、成绩合并和导出到 prober。                                |
-| `UsersModule`       | `backend/src/modules/users`        | `UsersService`、`CabinetService`、`AccountDeletionService` | 用户资料、导入 token、机台绑定、自动更新状态和账号删除。                   |
+| Module                | 路径                                | 导出服务                                                                       | 负责功能摘要                                                                                            |
+| --------------------- | ----------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `AdminModule`         | `backend/src/modules/admin`         | `AdminSummaryService`、`AdminJobMetricsService` 等                             | 管理后台聚合查询与运维动作入口。                                                                        |
+| `AuthModule`          | `backend/src/modules/auth`          | `AuthService`、`AuthGuard`、`QrLoginService`                                   | 登录、JWT 校验、好友请求登录和机台二维码登录。                                                          |
+| `AutoUpdateModule`    | `backend/src/modules/auto-update`   | `AutoUpdateSchedulerService`                                                   | Rival-first 自动更新调度、Map auxiliary、FC/FS enrichment 触发和失败退避。                              |
+| `BotsModule`          | `backend/src/modules/bots`          | `BotStatusService`、`BotFriendSnapshotService`                                 | DXNet bot 状态、好友快照、可用性选择和不可用任务清理。                                                  |
+| `CoverModule`         | `backend/src/modules/cover`         | `CoverService`                                                                 | 本地封面文件查找、同步、格式变体生成和封面数量统计。                                                    |
+| `JobModule`           | `backend/src/modules/job`           | `JobService`、`JobFriendshipService`、`JobQueueService` 等                     | DXNet worker 任务队列与任务生命周期。                                                                   |
+| `MusicModule`         | `backend/src/modules/music`         | `MusicService`                                                                 | 曲库数据、曲库来源配置、曲库定时同步和曲库缓存。                                                        |
+| `ScoreExportModule`   | `backend/src/modules/score-export`  | `ScoreExportService`                                                           | 将同步成绩渲染为 PNG 图片。                                                                             |
+| `SdgbWorkerModule`    | `backend/src/modules/sdgb-worker`   | `SdgbJobService`、`SdgbJobDispatcher`                                          | 机台协议 worker 的任务队列、调度和同步调用封装。                                                        |
+| `SyncModule`          | `backend/src/modules/sync`          | `SyncService`                                                                  | 成绩同步快照落库、成绩合并和导出到 prober。                                                             |
+| `UsersModule`         | `backend/src/modules/users`         | `UsersService`、`CabinetService`、`AccountDeletionService`                     | 用户资料、导入 token、机台绑定、自动更新状态和账号删除。                                                |
 | `ObservabilityModule` | `backend/src/modules/observability` | `ClickHouseService`、`ObservabilityIngestService`、`ObservabilityQueryService` | ClickHouse 批量写入、RUM/analytics/structured logs/external API metadata、admin history/realtime 查询。 |
 
 ## 模块职责明细
@@ -55,7 +55,8 @@
 - 定时同步开启 `autoUpdate` 且已绑定 `cabinetUserId` 的用户到 `auto_update_probe_states`。
 - Rival-first 主链路通过 `SdgbJobDispatcher.getRivalHash()` 拉取 RivalMusic；hash 变化时直接调用 `SyncService.createFromRivalMusic()` 合并写入 sync，不再创建自动 `update_score`。
 - Map auxiliary 通过 `SdgbJobDispatcher.getUserMap()` 计算 map fingerprint，用于识别 score-silent 活跃并延长 hot session。
-- FC/FS enrichment 由 rival hash 变化或 map delta 触发：先 sdgb `addRival`，再创建 DXNet `get_user_recent_event` job。
+- FC/FS enrichment 由 rival hash 变化或 map delta 请求触发：cooldown 内先挂 pending，到期后先 sdgb `addRival`，再创建 DXNet `get_user_recent_event` job。
+- Rival/map/recent event 任一活动信号都会把稳定后全量 `update_score` 预约到 activity 后 45 分钟；如果 due 时已有 active `update_score`，直接视为覆盖并清 pending。
 - 持有 `auto_update_runs`、`auto_update_probe_states`、`auto_update_tasks`，记录每轮执行摘要、用户状态和短期任务日志。
 - 处理 rival/map/recent 失败退避；用户习惯画像尚未实现，仅预留 multiplier 字段。
 
@@ -81,7 +82,7 @@
 - 创建和唤醒 job 时写入 BullMQ；worker 直接消费队列，处理 `runAt` 延迟、释放 stale execution、超时失败由后台 sweep 兜底。
 - 处理 worker PATCH 回写的状态、stage、进度、profile、result、error 和执行标记。
 - `update_score` 成功完成后会触发 `SyncService.createFromJob()` 写入同步成绩，并按用户设置执行自动导出。
-- `get_user_recent_event` 成功完成后会触发 `SyncService.mergeRecentEvents()` 合并 FC/FS；如曲名 + 难度匹配多个 musicId，会创建带 `diffsToScrape` 的 `update_score` fallback。
+- `get_user_recent_event` 成功完成后会触发 `SyncService.mergeRecentEvents()` 合并唯一命中的 FC/FS；重名或缺失匹配会跳过，不再创建 ambiguous fallback。recent event fingerprint 变化会记录 activity signal。
 - 支持机台绑定用户的 cabinet fast path：通过 sdgb 加 rival 先建立好友关系，再创建普通 `update_score` job。
 - `JobTempCacheService` 用 Redis 临时缓存 `update_score` 中间 FriendVS 解析结果。
 - job timeline、worker 外部 API metadata 和相关 structured logs 写入 ClickHouse，由 admin Job Debug 组合查询。
@@ -115,7 +116,7 @@
 - 将 DXNet worker 的 job result 或 sdgb RivalMusic list 转换为 `SyncScore`，写入最新同步快照。
 - 同一用户只保留最新 sync；新成绩会和上一份 sync 合并，避免单次抓取缺项时丢失旧成绩。
 - 合并策略保留更高的 achievement、dxScore、FC 和 FS，元数据来自最新曲库。
-- `mergeRecentEvents()` 把 recent event FC/FS list 与当前成绩按 rank 合并，并返回 ambiguous difficulty 供 fallback 使用。
+- `mergeRecentEvents()` 把 recent event FC/FS list 与当前成绩按 rank 合并；只处理能唯一定位到当前 score 的 event。
 - 对外提供当前用户最新同步成绩查询。
 - `ProberExportMapService` 缓存 Diving Fish 与 LXNS 的曲目 id 映射，支持在不同曲库来源下导出。
 - 支持把最新 sync 上传到 Diving Fish 或 LXNS，并记录自动导出结果。
@@ -152,4 +153,4 @@
 | 成绩图导出                                                   | `ScoreExportModule`、`SyncModule`、`CoverModule`                  |
 | sdgb-worker 机台协议任务                                     | `SdgbWorkerModule`                                                |
 | 管理后台统计和运维动作                                       | `AdminModule` 以及被调用的具体业务模块                            |
-| worker 日志、外部 API metadata、Job Debug 时间线              | `ObservabilityModule`                                              |
+| worker 日志、外部 API metadata、Job Debug 时间线             | `ObservabilityModule`                                             |

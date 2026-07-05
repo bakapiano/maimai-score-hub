@@ -95,7 +95,7 @@ Map 变化但 rival hash 未变时：
 
 1. 延长或升为 hot。
 2. 不写 achievement / dxScore。
-3. 如果 `lastRecentEventAt >= 30min`，enqueue FC/FS enrichment。
+3. 请求一次 FC/FS enrichment；如果 recent event cooldown 未到，则记录 pending，到期后补跑一次。
 
 ## 当前执行控制与目标 QPS
 

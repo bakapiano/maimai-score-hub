@@ -30,10 +30,10 @@
 
 下列短生命周期运行态数据不再由 MongoDB 管理：
 
-| Key 模式                               | 保留期                                    | 用途                         |
-| -------------------------------------- | ----------------------------------------- | ---------------------------- |
-| `status:worker:sdgb:{workerId}`        | 约 `SDGB_WORKER_STALE_MS * 2`             | sdgb-worker 心跳和处理计数   |
-| `cache:job-temp:{jobId}:{diff}:{type}` | `JOB_TEMP_CACHE_TTL_SECONDS`，默认 1 小时 | `update_score` 中间结果缓存  |
+| Key 模式                               | 保留期                                    | 用途                        |
+| -------------------------------------- | ----------------------------------------- | --------------------------- |
+| `status:worker:sdgb:{workerId}`        | 约 `SDGB_WORKER_STALE_MS * 2`             | sdgb-worker 心跳和处理计数  |
+| `cache:job-temp:{jobId}:{diff}:{type}` | `JOB_TEMP_CACHE_TTL_SECONDS`，默认 1 小时 | `update_score` 中间结果缓存 |
 
 ## Users
 
@@ -281,30 +281,27 @@ type JobContext =
   | null
   | {
       // AutoUpdateSchedulerService.maybeEnqueueFcfs() 创建的
-      // get_user_recent_event job，用于只合并两次 enrichment 之间的 FC/FS。
+      // get_user_recent_event job，用于补最近 FC/FS。
       autoUpdateFcfs: true;
       reason: "rival_hash_changed" | "map_delta" | "manual";
-      recentEventSince: string | null; // ISO timestamp
     }
   | {
-      // get_user_recent_event 合并时出现无法唯一定位难度的 FC/FS，
-      // JobService 自动创建 fallback update_score job 时写入。
-      source: "fcfs_ambiguous_recent_event";
-      recentEventJobId: string;
-      ambiguousDiffs: number[];
+      // 用户活动稳定后自动创建的全量 update_score。
+      source: "auto_update_settled_full_update";
+      lastActivityAt: string | null; // ISO timestamp
     };
 ```
 
 `context` 当前取值：
 
-| jobType                 | 场景                                   | context                                              |
-| ----------------------- | -------------------------------------- | ---------------------------------------------------- |
-| `send_friend_request`   | 登录 / 建好友关系                      | `null`                                               |
-| `accept_friend_request` | 用户主动加 Bot 登录                    | `null`                                               |
-| `update_score`          | 用户手动同步 / 普通成绩更新            | `null`                                               |
-| `update_score`          | FC/FS recent event ambiguity fallback  | `{ source, recentEventJobId, ambiguousDiffs }`       |
-| `get_user_recent_event` | 自动更新 FC/FS enrichment              | `{ autoUpdateFcfs: true, reason, recentEventSince }` |
-| `get_full_friend_list`  | QR-login slow path 主动刷新 Bot 好友表 | `null`                                               |
+| jobType                 | 场景                                   | context                                                   |
+| ----------------------- | -------------------------------------- | --------------------------------------------------------- |
+| `send_friend_request`   | 登录 / 建好友关系                      | `null`                                                    |
+| `accept_friend_request` | 用户主动加 Bot 登录                    | `null`                                                    |
+| `update_score`          | 用户手动同步 / 普通成绩更新            | `null`                                                    |
+| `update_score`          | 稳定后全量自动更新                     | `{ source, lastActivityAt }`                              |
+| `get_user_recent_event` | 自动更新 FC/FS enrichment              | `{ autoUpdateFcfs: true, reason }`；通常 `runAt=now+3min` |
+| `get_full_friend_list`  | QR-login slow path 主动刷新 Bot 好友表 | `null`                                                    |
 
 索引：
 
@@ -338,11 +335,7 @@ type JobContext =
 
 ```ts
 type QrLoginStatus =
-  | "pending"
-  | "adding_rival"
-  | "waiting_snapshot"
-  | "matched"
-  | "failed";
+  "pending" | "adding_rival" | "waiting_snapshot" | "matched" | "failed";
 ```
 
 索引：
@@ -405,31 +398,37 @@ type BotFriendRow = {
 
 ### `AutoUpdateProbeStateEntity`
 
-| 字段                      | 类型                        | 约束 / 默认值            | 说明                                |
-| ------------------------- | --------------------------- | ------------------------ | ----------------------------------- |
-| `friendCode`              | `string`                    | required, unique, index  | 用户好友码                          |
-| `cabinetUserId`           | `number`                    | required, index          | 机台用户 ID                         |
-| `enabled`                 | `boolean`                   | default `true`, index    | 是否仍参与自动更新                  |
-| `tier`                    | `'hot' \| 'warm' \| 'cold'` | default `cold`, index    | 活跃度档位                          |
-| `lastRivalHash`           | `string \| null`            | default `null`           | 最近成功写入 sync 对应的 rival hash |
-| `lastRivalProbeAt`        | `Date \| null`              | default `null`           | 最近 RivalMusic probe 时间          |
-| `nextRivalProbeAt`        | `Date \| null`              | default `null`, index    | 下一次 RivalMusic probe 时间        |
-| `lastScoreChangedAt`      | `Date \| null`              | default `null`           | 最近成绩 hash 变化时间              |
-| `mapFingerprint`          | `string \| null`            | default `null`           | 最近 Map fingerprint                |
-| `mapDistanceSum`          | `number \| null`            | default `null`           | 最近 Map distance 总和              |
-| `lastMapProbeAt`          | `Date \| null`              | default `null`           | 最近 Map auxiliary 时间             |
-| `lastMapDeltaAt`          | `Date \| null`              | default `null`           | 最近 Map 变化时间                   |
-| `nextMapProbeAt`          | `Date \| null`              | default `null`, index    | 下一次 Map auxiliary 时间           |
-| `lastRecentEventAt`       | `Date \| null`              | default `null`           | 最近 FC/FS enrichment 时间          |
-| `nextRecentEventAt`       | `Date \| null`              | default `null`, index    | 下一次允许 recent event 时间        |
-| `rivalErrorCount`         | `number`                    | default `0`              | Rival probe 连续错误数              |
-| `mapErrorCount`           | `number`                    | default `0`              | Map auxiliary 连续错误数            |
-| `recentErrorCount`        | `number`                    | default `0`              | Recent event 连续错误数             |
-| `backoffUntil`            | `Date \| null`              | default `null`, index    | 主链路退避截止时间                  |
-| `habitMultiplier`         | `number`                    | default `1`              | Phase 2 用户习惯倍率预留            |
-| `loadMultiplier`          | `number`                    | default `1`              | 负载倍率预留                        |
-| `schedulerVersion`        | `string`                    | default `rival-first-v1` | 调度策略版本                        |
-| `createdAt` / `updatedAt` | `Date`                      | timestamps               | 创建/更新时间                       |
+| 字段                            | 类型                        | 约束 / 默认值            | 说明                                 |
+| ------------------------------- | --------------------------- | ------------------------ | ------------------------------------ |
+| `friendCode`                    | `string`                    | required, unique, index  | 用户好友码                           |
+| `cabinetUserId`                 | `number`                    | required, index          | 机台用户 ID                          |
+| `enabled`                       | `boolean`                   | default `true`, index    | 是否仍参与自动更新                   |
+| `tier`                          | `'hot' \| 'warm' \| 'cold'` | default `cold`, index    | 活跃度档位                           |
+| `lastRivalHash`                 | `string \| null`            | default `null`           | 最近成功写入 sync 对应的 rival hash  |
+| `lastRivalProbeAt`              | `Date \| null`              | default `null`           | 最近 RivalMusic probe 时间           |
+| `nextRivalProbeAt`              | `Date \| null`              | default `null`, index    | 下一次 RivalMusic probe 时间         |
+| `lastScoreChangedAt`            | `Date \| null`              | default `null`           | 最近成绩 hash 变化时间               |
+| `mapFingerprint`                | `string \| null`            | default `null`           | 最近 Map fingerprint                 |
+| `mapDistanceSum`                | `number \| null`            | default `null`           | 最近 Map distance 总和               |
+| `lastMapProbeAt`                | `Date \| null`              | default `null`           | 最近 Map auxiliary 时间              |
+| `lastMapDeltaAt`                | `Date \| null`              | default `null`           | 最近 Map 变化时间                    |
+| `nextMapProbeAt`                | `Date \| null`              | default `null`, index    | 下一次 Map auxiliary 时间            |
+| `lastRecentEventAt`             | `Date \| null`              | default `null`           | 最近 FC/FS enrichment 时间           |
+| `nextRecentEventAt`             | `Date \| null`              | default `null`, index    | 下一次允许 recent event 时间         |
+| `lastAutoUpdateActivityAt`      | `Date \| null`              | default `null`           | 最近自动更新活动信号时间             |
+| `pendingFullUpdateAt`           | `Date \| null`              | default `null`, index    | 稳定后全量 update_score 预约时间     |
+| `lastRecentEventFingerprint`    | `string \| null`            | default `null`           | 最近 recent event 轻量 fingerprint   |
+| `pendingRecentEventReason`      | `string \| null`            | default `null`, index    | cooldown/retry 期间挂起的 FC/FS 原因 |
+| `pendingRecentEventRequestedAt` | `Date \| null`              | default `null`           | 最近 pending FC/FS 触发时间          |
+| `pendingRecentEventCount`       | `number`                    | default `0`              | pending FC/FS 合并触发次数           |
+| `rivalErrorCount`               | `number`                    | default `0`              | Rival probe 连续错误数               |
+| `mapErrorCount`                 | `number`                    | default `0`              | Map auxiliary 连续错误数             |
+| `recentErrorCount`              | `number`                    | default `0`              | Recent event 连续错误数              |
+| `backoffUntil`                  | `Date \| null`              | default `null`, index    | 主链路退避截止时间                   |
+| `habitMultiplier`               | `number`                    | default `1`              | Phase 2 用户习惯倍率预留             |
+| `loadMultiplier`                | `number`                    | default `1`              | 负载倍率预留                         |
+| `schedulerVersion`              | `string`                    | default `rival-first-v1` | 调度策略版本                         |
+| `createdAt` / `updatedAt`       | `Date`                      | timestamps               | 创建/更新时间                        |
 
 索引：
 
@@ -437,6 +436,8 @@ type BotFriendRow = {
 - `cabinetUserId`：单字段索引。
 - `{ enabled: 1, nextRivalProbeAt: 1, tier: 1 }`，名称 `due_rival_probe`。
 - `{ enabled: 1, nextMapProbeAt: 1, tier: 1 }`，名称 `due_map_probe`。
+- `{ enabled: 1, pendingRecentEventReason: 1, nextRecentEventAt: 1 }`，名称 `due_pending_fcfs`。
+- `{ enabled: 1, pendingFullUpdateAt: 1 }`，名称 `due_pending_full_update`。
 
 ### `AutoUpdateTaskEntity`
 

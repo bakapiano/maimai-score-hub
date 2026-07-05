@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
 import { BotsModule } from '../bots/bots.module';
@@ -21,11 +21,12 @@ import {
 } from './schemas/auto-update-task.schema';
 import { AutoUpdateSchedulerService } from './services/auto-update-scheduler.service';
 import { AutoUpdateSchedulerTimingService } from './services/auto-update-scheduler-timing.service';
+import { AutoUpdateActivityService } from './services/auto-update-activity.service';
 
 @Module({
   imports: [
     UsersModule,
-    JobModule,
+    forwardRef(() => JobModule),
     ProberExportModule,
     BotsModule,
     SdgbWorkerModule,
@@ -39,7 +40,11 @@ import { AutoUpdateSchedulerTimingService } from './services/auto-update-schedul
       { name: AutoUpdateTaskEntity.name, schema: AutoUpdateTaskSchema },
     ]),
   ],
-  providers: [AutoUpdateSchedulerService, AutoUpdateSchedulerTimingService],
-  exports: [AutoUpdateSchedulerService],
+  providers: [
+    AutoUpdateActivityService,
+    AutoUpdateSchedulerService,
+    AutoUpdateSchedulerTimingService,
+  ],
+  exports: [AutoUpdateActivityService, AutoUpdateSchedulerService],
 })
 export class AutoUpdateModule {}

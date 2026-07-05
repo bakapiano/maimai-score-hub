@@ -17,7 +17,7 @@
    - 与用户当前成绩合并，保留更高 achievement、dxScore、FC、FS。
    - 更新 `lastRivalHash`、`lastScoreChangedAt`。
    - 将用户升为 hot。
-   - enqueue `fcfs_enrichment` 候选任务。
+   - 请求一次 FC/FS enrichment；如果 recent event cooldown 未到，则记录 pending，到期后补跑一次。
 5. 如果 hash 未变化：
    - 更新 `lastRivalProbeAt`。
    - 不写 sync。
@@ -48,7 +48,7 @@
 3. 如果 fingerprint 变化：
    - 更新 `lastMapDeltaAt`。
    - 将用户升为 hot 或延长 hot session。
-   - 如果 recent event cooldown 已过，enqueue `fcfs_enrichment`。
+   - 请求一次 FC/FS enrichment；如果 recent event cooldown 未到，则记录 pending，到期后补跑一次。
    - 如果距离上次 rival probe 已超过 tier 间隔，enqueue rival score probe。
 4. 如果 fingerprint 未变化：
    - 更新 `lastMapProbeAt`。
@@ -72,25 +72,25 @@ FC/FS Enrichment 是 **change-driven**，不是 **tier-driven**：
 
 执行：
 
-1. 检查单用户 cooldown，例如 30 分钟内最多一次。
-2. 选择可用 Bot。
-3. 通过 sdgb `addRival` 确保 Bot 与目标用户有 rival/好友关系；如果目标用户后续被 DXNet cleanup 从 Bot 好友列表移除，下次 enrichment 会再次通过 addRival 恢复。
-4. DXNet worker 请求好友详情 recent event 页面。
-5. 解析最近事件中的 FC/AP/FS/FDX，得到本次 recent event 返回的 FC/FS list。
-6. 只处理本次 enrichment 与上一次 enrichment 之间的事件；首次 enrichment 没有 since 时处理当前页面返回的全部 recent event。
-7. 不需要和上一次 recent event 结果做 diff；直接把本次 list 与用户当前成绩合并。
-8. 合并时按 rank 升级，不覆盖已有更高 FC/FS。
-9. 如果某条 recent event 的 `songName + difficulty` 在用户当前成绩里匹配到多个 musicId，视为 ambiguous：
-   - 该条 recent event 不直接写 FC/FS。
-   - 收集它的 difficulty。
-   - 本次 enrichment 完成后触发一次指定难度的 DXNet `update_score` fallback。
-   - fallback 使用刚刚 FC/FS enrichment 已完成的 `addRival` 关系，并只抓 ambiguous 对应难度。
+1. 检查单用户 cooldown，例如 30 分钟内最多执行一次。
+2. 如果 cooldown 未到，不丢弃触发信号；在 `auto_update_probe_states` 记录 pending FC/FS enrichment，并把多次触发合并为一次到期执行。
+3. 如果 cooldown 已到，选择可用 Bot。
+4. 通过 sdgb `addRival` 确保 Bot 与目标用户有 rival/好友关系；如果目标用户后续被 DXNet cleanup 从 Bot 好友列表移除，下次 enrichment 会再次通过 addRival 恢复。
+5. 创建 DXNet `get_user_recent_event` job，并默认延迟 3 分钟执行，等待 DXNet recent event 页面稳定。
+6. DXNet worker 请求好友详情 recent event 页面。
+7. 解析最近事件中的 FC/AP/FS/FDX，得到本次 recent event 返回的 FC/FS list。
+8. 不使用 `recentEventSince` 过滤；每次 recent event 返回的 list 都可参与合并。
+9. 不需要和上一次 recent event 结果做 diff；直接把本次 list 与用户当前成绩合并。
+10. 合并时按 rank 升级，不覆盖已有更高 FC/FS。
+11. 如果某条 recent event 的 `songName + difficulty` 在用户当前成绩里匹配到 0 个或多个 score，直接跳过；FC/FS enrichment 不负责 musicId 消歧，也不触发 `update_score` fallback。
+12. 计算 recent event fingerprint；如果 fingerprint 变化，记录一次 activity signal，延后稳定后全量 `update_score`。
 
 输出：
 
 - 最近 FC/FS 增量。
 - `lastRecentEventAt`。
-- ambiguous difficulty fallback `update_score` job（如有）。
+- pending FC/FS enrichment 状态（cooldown 未到或执行失败时）。
+- recent event fingerprint 变化触发的稳定后全量更新预约（如有）。
 
 ## 解耦要求
 

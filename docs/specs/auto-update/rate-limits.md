@@ -4,13 +4,15 @@
 
 ## Phase 1 已实现的执行控制
 
-| 链路              | 当前代码控制                                                           | 说明                                                             |
-| ----------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Rival score probe | `AUTO_UPDATE_RIVAL_BATCH_LIMIT=480`，`AUTO_UPDATE_RIVAL_CONCURRENCY=4` | 每轮最多处理 480 个 due state，scheduler 同时等待 4 个 sdgb job  |
-| Map auxiliary     | `AUTO_UPDATE_MAP_BATCH_LIMIT=120`，`AUTO_UPDATE_MAP_CONCURRENCY=2`     | 每轮最多处理 120 个 due state                                    |
-| Recent event      | `AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS=30min`                           | 单用户 cooldown；生成 DXNet `get_user_recent_event` job          |
-| Rival / map 失败  | 指数退避 / map 线性退避                                                | 避免失败用户持续消耗资源                                         |
-| sdgb worker       | BullMQ consumer，`SDGB_WORKER_CONCURRENCY=16`                          | 已实现 global + per-API token bucket，并支持按 job type 并发上限 |
+| 链路                | 当前代码控制                                                           | 说明                                                                                   |
+| ------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Rival score probe   | `AUTO_UPDATE_RIVAL_BATCH_LIMIT=480`，`AUTO_UPDATE_RIVAL_CONCURRENCY=4` | 每轮最多处理 480 个 due state，scheduler 同时等待 4 个 sdgb job                        |
+| Map auxiliary       | `AUTO_UPDATE_MAP_BATCH_LIMIT=120`，`AUTO_UPDATE_MAP_CONCURRENCY=2`     | 每轮最多处理 120 个 due state                                                          |
+| Recent event        | `AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS=30min`                           | 单用户 cooldown；cooldown 内合并为 pending，到期生成 DXNet `get_user_recent_event` job |
+| Recent event delay  | `AUTO_UPDATE_RECENT_EVENT_DELAY_MS=3min`                               | 创建 DXNet recent-event job 后延迟执行，等待 DXNet recent event 页面稳定               |
+| Settled full update | `AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS=45min`                       | 活动信号 debounce 后创建一次全量 DXNet `update_score`                                  |
+| Rival / map 失败    | 指数退避 / map 线性退避                                                | 避免失败用户持续消耗资源                                                               |
+| sdgb worker         | BullMQ consumer，`SDGB_WORKER_CONCURRENCY=16`                          | 已实现 global + per-API token bucket，并支持按 job type 并发上限                       |
 
 ## 10k 目标 QPS
 
@@ -42,22 +44,25 @@ sdgb-worker 已改为 BullMQ consumer，不再调用 `/workers/sdgb/jobs/next` �
 get_recent_event_global_limit = 30/min
 get_recent_event_per_bot_limit = 15/min
 get_recent_event_per_user_cooldown = 30min
+get_recent_event_execution_delay = 3min
 ```
 
-Phase 1 代码已实现 per-user cooldown；DXNet recent event 的 global/per-bot token bucket 尚未实现，当前主要依赖 worker/Bot 自身队列和 `get_user_recent_event` job 调度。
+Phase 1 代码已实现 per-user cooldown；cooldown 内不会丢弃 rival/map 触发信号，而是记录 pending FC/FS enrichment 并在 `nextRecentEventAt` 到期后补跑一次。DXNet recent event 的 global/per-bot token bucket 尚未实现，当前主要依赖 worker/Bot 自身队列和 `get_user_recent_event` job 调度。
 
 Recent event 只由变化事件触发：
 
 ```text
-rival hash changed -> enqueue fcfs_enrichment
-map fingerprint changed AND rival hash unchanged -> enqueue fcfs_enrichment
+rival hash changed -> request fcfs_enrichment
+map fingerprint changed -> request fcfs_enrichment
+cooldown not due -> coalesce as pending fcfs_enrichment
+cooldown due -> enqueue DXNet get_user_recent_event job
 ```
 
 不要按 hot 用户定时全量扫 recent event；hot 只提高触发这些变化事件的概率。
 
 手动/管理员强制触发 FC/FS enrichment 当前尚未实现。
 
-如果 recent event 出现曲名歧义，系统会创建一次指定难度的 DXNet `update_score` fallback。这个 fallback 不走全难度抓取，只抓 ambiguous difficulty。
+如果 recent event 出现曲名歧义，FC/FS enrichment 直接跳过该条 event，不再创建指定难度 fallback。稳定后全量 `update_score` 由 activity debounce 统一负责。
 
 ## 优先级现状
 

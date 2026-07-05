@@ -17,6 +17,7 @@ import { SyncService } from '../../sync/services/sync.service';
 import { UsersService } from '../../users/services/users.service';
 import {
   AutoUpdateProbeStateEntity,
+  type AutoUpdateFcfsReason,
   type AutoUpdateTier,
 } from '../schemas/auto-update-probe-state.schema';
 import { AutoUpdateRunEntity } from '../schemas/auto-update-run.schema';
@@ -25,8 +26,19 @@ import {
   AutoUpdateSchedulerTimingService,
   countRivalDetails,
 } from './auto-update-scheduler-timing.service';
+import { AutoUpdateActivityService } from './auto-update-activity.service';
 
 const SCHEDULER_VERSION = 'rival-first-v1';
+const FCFS_REASONS: AutoUpdateFcfsReason[] = [
+  'rival_hash_changed',
+  'map_delta',
+  'manual',
+];
+const FCFS_REASON_PRIORITY: Record<AutoUpdateFcfsReason, number> = {
+  map_delta: 1,
+  rival_hash_changed: 2,
+  manual: 3,
+};
 
 type AutoUpdateProbeResult = {
   friendCode: string;
@@ -37,6 +49,17 @@ type AutoUpdateProbeResult = {
 type RivalMusic = Awaited<
   ReturnType<SdgbJobDispatcher['getRivalHash']>
 >['music'];
+type PendingFcfsSummary = {
+  due: number;
+  triggered: number;
+  failed: number;
+};
+type PendingFullUpdateSummary = {
+  due: number;
+  created: number;
+  coveredByActive: number;
+  failed: number;
+};
 
 @Injectable()
 export class AutoUpdateSchedulerService
@@ -60,6 +83,7 @@ export class AutoUpdateSchedulerService
     @InjectModel(AutoUpdateRunEntity.name)
     private readonly runsModel: Model<AutoUpdateRunEntity>,
     private readonly timing: AutoUpdateSchedulerTimingService,
+    private readonly activity: AutoUpdateActivityService,
   ) {}
 
   onModuleInit() {
@@ -195,6 +219,44 @@ export class AutoUpdateSchedulerService
         .lean<AutoUpdateProbeStateEntity[]>()
         .exec();
       const mapResults = await this.runDueMapStates(mapDue);
+      const pendingFcfsDue = await this.stateModel
+        .find({
+          enabled: true,
+          pendingRecentEventReason: { $in: FCFS_REASONS },
+          $and: [
+            {
+              $or: [
+                { nextRecentEventAt: null },
+                { nextRecentEventAt: { $lte: now } },
+              ],
+            },
+            {
+              $or: [{ backoffUntil: null }, { backoffUntil: { $lte: now } }],
+            },
+          ],
+        })
+        .sort({ nextRecentEventAt: 1 })
+        .limit(this.timing.mapBatchLimit)
+        .lean<AutoUpdateProbeStateEntity[]>()
+        .exec();
+      const pendingFcfs = await this.runDuePendingFcfsStates(
+        pendingFcfsDue,
+        now,
+      );
+      const pendingFullUpdateDue = await this.stateModel
+        .find({
+          enabled: true,
+          pendingFullUpdateAt: { $lte: now },
+          $or: [{ backoffUntil: null }, { backoffUntil: { $lte: now } }],
+        })
+        .sort({ pendingFullUpdateAt: 1 })
+        .limit(this.timing.mapBatchLimit)
+        .lean<AutoUpdateProbeStateEntity[]>()
+        .exec();
+      const pendingFullUpdate = await this.runDuePendingFullUpdateStates(
+        pendingFullUpdateDue,
+        now,
+      );
 
       const triggered = results.filter((r) => r.action === 'triggered').length;
       const skippedNoChange =
@@ -205,7 +267,7 @@ export class AutoUpdateSchedulerService
         mapResults.filter((r) => r.action === 'failed').length;
 
       this.logger.log(
-        `rival-first auto-update sweep done: ${triggered} changed, ${skippedNoChange} unchanged, ${failed} failed (rivalDue=${due.length}, mapDue=${mapDue.length})`,
+        `rival-first auto-update sweep done: ${triggered} changed, ${skippedNoChange} unchanged, ${failed} failed (rivalDue=${due.length}, mapDue=${mapDue.length}, pendingFcfsDue=${pendingFcfs.due}, pendingFcfsTriggered=${pendingFcfs.triggered}, pendingFcfsFailed=${pendingFcfs.failed}, pendingFullDue=${pendingFullUpdate.due}, pendingFullCreated=${pendingFullUpdate.created}, pendingFullCovered=${pendingFullUpdate.coveredByActive}, pendingFullFailed=${pendingFullUpdate.failed})`,
       );
 
       return {
@@ -250,6 +312,12 @@ export class AutoUpdateSchedulerService
                   rivalErrorCount: 0,
                   mapErrorCount: 0,
                   recentErrorCount: 0,
+                  lastAutoUpdateActivityAt: null,
+                  pendingFullUpdateAt: null,
+                  lastRecentEventFingerprint: null,
+                  pendingRecentEventReason: null,
+                  pendingRecentEventRequestedAt: null,
+                  pendingRecentEventCount: 0,
                   backoffUntil: null,
                 },
               },
@@ -303,6 +371,148 @@ export class AutoUpdateSchedulerService
     );
     await Promise.all(workers);
     return results;
+  }
+
+  private async runDuePendingFcfsStates(
+    states: AutoUpdateProbeStateEntity[],
+    now: Date,
+  ): Promise<PendingFcfsSummary> {
+    const results: Array<'triggered' | 'failed' | 'skipped'> = [];
+    let next = 0;
+    const workers = Array.from(
+      { length: Math.min(this.timing.mapConcurrency, states.length) },
+      async () => {
+        while (next < states.length) {
+          const index = next++;
+          results[index] = await this.processPendingFcfs(states[index], now);
+        }
+      },
+    );
+    await Promise.all(workers);
+    return {
+      due: states.length,
+      triggered: results.filter((r) => r === 'triggered').length,
+      failed: results.filter((r) => r === 'failed').length,
+    };
+  }
+
+  private async processPendingFcfs(
+    state: AutoUpdateProbeStateEntity,
+    now: Date,
+  ): Promise<'triggered' | 'failed' | 'skipped'> {
+    const reason = this.normalizeFcfsReason(state.pendingRecentEventReason);
+    if (!reason) {
+      await this.stateModel.updateOne(
+        { friendCode: state.friendCode },
+        {
+          $set: {
+            pendingRecentEventReason: null,
+            pendingRecentEventRequestedAt: null,
+            pendingRecentEventCount: 0,
+            schedulerVersion: SCHEDULER_VERSION,
+          },
+        },
+      );
+      return 'skipped';
+    }
+
+    try {
+      await this.maybeEnqueueFcfs(state, reason, now);
+      return 'triggered';
+    } catch (err) {
+      this.logger.warn(
+        `failed to run pending fcfs enrichment fc=${state.friendCode}: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      return 'failed';
+    }
+  }
+
+  private async runDuePendingFullUpdateStates(
+    states: AutoUpdateProbeStateEntity[],
+    now: Date,
+  ): Promise<PendingFullUpdateSummary> {
+    const results: Array<'created' | 'coveredByActive' | 'failed'> = [];
+    let next = 0;
+    const workers = Array.from(
+      { length: Math.min(this.timing.mapConcurrency, states.length) },
+      async () => {
+        while (next < states.length) {
+          const index = next++;
+          results[index] = await this.processPendingFullUpdate(
+            states[index],
+            now,
+          );
+        }
+      },
+    );
+    await Promise.all(workers);
+    return {
+      due: states.length,
+      created: results.filter((r) => r === 'created').length,
+      coveredByActive: results.filter((r) => r === 'coveredByActive').length,
+      failed: results.filter((r) => r === 'failed').length,
+    };
+  }
+
+  private async processPendingFullUpdate(
+    state: AutoUpdateProbeStateEntity,
+    now: Date,
+  ): Promise<'created' | 'coveredByActive' | 'failed'> {
+    try {
+      const active = await this.jobs.getActiveUpdateScoreByFriendCode(
+        state.friendCode,
+      );
+      if (active) {
+        await this.clearPendingFullUpdate(state.friendCode);
+        return 'coveredByActive';
+      }
+
+      await this.jobs.create({
+        friendCode: state.friendCode,
+        jobType: 'update_score',
+        diffsToScrape: null,
+        cancelActiveJobs: false,
+        removeFriendAfterComplete: true,
+        context: {
+          source: 'auto_update_settled_full_update',
+          lastActivityAt: state.lastAutoUpdateActivityAt?.toISOString() ?? null,
+        },
+      });
+      await this.clearPendingFullUpdate(state.friendCode);
+      return 'created';
+    } catch (err) {
+      await this.stateModel.updateOne(
+        { friendCode: state.friendCode },
+        {
+          $set: {
+            pendingFullUpdateAt: new Date(
+              now.getTime() + this.timing.settledFullUpdateRetryMs,
+            ),
+            schedulerVersion: SCHEDULER_VERSION,
+          },
+        },
+      );
+      this.logger.warn(
+        `failed to create settled full update fc=${state.friendCode}: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      return 'failed';
+    }
+  }
+
+  private async clearPendingFullUpdate(friendCode: string): Promise<void> {
+    await this.stateModel.updateOne(
+      { friendCode },
+      {
+        $set: {
+          pendingFullUpdateAt: null,
+          schedulerVersion: SCHEDULER_VERSION,
+        },
+      },
+    );
   }
 
   private async processRivalProbe(
@@ -420,6 +630,10 @@ export class AutoUpdateSchedulerService
       musicCount,
       detailCount,
       scoreCount: Array.isArray(sync.scores) ? sync.scores.length : null,
+    });
+    await this.activity.recordActivitySignal({
+      friendCode: state.friendCode,
+      at: now,
     });
     await this.enqueueFcfsAfterRivalChange(state, now);
     return {
@@ -634,6 +848,10 @@ export class AutoUpdateSchedulerService
       });
 
       if (changed) {
+        await this.activity.recordActivitySignal({
+          friendCode: state.friendCode,
+          at: now,
+        });
         await this.maybeEnqueueFcfs(state, 'map_delta', now).catch((err) =>
           this.logger.warn(
             `failed to enqueue map-triggered fcfs fc=${state.friendCode}: ${
@@ -690,10 +908,11 @@ export class AutoUpdateSchedulerService
 
   private async maybeEnqueueFcfs(
     state: AutoUpdateProbeStateEntity,
-    reason: 'rival_hash_changed' | 'map_delta' | 'manual',
+    reason: AutoUpdateFcfsReason,
     now: Date,
   ): Promise<void> {
     if (state.nextRecentEventAt && state.nextRecentEventAt > now) {
+      await this.deferFcfsUntilCooldown(state, reason, now);
       return;
     }
 
@@ -728,12 +947,12 @@ export class AutoUpdateSchedulerService
         friendCode: state.friendCode,
         jobType: 'get_user_recent_event',
         botUserFriendCode: bot.friendCode,
+        runAt: new Date(now.getTime() + this.timing.recentEventDelayMs),
         removeFriendAfterComplete: true,
         cancelActiveJobs: false,
         context: {
           autoUpdateFcfs: true,
           reason,
-          recentEventSince: state.lastRecentEventAt?.toISOString() ?? null,
         },
       });
       const nextRecentEventAt = new Date(
@@ -747,6 +966,9 @@ export class AutoUpdateSchedulerService
               lastRecentEventAt: now,
               nextRecentEventAt,
               recentErrorCount: 0,
+              pendingRecentEventReason: null,
+              pendingRecentEventRequestedAt: null,
+              pendingRecentEventCount: 0,
               schedulerVersion: SCHEDULER_VERSION,
             },
           },
@@ -770,16 +992,23 @@ export class AutoUpdateSchedulerService
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const failureCount = (state.recentErrorCount ?? 0) + 1;
+      const nextRecentEventAt = new Date(
+        now.getTime() + this.timing.recentEventRetryDelayMs(failureCount),
+      );
       await Promise.all([
         this.stateModel.updateOne(
           { friendCode: state.friendCode },
           {
             $set: {
               recentErrorCount: failureCount,
-              nextRecentEventAt: new Date(
-                now.getTime() +
-                  this.timing.recentEventRetryDelayMs(failureCount),
+              nextRecentEventAt,
+              pendingRecentEventReason: this.mergeFcfsReason(
+                state.pendingRecentEventReason,
+                reason,
               ),
+              pendingRecentEventRequestedAt:
+                state.pendingRecentEventRequestedAt ?? now,
+              schedulerVersion: SCHEDULER_VERSION,
             },
           },
         ),
@@ -796,5 +1025,46 @@ export class AutoUpdateSchedulerService
       ]);
       throw err;
     }
+  }
+
+  private async deferFcfsUntilCooldown(
+    state: AutoUpdateProbeStateEntity,
+    reason: AutoUpdateFcfsReason,
+    now: Date,
+  ): Promise<void> {
+    await this.stateModel.updateOne(
+      { friendCode: state.friendCode },
+      {
+        $set: {
+          pendingRecentEventReason: this.mergeFcfsReason(
+            state.pendingRecentEventReason,
+            reason,
+          ),
+          pendingRecentEventRequestedAt: now,
+          schedulerVersion: SCHEDULER_VERSION,
+        },
+        $inc: { pendingRecentEventCount: 1 },
+      },
+    );
+  }
+
+  private mergeFcfsReason(
+    existing: unknown,
+    next: AutoUpdateFcfsReason,
+  ): AutoUpdateFcfsReason {
+    const current = this.normalizeFcfsReason(existing);
+    if (!current) {
+      return next;
+    }
+    return FCFS_REASON_PRIORITY[next] > FCFS_REASON_PRIORITY[current]
+      ? next
+      : current;
+  }
+
+  private normalizeFcfsReason(value: unknown): AutoUpdateFcfsReason | null {
+    return typeof value === 'string' &&
+      FCFS_REASONS.includes(value as AutoUpdateFcfsReason)
+      ? (value as AutoUpdateFcfsReason)
+      : null;
   }
 }

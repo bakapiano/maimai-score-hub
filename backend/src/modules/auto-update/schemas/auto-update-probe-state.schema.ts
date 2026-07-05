@@ -2,6 +2,8 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import type { HydratedDocument } from 'mongoose';
 
 export type AutoUpdateTier = 'hot' | 'warm' | 'cold';
+export type AutoUpdateFcfsReason =
+  'rival_hash_changed' | 'map_delta' | 'manual';
 
 @Schema({ collection: 'auto_update_probe_states', timestamps: true })
 export class AutoUpdateProbeStateEntity {
@@ -50,6 +52,24 @@ export class AutoUpdateProbeStateEntity {
   @Prop({ type: Date, default: null, index: true })
   nextRecentEventAt!: Date | null;
 
+  @Prop({ type: Date, default: null })
+  lastAutoUpdateActivityAt!: Date | null;
+
+  @Prop({ type: Date, default: null, index: true })
+  pendingFullUpdateAt!: Date | null;
+
+  @Prop({ type: String, default: null })
+  lastRecentEventFingerprint!: string | null;
+
+  @Prop({ type: String, default: null, index: true })
+  pendingRecentEventReason!: AutoUpdateFcfsReason | null;
+
+  @Prop({ type: Date, default: null })
+  pendingRecentEventRequestedAt!: Date | null;
+
+  @Prop({ type: Number, default: 0 })
+  pendingRecentEventCount!: number;
+
   @Prop({ type: Number, default: 0 })
   rivalErrorCount!: number;
 
@@ -88,4 +108,12 @@ AutoUpdateProbeStateSchema.index(
 AutoUpdateProbeStateSchema.index(
   { enabled: 1, nextMapProbeAt: 1, tier: 1 },
   { name: 'due_map_probe' },
+);
+AutoUpdateProbeStateSchema.index(
+  { enabled: 1, pendingRecentEventReason: 1, nextRecentEventAt: 1 },
+  { name: 'due_pending_fcfs' },
+);
+AutoUpdateProbeStateSchema.index(
+  { enabled: 1, pendingFullUpdateAt: 1 },
+  { name: 'due_pending_full_update' },
 );
