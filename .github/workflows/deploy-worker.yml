@@ -54,6 +54,7 @@ jobs:
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           API_SHARED_SECRET: ${{ secrets.API_SHARED_SECRET }}
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
         with:
           host: ${{ secrets[format('WORKER_{0}_HOST', matrix.instance)] }}
           username: ${{ secrets[format('WORKER_{0}_USER', matrix.instance)] }}
@@ -61,12 +62,16 @@ jobs:
           port: ${{ secrets[format('WORKER_{0}_PORT', matrix.instance)] }}
           key: ${{ secrets.SSH_KEY }}
           command_timeout: 30m
-          envs: ADMIN_PASSWORD,API_SHARED_SECRET,REDIS_PASSWORD
+          envs: ADMIN_PASSWORD,API_SHARED_SECRET,REDIS_PASSWORD,REDIS_HOST
           script: |
             DEPLOY_PATH="${{ secrets[format('WORKER_{0}_PATH', matrix.instance)] }}"
             SOURCE_ARCHIVE="/tmp/maimai-score-hub-worker-${{ github.sha }}.tgz"
             if [ -z "$DEPLOY_PATH" ]; then
               echo "❌ WORKER_${{ matrix.instance }}_PATH secret is required"
+              exit 1
+            fi
+            if [ -z "${REDIS_HOST:-}" ]; then
+              echo "❌ REDIS_HOST secret is required"
               exit 1
             fi
             if [ ! -f "$SOURCE_ARCHIVE" ]; then
@@ -130,7 +135,7 @@ jobs:
             upsert_env ADMIN_PASSWORD "${ADMIN_PASSWORD:-}"
             upsert_env API_SHARED_SECRET "${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}"
             upsert_env REDIS_PASSWORD "${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}"
-            upsert_env REDIS_HOST "175.178.13.169"
+            upsert_env REDIS_HOST "${REDIS_HOST:-}"
             upsert_env REDIS_PORT "6379"
             upsert_env REDIS_DB "0"
             upsert_env REDIS_KEY_PREFIX "maimai:"
@@ -156,7 +161,7 @@ jobs:
                 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}" \
                 API_SHARED_SECRET="${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}" \
                 REDIS_PASSWORD="${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}" \
-                REDIS_HOST="175.178.13.169" \
+                REDIS_HOST="${REDIS_HOST:-}" \
                 REDIS_PORT="6379" \
                 REDIS_DB="0" \
                 REDIS_KEY_PREFIX="maimai:" \
@@ -170,7 +175,7 @@ jobs:
                 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}" \
                 API_SHARED_SECRET="${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}" \
                 REDIS_PASSWORD="${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}" \
-                REDIS_HOST="175.178.13.169" \
+                REDIS_HOST="${REDIS_HOST:-}" \
                 REDIS_PORT="6379" \
                 REDIS_DB="0" \
                 REDIS_KEY_PREFIX="maimai:" \
