@@ -911,6 +911,16 @@ export class AutoUpdateSchedulerService
     reason: AutoUpdateFcfsReason,
     now: Date,
   ): Promise<void> {
+    this.logger.warn(
+      `FCFS enrichment disabled temporarily; skip addRival/get_user_recent_event fc=${state.friendCode} reason=${reason}`,
+    );
+    return;
+
+    /*
+     * Temporarily disabled as a production stopgap: this path uses sdgb
+     * addRival before enqueueing get_user_recent_event and can rapidly fill
+     * bot friend lists when many users are due.
+     *
     if (state.nextRecentEventAt && state.nextRecentEventAt > now) {
       await this.deferFcfsUntilCooldown(state, reason, now);
       return;
@@ -1025,6 +1035,7 @@ export class AutoUpdateSchedulerService
       ]);
       throw err;
     }
+    */
   }
 
   private async deferFcfsUntilCooldown(
