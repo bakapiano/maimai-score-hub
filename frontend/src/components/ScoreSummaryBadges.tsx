@@ -2,7 +2,7 @@ import { ActionIcon, Box, Card, Group, Stack, Text } from "@mantine/core";
 import React, { useCallback, useState } from "react";
 
 import type { SyncScore } from "../types/syncScore";
-import { renderRank } from "./MusicScoreCard";
+import { renderMusicIcon, renderRank } from "./MusicScoreCard";
 
 // Types
 const rankOrder = ["SSS+", "SSS", "SS+", "SS", "S+", "S"] as const;
@@ -257,7 +257,9 @@ const StatItem = ({
             : undefined
       }
       style={{
-        width: compact ? 80 : 106,
+        width: "fit-content",
+        minWidth: compact ? 128 : 150,
+        height: compact ? 34 : 40,
         padding: compact ? "2px 6px" : "4px 8px",
         borderRadius: 6,
         boxSizing: "border-box",
@@ -267,12 +269,23 @@ const StatItem = ({
         userSelect: "none",
       }}
     >
-      <Group gap={4} justify="space-between" wrap="nowrap">
-        <Box style={{ width: compact ? 28 : 36 }}>{labelNode}</Box>
+      <Group gap={4} justify="space-between" wrap="nowrap" h="100%">
+        <Box
+          style={{
+            width: compact ? 52 : 72,
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-start",
+            flex: "0 0 auto",
+          }}
+        >
+          {labelNode}
+        </Box>
         <Text
           size={compact ? "xs" : "sm"}
           fw={600}
-          style={{ whiteSpace: "nowrap" }}
+          style={{ whiteSpace: "nowrap", flexShrink: 0 }}
         >
           {count}
           <Text span size="xs" fw={400}>
@@ -306,11 +319,6 @@ const ExpandButton = ({
   </ActionIcon>
 );
 
-// FC/FS color helpers
-const fcColor = (key: FcBucket) =>
-  key === "ap+" || key === "ap" ? "orange" : "green";
-const fsColor = (key: FsBucket) =>
-  key === "fsd+" || key === "fsd" ? "orange" : "blue";
 const statusLabel = (key: FcBucket | FsBucket) => key.toUpperCase();
 
 // Main component - inline display with expand button
@@ -371,11 +379,10 @@ export function CombinedBadges({
           compact
           active={activeOf("fc", key)}
           onClick={clickOf("fc", key)}
-          labelNode={
-            <Text size="xs" fw={600} c={fcColor(key)}>
-              {statusLabel(key)}
-            </Text>
-          }
+          labelNode={renderMusicIcon(key, {
+            compact: true,
+            alt: statusLabel(key),
+          })}
         />
       ))}
       {fsList.map((key) => (
@@ -386,11 +393,10 @@ export function CombinedBadges({
           compact
           active={activeOf("fs", key)}
           onClick={clickOf("fs", key)}
-          labelNode={
-            <Text size="xs" fw={600} c={fsColor(key)}>
-              {statusLabel(key)}
-            </Text>
-          }
+          labelNode={renderMusicIcon(key, {
+            compact: true,
+            alt: statusLabel(key),
+          })}
         />
       ))}
       <ExpandButton
@@ -478,11 +484,10 @@ export function ScoreSummaryCard({
                 total={statusSummary.total}
                 active={activeOf("fc", key)}
                 onClick={clickOf("fc", key)}
-                labelNode={
-                  <Text size="sm" fw={600} c={fcColor(key)}>
-                    {statusLabel(key)}
-                  </Text>
-                }
+                labelNode={renderMusicIcon(key, {
+                  compact: true,
+                  alt: statusLabel(key),
+                })}
                 compact
               />
             ))}
@@ -493,11 +498,10 @@ export function ScoreSummaryCard({
                 total={statusSummary.total}
                 active={activeOf("fs", key)}
                 onClick={clickOf("fs", key)}
-                labelNode={
-                  <Text size="sm" fw={600} c={fsColor(key)}>
-                    {statusLabel(key)}
-                  </Text>
-                }
+                labelNode={renderMusicIcon(key, {
+                  compact: true,
+                  alt: statusLabel(key),
+                })}
                 compact
               />
             ))}

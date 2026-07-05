@@ -134,7 +134,9 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
     isNew: boolean,
   ) => {
     const music = musicMap.get(score.musicId);
-    const chart = score.cid != null ? chartMap.get(score.cid) : undefined;
+    const chart =
+      (score.cid != null ? chartMap.get(score.cid) : undefined) ??
+      music?.charts?.[score.chartIndex];
     setSelectedScore({
       musicId: score.musicId,
       chartIndex: score.chartIndex,
@@ -203,6 +205,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
         opened={styleModalOpened}
         onClose={() => setStyleModalOpened(false)}
         title="B50 样式"
+        lockScroll={false}
         centered
         size="lg"
       >

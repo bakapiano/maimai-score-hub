@@ -32,6 +32,7 @@ export {
   getRankFromScore,
   getCoverUrl,
   getIconUrl,
+  renderMusicIcon,
 } from "./utils";
 
 // Components

@@ -1,6 +1,7 @@
 // Types for Music Score Card components
 
 export interface ChartPayload {
+  cid?: number;
   level?: string;
   detailLevel?: number | null;
   notes?: unknown;

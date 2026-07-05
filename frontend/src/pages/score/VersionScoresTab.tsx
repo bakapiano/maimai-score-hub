@@ -178,7 +178,7 @@ export function VersionScoresTab({
       chartIndex: entry.chartIndex,
       type: entry.music.type,
       rating: entry.score?.rating ?? null,
-      score: entry.score?.score || entry.score?.dxScore || null,
+      score: entry.score?.score || null,
       fs: entry.score?.fs ?? null,
       fc: entry.score?.fc ?? null,
       dxScore: entry.score?.dxScore || null,

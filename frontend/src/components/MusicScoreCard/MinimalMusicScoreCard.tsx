@@ -88,14 +88,9 @@ export function MinimalMusicScoreCard({
             }}
           >
             {showScore && scoreDisplayMode === "rank" && (
-              <Text
-                fw={900}
-                size="lg"
-                c="white"
-                style={{ textShadow: TEXT_STROKE_GOLD_BLACK }}
-              >
-                {renderRank(rank)}
-              </Text>
+              <Box h={24} style={{ display: "flex", alignItems: "center" }}>
+                {renderRank(rank, { compact: true, width: 48 })}
+              </Box>
             )}
             {showScore && scoreDisplayMode === "score" && (
               <Text

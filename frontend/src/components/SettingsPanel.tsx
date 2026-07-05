@@ -289,6 +289,7 @@ export function SettingsPanel({ opened, onClose }: Props) {
       title="网站设置"
       position="right"
       size="sm"
+      lockScroll={false}
       onTouchStart={(event) => {
         touchStartX.current = event.touches[0]?.clientX ?? null;
       }}

@@ -160,7 +160,9 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
 
   const handleScoreClick = (score: SyncScore) => {
     const music = musicMap.get(score.musicId);
-    const chart = score.cid != null ? chartMap.get(score.cid) : undefined;
+    const chart =
+      (score.cid != null ? chartMap.get(score.cid) : undefined) ??
+      music?.charts?.[score.chartIndex];
     setSelectedScore({
       musicId: score.musicId,
       chartIndex: score.chartIndex,

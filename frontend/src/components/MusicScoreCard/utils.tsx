@@ -1,6 +1,36 @@
 // Utility functions for Music Score Card components
 
-import { STROKE_STYLE } from "./constants";
+const RANK_ASSET: Record<string, string> = {
+  "SSS+": "UI_TTR_Rank_SSSp.png",
+  SSS: "UI_TTR_Rank_SSS.png",
+  "SS+": "UI_TTR_Rank_SSp.png",
+  SS: "UI_TTR_Rank_SS.png",
+  "S+": "UI_TTR_Rank_Sp.png",
+  S: "UI_TTR_Rank_S.png",
+  AAA: "UI_TTR_Rank_AAA.png",
+  AA: "UI_TTR_Rank_AA.png",
+  A: "UI_TTR_Rank_A.png",
+  BBB: "UI_TTR_Rank_BBB.png",
+  BB: "UI_TTR_Rank_BB.png",
+  B: "UI_TTR_Rank_B.png",
+  C: "UI_TTR_Rank_C.png",
+  D: "UI_TTR_Rank_D.png",
+};
+
+const STATUS_ASSET: Record<string, string> = {
+  fc: "UI_MSS_MBase_Icon_FC.png",
+  "fc+": "UI_MSS_MBase_Icon_FCp.png",
+  fcp: "UI_MSS_MBase_Icon_FCp.png",
+  ap: "UI_MSS_MBase_Icon_AP.png",
+  "ap+": "UI_MSS_MBase_Icon_APp.png",
+  app: "UI_MSS_MBase_Icon_APp.png",
+  fs: "UI_MSS_MBase_Icon_FS.png",
+  "fs+": "UI_MSS_MBase_Icon_FSp.png",
+  fsp: "UI_MSS_MBase_Icon_FSp.png",
+  fsd: "UI_MSS_MBase_Icon_FSD.png",
+  "fsd+": "UI_MSS_MBase_Icon_FSDp.png",
+  fsdp: "UI_MSS_MBase_Icon_FSDp.png",
+};
 
 export function getRank(scoreVal: number): string {
   if (scoreVal >= 100.5) return "SSS+";
@@ -17,75 +47,63 @@ export function getRank(scoreVal: number): string {
 
 export function renderRank(
   r: string,
-  opts?: { compact?: boolean; stroke?: boolean },
+  opts?: { compact?: boolean; stroke?: boolean; width?: number },
 ) {
   const isCompact = opts?.compact === true;
-  const hasStroke = opts?.stroke === true;
-  const textShadow =
-    isCompact && !hasStroke
-      ? "none"
-      : "-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000";
-  const letterSpacing = isCompact ? (hasStroke ? 1 : 0) : 1;
+  const asset = RANK_ASSET[r];
 
-  if (r === "SSS" || r === "SSS+") {
-    const parts = [
-      { ch: "S", color: "#f5d142" }, // gold
-      { ch: "S", color: "#4ea3ff" }, // blue
-      { ch: "S", color: "#ff4d4f" }, // red
-    ];
-    const extra = r.endsWith("+") ? [{ ch: "+", color: "#f5d142" }] : [];
+  if (asset) {
     return (
-      <span style={{ textShadow, letterSpacing }}>
-        {parts.concat(extra).map((p, idx) => (
-          <span
-            key={`${p.ch}-${idx}`}
-            style={{ color: p.color, ...STROKE_STYLE }}
-          >
-            {p.ch}
-          </span>
-        ))}
-      </span>
+      <img
+        src={`/mai/pic/${asset}`}
+        alt={r}
+        style={{
+          display: "inline-block",
+          width: opts?.width ?? (isCompact ? 42 : 72),
+          maxHeight: isCompact ? 24 : 32,
+          height: "auto",
+          verticalAlign: "middle",
+        }}
+      />
     );
   }
-  if (["S", "S+", "SS", "SS+"].includes(r)) {
-    return (
-      <span
-        style={{
-          color: "#f5d142",
-          ...STROKE_STYLE,
-          textShadow,
-          letterSpacing,
-        }}
-      >
-        {r}
-      </span>
-    ); // gold
-  }
-  if (["A", "AA", "AAA"].includes(r)) {
-    return (
-      <span
-        style={{
-          color: "#ff4d4f",
-          ...STROKE_STYLE,
-          textShadow,
-          letterSpacing,
-        }}
-      >
-        {r}
-      </span>
-    ); // red
-  }
+
   return (
     <span
       style={{
-        ...STROKE_STYLE,
-        textShadow,
-        letterSpacing,
+        letterSpacing: isCompact ? 0 : 1,
       }}
     >
       {r}
     </span>
   );
+}
+
+export function renderMusicIcon(
+  icon: string,
+  opts?: { compact?: boolean; alt?: string },
+) {
+  const normalized = icon.toLowerCase();
+  const asset = STATUS_ASSET[normalized];
+  const alt = opts?.alt ?? icon.toUpperCase();
+
+  if (asset) {
+    return (
+      <img
+        src={`/mai/pic/${asset}`}
+        alt={alt}
+        style={{
+          display: "inline-block",
+          width: opts?.compact ? 28 : 38,
+          maxHeight: opts?.compact ? 24 : 32,
+          height: "auto",
+          verticalAlign: "middle",
+        }}
+      />
+    );
+  }
+
+  return alt;
 }
 
 /**
