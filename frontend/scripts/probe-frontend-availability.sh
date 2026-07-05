@@ -6,6 +6,7 @@ DURATION_SECONDS="${FRONTEND_PROBE_DURATION_SECONDS:-60}"
 INTERVAL_MS="${FRONTEND_PROBE_INTERVAL_MS:-100}"
 TIMEOUT_SECONDS="${FRONTEND_PROBE_TIMEOUT_SECONDS:-2}"
 LOG_FILE="${FRONTEND_PROBE_LOG_FILE:-}"
+STOP_FILE="${FRONTEND_PROBE_STOP_FILE:-}"
 
 usage() {
   cat <<'EOF'
@@ -20,6 +21,7 @@ Options:
   --interval-ms MS       Interval between requests. Default: 100
   --timeout SECONDS      Per-request timeout. Default: 2
   --log-file PATH        Also write CSV samples to PATH.
+  --stop-file PATH       Stop early when PATH exists.
   -h, --help             Show this help.
 EOF
 }
@@ -44,6 +46,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --log-file)
       LOG_FILE="$2"
+      shift
+      ;;
+    --stop-file)
+      STOP_FILE="$2"
       shift
       ;;
     -h|--help)
@@ -79,9 +85,17 @@ if [[ -n "$LOG_FILE" ]]; then
   printf 'timestamp,http_code,total_ms,ok\n' >"$LOG_FILE"
 fi
 
-printf 'probing %s for %ss every %sms\n' "$URL" "$DURATION_SECONDS" "$INTERVAL_MS"
+if [[ -n "$STOP_FILE" ]]; then
+  printf 'probing %s for up to %ss every %sms; stop file: %s\n' "$URL" "$DURATION_SECONDS" "$INTERVAL_MS" "$STOP_FILE"
+else
+  printf 'probing %s for %ss every %sms\n' "$URL" "$DURATION_SECONDS" "$INTERVAL_MS"
+fi
 
 while (( SECONDS < end_at )); do
+  if [[ -n "$STOP_FILE" && -e "$STOP_FILE" && "$total" -gt 0 ]]; then
+    break
+  fi
+
   timestamp="$(date +'%Y-%m-%dT%H:%M:%S%z')"
   sample="$(curl -L -sS -o /dev/null -w '%{http_code} %{time_total}' --max-time "$TIMEOUT_SECONDS" "$URL" 2>/dev/null || true)"
   code="${sample%% *}"

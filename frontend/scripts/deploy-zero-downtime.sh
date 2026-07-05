@@ -39,6 +39,7 @@ Environment:
   FRONTEND_HEALTH_URL       Public URL to verify after publish. Default: http://127.0.0.1:8848/
   FRONTEND_IMAGE_REPO       Temporary build image repo. Default: maimai-score-hub-frontend
   FRONTEND_IMAGE_TAG        Temporary build image tag. Default: deploy-<git>-<timestamp>
+  FRONTEND_COMPOSE_CMD      Compose command. Default: docker-compose if present, otherwise docker compose
 EOF
 }
 
@@ -88,7 +89,7 @@ require_command() {
 }
 
 compose() {
-  docker compose -f "$COMPOSE_FILE" "$@"
+  "${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" "$@"
 }
 
 container_id() {
@@ -152,7 +153,15 @@ trap cleanup EXIT
 
 require_command docker
 require_command curl
-require_command git
+
+if [[ -n "${FRONTEND_COMPOSE_CMD:-}" ]]; then
+  # shellcheck disable=SC2206
+  COMPOSE_CMD=($FRONTEND_COMPOSE_CMD)
+elif command -v docker-compose >/dev/null 2>&1; then
+  COMPOSE_CMD=(docker-compose)
+else
+  COMPOSE_CMD=(docker compose)
+fi
 
 if [[ ! -f "$COMPOSE_FILE" ]]; then
   echo "Compose file not found: $COMPOSE_FILE" >&2

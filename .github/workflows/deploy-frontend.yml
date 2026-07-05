@@ -72,19 +72,58 @@ jobs:
             rm -f "$SOURCE_ARCHIVE"
             printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
 
-            # Cap docker build cache BEFORE build to avoid ENOSPC
+            # Cap docker build cache before build to avoid ENOSPC
             # mid-build silently falling back to stale layers.
             sudo docker builder prune --force --keep-storage=2GB || true
-            if command -v docker-compose >/dev/null 2>&1; then
-              sudo docker-compose -f frontend/docker-compose.yml up -d --build || exit 1
+
+            PROBE_LOG="/tmp/maimai-score-hub-frontend-probe-${{ github.sha }}.csv"
+            PROBE_STOP="/tmp/maimai-score-hub-frontend-probe-${{ github.sha }}.stop"
+            rm -f "$PROBE_STOP"
+            PROBE_PID=""
+            if curl -fsS http://127.0.0.1:8848/ >/dev/null; then
+              echo "Starting side probe during frontend deploy"
+              bash frontend/scripts/probe-frontend-availability.sh \
+                --url http://127.0.0.1:8848/ \
+                --duration 900 \
+                --interval-ms 100 \
+                --timeout 2 \
+                --log-file "$PROBE_LOG" \
+                --stop-file "$PROBE_STOP" &
+              PROBE_PID="$!"
+              # Give the probe time to capture pre-deploy availability.
+              sleep 2
             else
-              sudo docker compose -f frontend/docker-compose.yml up -d --build || exit 1
+              echo "Frontend is not currently reachable on localhost:8848; skipping zero-downtime side probe for bootstrap."
             fi
+
+            DEPLOY_STATUS=0
+            sudo COMPOSE_FILE="$DEPLOY_PATH/frontend/docker-compose.yml" \
+              FRONTEND_HEALTH_URL="http://127.0.0.1:8848/" \
+              bash frontend/scripts/deploy-zero-downtime.sh --bootstrap || DEPLOY_STATUS=$?
+
+            PROBE_STATUS=0
+            if [ -n "$PROBE_PID" ]; then
+              touch "$PROBE_STOP"
+              wait "$PROBE_PID" || PROBE_STATUS=$?
+              echo "Side probe log: $PROBE_LOG"
+              tail -n 20 "$PROBE_LOG" || true
+            fi
+
             sudo docker image prune -f
             # Cap docker build cache so the disk doesn't fill up.
             # The frontend host has limited disk, and BuildKit cache can
             # grow enough to break later deployments.
             sudo docker builder prune --force --keep-storage=2GB || true
+
+            if [ "$DEPLOY_STATUS" -ne 0 ]; then
+              echo "Frontend deploy failed with status $DEPLOY_STATUS"
+              exit "$DEPLOY_STATUS"
+            fi
+            if [ "$PROBE_STATUS" -ne 0 ]; then
+              echo "Frontend side probe detected downtime"
+              exit "$PROBE_STATUS"
+            fi
+
             for i in 1 2 3 4 5; do
               if curl -fsS http://localhost:8848 >/dev/null; then
                 echo "Health check passed"
