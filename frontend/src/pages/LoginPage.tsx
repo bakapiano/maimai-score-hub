@@ -53,6 +53,8 @@ type LoginStatus = {
   [key: string]: unknown;
 };
 
+type PasswordLoginIdentifier = "friendCode" | "username";
+
 function FriendCodeGuide() {
   const [opened, { toggle }] = useDisclosure(false);
 
@@ -119,8 +121,6 @@ export default function LoginPage() {
   });
   const [passwordFriendCode, setPasswordFriendCode] = useState(() => {
     try {
-      const username = localStorage.getItem("lastUsername") || "";
-      if (username) return "";
       return localStorage.getItem("lastFriendCode") || "";
     } catch {
       return "";
@@ -133,11 +133,19 @@ export default function LoginPage() {
       return "";
     }
   });
+  const [passwordLoginIdentifier, setPasswordLoginIdentifier] =
+    useState<PasswordLoginIdentifier>(() => {
+      try {
+        return localStorage.getItem("lastUsername") ? "username" : "friendCode";
+      } catch {
+        return "friendCode";
+      }
+    });
   const [passwordLoginPassword, setPasswordLoginPassword] = useState("");
   const [passwordLoginLoading, setPasswordLoginLoading] = useState(false);
   const [loginMethod, setLoginMethod] = useState<
     "bot_sends_request" | "user_sends_request" | null
-  >(null);
+  >("bot_sends_request");
   const [_health, setHealth] = useState("");
   const [jobId, setJobId] = useState(() => {
     try {
@@ -193,11 +201,14 @@ export default function LoginPage() {
 
   const canPasswordLogin = useMemo(
     () => {
-      const hasFriendCode = passwordFriendCode.trim().length > 0;
-      const hasUsername = passwordUsername.trim().length > 0;
+      const identifier =
+        passwordLoginIdentifier === "friendCode"
+          ? passwordFriendCode.trim()
+          : passwordUsername.trim();
       return (
-        hasFriendCode !== hasUsername &&
-        (!hasFriendCode || /^\d{15}$/.test(passwordFriendCode.trim())) &&
+        identifier.length > 0 &&
+        (passwordLoginIdentifier !== "friendCode" ||
+          /^\d{15}$/.test(identifier)) &&
         passwordLoginPassword.length > 0 &&
         !passwordLoginLoading &&
         !polling &&
@@ -205,6 +216,7 @@ export default function LoginPage() {
       );
     },
     [
+      passwordLoginIdentifier,
       passwordFriendCode,
       passwordUsername,
       passwordLoginPassword,
@@ -462,10 +474,21 @@ export default function LoginPage() {
     try {
       const friendCode = passwordFriendCode.trim();
       const username = passwordUsername.trim();
-      if (!!friendCode === !!username) {
+      if (
+        passwordLoginIdentifier === "friendCode" &&
+        !/^\d{15}$/.test(friendCode)
+      ) {
         notifications.show({
           title: "密码登录失败",
-          message: "请只填写好友码或用户名其中一项",
+          message: "请输入 15 位好友码",
+          color: "red",
+        });
+        return;
+      }
+      if (passwordLoginIdentifier === "username" && !username) {
+        notifications.show({
+          title: "密码登录失败",
+          message: "请输入用户名",
           color: "red",
         });
         return;
@@ -473,7 +496,9 @@ export default function LoginPage() {
 
       const res = await authApi.passwordLogin({
         body: {
-          ...(friendCode ? { friendCode } : { username }),
+          ...(passwordLoginIdentifier === "friendCode"
+            ? { friendCode }
+            : { username }),
           password: passwordLoginPassword,
         },
       });
@@ -839,27 +864,53 @@ export default function LoginPage() {
                     <Tabs.Panel value="password" pt="md">
                       <Paper shadow="xs" p="lg" radius="md" withBorder>
                         <Stack gap="md">
-                          <TextInput
-                            label="好友码"
-                            placeholder="15 位好友码"
-                            value={passwordFriendCode}
-                            onChange={(event) => {
-                              const value = event.currentTarget.value;
-                              if (/^\d*$/.test(value) && value.length <= 15) {
-                                setPasswordFriendCode(value);
-                              }
-                            }}
-                            disabled={polling || qrBusy || passwordLoginLoading}
-                          />
-                          <TextInput
-                            label="用户名"
-                            placeholder="自定义用户名"
-                            value={passwordUsername}
-                            onChange={(event) =>
-                              setPasswordUsername(event.currentTarget.value)
+                          <SegmentedControl
+                            value={passwordLoginIdentifier}
+                            onChange={(value) =>
+                              setPasswordLoginIdentifier(
+                                value as PasswordLoginIdentifier,
+                              )
                             }
                             disabled={polling || qrBusy || passwordLoginLoading}
+                            data={[
+                              { label: "好友码", value: "friendCode" },
+                              { label: "用户名", value: "username" },
+                            ]}
                           />
+                          {passwordLoginIdentifier === "friendCode" ? (
+                            <TextInput
+                              label="好友码"
+                              placeholder="15 位好友码"
+                              value={passwordFriendCode}
+                              onChange={(event) => {
+                                const value = event.currentTarget.value;
+                                if (/^\d*$/.test(value) && value.length <= 15) {
+                                  setPasswordFriendCode(value);
+                                }
+                              }}
+                              disabled={
+                                polling || qrBusy || passwordLoginLoading
+                              }
+                              error={
+                                passwordFriendCode &&
+                                passwordFriendCode.length !== 15
+                                  ? "好友码必须是 15 位数字"
+                                  : null
+                              }
+                            />
+                          ) : (
+                            <TextInput
+                              label="用户名"
+                              placeholder="自定义用户名"
+                              value={passwordUsername}
+                              onChange={(event) =>
+                                setPasswordUsername(event.currentTarget.value)
+                              }
+                              disabled={
+                                polling || qrBusy || passwordLoginLoading
+                              }
+                            />
+                          )}
                           <PasswordInput
                             label="密码"
                             placeholder="请输入密码"
@@ -882,7 +933,7 @@ export default function LoginPage() {
                             密码登录
                           </Button>
                           <Text size="xs" c="dimmed">
-                            好友码和用户名二选一填写。密码需要先在已登录账号的设置中创建。
+                            密码需要先在已登录账号的设置中创建。
                           </Text>
                         </Stack>
                       </Paper>

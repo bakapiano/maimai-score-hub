@@ -1,4 +1,4 @@
-import { type CSSProperties, useMemo } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 
 import type { MusicChartPayload, MusicRow } from "../../types/music";
 import type { SyncScore } from "../../types/syncScore";
@@ -7,12 +7,12 @@ import classes from "./Best50ExportStyleView.module.css";
 
 const ASSET_BASE = "/mai/pic";
 
-const DIFF_CARD_ASSETS = [
-  "b50_score_basic.png",
-  "b50_score_advanced.png",
-  "b50_score_expert.png",
-  "b50_score_master.png",
-  "b50_score_remaster.png",
+const LEVEL_COLORS = [
+  "#6fe163",
+  "#f8df3a",
+  "#fc4255",
+  "#9a15ff",
+  "#dc9fff",
 ];
 
 const ID_COLORS = [
@@ -129,10 +129,6 @@ function getRankFromScore(score: string | null) {
   return parsed !== null ? getRank(parsed) : null;
 }
 
-function getCardTextColor(chartIndex: number) {
-  return chartIndex === 4 ? "#8a00e2" : "#ffffff";
-}
-
 function parseDxScore(value: string | null | undefined) {
   if (value === null || value === undefined) return null;
   const parsed = Number(value);
@@ -231,7 +227,7 @@ function buildCards(
       scoreText: score.score ?? null,
       dxScoreText:
         score.dxScore && dxScoreMax
-          ? `${score.dxScore}/${dxScoreMax}`
+          ? `${score.dxScore} / ${dxScoreMax}`
           : (score.dxScore ?? null),
       dxStar:
         dxScore !== null && dxScoreMax !== null && dxScoreMax > 0
@@ -246,28 +242,22 @@ function buildCards(
   });
 }
 
-function HideOnErrorImage({
-  className,
-  src,
-  alt,
-  style,
-}: {
-  className?: string;
-  src: string;
-  alt: string;
-  style?: CSSProperties;
-}) {
+function CoverImage({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+
   return (
-    <img
-      className={className}
-      src={src}
-      alt={alt}
-      style={style}
-      referrerPolicy="no-referrer"
-      onError={(event) => {
-        event.currentTarget.style.display = "none";
-      }}
-    />
+    <>
+      <div className={classes.coverFallback}>{failed ? "No Cover" : null}</div>
+      {!failed ? (
+        <img
+          className={classes.cover}
+          src={src}
+          alt={alt}
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -281,7 +271,7 @@ function ExportScoreCard({
   interactive?: boolean;
 }) {
   const chartIndex = card.chartIndex;
-  const textColor = getCardTextColor(chartIndex);
+  const textColor = "#ffffff";
   const rank = getRankFromScore(card.scoreText);
   const rankAsset = rank ? RANK_ASSET[rank] : null;
   const fcAsset = card.fc ? FC_ASSET[card.fc] : null;
@@ -292,17 +282,15 @@ function ExportScoreCard({
 
   const content = (
     <>
-      <img
+      <div
         className={classes.cardBg}
-        src={asset(DIFF_CARD_ASSETS[chartIndex] ?? DIFF_CARD_ASSETS[0])}
-        alt=""
+        style={
+          {
+            "--card-level-color": LEVEL_COLORS[chartIndex] ?? "#888",
+          } as CSSProperties
+        }
       />
-      <div className={classes.coverFallback}>No Cover</div>
-      <HideOnErrorImage
-        className={classes.cover}
-        src={getCoverUrl(card.musicId)}
-        alt={card.title}
-      />
+      <CoverImage src={getCoverUrl(card.musicId)} alt={card.title} />
       <div
         className={`${classes.cardText} ${classes.cardTitle}`}
         style={{ color: textColor }}
