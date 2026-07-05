@@ -5,7 +5,6 @@
 
 import type {
   AggregatedScoreResult,
-  FriendVsSong,
   ParsedScoreResult,
 } from "../../../../../common/types.ts";
 import { DIFFICULTIES } from "../../../../../common/maimai/constants.ts";
@@ -47,52 +46,24 @@ export class ScoreAggregator {
       onDiffCompleted,
     } = options;
 
-    const diffCompletionCount = new Map<number, number>();
     const notifyDiffCompleted = async (diff: number) => {
-      if (!onDiffCompleted) return;
-      const count = (diffCompletionCount.get(diff) ?? 0) + 1;
-      diffCompletionCount.set(diff, count);
-      if (count >= 2) {
+      if (onDiffCompleted) {
         await onDiffCompleted(diff);
       }
     };
 
     const tasks: Array<() => Promise<ParsedScoreResult>> = [];
 
-    // Friend-VS 默认页面会在歌曲数较多时截断，导致漏歌；改为分别请求
-    // winOnly + loseOnly 两个页面再合并，以获得完整覆盖。
-    const fetchOneSide = async (
-      scoreType: 1 | 2,
-      diff: number,
-      side: "win" | "lose",
-    ): Promise<FriendVsSong[]> =>
-      this.client.scores.getFriendVS(friendCode, scoreType, diff, side, {
-        jobId,
-      });
-
-    const mergeSongs = (
-      a: FriendVsSong[],
-      b: FriendVsSong[],
-    ): FriendVsSong[] => {
-      const seen = new Set<string>();
-      const out: FriendVsSong[] = [];
-      for (const s of [...a, ...b]) {
-        const key = JSON.stringify([s.name, s.type, s.level]);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push(s);
-      }
-      return out;
-    };
-
     const buildTask =
       (scoreType: 1 | 2, diff: number) =>
       async (): Promise<ParsedScoreResult> => {
-        const [winSongs, loseSongs] = await Promise.all([
-          fetchOneSide(scoreType, diff, "win"),
-          fetchOneSide(scoreType, diff, "lose"),
-        ]);
-        const songs = mergeSongs(winSongs, loseSongs);
+        const songs = await this.client.scores.getFriendVS(
+          friendCode,
+          scoreType,
+          diff,
+          undefined,
+          { jobId },
+        );
         const parsed = { diff, type: scoreType, songs };
         await notifyDiffCompleted(diff);
         return parsed;
