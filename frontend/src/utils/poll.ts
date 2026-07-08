@@ -89,16 +89,16 @@ export async function pollWithBackoff<T>(
   let lastErr: unknown = null;
 
   while (Date.now() < deadline) {
-    if (opts.signal?.aborted) throw new PollAborted();
+    if (opts.signal?.aborted) {throw new PollAborted();}
     try {
       const r = await fn();
       consecutiveFails = 0; // success resets the counter
-      if (r.done) return r.value;
+      if (r.done) {return r.value;}
       await sleep(interval, opts.signal);
       continue;
     } catch (err) {
       // 4xx → propagate immediately. Caller decides what to do.
-      if (err instanceof HttpClientError) throw err;
+      if (err instanceof HttpClientError) {throw err;}
 
       // 5xx / network → backoff and try again, unless we exhausted.
       lastErr = err;

@@ -8,13 +8,14 @@ const CACHE_PREFIX = "offline_cache_";
 const KEYS = {
   profile: `${CACHE_PREFIX}profile`,
   syncLatest: `${CACHE_PREFIX}sync_latest`,
+  syncLatestSummary: `${CACHE_PREFIX}sync_latest_summary`,
   musicList: `${CACHE_PREFIX}music_list`,
 } as const;
 
 function safeGet<T>(key: string): T | null {
   try {
     const raw = localStorage.getItem(key);
-    if (!raw) return null;
+    if (!raw) {return null;}
     return JSON.parse(raw) as T;
   } catch {
     return null;
@@ -58,12 +59,31 @@ export type CachedSyncLatest = {
   } | null;
 };
 
+export type CachedSyncLatestSummary = {
+  id?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  scoreCount: number;
+  autoExportResult?: CachedSyncLatest["autoExportResult"];
+};
+
 export function cacheSyncLatest(data: CachedSyncLatest): void {
   safeSet(KEYS.syncLatest, data);
+  safeSet(KEYS.syncLatestSummary, {
+    id: data.id,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt,
+    scoreCount: Array.isArray(data.scores) ? data.scores.length : 0,
+    autoExportResult: data.autoExportResult ?? null,
+  } satisfies CachedSyncLatestSummary);
 }
 
 export function getCachedSyncLatest(): CachedSyncLatest | null {
   return safeGet<CachedSyncLatest>(KEYS.syncLatest);
+}
+
+export function getCachedSyncLatestSummary(): CachedSyncLatestSummary | null {
+  return safeGet<CachedSyncLatestSummary>(KEYS.syncLatestSummary);
 }
 
 // ── Music list cache ──
@@ -84,8 +104,8 @@ export function cacheMusicList<T>(items: T[]): void {
 
 export function getCachedMusicList<T = unknown>(): T[] | null {
   const cached = safeGet<CachedMusicList<T> | T[]>(KEYS.musicList);
-  if (Array.isArray(cached)) return cached;
-  if (cached && Array.isArray(cached.items)) return cached.items;
+  if (Array.isArray(cached)) {return cached;}
+  if (cached && Array.isArray(cached.items)) {return cached.items;}
   return null;
 }
 
@@ -114,5 +134,5 @@ export function isOfflineMode(): boolean {
 }
 
 export function hasOfflineData(): boolean {
-  return getCachedProfile() !== null || getCachedSyncLatest() !== null;
+  return getCachedProfile() !== null || getCachedSyncLatestSummary() !== null;
 }

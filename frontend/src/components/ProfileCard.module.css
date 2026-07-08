@@ -1,0 +1,78 @@
+.scrollArea {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  padding-inline: var(--mantine-spacing-md);
+}
+
+.profileBody {
+  width: 100%;
+  min-width: max-content;
+  padding: var(--mantine-spacing-md) 0;
+  color: light-dark(var(--mantine-color-black), var(--mantine-color-dark-0));
+}
+
+.avatarFrame {
+  flex-shrink: 0;
+  width: 94px;
+  height: 108px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--mantine-color-gray-light);
+}
+
+.summary {
+  flex: 1 1 auto;
+  min-width: 260px;
+  overflow: visible;
+  padding-right: var(--mantine-spacing-md);
+}
+
+.metaRow {
+  min-width: 0;
+}
+
+.titleBadge {
+  flex: none;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: none;
+  cursor: inherit;
+}
+
+.ratingBadge {
+  flex-shrink: 0;
+}
+
+.rankRow {
+  flex: 0 0 auto;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.courseRank {
+  flex: 0 0 auto;
+  height: 36px;
+  width: auto;
+}
+
+.classRankFrame {
+  flex: 0 0 78px;
+  height: 36px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+.starGroup {
+  flex: 0 0 auto;
+  height: 36px;
+  align-items: center;
+}
+
+.starIcon {
+  height: 30px;
+  width: auto;
+}

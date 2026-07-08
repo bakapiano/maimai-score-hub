@@ -24,9 +24,13 @@ import { ScoreDetailModal } from "../../components/ScoreDetailModal";
 import type { MusicChartPayload, MusicRow } from "../../types/music";
 import type { SyncScore } from "../../types/syncScore";
 import { downloadBlob } from "../../utils/downloadBlob";
+import {
+  getRatingFloorByIsNew,
+  getRatingFloors,
+} from "../../utils/ratingFloors";
 import { type ReactNode, useMemo, useState } from "react";
-import { useMusic } from "../../providers/MusicProvider";
-import { useAuth } from "../../providers/AuthProvider";
+import { useAuth } from "../../providers/AuthContext";
+import { useMusic } from "../../providers/MusicContext";
 
 type RatingSummary = {
   newTop: SyncScore[];
@@ -41,7 +45,7 @@ type RatingSummary = {
 };
 
 const buildRatingSummary = (scores: SyncScore[]): RatingSummary | null => {
-  if (!Array.isArray(scores)) return null;
+  if (!Array.isArray(scores)) {return null;}
 
   const withRating = scores.filter(
     (s) => typeof s.rating === "number" && s.type !== "utage",
@@ -114,6 +118,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
   const { musicMap, chartMap } = useMusic();
   const { token } = useAuth();
   const ratingSummary = useMemo(() => buildRatingSummary(scores), [scores]);
+  const ratingFloors = useMemo(() => getRatingFloors(scores), [scores]);
 
   // Modal state
   const [modalOpened, setModalOpened] = useState(false);
@@ -135,7 +140,9 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
   ) => {
     const music = musicMap.get(score.musicId);
     const chart =
-      (score.cid != null ? chartMap.get(score.cid) : undefined) ??
+      (score.cid !== null && score.cid !== undefined
+        ? chartMap.get(score.cid)
+        : undefined) ??
       music?.charts?.[score.chartIndex];
     setSelectedScore({
       musicId: score.musicId,
@@ -164,12 +171,13 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
       noteDesigner: chart?.charter || null,
       ranking,
       isNew,
+      ratingFloor: getRatingFloorByIsNew(isNew, ratingFloors),
     });
     setModalOpened(true);
   };
 
   const handleExport = async () => {
-    if (!token) return;
+    if (!token) {return;}
     setExporting(true);
     try {
       const res = await fetch("/api/v1/me/score-exports/best50", {
@@ -305,7 +313,9 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
                   {ratingSummary.newTop.slice(0, 15).map((score, idx) => {
                     const music = musicMap.get(score.musicId);
                     const chart =
-                      score.cid != null ? chartMap.get(score.cid) : undefined;
+                      score.cid !== null && score.cid !== undefined
+                        ? chartMap.get(score.cid)
+                        : undefined;
                     return (
                       <div
                         key={`new-${score.musicId}-${score.type}-${score.chartIndex}`}
@@ -352,7 +362,9 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
                   {ratingSummary.oldTop.slice(0, 35).map((score, idx) => {
                     const music = musicMap.get(score.musicId);
                     const chart =
-                      score.cid != null ? chartMap.get(score.cid) : undefined;
+                      score.cid !== null && score.cid !== undefined
+                        ? chartMap.get(score.cid)
+                        : undefined;
                     return (
                       <div
                         key={`old-${score.musicId}-${score.type}-${score.chartIndex}`}
@@ -530,7 +542,10 @@ function CompactMusicScoreCardPreview({
   chartMap: Map<number, ChartLookup>;
 }) {
   const music = musicMap.get(score.musicId);
-  const chart = score.cid != null ? chartMap.get(score.cid) : undefined;
+  const chart =
+    score.cid !== null && score.cid !== undefined
+      ? chartMap.get(score.cid)
+      : undefined;
 
   return (
     <CompactMusicScoreCard

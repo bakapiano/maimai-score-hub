@@ -137,7 +137,7 @@ export function CabinetBindingCard({
   );
 
   const onPickFile = (file: File | null) => {
-    if (!file) return;
+    if (!file) {return;}
     const fd = new FormData();
     fd.append("image", file);
     void submitBind(fd);

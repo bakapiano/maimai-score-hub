@@ -17,8 +17,8 @@ export const PwaInstallContext =
   createContext<PwaInstallContextValue | null>(null);
 
 export function isStandalone() {
-  if (typeof window === "undefined") return false;
-  if (window.matchMedia("(display-mode: standalone)").matches) return true;
+  if (typeof window === "undefined") {return false;}
+  if (window.matchMedia("(display-mode: standalone)").matches) {return true;}
 
   const navigatorWithStandalone = navigator as Navigator & {
     standalone?: boolean;
@@ -27,7 +27,7 @@ export function isStandalone() {
 }
 
 export function isIos() {
-  if (typeof navigator === "undefined") return false;
+  if (typeof navigator === "undefined") {return false;}
   const userAgent = navigator.userAgent.toLowerCase();
   return (
     /iphone|ipad|ipod/.test(userAgent) ||

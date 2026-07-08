@@ -22,7 +22,6 @@ export default defineConfig({
             "@mantine/hooks",
             "@mantine/notifications",
           ],
-          recharts: ["recharts"],
           icons: ["@tabler/icons-react"],
         },
       },
@@ -32,6 +31,10 @@ export default defineConfig({
     port: 3001,
     host: "127.0.0.1",
     proxy: {
+      "/admin": {
+        target: "http://127.0.0.1:3002",
+        changeOrigin: true,
+      },
       "/api": "http://127.0.0.1:9050",
       "/maimai-mobile/img": {
         target: "https://maimai.wahlap.com",

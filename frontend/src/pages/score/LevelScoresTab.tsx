@@ -13,19 +13,27 @@ import {
 import {
   CombinedBadges,
   ScoreSummaryCard,
+} from "../../components/ScoreSummaryBadges";
+import {
   calculateAverageScore,
   matchesBadgeFilter,
   summarizeRanks,
   summarizeStatuses,
   useBadgeScopeFilter,
-} from "../../components/ScoreSummaryBadges";
+} from "../../components/ScoreSummaryBadges.model";
 import {
   IconChevronLeft,
   IconChevronRight,
   IconDownload,
 } from "@tabler/icons-react";
 import type { MusicChartPayload, MusicRow } from "../../types/music";
-import { useMemo, useRef, useState, useTransition } from "react";
+import {
+  type MouseEvent,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 import {
   MinimalMusicScoreCard,
@@ -34,14 +42,20 @@ import {
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
 import {
   ScoreDisplayFilter,
-  type DisplayFilterSettings,
-  DEFAULT_DISPLAY_FILTER,
-  matchesScoreFilter,
 } from "../../components/ScoreDisplayFilter";
+import {
+  DEFAULT_DISPLAY_FILTER,
+  type DisplayFilterSettings,
+  matchesScoreFilter,
+} from "../../components/ScoreDisplayFilter.model";
 import type { SyncScore } from "../../types/syncScore";
 import classes from "./LevelScoresTab.module.css";
 import { downloadBlob } from "../../utils/downloadBlob";
-import { useAuth } from "../../providers/AuthProvider";
+import { useAuth } from "../../providers/AuthContext";
+import {
+  getRatingFloors,
+} from "../../utils/ratingFloors";
+import { buildScoreDetailFromEntry } from "../../utils/scoreDetail";
 
 type ChartEntry = {
   music: MusicRow;
@@ -62,15 +76,15 @@ type LevelBucket = {
 
 const parseLevelValue = (value: string) => {
   const match = /^([0-9]+(?:\.[0-9]+)?)(\+)?$/.exec(value.trim());
-  if (!match) return null;
+  if (!match) {return null;}
   const base = parseFloat(match[1]);
-  if (!Number.isFinite(base)) return null;
+  if (!Number.isFinite(base)) {return null;}
   // Treat a trailing + as slightly higher than the base number
   return base + (match[2] ? 0.1 : 0);
 };
 
 const normalizeLevelKey = (chart: MusicChartPayload) => {
-  if (chart.level) return chart.level;
+  if (chart.level) {return chart.level;}
   if (typeof chart.detailLevel === "number") {
     return Math.floor(chart.detailLevel).toString();
   }
@@ -79,8 +93,8 @@ const normalizeLevelKey = (chart: MusicChartPayload) => {
 
 const normalizeDetailKey = (chart: MusicChartPayload) => {
   if (typeof chart.detailLevel === "number")
-    return chart.detailLevel.toFixed(1);
-  if (chart.level) return chart.level;
+    {return chart.detailLevel.toFixed(1);}
+  if (chart.level) {return chart.level;}
   return "?";
 };
 
@@ -103,9 +117,9 @@ const buildBuckets = (
       const detailKey = normalizeDetailKey(chart);
       const levelBucket =
         levelMap.get(levelKey) ?? new Map<string, ChartEntry[]>();
-      if (!levelMap.has(levelKey)) levelMap.set(levelKey, levelBucket);
+      if (!levelMap.has(levelKey)) {levelMap.set(levelKey, levelBucket);}
       const detailBucket = levelBucket.get(detailKey) ?? [];
-      if (!levelBucket.has(detailKey)) levelBucket.set(detailKey, detailBucket);
+      if (!levelBucket.has(detailKey)) {levelBucket.set(detailKey, detailBucket);}
 
       detailBucket.push({
         music,
@@ -138,12 +152,64 @@ const buildBuckets = (
   buckets.sort((a, b) => {
     const numDiff =
       (b.levelNumeric ?? -Infinity) - (a.levelNumeric ?? -Infinity);
-    if (numDiff !== 0) return numDiff;
+    if (numDiff !== 0) {return numDiff;}
     return a.levelKey.localeCompare(b.levelKey);
   });
 
   return buckets;
 };
+
+function useHorizontalDragScroll() {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const scrollLeftPos = useRef(0);
+
+  const scrollLeft = () => {
+    scrollContainerRef.current?.scrollBy({ left: -150, behavior: "smooth" });
+  };
+
+  const scrollRight = () => {
+    scrollContainerRef.current?.scrollBy({ left: 150, behavior: "smooth" });
+  };
+
+  const handleMouseDown = (event: MouseEvent) => {
+    if (!scrollContainerRef.current) {
+      return;
+    }
+    isDragging.current = true;
+    startX.current = event.pageX - scrollContainerRef.current.offsetLeft;
+    scrollLeftPos.current = scrollContainerRef.current.scrollLeft;
+    scrollContainerRef.current.style.cursor = "grabbing";
+  };
+
+  const handleMouseMove = (event: MouseEvent) => {
+    if (!isDragging.current || !scrollContainerRef.current) {
+      return;
+    }
+    event.preventDefault();
+    const x = event.pageX - scrollContainerRef.current.offsetLeft;
+    const walk = (x - startX.current) * 1.5;
+    scrollContainerRef.current.scrollLeft = scrollLeftPos.current - walk;
+  };
+
+  const stopDragging = () => {
+    isDragging.current = false;
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.style.cursor = "grab";
+    }
+  };
+
+  return {
+    scrollContainerRef,
+    scrollLeft,
+    scrollRight,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp: stopDragging,
+    handleMouseLeave: stopDragging,
+  };
+}
 
 type LevelScoresTabProps = {
   musics: MusicRow[];
@@ -158,12 +224,12 @@ export function LevelScoresTab({
   loading,
 }: LevelScoresTabProps) {
   const { token } = useAuth();
+  const ratingFloors = useMemo(() => getRatingFloors(scores), [scores]);
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [exporting, setExporting] = useState(false);
-  const [displayFilter, setDisplayFilter] = useState<DisplayFilterSettings>(
-    DEFAULT_DISPLAY_FILTER,
-  );
+  const [displayFilter, setDisplayFilter] =
+    useState<DisplayFilterSettings>(DEFAULT_DISPLAY_FILTER);
   const { pageFilter, sectionFilters, setPageFilter, setSectionFilter } =
     useBadgeScopeFilter();
 
@@ -173,41 +239,12 @@ export function LevelScoresTab({
     useState<DetailedMusicScoreCardProps | null>(null);
 
   const handleScoreClick = (entry: ChartEntry) => {
-    setSelectedScore({
-      musicId: entry.music.id,
-      chartIndex: entry.chartIndex,
-      type: entry.music.type,
-      rating: entry.score?.rating ?? null,
-      score: entry.score?.score || null,
-      fs: entry.score?.fs ?? null,
-      fc: entry.score?.fc ?? null,
-      dxScore: entry.score?.dxScore || null,
-      chartPayload: entry.chart || null,
-      songMetadata: {
-        title: entry.music.title,
-        artist: entry.music.artist,
-        category: entry.music.category,
-        isNew: entry.music.isNew,
-        bpm: entry.music.bpm,
-        version: entry.music.version,
-      },
-      bpm:
-        typeof entry.music.bpm === "number"
-          ? entry.music.bpm
-          : parseInt(entry.music.bpm as string) || null,
-      noteDesigner: entry.chart?.charter || null,
-    });
+    setSelectedScore(buildScoreDetailFromEntry(entry, ratingFloors));
     setModalOpened(true);
   };
 
-  const filteredMusics = useMemo(
-    () => musics.filter((m) => m.type !== "utage"),
-    [musics],
-  );
-  const filteredScores = useMemo(
-    () => scores.filter((s) => s.type !== "utage"),
-    [scores],
-  );
+  const filteredMusics = useMemo(() => musics.filter((m) => m.type !== "utage"), [musics]);
+  const filteredScores = useMemo(() => scores.filter((s) => s.type !== "utage"), [scores]);
 
   const buckets = useMemo(
     () => buildBuckets(filteredMusics, filteredScores),
@@ -217,7 +254,7 @@ export function LevelScoresTab({
     buckets.find((b) => b.levelKey === selectedLevel) ?? buckets[0];
 
   const currentAllItems = useMemo(() => {
-    if (!current) return [];
+    if (!current) {return [];}
     return current.details.flatMap((d) => d.items);
   }, [current]);
 
@@ -230,55 +267,18 @@ export function LevelScoresTab({
     );
   }, [currentAllItems, displayFilter]);
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
-  const startX = useRef(0);
-  const scrollLeftPos = useRef(0);
-
-  const scrollLeft = () => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollBy({ left: -150, behavior: "smooth" });
-    }
-  };
-
-  const scrollRight = () => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollBy({ left: 150, behavior: "smooth" });
-    }
-  };
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (!scrollContainerRef.current) return;
-    isDragging.current = true;
-    startX.current = e.pageX - scrollContainerRef.current.offsetLeft;
-    scrollLeftPos.current = scrollContainerRef.current.scrollLeft;
-    scrollContainerRef.current.style.cursor = "grabbing";
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging.current || !scrollContainerRef.current) return;
-    e.preventDefault();
-    const x = e.pageX - scrollContainerRef.current.offsetLeft;
-    const walk = (x - startX.current) * 1.5;
-    scrollContainerRef.current.scrollLeft = scrollLeftPos.current - walk;
-  };
-
-  const handleMouseUp = () => {
-    isDragging.current = false;
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.style.cursor = "grab";
-    }
-  };
-
-  const handleMouseLeave = () => {
-    isDragging.current = false;
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.style.cursor = "grab";
-    }
-  };
+  const {
+    scrollContainerRef,
+    scrollLeft,
+    scrollRight,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
+    handleMouseLeave,
+  } = useHorizontalDragScroll();
 
   const handleExport = async () => {
-    if (!token || !current) return;
+    if (!token || !current) {return;}
     setExporting(true);
     try {
       const res = await fetch(
@@ -446,7 +446,7 @@ export function LevelScoresTab({
                   displayFilter,
                 ),
               );
-              if (baseItems.length === 0) return null;
+              if (baseItems.length === 0) {return null;}
               const sectionKey = `${current.levelKey}-${detail.detailKey}`;
               const sectionFilter = sectionFilters[sectionKey] ?? null;
               const effectiveFilter = pageFilter ?? sectionFilter;

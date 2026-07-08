@@ -7,6 +7,7 @@ import {
 } from "./constants";
 import { getCoverUrl, getIconUrl, getRankFromScore, renderRank } from "./utils";
 
+import { DeferredImage } from "../DeferredImage";
 import type { MusicScoreCardProps } from "./types";
 
 export function MusicScoreCard({
@@ -19,8 +20,6 @@ export function MusicScoreCard({
   fc,
   chartPayload,
   songMetadata,
-  bpm: _bpm,
-  noteDesigner: _noteDesigner,
 }: MusicScoreCardProps) {
   const difficultyColor = LEVEL_COLORS[chartIndex] || "#888";
   const difficultyName =
@@ -69,9 +68,8 @@ export function MusicScoreCard({
           }}
         >
           <Box style={{ position: "relative" }}>
-            <Image
+            <DeferredImage
               src={coverUrl}
-              fallbackSrc="https://placehold.co/240x240?text=No+Cover"
               w={COVER_SIZE}
               h={COVER_SIZE}
               radius="sm"

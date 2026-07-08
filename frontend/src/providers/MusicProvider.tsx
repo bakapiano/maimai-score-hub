@@ -1,44 +1,49 @@
 import { musicApi } from "../api/appClient";
 import type { MusicChartPayload, MusicRow } from "../types/music";
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { MusicContext } from "./MusicContext";
 import {
   cacheMusicList,
   getCachedMusicList,
 } from "../utils/offlineCache";
-
-type MusicContextValue = {
-  musics: MusicRow[];
-  musicMap: Map<string, MusicRow>;
-  chartMap: Map<
-    number,
-    MusicChartPayload & { musicId: string; chartIndex: number }
-  >;
-  loading: boolean;
-  error: string | null;
-  reload: () => Promise<void>;
-};
-
-const MusicContext = createContext<MusicContextValue | undefined>(undefined);
+import { runWhenIdle, scheduleIdleTask } from "../utils/idle";
 
 let musicListRequest: Promise<MusicRow[]> | null = null;
 
-function areMusicListsEqual(a: MusicRow[], b: MusicRow[]) {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
+function areMusicRowsEqual(a: MusicRow | undefined, b: MusicRow | undefined) {
+  return (
+    a?.id === b?.id &&
+    a?.title === b?.title &&
+    a?.type === b?.type &&
+    a?.version === b?.version &&
+    a?.charts?.length === b?.charts?.length
+  );
+}
 
-  try {
-    return JSON.stringify(a) === JSON.stringify(b);
-  } catch {
-    return false;
+function areMusicListsEqual(a: MusicRow[], b: MusicRow[]) {
+  if (a === b) {return true;}
+  if (a.length !== b.length) {return false;}
+
+  for (let i = 0; i < a.length; i += 1) {
+    if (!areMusicRowsEqual(a[i], b[i])) {
+      return false;
+    }
   }
+  return true;
+}
+
+function readCachedMusicListWhenIdle() {
+  return runWhenIdle(() => getCachedMusicList<MusicRow>(), 300);
+}
+
+function cacheMusicListWhenIdle(musics: MusicRow[]) {
+  scheduleIdleTask(() => cacheMusicList(musics), 1000);
 }
 
 async function requestMusicList() {
@@ -64,14 +69,9 @@ async function requestMusicList() {
 }
 
 export function MusicProvider({ children }: { children: React.ReactNode }) {
-  const [initialCachedMusics] = useState<MusicRow[] | null>(() =>
-    getCachedMusicList<MusicRow>(),
-  );
-  const [musics, setMusics] = useState<MusicRow[]>(
-    () => initialCachedMusics ?? [],
-  );
-  const musicsRef = useRef<MusicRow[]>(initialCachedMusics ?? []);
-  const [loading, setLoading] = useState(() => initialCachedMusics === null);
+  const [musics, setMusics] = useState<MusicRow[]>([]);
+  const musicsRef = useRef<MusicRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadMusics = useCallback(async () => {
@@ -82,7 +82,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const nextMusics = await requestMusicList();
-      cacheMusicList(nextMusics);
+      cacheMusicListWhenIdle(nextMusics);
       setMusics((current) =>
         areMusicListsEqual(current, nextMusics) ? current : nextMusics,
       );
@@ -96,6 +96,25 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     musicsRef.current = musics;
   }, [musics]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    readCachedMusicListWhenIdle().then((cachedMusics) => {
+      if (cancelled || !cachedMusics || cachedMusics.length === 0) {
+        return;
+      }
+
+      setMusics((current) =>
+        current.length === 0 ? cachedMusics : current,
+      );
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     loadMusics();
@@ -114,7 +133,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       if (Array.isArray(music.charts)) {
         music.charts.forEach((chart, idx) => {
           // Key by cid (chart ID)
-          if (chart.cid != null) {
+          if (chart.cid !== null && chart.cid !== undefined) {
             cMap.set(chart.cid, {
               ...chart,
               musicId: music.id,
@@ -143,12 +162,4 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   return (
     <MusicContext.Provider value={value}>{children}</MusicContext.Provider>
   );
-}
-
-export function useMusic() {
-  const ctx = useContext(MusicContext);
-  if (!ctx) {
-    throw new Error("useMusic must be used within MusicProvider");
-  }
-  return ctx;
 }

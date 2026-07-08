@@ -1,52 +1,23 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
 import { usersApi } from "../api/appClient";
 import {
+  AuthContext,
+  type AuthProfile,
+  type RefreshProfileOptions,
+} from "./AuthContext";
+import {
   isOfflineMode,
   cacheProfile,
   setOfflineMode as persistOfflineMode,
 } from "../utils/offlineCache";
-import type { UserProfile } from "../components/ProfileCard";
 
 const TOKEN_KEY = "netbot_token";
 const PROFILE_CACHE_TTL_MS = 10_000;
-
-export type AuthProfile = {
-  id: string;
-  friendCode: string;
-  username?: string | null;
-  hasPassword?: boolean;
-  hasDivingFishImportToken?: boolean;
-  hasLxnsImportToken?: boolean;
-  profile?: UserProfile | null;
-  hasCabinetUserId?: boolean;
-  autoUpdate?: boolean;
-  lastScoreHash?: string | null;
-};
-
-type RefreshProfileOptions = {
-  force?: boolean;
-};
-
-type AuthContextValue = {
-  token: string | null;
-  setToken: (token: string | null) => void;
-  clearToken: () => void;
-  offline: boolean;
-  setOffline: (v: boolean) => void;
-  profile: AuthProfile | null;
-  profileLoading: boolean;
-  profileError: string | null;
-  refreshProfile: (options?: RefreshProfileOptions) => Promise<AuthProfile | null>;
-};
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const profileRequests = new Map<string, Promise<AuthProfile | null>>();
 const profileCache = new Map<
@@ -104,7 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (options: RefreshProfileOptions = {}) => {
       if (!token || offline) {
         setProfileLoading(false);
-        if (!token) setProfile(null);
+        if (!token) {setProfile(null);}
         return null;
       }
 
@@ -152,8 +123,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const fc = nextProfile?.friendCode;
         const username = nextProfile?.username;
         try {
-          if (fc) localStorage.setItem("lastFriendCode", fc);
-          if (username) localStorage.setItem("lastUsername", username);
+          if (fc) {localStorage.setItem("lastFriendCode", fc);}
+          if (username) {localStorage.setItem("lastUsername", username);}
         } catch {
           // ignore
         }
@@ -183,7 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Skip token validation in offline mode
-    if (!token || offline) return;
+    if (!token || offline) {return;}
 
     refreshProfile().catch((err) => {
       if (!(err instanceof UnauthorizedProfileError)) {
@@ -233,13 +204,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
-  return ctx;
-}
-
-export { TOKEN_KEY };

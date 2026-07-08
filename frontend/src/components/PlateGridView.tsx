@@ -10,13 +10,14 @@ import {
 import { LEVEL_COLORS } from "./MusicScoreCard/constants";
 import type { PlatePlan } from "../constants/platePlan";
 import type { SyncScore } from "../types/syncScore";
+import { CombinedBadges } from "./ScoreSummaryBadges";
 import {
-  CombinedBadges,
   matchesBadgeFilter,
   summarizeRanks,
   summarizeStatuses,
   type BadgeFilter,
-} from "./ScoreSummaryBadges";
+} from "./ScoreSummaryBadges.model";
+import { DeferredImage } from "./DeferredImage";
 
 type ChartEntry = {
   music: MusicRow;
@@ -32,11 +33,11 @@ type LevelGroup = {
 };
 
 function isCompleted(entry: ChartEntry, plan: PlatePlan): boolean {
-  if (!entry.score) return false;
+  if (!entry.score) {return false;}
   switch (plan) {
     case "jiang": {
       const scoreText = entry.score.score ?? null;
-      if (!scoreText) return false;
+      if (!scoreText) {return false;}
       const val = parseFloat(scoreText.replace("%", ""));
       return !isNaN(val) && val >= 100;
     }
@@ -66,7 +67,7 @@ function PlateCard({
 
   // Determine which icon to show based on plan (matching reference project)
   const planIcon = (() => {
-    if (!completed) return null;
+    if (!completed) {return null;}
     switch (plan) {
       case "jiang":
         return null; // 将牌: show rank text instead
@@ -99,12 +100,11 @@ function PlateCard({
         boxSizing: "border-box",
       }}
     >
-      <Image
+      <DeferredImage
         src={coverUrl}
         w="100%"
         h="100%"
         fit="cover"
-        fallbackSrc="https://placehold.co/58x58?text=?"
       />
 
       {/* Completed overlay with gradient */}

@@ -15,7 +15,7 @@ import {
 } from "@tabler/icons-react";
 
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { useAuth } from "../providers/AuthProvider";
+import { useAuth } from "../providers/AuthContext";
 
 type Banner = {
   title: string;

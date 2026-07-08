@@ -4,6 +4,8 @@ services:
       context: ..
       dockerfile: frontend/Dockerfile
     restart: unless-stopped
+    networks:
+      - maimai-web
     ports:
       - "8848:80"
     healthcheck:
@@ -12,3 +14,8 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
+
+networks:
+  maimai-web:
+    external: true
+    name: maimai-web

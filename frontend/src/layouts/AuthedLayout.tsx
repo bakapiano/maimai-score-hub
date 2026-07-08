@@ -26,7 +26,7 @@ import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { AppFooter } from "../components/AppFooter";
-import { useAuth } from "../providers/AuthProvider";
+import { useAuth } from "../providers/AuthContext";
 import { useDisclosure } from "@mantine/hooks";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { getCachedProfile } from "../utils/offlineCache";
@@ -87,7 +87,7 @@ function readLastFriendCode() {
 
 function readCachedMiniProfile(friendCode?: string | null): MiniProfile | null {
   const cached = getCachedProfile();
-  if (!cached) return null;
+  if (!cached) {return null;}
 
   const knownFriendCode = friendCode ?? readLastFriendCode();
   if (
@@ -172,7 +172,7 @@ export default function AuthedLayout() {
         onTouchEnd={(event) => {
           const startX = touchStartX.current;
           touchStartX.current = null;
-          if (startX === null) return;
+          if (startX === null) {return;}
           const endX = event.changedTouches[0]?.clientX ?? startX;
           if (startX - endX > 50) {
             close();

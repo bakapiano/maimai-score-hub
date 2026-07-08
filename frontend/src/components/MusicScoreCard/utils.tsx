@@ -33,15 +33,15 @@ const STATUS_ASSET: Record<string, string> = {
 };
 
 export function getRank(scoreVal: number): string {
-  if (scoreVal >= 100.5) return "SSS+";
-  if (scoreVal >= 100) return "SSS";
-  if (scoreVal >= 99.5) return "SS+";
-  if (scoreVal >= 99) return "SS";
-  if (scoreVal >= 98) return "S+";
-  if (scoreVal >= 97) return "S";
-  if (scoreVal >= 94) return "AAA";
-  if (scoreVal >= 90) return "AA";
-  if (scoreVal >= 80) return "A";
+  if (scoreVal >= 100.5) {return "SSS+";}
+  if (scoreVal >= 100) {return "SSS";}
+  if (scoreVal >= 99.5) {return "SS+";}
+  if (scoreVal >= 99) {return "SS";}
+  if (scoreVal >= 98) {return "S+";}
+  if (scoreVal >= 97) {return "S";}
+  if (scoreVal >= 94) {return "AAA";}
+  if (scoreVal >= 90) {return "AA";}
+  if (scoreVal >= 80) {return "A";}
   return "F";
 }
 
@@ -110,7 +110,7 @@ export function renderMusicIcon(
  * Parse score string to number
  */
 export function parseScore(score: string | null): number | null {
-  if (typeof score !== "string" || score.trim().length === 0) return null;
+  if (typeof score !== "string" || score.trim().length === 0) {return null;}
   const parsed = parseFloat(score.replace("%", ""));
   return Number.isNaN(parsed) ? null : parsed;
 }

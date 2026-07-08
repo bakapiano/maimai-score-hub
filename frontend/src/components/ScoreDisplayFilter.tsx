@@ -11,27 +11,10 @@ import {
 import { IconAdjustments } from "@tabler/icons-react";
 import { useState } from "react";
 
-export type ScoreDisplayMode = "rank" | "score";
-
-export type DisplayFilterSettings = {
-  showFc: boolean;
-  showFs: boolean;
-  showScore: boolean;
-  scoreDisplayMode: ScoreDisplayMode;
-  scoreDecimals: number;
-  scoreMin: number | null;
-  scoreMax: number | null;
-};
-
-export const DEFAULT_DISPLAY_FILTER: DisplayFilterSettings = {
-  showFc: true,
-  showFs: true,
-  showScore: true,
-  scoreDisplayMode: "rank",
-  scoreDecimals: 2,
-  scoreMin: null,
-  scoreMax: null,
-};
+import type {
+  DisplayFilterSettings,
+  ScoreDisplayMode,
+} from "./ScoreDisplayFilter.model";
 
 type ScoreDisplayFilterProps = {
   value: DisplayFilterSettings;
@@ -156,28 +139,4 @@ export function ScoreDisplayFilter({ value, onChange }: ScoreDisplayFilterProps)
       </Popover.Dropdown>
     </Popover>
   );
-}
-
-/**
- * Filter a ChartEntry-like item by score range.
- * Expects the item to have a `score` field with shape { score?: string | null }.
- */
-export function matchesScoreFilter(
-  scoreStr: string | null | undefined,
-  settings: Pick<DisplayFilterSettings, "scoreMin" | "scoreMax">,
-): boolean {
-  const { scoreMin, scoreMax } = settings;
-  if (scoreMin === null && scoreMax === null) return true;
-
-  if (!scoreStr) {
-    // No score — include only if no filter is active
-    return scoreMin === null && scoreMax === null;
-  }
-
-  const parsed = parseFloat(scoreStr.replace("%", ""));
-  if (Number.isNaN(parsed)) return true;
-
-  if (scoreMin !== null && parsed < scoreMin) return false;
-  if (scoreMax !== null && parsed > scoreMax) return false;
-  return true;
 }

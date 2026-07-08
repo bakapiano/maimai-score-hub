@@ -14,14 +14,15 @@ import { Best50Tab } from "./score/Best50Tab";
 import { LevelScoresTab } from "./score/LevelScoresTab";
 import type { SyncScore } from "../types/syncScore";
 import { VersionScoresTab } from "./score/VersionScoresTab";
-import { useAuth } from "../providers/AuthProvider";
-import { useMusic } from "../providers/MusicProvider";
+import { useAuth } from "../providers/AuthContext";
+import { useMusic } from "../providers/MusicContext";
 import { cacheSyncLatest, getCachedSyncLatest } from "../utils/offlineCache";
 import { fetchLatestSync } from "../api/syncLatest";
+import { runWhenIdle, scheduleIdleTask } from "../utils/idle";
 
 function readCachedScores() {
   const cached = getCachedSyncLatest();
-  if (!cached) return null;
+  if (!cached) {return null;}
 
   return {
     scores: Array.isArray(cached.scores) ? (cached.scores as SyncScore[]) : [],
@@ -29,17 +30,22 @@ function readCachedScores() {
   };
 }
 
+function readCachedScoresWhenIdle() {
+  return runWhenIdle(() => readCachedScores(), 300);
+}
+
+function cacheSyncLatestWhenIdle(
+  data: Parameters<typeof cacheSyncLatest>[0],
+) {
+  scheduleIdleTask(() => cacheSyncLatest(data), 1000);
+}
+
 export default function ScorePage() {
   const { token, offline } = useAuth();
   const { musics } = useMusic();
-  const [initialCachedSync] = useState(() => readCachedScores());
-  const [scores, setScores] = useState<SyncScore[]>(
-    () => initialCachedSync?.scores ?? [],
-  );
-  const [lastSyncAt, setLastSyncAt] = useState<string | null>(
-    () => initialCachedSync?.lastSyncAt ?? null,
-  );
-  const [loading, setLoading] = useState(false);
+  const [scores, setScores] = useState<SyncScore[]>([]);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+  const [loading, setLoading] = useState(() => Boolean(token || offline));
   const [error, setError] = useState<string | null>(null);
   const hasSync = Boolean(lastSyncAt) || scores.length > 0;
   const hasSyncRef = useRef(hasSync);
@@ -48,9 +54,9 @@ export default function ScorePage() {
     hasSyncRef.current = hasSync;
   }, [hasSync]);
 
-  const applyCachedScores = useCallback(() => {
-    const cached = readCachedScores();
-    if (!cached) return false;
+  const applyCachedScores = useCallback(async () => {
+    const cached = await readCachedScoresWhenIdle();
+    if (!cached) {return false;}
 
     setScores(cached.scores);
     setLastSyncAt(cached.lastSyncAt);
@@ -58,7 +64,7 @@ export default function ScorePage() {
   }, []);
 
   const clearScoresIfEmpty = useCallback(() => {
-    if (hasSyncRef.current) return;
+    if (hasSyncRef.current) {return;}
     setScores([]);
     setLastSyncAt(null);
   }, []);
@@ -66,11 +72,16 @@ export default function ScorePage() {
   const loadScores = useCallback(async (options: { force?: boolean } = {}) => {
     // Offline mode: load from cache
     if (offline) {
-      if (!applyCachedScores()) clearScoresIfEmpty();
+      setLoading(!hasSyncRef.current);
+      if (!(await applyCachedScores())) {clearScoresIfEmpty();}
+      setLoading(false);
       return;
     }
 
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
 
     setLoading(!hasSyncRef.current);
     setError(null);
@@ -86,19 +97,23 @@ export default function ScorePage() {
       if (latestRes.status !== 200) {
         if (latestRes.status === 404) {
           setError(null);
-          if (!applyCachedScores()) clearScoresIfEmpty();
+          if (!(await applyCachedScores())) {clearScoresIfEmpty();}
           return;
         }
         if (!hasSyncRef.current) {
           setError(`获取成绩失败 (HTTP ${latestRes.status})`);
         }
-        if (!applyCachedScores()) clearScoresIfEmpty();
+        if (!(await applyCachedScores())) {clearScoresIfEmpty();}
       } else if (latestRes.data) {
         const { id, scores: syncScores, createdAt, updatedAt } = latestRes.data;
         if (Array.isArray(syncScores)) {
           setScores(syncScores);
-          // Cache for offline use
-          cacheSyncLatest({ id, scores: syncScores, createdAt, updatedAt });
+          cacheSyncLatestWhenIdle({
+            id,
+            scores: syncScores,
+            createdAt,
+            updatedAt,
+          });
         } else {
           setScores([]);
         }
@@ -110,7 +125,7 @@ export default function ScorePage() {
       if (!hasSyncRef.current) {
         setError((err as Error)?.message ?? "请求失败");
       }
-      if (!applyCachedScores()) clearScoresIfEmpty();
+      if (!(await applyCachedScores())) {clearScoresIfEmpty();}
     } finally {
       setLoading(false);
     }
@@ -121,7 +136,7 @@ export default function ScorePage() {
   }, [loadScores]);
 
   useEffect(() => {
-    if (!token || offline) return;
+    if (!token || offline) {return;}
 
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") {
@@ -162,7 +177,7 @@ export default function ScorePage() {
             transition: "filter 120ms ease, opacity 120ms ease",
           }}
         >
-          <Tabs defaultValue="best">
+          <Tabs defaultValue="best" keepMounted={false}>
             <Tabs.List style={{ flexWrap: "nowrap", overflowX: "auto" }}>
               <Tabs.Tab value="best" leftSection={<IconTrophy size={16} />}>
                 B50

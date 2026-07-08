@@ -4,6 +4,11 @@ The frontend is a static Vite app served by a single nginx container. Recreating
 that container drops the `8848:80` port briefly, so normal `docker compose up -d
 --build` is not a zero-downtime deploy.
 
+The standalone admin portal is served by a separate nginx container on
+`127.0.0.1:8849` and is exposed publicly under `/admin/` by the frontend nginx
+reverse proxy. Changes to `frontend/nginx.conf` still require a frontend
+container rollout; admin-only UI changes use the admin deploy workflow.
+
 Use `scripts/deploy-zero-downtime.sh` for regular frontend releases. It keeps
 the current nginx container running, builds a candidate image, probes the
 candidate on a temporary localhost port, then copies the built static files into
@@ -69,6 +74,8 @@ status.
 
 - This flow is for static frontend releases. nginx config changes still require
   a separate, explicit nginx reload or container rollout.
+- The `/admin/` reverse proxy lives in frontend nginx. Deploy `admin` for admin
+  app changes, but deploy `frontend` when changing the proxy route itself.
 - The script uses the existing Dockerfile for the build, so the candidate
   artifact matches the image-based deployment path.
 - Because old hashed assets are retained, periodically prune very old files if

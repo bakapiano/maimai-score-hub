@@ -8,6 +8,7 @@ import {
 } from "./constants";
 import { getCoverUrl, getIconUrl, getRankFromScore, renderRank } from "./utils";
 
+import { DeferredImage } from "../DeferredImage";
 import type { MusicScoreCardProps } from "./types";
 
 export function CompactMusicScoreCard({
@@ -52,9 +53,8 @@ export function CompactMusicScoreCard({
         }}
       >
         <Box style={{ position: "relative" }}>
-          <Image
+          <DeferredImage
             src={coverUrl}
-            fallbackSrc="https://placehold.co/220x220?text=No+Cover"
             w={COMPACT_COVER_SIZE}
             h={COMPACT_COVER_SIZE}
             radius="sm"

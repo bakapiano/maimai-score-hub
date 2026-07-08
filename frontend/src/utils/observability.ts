@@ -333,20 +333,20 @@ function hashString(value: string): string {
 
 function getBrowser(): string {
   const ua = navigator.userAgent;
-  if (ua.includes("Edg/")) return "edge";
-  if (ua.includes("Chrome/")) return "chrome";
-  if (ua.includes("Firefox/")) return "firefox";
-  if (ua.includes("Safari/")) return "safari";
+  if (ua.includes("Edg/")) {return "edge";}
+  if (ua.includes("Chrome/")) {return "chrome";}
+  if (ua.includes("Firefox/")) {return "firefox";}
+  if (ua.includes("Safari/")) {return "safari";}
   return "other";
 }
 
 function getOs(): string {
   const ua = navigator.userAgent;
-  if (ua.includes("Windows")) return "windows";
-  if (ua.includes("Android")) return "android";
-  if (ua.includes("iPhone") || ua.includes("iPad")) return "ios";
-  if (ua.includes("Mac OS")) return "macos";
-  if (ua.includes("Linux")) return "linux";
+  if (ua.includes("Windows")) {return "windows";}
+  if (ua.includes("Android")) {return "android";}
+  if (ua.includes("iPhone") || ua.includes("iPad")) {return "ios";}
+  if (ua.includes("Mac OS")) {return "macos";}
+  if (ua.includes("Linux")) {return "linux";}
   return "other";
 }
 

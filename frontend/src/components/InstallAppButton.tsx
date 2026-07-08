@@ -19,7 +19,7 @@ export function InstallAppButton({
   const { status, install } = usePwaInstall();
   const [installing, setInstalling] = useState(false);
 
-  if (status === "installed" || status === "unavailable") return null;
+  if (status === "installed" || status === "unavailable") {return null;}
 
   const handleInstall = async () => {
     if (status === "ios") {

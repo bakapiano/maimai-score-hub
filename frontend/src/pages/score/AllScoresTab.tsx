@@ -30,12 +30,12 @@ import {
   IconSelector,
   IconX,
 } from "@tabler/icons-react";
+import { ScoreSummaryCard } from "../../components/ScoreSummaryBadges";
 import {
-  ScoreSummaryCard,
   calculateAverageScore,
   summarizeRanks,
   summarizeStatuses,
-} from "../../components/ScoreSummaryBadges";
+} from "../../components/ScoreSummaryBadges.model";
 import { getVersionSortIndex, sortVersions } from "../../constants/versions";
 import {
   useCallback,
@@ -46,6 +46,8 @@ import {
 } from "react";
 
 import type { SyncScore } from "../../types/syncScore";
+import type { MusicChartPayload, MusicRow } from "../../types/music";
+import { DeferredImage } from "../../components/DeferredImage";
 import {
   getCoverUrl,
   getIconUrl,
@@ -53,7 +55,11 @@ import {
   type DetailedMusicScoreCardProps,
 } from "../../components/MusicScoreCard";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
-import { useMusic } from "../../providers/MusicProvider";
+import { useMusic } from "../../providers/MusicContext";
+import {
+  getRatingFloorByIsNew,
+  getRatingFloors,
+} from "../../utils/ratingFloors";
 
 const FALLBACK_COVER =
   "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'><rect width='100%25' height='100%25' fill='%23222931'/><text x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%238a8f98' font-size='10'>Cover</text></svg>";
@@ -94,17 +100,201 @@ type AllScoresTabProps = {
   error: string | null;
 };
 
+type ScoreFilterState = {
+  categoryFilter: string[];
+  versionFilter: string[];
+  difficultyFilter: string[];
+  designerFilter: string[];
+  musicVersionFilter: string[];
+  detailLevelMin: number | string;
+  detailLevelMax: number | string;
+};
+
+type FilterOptions = {
+  categories: string[];
+  versions: string[];
+  musicVersions: string[];
+  difficulties: string[];
+  designers: string[];
+};
+
+type ChartMap = Map<
+  number,
+  MusicChartPayload & { musicId: string; chartIndex: number }
+>;
+
+type ScoreComparatorContext = {
+  musicMap: Map<string, MusicRow>;
+  chartMap: ChartMap;
+};
+
+const RANK_ORDER: Record<string, number> = {
+  "SSS+": 14,
+  SSS: 13,
+  "SS+": 12,
+  SS: 11,
+  "S+": 10,
+  S: 9,
+  AAA: 8,
+  AA: 7,
+  A: 6,
+  BBB: 5,
+  BB: 4,
+  B: 3,
+  C: 2,
+  D: 1,
+};
+
 function getRank(scoreVal: number) {
-  if (scoreVal >= 100.5) return "SSS+";
-  if (scoreVal >= 100) return "SSS";
-  if (scoreVal >= 99.5) return "SS+";
-  if (scoreVal >= 99) return "SS";
-  if (scoreVal >= 98) return "S+";
-  if (scoreVal >= 97) return "S";
-  if (scoreVal >= 94) return "AAA";
-  if (scoreVal >= 90) return "AA";
-  if (scoreVal >= 80) return "A";
+  if (scoreVal >= 100.5) {return "SSS+";}
+  if (scoreVal >= 100) {return "SSS";}
+  if (scoreVal >= 99.5) {return "SS+";}
+  if (scoreVal >= 99) {return "SS";}
+  if (scoreVal >= 98) {return "S+";}
+  if (scoreVal >= 97) {return "S";}
+  if (scoreVal >= 94) {return "AAA";}
+  if (scoreVal >= 90) {return "AA";}
+  if (scoreVal >= 80) {return "A";}
   return "F";
+}
+
+function getScoreChart(
+  score: SyncScore,
+  chartMap: ChartMap,
+) {
+  return score.cid !== null && score.cid !== undefined
+    ? chartMap.get(score.cid)
+    : undefined;
+}
+
+function buildFilterOptions(
+  scores: SyncScore[],
+  musicMap: Map<string, MusicRow>,
+  chartMap: ChartMap,
+): FilterOptions {
+  const categories = new Set<string>();
+  const versions = new Set<string>();
+  const musicVersions = new Set<string>();
+  const designers = new Set<string>();
+
+  scores.forEach((score) => {
+    const music = musicMap.get(score.musicId);
+    const chart = getScoreChart(score, chartMap);
+    if (music?.category) {categories.add(music.category);}
+    if (score.type) {versions.add(score.type.toUpperCase());}
+    if (music?.version) {musicVersions.add(music.version);}
+    if (chart?.charter) {designers.add(chart.charter);}
+  });
+
+  return {
+    categories: Array.from(categories).sort(),
+    versions: Array.from(versions).sort(),
+    musicVersions: sortVersions(Array.from(musicVersions)),
+    difficulties: Object.values(DIFFICULTY_NAMES),
+    designers: Array.from(designers).sort(),
+  };
+}
+
+function matchesDetailLevelFilter(
+  detailLevel: number | null | undefined,
+  filters: Pick<ScoreFilterState, "detailLevelMin" | "detailLevelMax">,
+) {
+  if (typeof detailLevel !== "number") {
+    return true;
+  }
+  if (
+    typeof filters.detailLevelMin === "number" &&
+    detailLevel < filters.detailLevelMin
+  ) {
+    return false;
+  }
+  if (
+    typeof filters.detailLevelMax === "number" &&
+    detailLevel > filters.detailLevelMax
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function scoreMatchesFilters(
+  score: SyncScore,
+  filters: ScoreFilterState,
+  musicMap: Map<string, MusicRow>,
+  chartMap: ChartMap,
+) {
+  const music = musicMap.get(score.musicId);
+  const chart = getScoreChart(score, chartMap);
+  const checks = [
+    filters.categoryFilter.length === 0 ||
+      filters.categoryFilter.includes(music?.category || ""),
+    filters.versionFilter.length === 0 ||
+      filters.versionFilter.includes(score.type?.toUpperCase?.() || ""),
+    filters.difficultyFilter.length === 0 ||
+      filters.difficultyFilter.includes(DIFFICULTY_NAMES[score.chartIndex] || ""),
+    filters.designerFilter.length === 0 ||
+      filters.designerFilter.includes(chart?.charter || ""),
+    filters.musicVersionFilter.length === 0 ||
+      filters.musicVersionFilter.includes(music?.version || ""),
+    matchesDetailLevelFilter(chart?.detailLevel, filters),
+  ];
+  return checks.every(Boolean);
+}
+
+function parseScoreValue(value: string | null | undefined, fallback = -Infinity) {
+  return value ? parseFloat(value.replace("%", "")) : fallback;
+}
+
+const SCORE_COMPARERS: Record<
+  SortKey,
+  (a: SyncScore, b: SyncScore, context: ScoreComparatorContext) => number
+> = {
+  title: (a, b, { musicMap }) =>
+    (musicMap.get(a.musicId)?.title || a.musicId || "").localeCompare(
+      musicMap.get(b.musicId)?.title || b.musicId || "",
+      "zh-CN",
+    ),
+  level: (a, b) => (a.chartIndex ?? 0) - (b.chartIndex ?? 0),
+  detailLevel: (a, b, { chartMap }) =>
+    (getScoreChart(a, chartMap)?.detailLevel ?? 0) -
+    (getScoreChart(b, chartMap)?.detailLevel ?? 0),
+  score: (a, b) => parseScoreValue(a.score) - parseScoreValue(b.score),
+  dxScore: (a, b) =>
+    parseInt(a.dxScore ?? "", 10) - parseInt(b.dxScore ?? "", 10),
+  rating: (a, b) =>
+    (typeof a.rating === "number" ? a.rating : -Infinity) -
+    (typeof b.rating === "number" ? b.rating : -Infinity),
+  rank: (a, b) =>
+    (RANK_ORDER[getRank(parseScoreValue(a.score, 0))] ?? 0) -
+    (RANK_ORDER[getRank(parseScoreValue(b.score, 0))] ?? 0),
+  musicVersion: (a, b, { musicMap }) =>
+    getVersionSortIndex(musicMap.get(a.musicId)?.version || "") -
+    getVersionSortIndex(musicMap.get(b.musicId)?.version || ""),
+};
+
+function compareScoresByKey(
+  a: SyncScore,
+  b: SyncScore,
+  sortKey: SortKey,
+  musicMap: Map<string, MusicRow>,
+  chartMap: ChartMap,
+) {
+  return SCORE_COMPARERS[sortKey](a, b, { musicMap, chartMap });
+}
+
+function sortScores(
+  scores: SyncScore[],
+  sortKey: SortKey,
+  sortOrder: SortOrder,
+  musicMap: Map<string, MusicRow>,
+  chartMap: ChartMap,
+) {
+  const sorted = [...scores];
+  sorted.sort((a, b) => {
+    const cmp = compareScoresByKey(a, b, sortKey, musicMap, chartMap);
+    return sortOrder === "asc" ? cmp : -cmp;
+  });
+  return sorted;
 }
 
 function SortableHeader({
@@ -146,6 +336,7 @@ function SortableHeader({
 
 export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
   const { musicMap, chartMap } = useMusic();
+  const ratingFloors = useMemo(() => getRatingFloors(scores), [scores]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [sortKey, setSortKey] = useState<SortKey>("rating");
@@ -161,7 +352,9 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
   const handleScoreClick = (score: SyncScore) => {
     const music = musicMap.get(score.musicId);
     const chart =
-      (score.cid != null ? chartMap.get(score.cid) : undefined) ??
+      (score.cid !== null && score.cid !== undefined
+        ? chartMap.get(score.cid)
+        : undefined) ??
       music?.charts?.[score.chartIndex];
     setSelectedScore({
       musicId: score.musicId,
@@ -188,6 +381,11 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
           ? music.bpm
           : parseInt(music?.bpm as string) || null,
       noteDesigner: chart?.charter || null,
+      isNew: score.isNew ?? music?.isNew ?? null,
+      ratingFloor: getRatingFloorByIsNew(
+        score.isNew ?? music?.isNew,
+        ratingFloors,
+      ),
     });
     setModalOpened(true);
   };
@@ -238,170 +436,50 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
   const canHideColumn = visibleColumns > 1;
 
   // Extract unique values for filters
-  const filterOptions = useMemo(() => {
-    const categories = new Set<string>();
-    const versions = new Set<string>();
-    const musicVersions = new Set<string>();
-    const designers = new Set<string>();
-
-    scores.forEach((s) => {
-      const music = musicMap.get(s.musicId);
-      const chart = s.cid != null ? chartMap.get(s.cid) : undefined;
-      if (music?.category) categories.add(music.category);
-      if (s.type) versions.add(s.type.toUpperCase());
-      if (music?.version) musicVersions.add(music.version);
-      if (chart?.charter) designers.add(chart.charter);
-    });
-
-    return {
-      categories: Array.from(categories).sort(),
-      versions: Array.from(versions).sort(),
-      musicVersions: sortVersions(Array.from(musicVersions)),
-      difficulties: Object.values(DIFFICULTY_NAMES),
-      designers: Array.from(designers).sort(),
-    };
-  }, [scores, musicMap, chartMap]);
+  const filterOptions = useMemo(
+    () => buildFilterOptions(scores, musicMap, chartMap),
+    [scores, musicMap, chartMap],
+  );
 
   // Filtered scores
-  const filteredScores = useMemo(() => {
-    return scores.filter((s) => {
-      const music = musicMap.get(s.musicId);
-      const chart = s.cid != null ? chartMap.get(s.cid) : undefined;
-      if (
-        categoryFilter.length > 0 &&
-        !categoryFilter.includes(music?.category || "")
-      )
-        return false;
-      if (
-        versionFilter.length > 0 &&
-        !versionFilter.includes(s.type?.toUpperCase?.() || "")
-      )
-        return false;
-      if (difficultyFilter.length > 0) {
-        const diffName = DIFFICULTY_NAMES[s.chartIndex];
-        if (!diffName || !difficultyFilter.includes(diffName)) return false;
-      }
-      if (
-        designerFilter.length > 0 &&
-        !designerFilter.includes(chart?.charter || "")
-      )
-        return false;
-      if (
-        musicVersionFilter.length > 0 &&
-        !musicVersionFilter.includes(music?.version || "")
-      )
-        return false;
-      // Detail level range filter
-      const detailLevel = chart?.detailLevel;
-      if (typeof detailLevel === "number") {
-        if (typeof detailLevelMin === "number" && detailLevel < detailLevelMin)
-          return false;
-        if (typeof detailLevelMax === "number" && detailLevel > detailLevelMax)
-          return false;
-      }
-      return true;
-    });
-  }, [
-    scores,
-    musicMap,
-    chartMap,
-    categoryFilter,
-    versionFilter,
-    difficultyFilter,
-    designerFilter,
-    musicVersionFilter,
-    detailLevelMin,
-    detailLevelMax,
-  ]);
+  const filters: ScoreFilterState = useMemo(
+    () => ({
+      categoryFilter,
+      versionFilter,
+      difficultyFilter,
+      designerFilter,
+      musicVersionFilter,
+      detailLevelMin,
+      detailLevelMax,
+    }),
+    [
+      categoryFilter,
+      versionFilter,
+      difficultyFilter,
+      designerFilter,
+      musicVersionFilter,
+      detailLevelMin,
+      detailLevelMax,
+    ],
+  );
+  const filteredScores = useMemo(
+    () =>
+      scores.filter((score) =>
+        scoreMatchesFilters(score, filters, musicMap, chartMap),
+      ),
+    [
+      scores,
+      musicMap,
+      chartMap,
+      filters,
+    ],
+  );
 
   // Sorted scores
-  const sortedScores = useMemo(() => {
-    const sorted = [...filteredScores];
-    sorted.sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case "title": {
-          const musicA = musicMap.get(a.musicId);
-          const musicB = musicMap.get(b.musicId);
-          const titleA = musicA?.title || a.musicId || "";
-          const titleB = musicB?.title || b.musicId || "";
-          cmp = titleA.localeCompare(titleB, "zh-CN");
-          break;
-        }
-        case "level": {
-          cmp = (a.chartIndex ?? 0) - (b.chartIndex ?? 0);
-          break;
-        }
-        case "detailLevel": {
-          const chartA = a.cid != null ? chartMap.get(a.cid) : undefined;
-          const chartB = b.cid != null ? chartMap.get(b.cid) : undefined;
-          const lvA =
-            typeof chartA?.detailLevel === "number" ? chartA.detailLevel : 0;
-          const lvB =
-            typeof chartB?.detailLevel === "number" ? chartB.detailLevel : 0;
-          cmp = lvA - lvB;
-          break;
-        }
-        case "score": {
-          const scoreA = a.score
-            ? parseFloat(a.score.replace("%", ""))
-            : -Infinity;
-          const scoreB = b.score
-            ? parseFloat(b.score.replace("%", ""))
-            : -Infinity;
-          cmp = scoreA - scoreB;
-          break;
-        }
-        case "dxScore": {
-          const dxA = a.dxScore ? parseInt(a.dxScore, 10) : -Infinity;
-          const dxB = b.dxScore ? parseInt(b.dxScore, 10) : -Infinity;
-          cmp = dxA - dxB;
-          break;
-        }
-        case "rating": {
-          const ratingA = typeof a.rating === "number" ? a.rating : -Infinity;
-          const ratingB = typeof b.rating === "number" ? b.rating : -Infinity;
-          cmp = ratingA - ratingB;
-          break;
-        }
-        case "rank": {
-          // Rank order: SSS+ > SSS > SS+ > SS > S+ > S > AAA > AA > A > BBB > BB > B > C > D
-          const rankOrder: Record<string, number> = {
-            "SSS+": 14,
-            SSS: 13,
-            "SS+": 12,
-            SS: 11,
-            "S+": 10,
-            S: 9,
-            AAA: 8,
-            AA: 7,
-            A: 6,
-            BBB: 5,
-            BB: 4,
-            B: 3,
-            C: 2,
-            D: 1,
-          };
-          const scoreA = a.score ? parseFloat(a.score.replace("%", "")) : 0;
-          const scoreB = b.score ? parseFloat(b.score.replace("%", "")) : 0;
-          const rankA = getRank(scoreA);
-          const rankB = getRank(scoreB);
-          cmp = (rankOrder[rankA] ?? 0) - (rankOrder[rankB] ?? 0);
-          break;
-        }
-        case "musicVersion": {
-          const musicA = musicMap.get(a.musicId);
-          const musicB = musicMap.get(b.musicId);
-          const versionA = musicA?.version || "";
-          const versionB = musicB?.version || "";
-          cmp = getVersionSortIndex(versionA) - getVersionSortIndex(versionB);
-          break;
-        }
-      }
-      return sortOrder === "asc" ? cmp : -cmp;
-    });
-    return sorted;
-  }, [filteredScores, musicMap, chartMap, sortKey, sortOrder]);
+  const sortedScores = useMemo(
+    () => sortScores(filteredScores, sortKey, sortOrder, musicMap, chartMap),
+    [filteredScores, musicMap, chartMap, sortKey, sortOrder],
+  );
 
   // Adjust page when filtered results change
   const validPage = useMemo(() => {
@@ -908,7 +986,9 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
               {paginatedScores.map((score, idx) => {
                 const music = musicMap.get(score.musicId);
                 const chart =
-                  score.cid != null ? chartMap.get(score.cid) : undefined;
+                  score.cid !== null && score.cid !== undefined
+                    ? chartMap.get(score.cid)
+                    : undefined;
                 if (!chart) {
                   console.log("Missing chart for score:", score);
                 }
@@ -949,7 +1029,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                     {/* 封面 */}
                     {showCover && (
                       <Table.Td style={{ padding: 4 }}>
-                        <Image
+                        <DeferredImage
                           src={coverUrl}
                           alt={name}
                           h={48}

@@ -4,10 +4,17 @@ import {
   MINIMAL_COVER_SIZE,
   TEXT_STROKE_GOLD_BLACK,
 } from "./constants";
-import { getCoverUrl, getIconUrl, getRankFromScore, renderRank, parseScore } from "./utils";
+import {
+  getCoverUrl,
+  getIconUrl,
+  getRankFromScore,
+  parseScore,
+  renderRank,
+} from "./utils";
 
 import type { MusicScoreCardProps } from "./types";
-import type { DisplayFilterSettings } from "../ScoreDisplayFilter";
+import type { DisplayFilterSettings } from "../ScoreDisplayFilter.model";
+import { DeferredImage } from "../DeferredImage";
 
 type MinimalMusicScoreCardProps = Pick<
   MusicScoreCardProps,
@@ -16,10 +23,133 @@ type MinimalMusicScoreCardProps = Pick<
   displaySettings?: DisplayFilterSettings;
 };
 
+type MinimalScoreOverlayProps = {
+  fc: string | null;
+  fs: string | null;
+  rank: string;
+  scoreText: string | null;
+  showFc: boolean;
+  showFs: boolean;
+  showScore: boolean;
+  scoreDisplayMode: DisplayFilterSettings["scoreDisplayMode"];
+};
+
+function formatMinimalScore(score: string | null, decimals: number) {
+  const scoreNumeric = parseScore(score);
+  if (scoreNumeric === null) {
+    return null;
+  }
+  const factor = Math.pow(10, decimals);
+  const truncated = Math.floor(scoreNumeric * factor) / factor;
+  return `${truncated.toFixed(decimals)}%`;
+}
+
+function EmptyStatusDot() {
+  return (
+    <Box
+      w={20}
+      h={20}
+      style={{
+        borderRadius: "50%",
+        backgroundColor: "white",
+        border: "1px solid #ccc",
+      }}
+    />
+  );
+}
+
+function MinimalStatusIcon({ icon }: { icon: string | null }) {
+  return (
+    <Box
+      w={24}
+      h={24}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {icon ? (
+        <Image src={getIconUrl(icon)} w={24} referrerPolicy="no-referrer" />
+      ) : (
+        <EmptyStatusDot />
+      )}
+    </Box>
+  );
+}
+
+function MinimalScoreOverlay({
+  fc,
+  fs,
+  rank,
+  scoreText,
+  showFc,
+  showFs,
+  showScore,
+  scoreDisplayMode,
+}: MinimalScoreOverlayProps) {
+  const hasIcons = showFc || showFs;
+
+  return (
+    <Box
+      style={{
+        position: "absolute",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "column",
+        gap: 0,
+        textAlign: "center",
+      }}
+    >
+      {showScore && scoreDisplayMode === "rank" && (
+        <Box
+          h={26}
+          px={4}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 6,
+            background: "rgba(16, 20, 28, 0.68)",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
+            backdropFilter: "blur(1px)",
+            WebkitBackdropFilter: "blur(1px)",
+          }}
+        >
+          {renderRank(rank, { compact: true, width: 48 })}
+        </Box>
+      )}
+      {showScore && scoreDisplayMode === "score" && (
+        <Text
+          fw={900}
+          size="xs"
+          c="#f5d142"
+          px={4}
+          style={{
+            borderRadius: 6,
+            background: "rgba(16, 20, 28, 0.68)",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
+            textShadow: TEXT_STROKE_GOLD_BLACK,
+          }}
+        >
+          {scoreText ?? "N/A"}
+        </Text>
+      )}
+      {hasIcons && (
+        <Group gap={0} align="center" justify="center">
+          {showFc && <MinimalStatusIcon icon={fc} />}
+          {showFs && <MinimalStatusIcon icon={fs} />}
+        </Group>
+      )}
+    </Box>
+  );
+}
+
 export function MinimalMusicScoreCard({
   musicId,
   chartIndex,
-  type: _type,
   score,
   fs,
   fc,
@@ -35,16 +165,7 @@ export function MinimalMusicScoreCard({
   const scoreDisplayMode = displaySettings?.scoreDisplayMode ?? "rank";
 
   const scoreDecimals = displaySettings?.scoreDecimals ?? 2;
-  const scoreNumeric = parseScore(score);
-  const scoreText = (() => {
-    if (scoreNumeric === null) return null;
-    // Truncate without rounding
-    const factor = Math.pow(10, scoreDecimals);
-    const truncated = Math.floor(scoreNumeric * factor) / factor;
-    return `${truncated.toFixed(scoreDecimals)}%`;
-  })();
-
-  const hasIcons = showFc || showFs;
+  const scoreText = formatMinimalScore(score, scoreDecimals);
 
   return (
     <Card
@@ -64,9 +185,8 @@ export function MinimalMusicScoreCard({
         }}
       >
         <Box style={{ position: "relative" }}>
-          <Image
+          <DeferredImage
             src={coverUrl}
-            fallbackSrc="https://placehold.co/200x200?text=No+Cover"
             w={MINIMAL_COVER_SIZE}
             h={MINIMAL_COVER_SIZE}
             radius="sm"
@@ -75,96 +195,16 @@ export function MinimalMusicScoreCard({
             }}
           />
 
-          <Box
-            style={{
-              position: "absolute",
-              inset: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexDirection: "column",
-              gap: 0,
-              textAlign: "center",
-            }}
-          >
-            {showScore && scoreDisplayMode === "rank" && (
-              <Box h={24} style={{ display: "flex", alignItems: "center" }}>
-                {renderRank(rank, { compact: true, width: 48 })}
-              </Box>
-            )}
-            {showScore && scoreDisplayMode === "score" && (
-              <Text
-                fw={900}
-                size="xs"
-                c="#f5d142"
-                style={{ textShadow: TEXT_STROKE_GOLD_BLACK }}
-              >
-                {scoreText ?? "N/A"}
-              </Text>
-            )}
-            {hasIcons && (
-              <Group gap={0} align="center" justify="center">
-                {showFc && (
-                  <Box
-                    w={24}
-                    h={24}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    {fc ? (
-                      <Image
-                        src={getIconUrl(fc)}
-                        w={24}
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <Box
-                        w={20}
-                        h={20}
-                        style={{
-                          borderRadius: "50%",
-                          backgroundColor: "white",
-                          border: "1px solid #ccc",
-                        }}
-                      />
-                    )}
-                  </Box>
-                )}
-                {showFs && (
-                  <Box
-                    w={24}
-                    h={24}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    {fs ? (
-                      <Image
-                        src={getIconUrl(fs)}
-                        w={24}
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <Box
-                        w={20}
-                        h={20}
-                        style={{
-                          borderRadius: "50%",
-                          backgroundColor: "white",
-                          border: "1px solid #ccc",
-                        }}
-                      />
-                    )}
-                  </Box>
-                )}
-              </Group>
-            )}
-          </Box>
+          <MinimalScoreOverlay
+            fc={fc}
+            fs={fs}
+            rank={rank}
+            scoreText={scoreText}
+            showFc={showFc}
+            showFs={showFs}
+            showScore={showScore}
+            scoreDisplayMode={scoreDisplayMode}
+          />
         </Box>
       </Box>
     </Card>

@@ -8,21 +8,34 @@ import {
   Divider,
   Group,
   Loader,
+  Paper,
   PasswordInput,
   Progress,
+  SimpleGrid,
   Stack,
   Tabs,
   Text,
   TextInput,
 } from "@mantine/core";
-import { IconCloudUpload, IconLogin, IconRefresh } from "@tabler/icons-react";
+import {
+  IconCloudUpload,
+  IconKey,
+  IconLogin,
+  IconPassword,
+  IconRefresh,
+  IconUser,
+} from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { JobResponse as JobStatus } from "@maimai-score-hub/shared";
 
-import { syncApi, usersApi } from "../api/appClient";
 import { fetchLatestSync } from "../api/syncLatest";
-import { cacheSyncLatest, getCachedSyncLatest } from "../utils/offlineCache";
+import { fetchSyncPageJson } from "./syncPageApi";
+import {
+  cacheSyncLatest,
+  getCachedSyncLatest,
+  getCachedSyncLatestSummary,
+} from "../utils/offlineCache";
 import {
   JobApiError,
   createJob,
@@ -35,8 +48,9 @@ import { ProfileCard } from "../components/ProfileCard";
 import { CabinetBindingCard } from "../components/CabinetBindingCard";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { recordAnalyticsEvent } from "../utils/observability";
-import { useAuth, type AuthProfile } from "../providers/AuthProvider";
+import { type AuthProfile, useAuth } from "../providers/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { runWhenIdle, scheduleIdleTask } from "../utils/idle";
 
 type UserProfileResponse = AuthProfile;
 
@@ -75,11 +89,16 @@ type LastSyncInfo = {
   id: string;
   createdAt: string;
   updatedAt: string;
-  scores: unknown[];
+  scoreCount: number;
   autoExportResult?: {
     divingFish?: { status: string; message?: string } | null;
     lxns?: { status: string; message?: string } | null;
   } | null;
+};
+
+type LatestSyncPayload = Partial<Omit<LastSyncInfo, "scoreCount">> & {
+  scores?: unknown[];
+  scoreCount?: number;
 };
 
 const DIFFICULTY_NAMES: Record<number, string> = {
@@ -90,123 +109,7 @@ const DIFFICULTY_NAMES: Record<number, string> = {
   4: "Re:MASTER",
   10: "宴会场",
 };
-
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
-  const path = typeof input === "string" ? input : input.toString();
-  const method = (init?.method ?? "GET").toUpperCase();
-  const headers = new Headers(init?.headers);
-  const authorization =
-    headers.get("Authorization") ?? headers.get("authorization") ?? "";
-
-  if (path === "/api/v1/me" && method === "GET" && authorization) {
-    const res = await usersApi.profile({
-      headers: { authorization },
-    });
-    return {
-      ok: res.status === 200,
-      status: res.status,
-      data: (res.body ?? null) as T,
-    };
-  }
-
-  if (path === "/api/v1/me" && method === "PATCH" && authorization) {
-    const body = init?.body
-      ? (JSON.parse(String(init.body)) as Record<string, unknown>)
-      : {};
-    const patchBody: Record<string, string | boolean | null> = {};
-    if ("divingFishImportToken" in body)
-      patchBody.divingFishImportToken =
-        (body.divingFishImportToken as string | null) ?? null;
-    if ("lxnsImportToken" in body)
-      patchBody.lxnsImportToken =
-        (body.lxnsImportToken as string | null) ?? null;
-    const res = await usersApi.updateProfile({
-      headers: { authorization },
-      body: patchBody,
-    });
-    return {
-      ok: res.status === 200,
-      status: res.status,
-      data: (res.body ?? null) as T,
-    };
-  }
-
-  if (
-    path === "/api/v1/me/prober-tokens/diving-fish" &&
-    method === "POST" &&
-    authorization
-  ) {
-    const body = init?.body
-      ? (JSON.parse(String(init.body)) as {
-          username: string;
-          password: string;
-        })
-      : { username: "", password: "" };
-    const res = await usersApi.getDivingFishToken({
-      headers: { authorization },
-      body,
-    });
-    return {
-      ok: res.status === 201,
-      status: res.status,
-      data: (res.body ?? null) as T,
-    };
-  }
-
-  if (path === "/api/v1/me/sync/latest" && method === "GET" && authorization) {
-    return await fetchLatestSync<T>(authorization.replace(/^Bearer\s+/i, ""));
-  }
-
-  if (
-    path === "/api/v1/me/sync/latest/exports/diving-fish" &&
-    method === "POST" &&
-    authorization
-  ) {
-    const res = await syncApi.exportToDivingFish({
-      headers: { authorization },
-    });
-    return {
-      ok: res.status === 201,
-      status: res.status,
-      data: (res.body ?? null) as T,
-    };
-  }
-
-  if (
-    path === "/api/v1/me/sync/latest/exports/lxns" &&
-    method === "POST" &&
-    authorization
-  ) {
-    const res = await syncApi.exportToLxns({
-      headers: { authorization },
-    });
-    return {
-      ok: res.status === 201,
-      status: res.status,
-      data: (res.body ?? null) as T,
-    };
-  }
-
-  const exportJobMatch = path.match(
-    /^\/api\/v1\/me\/sync\/prober-export-jobs\/([^/]+)$/,
-  );
-  if (exportJobMatch && method === "GET" && authorization) {
-    const res = await syncApi.getProberExportJob({
-      headers: { authorization },
-      params: { exportJobId: decodeURIComponent(exportJobMatch[1]) },
-    });
-    return {
-      ok: res.status === 200,
-      status: res.status,
-      data: (res.body ?? null) as T,
-    };
-  }
-
-  const res = await fetch(input, init);
-  const text = await res.text();
-  const data = text ? (JSON.parse(text) as T) : (null as T);
-  return { ok: res.ok, status: res.status, data };
-}
+const SYNC_WAIT_SECONDS = 5 * 60;
 
 function formatDate(dateString: string) {
   const date = new Date(dateString);
@@ -219,39 +122,56 @@ function formatDate(dateString: string) {
   });
 }
 
+function exportStatusColor(status: string) {
+  return status === "success" ? "green" : status === "skipped" ? "yellow" : "red";
+}
+
 function normalizeLastSync(
-  data: Partial<LastSyncInfo> | null | undefined,
+  data: LatestSyncPayload | null | undefined,
 ): LastSyncInfo | null {
-  if (!data) return null;
+  if (!data) {return null;}
 
   const createdAt = data.createdAt ?? data.updatedAt;
   const updatedAt = data.updatedAt ?? data.createdAt;
-  if (!createdAt || !updatedAt) return null;
+  if (!createdAt || !updatedAt) {return null;}
 
   return {
     id: data.id ?? "cached-latest-sync",
     createdAt,
     updatedAt,
-    scores: Array.isArray(data.scores) ? data.scores : [],
+    scoreCount:
+      typeof data.scoreCount === "number"
+        ? data.scoreCount
+        : Array.isArray(data.scores)
+          ? data.scores.length
+          : 0,
     autoExportResult: data.autoExportResult ?? null,
   };
 }
 
-function readCachedLastSync(): LastSyncInfo | null {
-  return normalizeLastSync(getCachedSyncLatest());
+function readCachedLastSyncSummary(): LastSyncInfo | null {
+  return normalizeLastSync(getCachedSyncLatestSummary());
 }
 
-function rememberLastSync(data: Partial<LastSyncInfo> | null | undefined) {
-  const normalized = normalizeLastSync(data);
-  if (!normalized) return null;
+function readCachedLastSyncWhenIdle() {
+  return runWhenIdle(() => normalizeLastSync(getCachedSyncLatest()), 300);
+}
 
-  cacheSyncLatest({
-    id: normalized.id,
-    scores: normalized.scores,
-    createdAt: normalized.createdAt,
-    updatedAt: normalized.updatedAt,
-    autoExportResult: normalized.autoExportResult,
-  });
+function rememberLastSync(data: LatestSyncPayload | null | undefined) {
+  const normalized = normalizeLastSync(data);
+  if (!normalized) {return null;}
+
+  if (Array.isArray(data?.scores)) {
+    scheduleIdleTask(() =>
+      cacheSyncLatest({
+        id: normalized.id,
+        scores: data.scores ?? [],
+        createdAt: normalized.createdAt,
+        updatedAt: normalized.updatedAt,
+        autoExportResult: normalized.autoExportResult,
+      }),
+    1000);
+  }
   return normalized;
 }
 
@@ -301,6 +221,119 @@ function SectionHeader({
   );
 }
 
+function getSyncStatusView({
+  lastSync,
+  loading,
+  syncStatus,
+}: {
+  lastSync: LastSyncInfo | null;
+  loading: boolean;
+  syncStatus: JobStatus | null;
+}) {
+  if (loading) {
+    return { color: "gray", label: "加载中", text: "正在获取同步状态" };
+  }
+  if (!syncStatus) {
+    return lastSync
+      ? { color: "green", label: "已同步", text: "可以随时更新最新成绩" }
+      : { color: "gray", label: "未同步", text: "完成首次同步后即可查看成绩" };
+  }
+  if (syncStatus.status === "completed") {
+    return { color: "green", label: "已完成", text: "本次同步已完成" };
+  }
+  if (syncStatus.status === "failed" || syncStatus.status === "canceled") {
+    return { color: "red", label: "失败", text: "同步任务未完成" };
+  }
+  if (syncStatus.status === "queued") {
+    return { color: "gray", label: "排队中", text: "任务正在等待执行" };
+  }
+  return { color: "blue", label: "同步中", text: "正在从 maimai DX NET 更新成绩" };
+}
+
+function getSyncStageText(syncStatus: JobStatus | null) {
+  if (!syncStatus) {return "等待开始";}
+  if (syncStatus.stage === "send_request") {return "发送好友申请";}
+  if (syncStatus.stage === "wait_acceptance") {return "等待好友确认";}
+  if (syncStatus.stage === "update_score") {return "更新成绩";}
+  if (syncStatus.status === "queued") {return "排队中";}
+  if (syncStatus.status === "completed") {return "已完成";}
+  if (syncStatus.status === "failed") {return "失败";}
+  if (syncStatus.status === "canceled") {return "已取消";}
+  return "同步中";
+}
+
+function AutoExportBadges({
+  result,
+}: {
+  result: LastSyncInfo["autoExportResult"];
+}) {
+  if (!result) {
+    return (
+      <Text size="sm" c="dimmed">
+        未启用
+      </Text>
+    );
+  }
+
+  return (
+    <Group gap={4}>
+      {result.divingFish && (
+        <Badge
+          variant="light"
+          radius="md"
+          color={exportStatusColor(result.divingFish.status)}
+        >
+          水鱼{" "}
+          {result.divingFish.status === "success"
+            ? "✓"
+            : result.divingFish.status === "skipped"
+              ? "—"
+              : "✗"}
+        </Badge>
+      )}
+      {result.lxns && (
+        <Badge
+          variant="light"
+          radius="md"
+          color={exportStatusColor(result.lxns.status)}
+        >
+          落雪{" "}
+          {result.lxns.status === "success"
+            ? "✓"
+            : result.lxns.status === "skipped"
+              ? "—"
+              : "✗"}
+        </Badge>
+      )}
+    </Group>
+  );
+}
+
+function SyncStatTile({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Paper
+      withBorder={false}
+      radius="md"
+      p="sm"
+      style={{
+        background: "var(--mantine-color-gray-light)",
+        minHeight: 64,
+      }}
+    >
+      <Text size="xs" c="dimmed" mb={4}>
+        {label}
+      </Text>
+      {children}
+    </Paper>
+  );
+}
+
 export default function SyncPage() {
   const {
     token,
@@ -318,7 +351,7 @@ export default function SyncPage() {
 
   // Last sync info
   const [lastSync, setLastSync] = useState<LastSyncInfo | null>(() =>
-    readCachedLastSync(),
+    readCachedLastSyncSummary(),
   );
 
   // Token settings
@@ -345,11 +378,12 @@ export default function SyncPage() {
   const [timeLeft, setTimeLeft] = useState(0);
   const chainedFriendshipJobIdRef = useRef<string | null>(null);
 
-  const totalWaitSeconds = 5 * 60;
   const remainingPercent = Math.min(
     100,
-    Math.max(0, (timeLeft / totalWaitSeconds) * 100),
+    Math.max(0, (timeLeft / SYNC_WAIT_SECONDS) * 100),
   );
+  const syncStage = syncStatus?.stage;
+  const syncFriendRequestSentAt = syncStatus?.friendRequestSentAt;
 
   // Export state
   const [exportLoading, setExportLoading] = useState<
@@ -363,9 +397,9 @@ export default function SyncPage() {
 
   // Fetch last sync info
   const loadLastSync = useCallback(async (options: { force?: boolean } = {}) => {
-    if (!token) return;
+    if (!token) {return;}
 
-    const res = await fetchLatestSync<LastSyncInfo>(token, options);
+    const res = await fetchLatestSync<LatestSyncPayload>(token, options);
 
     const nextLastSync = res.ok ? rememberLastSync(res.data) : null;
     if (res.ok && nextLastSync) {
@@ -373,13 +407,13 @@ export default function SyncPage() {
     } else {
       // Keep the last known sync visible across transient mobile resume
       // failures. A real first-time no-sync user still has no cached value.
-      setLastSync((current) => current ?? readCachedLastSync());
+      setLastSync((current) => current ?? readCachedLastSyncSummary());
     }
   }, [token]);
 
   // Fetch profile
   const loadProfile = useCallback(async () => {
-    if (!token) return null;
+    if (!token) {return null;}
 
     setProfileError(null);
 
@@ -397,7 +431,7 @@ export default function SyncPage() {
 
   // Load profile and last sync on mount
   useEffect(() => {
-    if (!token) return;
+    if (!token) {return;}
 
     let cancelled = false;
 
@@ -408,7 +442,7 @@ export default function SyncPage() {
       // Kick off independent requests in parallel. Profile comes from
       // AuthProvider so /me is deduped across the app and StrictMode.
       const profilePromise = refreshProfile();
-      const syncPromise = fetchLatestSync<LastSyncInfo>(token);
+      const syncPromise = fetchLatestSync<LatestSyncPayload>(token);
 
       let loadedProfile: UserProfileResponse | null = null;
       try {
@@ -418,7 +452,7 @@ export default function SyncPage() {
           setProfileError(err instanceof Error ? err.message : "加载失败");
         }
       }
-      if (cancelled) return;
+      if (cancelled) {return;}
 
       if (loadedProfile) {
         // Active-job lookup needs friendCode, so it chains off profile.
@@ -427,7 +461,7 @@ export default function SyncPage() {
             loadedProfile.friendCode,
             token,
           );
-          if (cancelled) return;
+          if (cancelled) {return;}
 
           if (activeJobRes.job) {
             const activeJob = activeJobRes.job;
@@ -444,12 +478,14 @@ export default function SyncPage() {
       }
 
       const syncRes = await syncPromise;
-      if (cancelled) return;
+      if (cancelled) {return;}
       const nextLastSync = syncRes.ok ? rememberLastSync(syncRes.data) : null;
       if (syncRes.ok && nextLastSync) {
         setLastSync(nextLastSync);
       } else {
-        setLastSync((current) => current ?? readCachedLastSync());
+        const cachedLastSync = await readCachedLastSyncWhenIdle();
+        if (cancelled) {return;}
+        setLastSync((current) => current ?? cachedLastSync);
       }
 
       setLoading(false);
@@ -465,16 +501,16 @@ export default function SyncPage() {
   // Save tokens (silent, returns success)
   // Only sends token fields that the user has actually entered a value for
   const saveTokens = async (): Promise<boolean> => {
-    if (!token) return false;
+    if (!token) {return false;}
 
     const body: Record<string, string | null> = {};
-    if (divingFishToken) body.divingFishImportToken = divingFishToken;
-    if (lxnsToken) body.lxnsImportToken = lxnsToken;
+    if (divingFishToken) {body.divingFishImportToken = divingFishToken;}
+    if (lxnsToken) {body.lxnsImportToken = lxnsToken;}
 
     // Nothing to save
-    if (Object.keys(body).length === 0) return true;
+    if (Object.keys(body).length === 0) {return true;}
 
-    const res = await fetchJson<unknown>("/api/v1/me", {
+    const res = await fetchSyncPageJson<unknown>("/api/v1/me", {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -492,7 +528,7 @@ export default function SyncPage() {
 
   const startUpdateScoreJob = useCallback(
     async (friendshipJobId?: string) => {
-      if (!token) return;
+      if (!token) {return;}
       const res = await createJob(
         {
           jobType: "update_score",
@@ -507,7 +543,7 @@ export default function SyncPage() {
   );
 
   const startFriendshipJob = useCallback(async () => {
-    if (!token) return;
+    if (!token) {return;}
     notifications.show({
       title: "需要先成为好友",
       message: "Bot 将先发送好友申请，接受后会自动开始更新成绩",
@@ -520,7 +556,7 @@ export default function SyncPage() {
 
   // Start sync
   const startSync = useCallback(async () => {
-    if (!profile?.friendCode || !token) return;
+    if (!profile?.friendCode || !token) {return;}
 
     setSyncing(true);
     setSyncError(null);
@@ -556,7 +592,7 @@ export default function SyncPage() {
 
   // Poll job status
   useEffect(() => {
-    if (!syncJobId || !syncing || !token) return;
+    if (!syncJobId || !syncing || !token) {return;}
 
     const interval = setInterval(async () => {
       try {
@@ -629,27 +665,26 @@ export default function SyncPage() {
   // Handle timeout countdown for wait_acceptance stage
   useEffect(() => {
     if (
-      !syncStatus ||
-      syncStatus.stage !== "wait_acceptance" ||
-      !syncStatus.friendRequestSentAt
+      syncStage !== "wait_acceptance" ||
+      !syncFriendRequestSentAt
     ) {
-      if (timeLeft !== 0) setTimeLeft(0);
+      setTimeLeft((current) => (current === 0 ? current : 0));
       return;
     }
 
     const interval = setInterval(() => {
       const now = Date.now();
-      const sentAt = new Date(syncStatus.friendRequestSentAt!).getTime();
-      const end = sentAt + totalWaitSeconds * 1000;
+      const sentAt = new Date(syncFriendRequestSentAt).getTime();
+      const end = sentAt + SYNC_WAIT_SECONDS * 1000;
       const left = Math.max(0, Math.ceil((end - now) / 1000));
       setTimeLeft(left);
     }, 500);
 
     return () => clearInterval(interval);
-  }, [syncStatus?.stage, syncStatus?.friendRequestSentAt]);
+  }, [syncStage, syncFriendRequestSentAt]);
 
   const verifySyncJob = async () => {
-    if (!syncJobId || !token) return;
+    if (!syncJobId || !token) {return;}
 
     setVerifyLoading(true);
     try {
@@ -679,14 +714,11 @@ export default function SyncPage() {
   const exportProviderName = (target: ExportTarget) =>
     target === "diving-fish" ? "Diving-Fish" : "落雪查分器";
 
-  const exportStatusColor = (status: string) =>
-    status === "success" ? "green" : status === "skipped" ? "yellow" : "red";
-
   const pollProberExportJob = async (
     exportJobId: string,
     target: ExportTarget,
   ): Promise<ProberExportJob> => {
-    if (!token) throw new Error("需要登录");
+    if (!token) {throw new Error("需要登录");}
     const terminal = new Set([
       "completed",
       "partial_failed",
@@ -694,7 +726,7 @@ export default function SyncPage() {
       "skipped",
     ]);
     for (let i = 0; i < 240; i++) {
-      const res = await fetchJson<ProberExportJob>(
+      const res = await fetchSyncPageJson<ProberExportJob>(
         `/api/v1/me/sync/prober-export-jobs/${encodeURIComponent(exportJobId)}`,
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -716,7 +748,7 @@ export default function SyncPage() {
   };
 
   const queueExport = async (target: ExportTarget) => {
-    if (!token) return;
+    if (!token) {return;}
     setExportLoading(target);
     recordAnalyticsEvent("export_started", { provider: target });
     try {
@@ -729,7 +761,7 @@ export default function SyncPage() {
         target === "diving-fish"
           ? "/api/v1/me/sync/latest/exports/diving-fish"
           : "/api/v1/me/sync/latest/exports/lxns";
-      const res = await fetchJson<ProberExportCreateResponse>(path, {
+      const res = await fetchSyncPageJson<ProberExportCreateResponse>(path, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -787,7 +819,7 @@ export default function SyncPage() {
 
   // Compute sync progress
   const getSyncProgress = () => {
-    if (!syncStatus?.scoreProgress) return null;
+    if (!syncStatus?.scoreProgress) {return null;}
     const { completedDiffs, totalDiffs } = syncStatus.scoreProgress;
     const percent =
       totalDiffs > 0 ? (completedDiffs.length / totalDiffs) * 100 : 0;
@@ -795,6 +827,11 @@ export default function SyncPage() {
   };
 
   const progress = getSyncProgress();
+  const syncStatusView = getSyncStatusView({
+    lastSync,
+    loading: pageLoading,
+    syncStatus,
+  });
 
   return (
     <Box style={{ position: "relative" }}>
@@ -858,104 +895,136 @@ export default function SyncPage() {
             subtitle="从 maimai DX NET 拉取最新游戏成绩"
           />
 
-          {lastSync && (
-            <Card withBorder padding="sm" radius="md">
-              <Group justify="space-between" align="center">
-                <Group gap="xl">
-                  <Stack gap={2}>
-                    <Text size="xs" c="dimmed">
-                      上次同步
-                    </Text>
-                    <Text size="sm" fw={500}>
-                      {formatDate(lastSync.createdAt)}
-                    </Text>
-                  </Stack>
-                  <Stack gap={2}>
-                    <Text size="xs" c="dimmed">
-                      记录条数
-                    </Text>
-                    <Badge variant="light" size="lg" radius="md">
-                      {lastSync.scores.length} 条
-                    </Badge>
-                  </Stack>
-                  {lastSync.autoExportResult && (
-                    <Stack gap={2}>
-                      <Text size="xs" c="dimmed">
-                        自动导出
-                      </Text>
-                      <Group gap={4}>
-                        {lastSync.autoExportResult.divingFish && (
-                          <Badge
-                            variant="light"
-                            size="lg"
-                            radius="md"
-                            color={
-                              exportStatusColor(
-                                lastSync.autoExportResult.divingFish.status,
-                              )
-                            }
-                          >
-                            水鱼{" "}
-                            {lastSync.autoExportResult.divingFish.status ===
-                            "success"
-                              ? "✓"
-                              : lastSync.autoExportResult.divingFish.status ===
-                                  "skipped"
-                                ? "—"
-                                : "✗"}
-                          </Badge>
-                        )}
-                        {lastSync.autoExportResult.lxns && (
-                          <Badge
-                            variant="light"
-                            size="lg"
-                            radius="md"
-                            color={
-                              exportStatusColor(
-                                lastSync.autoExportResult.lxns.status,
-                              )
-                            }
-                          >
-                            落雪{" "}
-                            {lastSync.autoExportResult.lxns.status === "success"
-                              ? "✓"
-                              : lastSync.autoExportResult.lxns.status ===
-                                  "skipped"
-                                ? "—"
-                                : "✗"}
-                          </Badge>
-                        )}
-                      </Group>
-                    </Stack>
-                  )}
-                </Group>
-                <Group gap="sm">
-                  <Button
-                    onClick={startSync}
-                    disabled={!profile?.friendCode || syncing}
+          <Card
+            withBorder
+            padding="md"
+            radius="md"
+            style={{
+              borderLeft: `4px solid var(--mantine-color-${syncStatusView.color}-6)`,
+            }}
+          >
+            <Stack gap="md">
+              <Group justify="space-between" align="flex-start" wrap="wrap">
+                <Group gap="xs" align="center">
+                  <Badge
                     variant="light"
-                    size="sm"
+                    color={syncStatusView.color}
+                    radius="md"
+                    size="lg"
                   >
-                    更新数据
-                  </Button>
-                </Group>
-              </Group>
-              {syncing && syncStatus && (
-                <Group gap="xs" mt={4}>
-                  <Loader size="xs" />
-                  <Text size="xs" c="dimmed">
-                    {syncStatus.status === "queued"
-                      ? "正在排队中，请稍候..."
-                      : syncStatus.stage === "send_request"
-                        ? "正在发送好友请求，通常需要等待约 60 秒..."
-                        : syncStatus.stage === "update_score"
-                          ? "正在更新成绩..."
-                          : "同步中..."}
+                    {syncStatusView.label}
+                  </Badge>
+                  {syncing && <Loader size="xs" />}
+                  <Text size="sm" c="dimmed">
+                    {syncStatusView.text}
                   </Text>
                 </Group>
+                <Button
+                  onClick={startSync}
+                  disabled={!profile?.friendCode || syncing || pageLoading}
+                  loading={syncing}
+                  variant={lastSync ? "light" : "filled"}
+                  leftSection={<IconRefresh size={16} />}
+                >
+                  {lastSync ? "更新数据" : "开始同步"}
+                </Button>
+              </Group>
+
+              <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="sm">
+                <SyncStatTile label="上次同步">
+                  <Text size="sm" fw={600}>
+                    {lastSync ? formatDate(lastSync.createdAt) : "暂无记录"}
+                  </Text>
+                </SyncStatTile>
+                <SyncStatTile label="记录条数">
+                  <Badge variant="light" size="lg" radius="md">
+                    {lastSync ? `${lastSync.scoreCount} 条` : "-"}
+                  </Badge>
+                </SyncStatTile>
+                <SyncStatTile label="自动导出">
+                  <AutoExportBadges result={lastSync?.autoExportResult} />
+                </SyncStatTile>
+              </SimpleGrid>
+
+              <Divider variant="dashed" />
+
+              <Group justify="space-between" align="center">
+                <Stack gap={2}>
+                  <Text size="xs" c="dimmed">
+                    当前阶段
+                  </Text>
+                  <Text size="sm" fw={600}>
+                    {getSyncStageText(syncStatus)}
+                  </Text>
+                </Stack>
+                {syncStatus && (
+                  <Badge
+                    variant="light"
+                    color={
+                      syncStatus.status === "completed"
+                        ? "green"
+                        : syncStatus.status === "failed" ||
+                            syncStatus.status === "canceled"
+                          ? "red"
+                          : syncStatus.status === "queued"
+                            ? "gray"
+                            : "blue"
+                    }
+                    radius="md"
+                  >
+                    {syncStatus.status}
+                  </Badge>
+                )}
+              </Group>
+
+              {progress && syncStatus?.stage === "update_score" && (
+                <Stack gap="xs">
+                  <Group justify="space-between" align="center">
+                    <Text size="sm" c="dimmed">
+                      更新进度
+                    </Text>
+                    <Text size="sm" fw={600}>
+                      {progress.completedDiffs.length} / {progress.totalDiffs}
+                    </Text>
+                  </Group>
+                  <Progress
+                    value={progress.percent}
+                    animated={syncing}
+                    size="md"
+                    radius="xl"
+                    color={progress.percent === 100 ? "green" : "blue"}
+                  />
+                  {progress.completedDiffs.length > 0 && (
+                    <Group gap="xs">
+                      {progress.completedDiffs.map((diff) => (
+                        <Badge
+                          radius="md"
+                          key={diff}
+                          size="sm"
+                          variant="filled"
+                          color={
+                            diff === 0
+                              ? "green"
+                              : diff === 1
+                                ? "yellow"
+                                : diff === 2
+                                  ? "red"
+                                  : diff === 3
+                                    ? "grape"
+                                    : diff === 4
+                                      ? "violet"
+                                      : "pink"
+                          }
+                        >
+                          {DIFFICULTY_NAMES[diff] ?? `Diff ${diff}`}
+                        </Badge>
+                      ))}
+                    </Group>
+                  )}
+                </Stack>
               )}
-            </Card>
-          )}
+            </Stack>
+          </Card>
 
           {pageLoading && (
             <Card withBorder padding="md" radius="md">
@@ -968,183 +1037,53 @@ export default function SyncPage() {
             </Card>
           )}
 
-          {!pageLoading && !lastSync && !syncStatus && (
-            <Card withBorder padding="md" radius="md">
-              <Stack gap="sm" align="center">
-                <Text size="sm" c="dimmed" ta="center">
-                  暂无同步记录，点击下方按钮开始首次同步。
-                </Text>
-                <Button
-                  onClick={startSync}
-                  disabled={!profile?.friendCode || syncing}
-                  variant="filled"
-                >
-                  开始同步
-                </Button>
-              </Stack>
-            </Card>
-          )}
-
           {syncError && <Alert color="red">{syncError}</Alert>}
 
-          {syncStatus && (
-            <Card
-              withBorder
-              padding="md"
+          {syncStatus?.error && (
+            <Alert color="red" variant="light" title="错误" radius="md">
+              {syncStatus.error}
+            </Alert>
+          )}
+
+          {syncing && syncStatus?.stage === "wait_acceptance" && (
+            <Alert
+              variant="outline"
               radius="md"
-              style={{
-                borderLeft:
-                  syncStatus.status === "completed"
-                    ? "4px solid var(--mantine-color-green-6)"
-                    : syncStatus.status === "failed" ||
-                        syncStatus.status === "canceled"
-                      ? "4px solid var(--mantine-color-red-6)"
-                      : syncStatus.status === "processing"
-                        ? "4px solid var(--mantine-color-blue-6)"
-                        : "4px solid var(--mantine-color-gray-4)",
-              }}
+              color="blue"
+              title="好友请求已发送！"
             >
               <Stack gap="sm">
-                <Group justify="space-between" align="center">
-                  <Group gap="xs">
-                    <Text size="sm" fw={500} c="dimmed">
-                      状态
-                    </Text>
-                  </Group>
-                  <Badge
-                    size="lg"
-                    radius="sm"
-                    variant="light"
-                    color={
-                      syncStatus.status === "completed"
-                        ? "green"
-                        : syncStatus.status === "failed" ||
-                            syncStatus.status === "canceled"
-                          ? "red"
-                          : syncStatus.status === "queued"
-                            ? "gray"
-                            : "blue"
-                    }
-                  >
-                    {syncStatus.status === "completed"
-                      ? "✓ 已完成"
-                      : syncStatus.status === "failed"
-                        ? "✗ 失败"
-                        : syncStatus.status === "canceled"
-                          ? "已取消"
-                          : syncStatus.status === "queued"
-                            ? "排队中"
-                            : "● 进行中"}
-                  </Badge>
-                </Group>
-
-                {/* <Group justify="space-between" align="center">
-                <Text size="sm" fw={500} c="dimmed">
-                  当前阶段
+                <Text size="sm">
+                  Bot 已发送好友申请，请登录 NET
+                  并在核对时间一致后同意好友申请。
                 </Text>
-                <Text size="sm" fw={500}>
-                  {getStageLabel(syncStatus.stage)}
-                </Text>
-              </Group> */}
-
-                {syncStatus.error && (
-                  <Alert color="red" variant="light" title="错误" radius="md">
-                    {syncStatus.error}
-                  </Alert>
+                {syncStatus.friendRequestSentAt && (
+                  <Text size="sm" c="red" fw={700}>
+                    若申请时间不是{" "}
+                    {formatFriendRequestSentAt(syncStatus.friendRequestSentAt)}
+                    ，请勿接受，可能是他人尝试登录！
+                  </Text>
                 )}
-
-                {progress && syncStatus.stage === "update_score" && (
-                  <Stack gap="xs">
-                    <Divider />
-                    <Group justify="space-between" align="center">
-                      <Text size="sm" fw={500} c="dimmed">
-                        更新进度
-                      </Text>
-                      <Text size="sm" fw={600}>
-                        {progress.completedDiffs.length} / {progress.totalDiffs}
-                      </Text>
-                    </Group>
-                    <Progress
-                      value={progress.percent}
-                      animated={syncing}
-                      size="md"
-                      radius="xl"
-                      color={progress.percent === 100 ? "green" : "blue"}
-                    />
-                    {progress.completedDiffs.length > 0 && (
-                      <Group gap="xs" mt={4}>
-                        {progress.completedDiffs.map((diff) => (
-                          <Badge
-                            radius={"md"}
-                            key={diff}
-                            size="sm"
-                            variant="filled"
-                            color={
-                              diff === 0
-                                ? "green"
-                                : diff === 1
-                                  ? "yellow"
-                                  : diff === 2
-                                    ? "red"
-                                    : diff === 3
-                                      ? "grape"
-                                      : diff === 4
-                                        ? "violet"
-                                        : "pink"
-                            }
-                          >
-                            {DIFFICULTY_NAMES[diff] ?? `Diff ${diff}`}
-                          </Badge>
-                        ))}
-                      </Group>
-                    )}
-                  </Stack>
-                )}
-
-                {syncing && syncStatus.stage === "wait_acceptance" && (
-                  <Alert
-                    variant="outline"
-                    radius="md"
-                    color="blue"
-                    title="好友请求已发送！"
+                <Progress.Root size="xl" mt={4}>
+                  <Progress.Section
+                    animated
+                    value={remainingPercent}
+                    title={`${timeLeft} 秒后过期`}
                   >
-                    <Stack gap="sm">
-                      <Text size="sm">
-                        Bot 已发送好友申请，请登录 NET
-                        并在核对时间一致后同意好友申请。
-                      </Text>
-                      {syncStatus.friendRequestSentAt && (
-                        <Text size="sm" c="red" fw={700}>
-                          若申请时间不是{" "}
-                          {formatFriendRequestSentAt(
-                            syncStatus.friendRequestSentAt,
-                          )}
-                          ，请勿接受，可能是他人尝试登录！
-                        </Text>
-                      )}
-                      <Progress.Root size="xl" mt={4}>
-                        <Progress.Section
-                          animated
-                          value={remainingPercent}
-                          title={`${timeLeft} 秒后过期`}
-                        >
-                          <Progress.Label>{timeLeft} 秒后过期</Progress.Label>
-                        </Progress.Section>
-                      </Progress.Root>
-                      <Button
-                        onClick={verifySyncJob}
-                        loading={verifyLoading}
-                        disabled={!syncJobId}
-                      >
-                        我已接受请求
-                      </Button>
-                    </Stack>
-                  </Alert>
-                )}
-
+                    <Progress.Label>{timeLeft} 秒后过期</Progress.Label>
+                  </Progress.Section>
+                </Progress.Root>
+                <Button
+                  onClick={verifySyncJob}
+                  loading={verifyLoading}
+                  disabled={!syncJobId}
+                >
+                  我已接受请求
+                </Button>
               </Stack>
-            </Card>
+            </Alert>
           )}
+
         </Stack>
 
         {/* Cabinet QR Section */}
@@ -1188,6 +1127,7 @@ export default function SyncPage() {
               </Anchor>
 
               <Tabs
+                keepMounted={false}
                 value={divingFishMode}
                 onChange={(v) =>
                   setDivingFishMode((v as "token" | "login") ?? "token")
@@ -1199,10 +1139,11 @@ export default function SyncPage() {
                 </Tabs.List>
 
                 <Tabs.Panel value="token" pt="md">
-                  <Group align="flex-end" gap="xs">
+                  <Stack gap="sm">
                     <PasswordInput
                       label="Import Token"
                       placeholder="输入 import token"
+                      leftSection={<IconKey size={16} />}
                       value={
                         profile?.hasDivingFishImportToken &&
                         !editingDivingFishToken
@@ -1214,40 +1155,41 @@ export default function SyncPage() {
                         !editingDivingFishToken
                       }
                       onChange={(e) => setDivingFishToken(e.target.value)}
-                      style={{ flex: 1 }}
                     />
-                    {profile?.hasDivingFishImportToken &&
-                    !editingDivingFishToken ? (
+                    <Group justify="flex-end" gap="xs">
+                      {profile?.hasDivingFishImportToken &&
+                      !editingDivingFishToken ? (
+                        <Button
+                          onClick={() => {
+                            setEditingDivingFishToken(true);
+                            setDivingFishToken("");
+                          }}
+                          variant="subtle"
+                          size="sm"
+                        >
+                          修改
+                        </Button>
+                      ) : null}
                       <Button
-                        onClick={() => {
-                          setEditingDivingFishToken(true);
-                          setDivingFishToken("");
-                        }}
-                        variant="subtle"
+                        onClick={exportToDivingFish}
+                        loading={exportLoading === "diving-fish"}
+                        disabled={
+                          (!divingFishToken &&
+                            !profile?.hasDivingFishImportToken) ||
+                          (editingDivingFishToken && !divingFishToken) ||
+                          exportLoading !== null
+                        }
+                        variant="light"
                         size="sm"
                       >
-                        修改
+                        {exportLoading === "diving-fish" ? (
+                          <Loader size="xs" />
+                        ) : (
+                          "更新"
+                        )}
                       </Button>
-                    ) : null}
-                    <Button
-                      onClick={exportToDivingFish}
-                      loading={exportLoading === "diving-fish"}
-                      disabled={
-                        (!divingFishToken &&
-                          !profile?.hasDivingFishImportToken) ||
-                        (editingDivingFishToken && !divingFishToken) ||
-                        exportLoading !== null
-                      }
-                      variant="light"
-                      size="sm"
-                    >
-                      {exportLoading === "diving-fish" ? (
-                        <Loader size="xs" />
-                      ) : (
-                        "更新"
-                      )}
-                    </Button>
-                  </Group>
+                    </Group>
+                  </Stack>
                 </Tabs.Panel>
 
                 <Tabs.Panel value="login" pt="md">
@@ -1259,17 +1201,20 @@ export default function SyncPage() {
                     <TextInput
                       label="用户名"
                       placeholder="水鱼账号用户名"
+                      leftSection={<IconUser size={16} />}
                       value={divingFishUsername}
                       onChange={(e) => setDivingFishUsername(e.target.value)}
                     />
                     <PasswordInput
                       label="密码"
                       placeholder="水鱼账号密码"
+                      leftSection={<IconPassword size={16} />}
                       value={divingFishPassword}
                       onChange={(e) => setDivingFishPassword(e.target.value)}
                     />
-                    <Button
-                      onClick={async () => {
+                    <Group justify="flex-end">
+                      <Button
+                        onClick={async () => {
                         if (!divingFishUsername || !divingFishPassword) {
                           notifications.show({
                             title: "错误",
@@ -1282,7 +1227,7 @@ export default function SyncPage() {
                         setFetchingDivingFishToken(true);
                         try {
                           // Step 1: Get token
-                          const res = await fetchJson<{
+                          const res = await fetchSyncPageJson<{
                             importToken?: string;
                             nickname?: string;
                             message?: string;
@@ -1306,7 +1251,7 @@ export default function SyncPage() {
                             setDivingFishPassword("");
 
                             // Step 2: Save token and export
-                            const saveRes = await fetchJson<unknown>(
+                            const saveRes = await fetchSyncPageJson<unknown>(
                               "/api/v1/me",
                               {
                                 method: "PATCH",
@@ -1324,7 +1269,7 @@ export default function SyncPage() {
                             if (saveRes.ok) {
                               // Step 3: Queue export to diving-fish
                               const exportRes =
-                                await fetchJson<ProberExportCreateResponse>(
+                                await fetchSyncPageJson<ProberExportCreateResponse>(
                                   "/api/v1/me/sync/latest/exports/diving-fish",
                                   {
                                     method: "POST",
@@ -1405,18 +1350,19 @@ export default function SyncPage() {
                         } finally {
                           setFetchingDivingFishToken(false);
                         }
-                      }}
-                      loading={fetchingDivingFishToken}
-                      disabled={
-                        !divingFishUsername ||
-                        !divingFishPassword ||
-                        fetchingDivingFishToken
-                      }
-                      variant="filled"
-                      size="sm"
-                    >
-                      获取 Token 并更新
-                    </Button>
+                        }}
+                        loading={fetchingDivingFishToken}
+                        disabled={
+                          !divingFishUsername ||
+                          !divingFishPassword ||
+                          fetchingDivingFishToken
+                        }
+                        variant="filled"
+                        size="sm"
+                      >
+                        获取 Token 并更新
+                      </Button>
+                    </Group>
                   </Stack>
                 </Tabs.Panel>
               </Tabs>
@@ -1434,10 +1380,11 @@ export default function SyncPage() {
               >
                 落雪查分器
               </Anchor>
-              <Group align="flex-end" gap="xs">
+              <Stack gap="sm">
                 <PasswordInput
                   label="Personal Token"
                   placeholder="输入 personal token"
+                  leftSection={<IconKey size={16} />}
                   value={
                     profile?.hasLxnsImportToken && !editingLxnsToken
                       ? "••••••••••••••••••••••••••••••••"
@@ -1445,34 +1392,35 @@ export default function SyncPage() {
                   }
                   disabled={!!profile?.hasLxnsImportToken && !editingLxnsToken}
                   onChange={(e) => setLxnsToken(e.target.value)}
-                  style={{ flex: 1 }}
                 />
-                {profile?.hasLxnsImportToken && !editingLxnsToken ? (
+                <Group justify="flex-end" gap="xs">
+                  {profile?.hasLxnsImportToken && !editingLxnsToken ? (
+                    <Button
+                      onClick={() => {
+                        setEditingLxnsToken(true);
+                        setLxnsToken("");
+                      }}
+                      variant="subtle"
+                      size="sm"
+                    >
+                      修改
+                    </Button>
+                  ) : null}
                   <Button
-                    onClick={() => {
-                      setEditingLxnsToken(true);
-                      setLxnsToken("");
-                    }}
-                    variant="subtle"
+                    onClick={exportToLxns}
+                    loading={exportLoading === "lxns"}
+                    disabled={
+                      (!lxnsToken && !profile?.hasLxnsImportToken) ||
+                      (editingLxnsToken && !lxnsToken) ||
+                      exportLoading !== null
+                    }
+                    variant="light"
                     size="sm"
                   >
-                    修改
+                    {exportLoading === "lxns" ? <Loader size="xs" /> : "更新"}
                   </Button>
-                ) : null}
-                <Button
-                  onClick={exportToLxns}
-                  loading={exportLoading === "lxns"}
-                  disabled={
-                    (!lxnsToken && !profile?.hasLxnsImportToken) ||
-                    (editingLxnsToken && !lxnsToken) ||
-                    exportLoading !== null
-                  }
-                  variant="light"
-                  size="sm"
-                >
-                  {exportLoading === "lxns" ? <Loader size="xs" /> : "更新"}
-                </Button>
-              </Group>
+                </Group>
+              </Stack>
             </Stack>
           </Card>
         </Stack>

@@ -9,20 +9,21 @@
     "prebuild": "npm --prefix ../shared run build",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "lint:check": "eslint . --max-warnings=0",
+    "typecheck": "tsc -b --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@maimai-score-hub/shared": "file:../shared",
-    "@ts-rest/core": "^3.52.1",
     "@emotion/react": "^11.14.0",
+    "@maimai-score-hub/shared": "file:../shared",
     "@mantine/core": "^8.3.10",
     "@mantine/hooks": "^8.3.10",
     "@mantine/notifications": "^8.3.10",
     "@tabler/icons-react": "^3.28.0",
+    "@ts-rest/core": "^3.52.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.11.0",
-    "recharts": "^3.6.0"
+    "react-router-dom": "^7.11.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

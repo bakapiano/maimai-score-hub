@@ -4,6 +4,7 @@ import type { MusicChartPayload, MusicRow } from "../../types/music";
 import type { SyncScore } from "../../types/syncScore";
 import { getCoverUrl } from "../../components/MusicScoreCard";
 import classes from "./Best50ExportStyleView.module.css";
+import { useDeferredVisibleSrc } from "../../utils/deferredImage";
 
 const ASSET_BASE = "/mai/pic";
 
@@ -102,25 +103,25 @@ function asset(filename: string) {
 }
 
 function parseScore(score: string | null) {
-  if (!score || typeof score !== "string") return null;
+  if (!score || typeof score !== "string") {return null;}
   const parsed = parseFloat(score.replace("%", ""));
   return Number.isNaN(parsed) ? null : parsed;
 }
 
 function getRank(scoreVal: number) {
-  if (scoreVal >= 100.5) return "SSS+";
-  if (scoreVal >= 100) return "SSS";
-  if (scoreVal >= 99.5) return "SS+";
-  if (scoreVal >= 99) return "SS";
-  if (scoreVal >= 98) return "S+";
-  if (scoreVal >= 97) return "S";
-  if (scoreVal >= 94) return "AAA";
-  if (scoreVal >= 90) return "AA";
-  if (scoreVal >= 80) return "A";
-  if (scoreVal >= 75) return "BBB";
-  if (scoreVal >= 70) return "BB";
-  if (scoreVal >= 60) return "B";
-  if (scoreVal >= 50) return "C";
+  if (scoreVal >= 100.5) {return "SSS+";}
+  if (scoreVal >= 100) {return "SSS";}
+  if (scoreVal >= 99.5) {return "SS+";}
+  if (scoreVal >= 99) {return "SS";}
+  if (scoreVal >= 98) {return "S+";}
+  if (scoreVal >= 97) {return "S";}
+  if (scoreVal >= 94) {return "AAA";}
+  if (scoreVal >= 90) {return "AA";}
+  if (scoreVal >= 80) {return "A";}
+  if (scoreVal >= 75) {return "BBB";}
+  if (scoreVal >= 70) {return "BB";}
+  if (scoreVal >= 60) {return "B";}
+  if (scoreVal >= 50) {return "C";}
   return "D";
 }
 
@@ -130,7 +131,7 @@ function getRankFromScore(score: string | null) {
 }
 
 function parseDxScore(value: string | null | undefined) {
-  if (value === null || value === undefined) return null;
+  if (value === null || value === undefined) {return null;}
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -193,12 +194,72 @@ function getDxScoreMax(chart: MusicChartPayload | undefined) {
 }
 
 function getDxStar(dxPercent: number) {
-  if (dxPercent <= 85) return 0;
-  if (dxPercent <= 90) return 1;
-  if (dxPercent <= 93) return 2;
-  if (dxPercent <= 95) return 3;
-  if (dxPercent <= 97) return 4;
+  if (dxPercent <= 85) {return 0;}
+  if (dxPercent <= 90) {return 1;}
+  if (dxPercent <= 93) {return 2;}
+  if (dxPercent <= 95) {return 3;}
+  if (dxPercent <= 97) {return 4;}
   return 5;
+}
+
+function getChartForScore(
+  score: SyncScore,
+  chartMap: Map<number, ChartLookup>,
+) {
+  return score.cid !== null && score.cid !== undefined
+    ? chartMap.get(score.cid)
+    : undefined;
+}
+
+function getDetailLevelText(chart: MusicChartPayload | undefined) {
+  if (typeof chart?.detailLevel === "number") {
+    return chart.detailLevel.toFixed(1);
+  }
+  return chart?.detailLevel ?? chart?.level ?? "?";
+}
+
+function getDxScoreText(score: SyncScore, dxScoreMax: number | null) {
+  if (score.dxScore && dxScoreMax) {
+    return `${score.dxScore} / ${dxScoreMax}`;
+  }
+  return score.dxScore ?? null;
+}
+
+function getDxStarForScore(dxScore: number | null, dxScoreMax: number | null) {
+  if (dxScore === null || dxScoreMax === null || dxScoreMax <= 0) {
+    return null;
+  }
+  return getDxStar((dxScore / dxScoreMax) * 100);
+}
+
+function buildCard(
+  score: SyncScore,
+  idx: number,
+  isNew: boolean,
+  musicMap: Map<string, MusicRow>,
+  chartMap: Map<number, ChartLookup>,
+): ExportCard {
+  const music = musicMap.get(score.musicId);
+  const chart = getChartForScore(score, chartMap);
+  const dxScore = parseDxScore(score.dxScore);
+  const dxScoreMax = getDxScoreMax(chart);
+
+  return {
+    score,
+    ranking: idx + 1,
+    isNew,
+    musicId: score.musicId,
+    chartIndex: score.chartIndex,
+    type: score.type,
+    scoreText: score.score ?? null,
+    dxScoreText: getDxScoreText(score, dxScoreMax),
+    dxStar: getDxStarForScore(dxScore, dxScoreMax),
+    rating: score.rating ?? null,
+    fc: score.fc ?? null,
+    fs: score.fs ?? null,
+    title: music?.title ?? "Unknown Title",
+    detailLevelText: String(getDetailLevelText(chart)),
+  };
 }
 
 function buildCards(
@@ -207,52 +268,29 @@ function buildCards(
   musicMap: Map<string, MusicRow>,
   chartMap: Map<number, ChartLookup>,
 ): ExportCard[] {
-  return scores.map((score, idx) => {
-    const music = musicMap.get(score.musicId);
-    const chart = score.cid != null ? chartMap.get(score.cid) : undefined;
-    const detailLevelText =
-      typeof chart?.detailLevel === "number"
-        ? chart.detailLevel.toFixed(1)
-        : (chart?.detailLevel ?? chart?.level ?? "?");
-    const dxScore = parseDxScore(score.dxScore);
-    const dxScoreMax = getDxScoreMax(chart);
-
-    return {
-      score,
-      ranking: idx + 1,
-      isNew,
-      musicId: score.musicId,
-      chartIndex: score.chartIndex,
-      type: score.type,
-      scoreText: score.score ?? null,
-      dxScoreText:
-        score.dxScore && dxScoreMax
-          ? `${score.dxScore} / ${dxScoreMax}`
-          : (score.dxScore ?? null),
-      dxStar:
-        dxScore !== null && dxScoreMax !== null && dxScoreMax > 0
-          ? getDxStar((dxScore / dxScoreMax) * 100)
-          : null,
-      rating: score.rating ?? null,
-      fc: score.fc ?? null,
-      fs: score.fs ?? null,
-      title: music?.title ?? "Unknown Title",
-      detailLevelText: String(detailLevelText),
-    };
-  });
+  return scores.map((score, idx) =>
+    buildCard(score, idx, isNew, musicMap, chartMap),
+  );
 }
 
 function CoverImage({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
+  const [coverRef, deferredSrc] = useDeferredVisibleSrc<HTMLDivElement>(
+    failed ? null : src,
+  );
 
   return (
     <>
-      <div className={classes.coverFallback}>{failed ? "No Cover" : null}</div>
-      {!failed ? (
+      <div ref={coverRef} className={classes.coverFallback}>
+        {failed ? "No Cover" : null}
+      </div>
+      {deferredSrc && !failed ? (
         <img
           className={classes.cover}
-          src={src}
+          src={deferredSrc}
           alt={alt}
+          loading="lazy"
+          decoding="async"
           referrerPolicy="no-referrer"
           onError={() => setFailed(true)}
         />
@@ -404,7 +442,7 @@ export function Best50ExportStyleCardPreview({
     musicMap,
     chartMap,
   )[0];
-  if (!card) return null;
+  if (!card) {return null;}
 
   return (
     <div className={classes.singleCardPreview}>

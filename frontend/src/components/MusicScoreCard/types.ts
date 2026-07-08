@@ -37,4 +37,5 @@ export interface DetailedMusicScoreCardProps extends MusicScoreCardProps {
   maxDxScore?: number | null;
   ranking?: number | null;
   isNew?: boolean | null;
+  ratingFloor?: number | null;
 }

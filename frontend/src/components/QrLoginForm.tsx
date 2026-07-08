@@ -1,6 +1,5 @@
 import {
   Alert,
-  Badge,
   Box,
   Button,
   FileButton,
@@ -17,12 +16,74 @@ import {
   fetchForPoll,
   pollWithBackoff,
 } from "../utils/poll";
-import { IconQrcode, IconUpload } from "@tabler/icons-react";
+import { IconInfoCircle, IconQrcode, IconUpload } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
 
 const QR_ATTEMPT_KEY = "pendingQrLoginAttemptId";
+const SLOW_JOB_NOTICE_MS = 30_000;
+const STATUS_LABEL: Record<string, string> = {
+  pending: "正在准备登录…",
+  adding_rival: "正在添加好友…",
+  waiting_snapshot: "确认好友身份中（通常需要 1 分钟）…",
+};
+
+type QrLoginJson = {
+  kind?: "fast" | "async";
+  token?: string | null;
+  attemptId?: string | null;
+  message?: string | { code?: string; message?: string };
+  error?: string | null;
+};
+
+async function postQrLogin(payload: FormData | string) {
+  const res = await fetch("/api/v1/auth/qr-login", {
+    method: "POST",
+    headers:
+      typeof payload === "string"
+        ? { "Content-Type": "application/json" }
+        : undefined,
+    body:
+      typeof payload === "string" ? JSON.stringify({ qrCode: payload }) : payload,
+  });
+  const text = await res.text();
+  const json = (text ? JSON.parse(text) : null) as QrLoginJson | null;
+  return { res, json };
+}
+
+function getQrLoginMessage(json: QrLoginJson | null, status: number) {
+  return (
+    (typeof json?.message === "object" && json.message?.message) ||
+    (typeof json?.message === "string" && json.message) ||
+    json?.error ||
+    `HTTP ${status}`
+  );
+}
+
+function isExpiredQr(json: QrLoginJson | null) {
+  return typeof json?.message === "object" && json.message?.code === "qr_expired";
+}
+
+function showQrLoginSuccess() {
+  notifications.show({ color: "green", message: "神秘二维码登录成功" });
+}
+
+function clearQrAttemptCache() {
+  try {
+    localStorage.removeItem(QR_ATTEMPT_KEY);
+  } catch {
+    // localStorage may be unavailable.
+  }
+}
+
+function persistQrAttempt(attemptId: string) {
+  try {
+    localStorage.setItem(QR_ATTEMPT_KEY, attemptId);
+  } catch {
+    // localStorage may be unavailable.
+  }
+}
 
 /**
  * QR-code login form.
@@ -55,18 +116,27 @@ export function QrLoginForm({
   const [busy, setBusy] = useState(false);
   // Slow-path progress message rendered to the user while we poll.
   const [progress, setProgress] = useState<string | null>(null);
+  const [slowNoticeVisible, setSlowNoticeVisible] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
-
-  const STATUS_LABEL: Record<string, string> = {
-    pending: "正在准备登录…",
-    adding_rival: "正在添加好友…",
-    waiting_snapshot: "确认好友身份中（通常需要 1 分钟）…",
-  };
+  const pendingQrJob = busy && progress !== null;
 
   // Bubble busy state up so the parent can disable other login modes.
   useEffect(() => {
     onBusyChange?.(busy);
   }, [busy, onBusyChange]);
+
+  useEffect(() => {
+    if (!pendingQrJob) {
+      setSlowNoticeVisible(false);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setSlowNoticeVisible(true);
+    }, SLOW_JOB_NOTICE_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [pendingQrJob]);
 
   /**
    * Poll the slow-path attempt status until terminal. Returns a token on
@@ -102,7 +172,32 @@ export function QrLoginForm({
         { intervalMs: 1_000, maxFailures: 5, signal, timeoutMs: 5 * 60_000 },
       );
     },
-    [STATUS_LABEL],
+    [],
+  );
+
+  const handleAsyncLogin = useCallback(
+    async (attemptId: string) => {
+      persistQrAttempt(attemptId);
+      setProgress(STATUS_LABEL.pending);
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      try {
+        const token = await pollAttempt(attemptId, ctrl.signal);
+        clearQrAttemptCache();
+        showQrLoginSuccess();
+        onSuccess(token);
+      } catch (pollErr) {
+        clearQrAttemptCache();
+        notifications.show({
+          color: "red",
+          title: "神秘二维码登录失败",
+          message: pollErr instanceof Error ? pollErr.message : String(pollErr),
+        });
+      } finally {
+        abortRef.current = null;
+      }
+    },
+    [onSuccess, pollAttempt],
   );
 
   // Resume an in-flight attempt persisted in localStorage. Runs once
@@ -115,27 +210,19 @@ export function QrLoginForm({
     } catch {
       // ignore
     }
-    if (!cached) return;
+    if (!cached) {return;}
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setBusy(true);
     setProgress(STATUS_LABEL.pending);
     pollAttempt(cached, ctrl.signal)
       .then((token) => {
-        try {
-          localStorage.removeItem(QR_ATTEMPT_KEY);
-        } catch {
-          // ignore
-        }
-        notifications.show({ color: "green", message: "神秘二维码登录成功" });
+        clearQrAttemptCache();
+        showQrLoginSuccess();
         onSuccess(token);
       })
       .catch((err) => {
-        try {
-          localStorage.removeItem(QR_ATTEMPT_KEY);
-        } catch {
-          // ignore
-        }
+        clearQrAttemptCache();
         if (err instanceof PollTimeout || err instanceof PollDead) {
           notifications.show({
             color: "red",
@@ -165,74 +252,27 @@ export function QrLoginForm({
     setBusy(true);
     setProgress(null);
     try {
-      const res = await fetch("/api/v1/auth/qr-login", {
-        method: "POST",
-        headers:
-          typeof payload === "string"
-            ? { "Content-Type": "application/json" }
-            : undefined,
-        body:
-          typeof payload === "string"
-            ? JSON.stringify({ qrCode: payload })
-            : payload,
-      });
-      const text = await res.text();
-      const json = text ? JSON.parse(text) : null;
+      const { res, json } = await postQrLogin(payload);
       if (res.ok && json?.kind === "fast" && json?.token) {
-        notifications.show({ color: "green", message: "神秘二维码登录成功" });
+        showQrLoginSuccess();
         onSuccess(String(json.token));
         return;
       }
       if (res.ok && json?.kind === "async" && json?.attemptId) {
-        const attemptId = String(json.attemptId);
-        // Persist so a reload / navigation can resume the same attempt
-        // instead of starting another one. Cleared in both success and
-        // failure branches below.
-        try {
-          localStorage.setItem(QR_ATTEMPT_KEY, attemptId);
-        } catch {
-          // ignore
-        }
-        setProgress(STATUS_LABEL.pending);
-        const ctrl = new AbortController();
-        abortRef.current = ctrl;
-        try {
-          const token = await pollAttempt(attemptId, ctrl.signal);
-          try {
-            localStorage.removeItem(QR_ATTEMPT_KEY);
-          } catch {
-            // ignore
-          }
-          notifications.show({ color: "green", message: "神秘二维码登录成功" });
-          onSuccess(token);
-        } catch (pollErr) {
-          try {
-            localStorage.removeItem(QR_ATTEMPT_KEY);
-          } catch {
-            // ignore
-          }
-          notifications.show({
-            color: "red",
-            title: "神秘二维码登录失败",
-            message:
-              pollErr instanceof Error ? pollErr.message : String(pollErr),
-          });
-        } finally {
-          abortRef.current = null;
-        }
+        await handleAsyncLogin(String(json.attemptId));
         return;
       }
       // Backwards-compat for the old (non-async) backend that returned
       // {token, user} directly without a `kind` discriminator. Remove
       // once all backend instances ship the new flow.
       if (res.ok && json?.token) {
-        notifications.show({ color: "green", message: "神秘二维码登录成功" });
+        showQrLoginSuccess();
         onSuccess(String(json.token));
         return;
       }
       // Backend returns BadRequestException({code,message}) for known
       // error categories so we can render targeted UI here.
-      if (json?.message?.code === "qr_expired") {
+      if (isExpiredQr(json)) {
         notifications.show({
           color: "orange",
           title: "神秘二维码已过期",
@@ -246,15 +286,10 @@ export function QrLoginForm({
       // so we always prefer the inner message and only fall back to a
       // generic banner. Don't surface "Bad Request" itself — it leaks
       // framework noise to the end user.
-      const msg =
-        (typeof json?.message === "object" && json.message?.message) ||
-        (typeof json?.message === "string" && json.message) ||
-        json?.error ||
-        `HTTP ${res.status}`;
       notifications.show({
         color: "red",
         title: "神秘二维码登录失败",
-        message: msg,
+        message: getQrLoginMessage(json, res.status),
       });
     } catch (err) {
       notifications.show({
@@ -270,40 +305,10 @@ export function QrLoginForm({
 
   return (
     <Stack gap="md">
-      <Group justify="space-between" align="center" mb={4}>
-        <Group gap="xs">
-          <Box
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "var(--mantine-color-grape-light)",
-              color: "var(--mantine-color-grape-filled)",
-            }}
-          >
-            <IconQrcode size={18} />
-          </Box>
-          <Stack gap={0}>
-            <Text fw={700} size="md" style={{ lineHeight: 1.2 }}>
-              神秘二维码登录
-            </Text>
-            <Text size="xs" c="dimmed">
-              首次登陆可能会需要 30–60 秒，请耐心等待
-            </Text>
-          </Stack>
-        </Group>
-        <Badge color="orange" variant="light" size="sm">
-          测试中
-        </Badge>
-      </Group>
-
       <Stack gap="sm">
         <FileButton
           onChange={(file) => {
-            if (!file) return;
+            if (!file) {return;}
             const fd = new FormData();
             fd.append("image", file);
             void submit(fd);
@@ -346,6 +351,7 @@ export function QrLoginForm({
         <Group gap="xs" wrap="nowrap">
           <PasswordInput
             placeholder="SGWCMAID..."
+            leftSection={<IconQrcode size={16} />}
             value={qrText}
             onChange={(e) => setQrText(e.currentTarget.value)}
             style={{ flex: 1 }}
@@ -376,6 +382,19 @@ export function QrLoginForm({
           icon={<Loader size="xs" />}
         >
           <Text size="sm">{progress}</Text>
+        </Alert>
+      )}
+
+      {slowNoticeVisible && (
+        <Alert
+          variant="light"
+          color="yellow"
+          radius="md"
+          icon={<IconInfoCircle size={18} />}
+        >
+          <Text size="sm">
+            登录任务处理时间较长，请继续等待，不要重复提交二维码。
+          </Text>
         </Alert>
       )}
     </Stack>

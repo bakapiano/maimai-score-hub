@@ -52,7 +52,7 @@ export function PwaInstallProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const install = useCallback(async () => {
-    if (!deferredPrompt || installed) return "unavailable";
+    if (!deferredPrompt || installed) {return "unavailable";}
 
     try {
       await deferredPrompt.prompt();

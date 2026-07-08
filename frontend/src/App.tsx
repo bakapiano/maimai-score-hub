@@ -1,4 +1,5 @@
-import { AuthProvider, useAuth } from "./providers/AuthProvider";
+import { AuthProvider } from "./providers/AuthProvider";
+import { useAuth } from "./providers/AuthContext";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Suspense, lazy, type ReactNode } from "react";
 
@@ -15,15 +16,6 @@ const AuthedLayout = lazy(() => import("./layouts/AuthedLayout"));
 const HomePage = lazy(() => import("./pages/HomePage"));
 const ScorePage = lazy(() => import("./pages/ScorePage"));
 const SyncPage = lazy(() => import("./pages/SyncPage"));
-const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
-const AdminRealtimePage = lazy(() => import("./pages/admin/AdminRealtimePage"));
-const AdminHistoryPage = lazy(() => import("./pages/admin/AdminHistoryPage"));
-const AdminJobDebugPage = lazy(() => import("./pages/admin/AdminJobDebugPage"));
-const AdminSyncPage = lazy(() => import("./pages/admin/AdminSyncPage"));
-const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage"));
-const AdminWorkerLogsPage = lazy(
-  () => import("./pages/admin/AdminWorkerLogsPage"),
-);
 const AboutPage = lazy(() => import("./pages/AboutPage"));
 
 function PageLoader() {
@@ -36,7 +28,7 @@ function PageLoader() {
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { token, offline } = useAuth();
-  if (!token && !offline) return <Navigate to="/login" replace />;
+  if (!token && !offline) {return <Navigate to="/login" replace />;}
   return <>{children}</>;
 }
 
@@ -63,21 +55,6 @@ function App() {
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="/login" element={<LoginPage />} />
-                  <Route path="/admin" element={<AdminLayout />}>
-                    <Route index element={<AdminRealtimePage />} />
-                    <Route path="history" element={<AdminHistoryPage />} />
-                    <Route path="sync" element={<AdminSyncPage />} />
-                    <Route path="job-debug" element={<AdminJobDebugPage />} />
-                    <Route path="users" element={<AdminUsersPage />} />
-                    <Route
-                      path="live-logs"
-                      element={<AdminWorkerLogsPage />}
-                    />
-                    <Route
-                      path="history/logs"
-                      element={<Navigate to="/admin/live-logs" replace />}
-                    />
-                  </Route>
                   <Route
                     element={
                       <RequireAuth>

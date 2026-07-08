@@ -6,7 +6,7 @@ import {
   recordPageView,
   setObservabilityContext,
 } from "../utils/observability";
-import { useAuth } from "../providers/AuthProvider";
+import { useAuth } from "../providers/AuthContext";
 
 export function ObservabilityReporter() {
   const location = useLocation();
@@ -31,8 +31,5 @@ export function ObservabilityReporter() {
 }
 
 function normalizeRoute(pathname: string): string {
-  if (pathname.startsWith("/admin/jobs/")) {
-    return "/admin/jobs/:jobId/debug";
-  }
   return pathname || "/";
 }

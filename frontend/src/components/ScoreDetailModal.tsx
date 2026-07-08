@@ -2,48 +2,29 @@ import {
   ActionIcon,
   Badge,
   Box,
+  Collapse,
   Group,
-  Image,
   Modal,
   NumberFormatter,
   Paper,
   SegmentedControl,
   Select,
-  SimpleGrid,
   Stack,
   Table,
   Text,
-  ThemeIcon,
-  Title,
-  Tooltip,
 } from "@mantine/core";
-import {
-  IconCategory,
-  IconClock,
-  IconHash,
-  IconUser,
-  IconVersions,
-  IconX,
-} from "@tabler/icons-react";
-import {
-  type CSSProperties,
-  type ReactNode,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { IconChevronDown, IconChevronUp, IconX } from "@tabler/icons-react";
+import { useMemo, useState } from "react";
 import { useMediaQuery } from "@mantine/hooks";
 
 import {
-  DIFFICULTY_NAMES,
-  LEVEL_COLORS,
-  getCoverUrl,
-  getIconUrl,
-  getRank,
-  parseScore,
   type DetailedMusicScoreCardProps,
 } from "./MusicScoreCard";
+import { ScoreRatingCalculatorSection } from "./ScoreRatingCalculatorSection";
+import {
+  ScoreSummary,
+  ScoreVerificationSection,
+} from "./ScoreDetailSummary";
 import classes from "./ScoreDetailModal.module.css";
 
 export interface ScoreDetailModalProps {
@@ -61,27 +42,6 @@ type NoteStats = {
   total: number | null;
   hasBreakdown: boolean;
   sides?: Array<{ label: string; total: number | null }>;
-};
-
-const FALLBACK_COVER =
-  "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96'><rect width='100%25' height='100%25' fill='%23222931'/><text x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%238a8f98' font-size='12'>Cover</text></svg>";
-const ASSET_BASE = "/mai/pic";
-
-const RANK_ASSET: Record<string, string> = {
-  "SSS+": "UI_TTR_Rank_SSSp.png",
-  SSS: "UI_TTR_Rank_SSS.png",
-  "SS+": "UI_TTR_Rank_SSp.png",
-  SS: "UI_TTR_Rank_SS.png",
-  "S+": "UI_TTR_Rank_Sp.png",
-  S: "UI_TTR_Rank_S.png",
-  AAA: "UI_TTR_Rank_AAA.png",
-  AA: "UI_TTR_Rank_AA.png",
-  A: "UI_TTR_Rank_A.png",
-  BBB: "UI_TTR_Rank_BBB.png",
-  BB: "UI_TTR_Rank_BB.png",
-  B: "UI_TTR_Rank_B.png",
-  C: "UI_TTR_Rank_C.png",
-  D: "UI_TTR_Rank_D.png",
 };
 
 const NOTE_ROWS: Array<{
@@ -294,7 +254,7 @@ function getNoteSources(notes: unknown) {
 }
 
 function getAchievementWeightTotal(noteStats: NoteStats) {
-  if (!noteStats.hasBreakdown) return null;
+  if (!noteStats.hasBreakdown) {return null;}
   const total = NOTE_ROWS.reduce(
     (sum, row) => sum + (noteStats.counts[row.key] ?? 0) * row.weight,
     0,
@@ -327,114 +287,130 @@ function PercentageLines({
   );
 }
 
-function getCalculatorCell(
-  noteKey: NoteKey,
-  judgement: JudgementKey,
-  noteStats: NoteStats,
-  achievementWeightTotal: number | null,
+function getBreakPerfectCell(
+  breakCount: number,
+  achievementWeightTotal: number,
   mode: CalculatorMode,
 ) {
-  const count = noteStats.counts[noteKey] ?? 0;
-  const breakCount = noteStats.counts.break ?? 0;
-  if (count <= 0 || achievementWeightTotal === null) return "-";
+  const criticalPerfectBonus = BREAK_BONUS.criticalPerfect / breakCount;
 
-  if (noteKey === "break" && breakCount <= 0) return "-";
-
-  if (noteKey === "break" && judgement === "perfect") {
-    const criticalPerfectBonus = BREAK_BONUS.criticalPerfect / breakCount;
-
-    if (mode === "100-") {
-      return (
-        <PercentageLines
-          values={[
-            { value: criticalPerfectBonus, highlight: true },
-            { value: BREAK_BONUS.perfect[0] / breakCount },
-            {
-              value:
-                criticalPerfectBonus - BREAK_BONUS.perfect[1] / breakCount,
-            },
-          ]}
-        />
-      );
-    }
-
-    if (mode === "101-") {
-      return (
-        <PercentageLines
-          values={[
-            { value: 0, highlight: true },
-            {
-              value:
-                BREAK_BONUS.perfect[0] / breakCount - criticalPerfectBonus,
-            },
-            {
-              value:
-                BREAK_BONUS.perfect[1] / breakCount - criticalPerfectBonus,
-            },
-          ]}
-        />
-      );
-    }
-
-    const percentage =
-      (BASIC_WEIGHTS.perfect.break / achievementWeightTotal) * 100;
+  if (mode === "100-") {
     return (
       <PercentageLines
         values={[
-          { value: percentage + criticalPerfectBonus, highlight: true },
-          { value: percentage + BREAK_BONUS.perfect[0] / breakCount },
-          { value: percentage + BREAK_BONUS.perfect[1] / breakCount },
+          { value: criticalPerfectBonus, highlight: true },
+          { value: BREAK_BONUS.perfect[0] / breakCount },
+          { value: criticalPerfectBonus - BREAK_BONUS.perfect[1] / breakCount },
         ]}
       />
     );
   }
 
-  if (noteKey === "break" && judgement === "great") {
+  if (mode === "101-") {
     return (
       <PercentageLines
-        values={BASIC_WEIGHTS.great.break.map((weight) => {
-          let percentage =
-            (weight / achievementWeightTotal) * 100 +
-            BREAK_BONUS.great / breakCount;
-
-          if (mode === "100-" || mode === "101-") {
-            let perfectBreak =
-              (BASIC_WEIGHTS.perfect.break / achievementWeightTotal) * 100;
-            if (mode === "101-") {
-              perfectBreak += BREAK_BONUS.criticalPerfect / breakCount;
-            }
-            percentage -= perfectBreak;
-          }
-
-          return { value: percentage };
-        })}
+        values={[
+          { value: 0, highlight: true },
+          { value: BREAK_BONUS.perfect[0] / breakCount - criticalPerfectBonus },
+          { value: BREAK_BONUS.perfect[1] / breakCount - criticalPerfectBonus },
+        ]}
       />
     );
   }
 
-  const rawWeight = BASIC_WEIGHTS[judgement][noteKey];
-  let weight = typeof rawWeight === "number" ? rawWeight : 0;
-  let bonus: number | readonly number[] = BREAK_BONUS[judgement];
+  const percentage =
+    (BASIC_WEIGHTS.perfect.break / achievementWeightTotal) * 100;
+  return (
+    <PercentageLines
+      values={[
+        { value: percentage + criticalPerfectBonus, highlight: true },
+        { value: percentage + BREAK_BONUS.perfect[0] / breakCount },
+        { value: percentage + BREAK_BONUS.perfect[1] / breakCount },
+      ]}
+    />
+  );
+}
 
-  if (mode === "100-" || mode === "101-") {
-    if (judgement === "perfect") {
-      weight = BASIC_WEIGHTS.miss[noteKey];
-    } else if (judgement === "great") {
-      weight =
-        BASIC_WEIGHTS.perfect[noteKey] -
-        (BASIC_WEIGHTS.great[noteKey] as number);
-    } else if (judgement === "good") {
-      weight = BASIC_WEIGHTS.perfect[noteKey] - BASIC_WEIGHTS.good[noteKey];
-      bonus =
-        mode === "101-"
-          ? BREAK_BONUS.criticalPerfect - BREAK_BONUS.good
-          : BREAK_BONUS.miss - BREAK_BONUS.good;
-    } else if (judgement === "miss") {
-      weight = BASIC_WEIGHTS.perfect[noteKey];
-      bonus = mode === "101-" ? BREAK_BONUS.criticalPerfect : BREAK_BONUS.miss;
-    }
+function getBreakGreatCell(
+  breakCount: number,
+  achievementWeightTotal: number,
+  mode: CalculatorMode,
+) {
+  const perfectBase =
+    (BASIC_WEIGHTS.perfect.break / achievementWeightTotal) * 100;
+  const criticalBonus =
+    mode === "101-" ? BREAK_BONUS.criticalPerfect / breakCount : 0;
+  const subtractPerfect = mode === "100-" || mode === "101-";
+
+  return (
+    <PercentageLines
+      values={BASIC_WEIGHTS.great.break.map((weight) => {
+        const breakGreat =
+          (weight / achievementWeightTotal) * 100 +
+          BREAK_BONUS.great / breakCount;
+        return {
+          value: subtractPerfect
+            ? breakGreat - perfectBase - criticalBonus
+            : breakGreat,
+        };
+      })}
+    />
+  );
+}
+
+function getAdjustedCalculatorWeight(
+  noteKey: NoteKey,
+  judgement: JudgementKey,
+  mode: CalculatorMode,
+) {
+  const rawWeight = BASIC_WEIGHTS[judgement][noteKey];
+  const base = {
+    weight: typeof rawWeight === "number" ? rawWeight : 0,
+    bonus: BREAK_BONUS[judgement] as number | readonly number[],
+  };
+
+  if (mode === "0+") {
+    return base;
   }
 
+  switch (judgement) {
+    case "perfect":
+      return { weight: BASIC_WEIGHTS.miss[noteKey], bonus: base.bonus };
+    case "great":
+      return {
+        weight:
+          BASIC_WEIGHTS.perfect[noteKey] -
+          (BASIC_WEIGHTS.great[noteKey] as number),
+        bonus: base.bonus,
+      };
+    case "good":
+      return {
+        weight: BASIC_WEIGHTS.perfect[noteKey] - BASIC_WEIGHTS.good[noteKey],
+        bonus:
+          mode === "101-"
+            ? BREAK_BONUS.criticalPerfect - BREAK_BONUS.good
+            : BREAK_BONUS.miss - BREAK_BONUS.good,
+      };
+    case "miss":
+      return {
+        weight: BASIC_WEIGHTS.perfect[noteKey],
+        bonus: mode === "101-" ? BREAK_BONUS.criticalPerfect : BREAK_BONUS.miss,
+      };
+  }
+}
+
+function getGenericCalculatorCell(
+  noteKey: NoteKey,
+  judgement: JudgementKey,
+  breakCount: number,
+  achievementWeightTotal: number,
+  mode: CalculatorMode,
+) {
+  const { weight, bonus } = getAdjustedCalculatorWeight(
+    noteKey,
+    judgement,
+    mode,
+  );
   let percentage = (weight / achievementWeightTotal) * 100;
   if (noteKey === "break" && typeof bonus === "number") {
     percentage += bonus / breakCount;
@@ -446,340 +422,34 @@ function getCalculatorCell(
   return formatPercent(percentage);
 }
 
-function parseAchievement(value: string | null) {
-  const parsed = parseScore(value);
-  if (parsed === null || parsed > 101.5) return null;
-  return parsed;
-}
+function getCalculatorCell(
+  noteKey: NoteKey,
+  judgement: JudgementKey,
+  noteStats: NoteStats,
+  achievementWeightTotal: number | null,
+  mode: CalculatorMode,
+) {
+  const count = noteStats.counts[noteKey] ?? 0;
+  const breakCount = noteStats.counts.break ?? 0;
+  if (count <= 0 || achievementWeightTotal === null) {
+    return "-";
+  }
+  if (noteKey === "break" && breakCount <= 0) {
+    return "-";
+  }
+  if (noteKey === "break" && judgement === "perfect") {
+    return getBreakPerfectCell(breakCount, achievementWeightTotal, mode);
+  }
+  if (noteKey === "break" && judgement === "great") {
+    return getBreakGreatCell(breakCount, achievementWeightTotal, mode);
+  }
 
-function formatAchievement(value: string | null) {
-  const parsed = parseAchievement(value);
-  if (parsed === null) return value || "N/A";
-  return `${parsed.toFixed(4)}%`;
-}
-
-function formatTypeLabel(type: string) {
-  if (type === "standard") return "标准";
-  if (type === "dx") return "DX";
-  if (type === "utage") return "宴";
-  return type.toUpperCase();
-}
-
-function getDetailLevelText(scoreData: DetailedMusicScoreCardProps) {
-  const detailLevel = scoreData.chartPayload?.detailLevel;
-  if (typeof detailLevel === "number") return detailLevel.toFixed(1);
-  return detailLevel ?? scoreData.chartPayload?.level ?? "?";
-}
-
-function getBpmDisplay(scoreData: DetailedMusicScoreCardProps) {
-  return scoreData.bpm ?? scoreData.songMetadata?.bpm ?? null;
-}
-
-function parseDxScore(value: string | number | null | undefined) {
-  if (value === null || value === undefined) return null;
-  const parsed =
-    typeof value === "number"
-      ? value
-      : Number(String(value).replace(/,/g, ""));
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function getDxStar(dxPercent: number) {
-  if (dxPercent <= 85) return 0;
-  if (dxPercent <= 90) return 1;
-  if (dxPercent <= 93) return 2;
-  if (dxPercent <= 95) return 3;
-  if (dxPercent <= 97) return 4;
-  return 5;
-}
-
-function MetadataItem({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: ReactNode;
-}) {
-  const tooltipLabel =
-    typeof value === "string" || typeof value === "number"
-      ? String(value)
-      : undefined;
-
-  return (
-    <Box className={classes.metadataItem}>
-      <Group gap="xs" wrap="nowrap" align="flex-start">
-        <ThemeIcon size="sm" variant="light" color="gray">
-          {icon}
-        </ThemeIcon>
-        <Stack gap={1} className={classes.fieldText}>
-          <Text size="xs" c="dimmed">
-            {label}
-          </Text>
-          <Tooltip
-            label={tooltipLabel}
-            disabled={!tooltipLabel}
-            openDelay={250}
-            withinPortal
-          >
-          <Text size="sm" fw={400} className={classes.fieldValue}>
-            {value}
-          </Text>
-          </Tooltip>
-        </Stack>
-      </Group>
-    </Box>
-  );
-}
-
-function ScoreStat({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: ReactNode;
-  detail?: ReactNode;
-}) {
-  return (
-    <Paper className={classes.statTile} withBorder>
-      <Text size="xs" c="dimmed">
-        {label}
-      </Text>
-      <Text fw={400} className={classes.statValue}>
-        {value}
-      </Text>
-      {detail ? (
-        <Text size="xs" c="dimmed" className={classes.statDetail}>
-          {detail}
-        </Text>
-      ) : null}
-    </Paper>
-  );
-}
-
-function ScoreSummary({
-  scoreData,
-  maxDxScore,
-}: {
-  scoreData: DetailedMusicScoreCardProps;
-  maxDxScore: number | null;
-}) {
-  const songInfoRef = useRef<HTMLDivElement | null>(null);
-  const [coverSize, setCoverSize] = useState<number | null>(null);
-  const difficultyColor = LEVEL_COLORS[scoreData.chartIndex] || "#888";
-  const difficultyName =
-    DIFFICULTY_NAMES[scoreData.chartIndex]?.toUpperCase() || "UNKNOWN";
-  const detailLevelText = getDetailLevelText(scoreData);
-  const levelText = scoreData.chartPayload?.level ?? detailLevelText;
-  const achievement = parseAchievement(scoreData.score);
-  const rank = achievement !== null ? getRank(achievement) : null;
-  const rankAsset = rank ? RANK_ASSET[rank] : null;
-  const dxScore = parseDxScore(scoreData.dxScore);
-  const bpm = getBpmDisplay(scoreData);
-  const metadataItems: Array<{
-    label: string;
-    value: ReactNode | null | undefined;
-    icon: ReactNode;
-  }> = [
-    {
-      label: "谱师",
-      value: scoreData.noteDesigner ?? scoreData.chartPayload?.charter,
-      icon: <IconUser size={14} />,
-    },
-    {
-      label: "BPM",
-      value: bpm,
-      icon: <IconClock size={14} />,
-    },
-    {
-      label: "分类",
-      value: scoreData.songMetadata?.category,
-      icon: <IconCategory size={14} />,
-    },
-    {
-      label: "版本",
-      value: scoreData.songMetadata?.version,
-      icon: <IconVersions size={14} />,
-    },
-  ];
-  const visibleMetadataItems = metadataItems.filter(
-    (
-      item,
-    ): item is {
-      label: string;
-      value: ReactNode;
-      icon: ReactNode;
-    } => item.value !== null && item.value !== undefined && item.value !== "",
-  );
-  const dxPercent =
-    dxScore !== null && maxDxScore !== null && maxDxScore > 0
-      ? (dxScore / maxDxScore) * 100
-      : null;
-  const dxStar = dxPercent !== null ? getDxStar(dxPercent) : null;
-
-  useLayoutEffect(() => {
-    const element = songInfoRef.current;
-    if (!element) return;
-
-    const updateSize = () => {
-      const height = Math.round(element.getBoundingClientRect().height);
-      if (height > 0) {
-        setCoverSize((current) => (current === height ? current : height));
-      }
-    };
-
-    updateSize();
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [scoreData.musicId, scoreData.chartIndex]);
-
-  return (
-    <Box
-      className={classes.summary}
-      style={{ "--difficulty-color": difficultyColor } as CSSProperties}
-    >
-      <Group wrap="nowrap" align="flex-start" className={classes.summaryHeader}>
-        <Box
-          className={classes.coverFrame}
-          style={
-            coverSize
-              ? { width: coverSize, height: coverSize }
-              : undefined
-          }
-        >
-          <Image
-            src={getCoverUrl(scoreData.musicId)}
-            fallbackSrc={FALLBACK_COVER}
-            alt={scoreData.songMetadata?.title || scoreData.musicId}
-            className={classes.cover}
-          />
-        </Box>
-        <Stack gap="xs" className={classes.songInfo} ref={songInfoRef}>
-          <Group gap={6}>
-            <Badge variant="filled" color={scoreData.type === "dx" ? "orange" : "blue"}>
-              {formatTypeLabel(scoreData.type)}
-            </Badge>
-            {scoreData.songMetadata?.isNew ? (
-              <Badge variant="light" color="teal">
-                新曲 / B15
-              </Badge>
-            ) : null}
-            <Badge
-              variant="light"
-              color="gray"
-              leftSection={<IconHash size={12} />}
-            >
-              {scoreData.musicId}
-            </Badge>
-          </Group>
-          <Stack gap={2}>
-            <Title order={3} className={classes.songTitle}>
-              {scoreData.songMetadata?.title || "Unknown Title"}
-            </Title>
-            {scoreData.songMetadata?.artist ? (
-              <Text size="sm" c="dimmed" lineClamp={1}>
-                {scoreData.songMetadata.artist}
-              </Text>
-            ) : null}
-          </Stack>
-          <Group gap="xs">
-            <Badge
-              className={classes.levelBadge}
-              style={{ "--difficulty-color": difficultyColor } as CSSProperties}
-            >
-              {difficultyName}
-            </Badge>
-            <Badge variant="default">{levelText}</Badge>
-            {detailLevelText !== levelText ? (
-              <Badge variant="light" color="gray">
-                定数 {detailLevelText}
-              </Badge>
-            ) : null}
-          </Group>
-        </Stack>
-      </Group>
-
-      <Group className={classes.achievementRow} align="center" gap="sm" wrap="nowrap">
-        <Group gap="sm" wrap="nowrap" className={classes.achievementMain}>
-          {rankAsset ? (
-            <Image
-              src={`${ASSET_BASE}/${rankAsset}`}
-              alt={rank ?? "评级"}
-              className={classes.rankImage}
-            />
-          ) : null}
-          <Text fw={400} className={classes.achievementText}>
-            {formatAchievement(scoreData.score)}
-          </Text>
-        </Group>
-        <Group gap={0} wrap="nowrap" className={classes.statusGroup}>
-          <Box className={classes.statusIcon}>
-            {scoreData.fc ? (
-              <Image src={getIconUrl(scoreData.fc)} w={32} h={32} />
-            ) : null}
-          </Box>
-          <Box className={classes.statusIcon}>
-            {scoreData.fs ? (
-              <Image src={getIconUrl(scoreData.fs)} w={32} h={32} />
-            ) : null}
-          </Box>
-        </Group>
-      </Group>
-
-      <SimpleGrid cols={{ base: 2, xs: 2 }} spacing="sm">
-        <ScoreStat
-          label="DX Rating"
-          value={
-            typeof scoreData.rating === "number"
-              ? Math.round(scoreData.rating)
-              : "-"
-          }
-        />
-        <ScoreStat
-          label="DX 分数"
-          value={
-            dxScore !== null ? (
-              <Group gap="xs" wrap="nowrap" className={classes.dxScoreLine}>
-                <Text span inherit>
-                  <NumberFormatter value={dxScore} thousandSeparator />
-                  {maxDxScore !== null ? (
-                    <>
-                      {" "}
-                      / <NumberFormatter value={maxDxScore} thousandSeparator />
-                    </>
-                  ) : null}
-                </Text>
-                {dxStar !== null && dxStar > 0 ? (
-                  <Image
-                    src={`${ASSET_BASE}/UI_GAM_Gauge_DXScoreIcon_0${dxStar}.png`}
-                    alt={`${dxStar} 星`}
-                    className={classes.dxStarIcon}
-                  />
-                ) : null}
-              </Group>
-            ) : (
-              "N/A"
-            )
-          }
-        />
-      </SimpleGrid>
-
-      {visibleMetadataItems.length > 0 ? (
-        <SimpleGrid cols={{ base: 2, xs: 4 }} spacing="xs">
-          {visibleMetadataItems.map((item) => (
-            <MetadataItem
-              key={item.label}
-              icon={item.icon}
-              label={item.label}
-              value={item.value}
-            />
-          ))}
-        </SimpleGrid>
-      ) : null}
-    </Box>
+  return getGenericCalculatorCell(
+    noteKey,
+    judgement,
+    breakCount,
+    achievementWeightTotal,
+    mode,
   );
 }
 
@@ -792,6 +462,7 @@ function ChartDetails({
   noteStats: NoteStats;
   maxDxScore: number | null;
 }) {
+  const [opened, setOpened] = useState(false);
   const [calculatorMode, setCalculatorMode] =
     useState<CalculatorMode>("101-");
   const [noteSourceValue, setNoteSourceValue] = useState("main");
@@ -824,8 +495,8 @@ function ChartDetails({
 
   return (
     <Stack gap="md" className={classes.chartDetails}>
-      <Stack gap="sm">
-        <Group justify="space-between" align="center" gap="xs">
+      <Group justify="space-between" align="center" gap="xs">
+        <Group gap="xs">
           <Text fw={700}>谱面详细</Text>
           {activeNoteStats.total !== null ? (
             <Badge variant="light" color="gray">
@@ -834,7 +505,18 @@ function ChartDetails({
             </Badge>
           ) : null}
         </Group>
+        <ActionIcon
+          variant="subtle"
+          color="gray"
+          aria-label={opened ? "收起谱面详细" : "展开谱面详细"}
+          onClick={() => setOpened((value) => !value)}
+        >
+          {opened ? <IconChevronUp size={18} /> : <IconChevronDown size={18} />}
+        </ActionIcon>
+      </Group>
 
+      <Collapse in={opened}>
+        <Stack gap="sm">
         <Group className={classes.calculatorControls} gap="xs" align="center">
           {noteSources.length > 1 ? (
             <SegmentedControl
@@ -959,7 +641,8 @@ function ChartDetails({
             </Text>
           ) : null}
         </Group>
-      </Stack>
+        </Stack>
+      </Collapse>
     </Stack>
   );
 }
@@ -1023,6 +706,8 @@ export function ScoreDetailModal({
                 scoreData={scoreData}
                 maxDxScore={maxDxScore}
               />
+              <ScoreVerificationSection scoreData={scoreData} />
+              <ScoreRatingCalculatorSection scoreData={scoreData} />
               <ChartDetails
                 scoreData={scoreData}
                 noteStats={noteStats}

@@ -12,7 +12,7 @@ import {
   Paper,
   PasswordInput,
   Progress,
-  SegmentedControl,
+  SimpleGrid,
   Stack,
   Tabs,
   Text,
@@ -25,6 +25,13 @@ import {
   IconCopy,
   IconChevronDown,
   IconChevronUp,
+  IconId,
+  IconLogin2,
+  IconPassword,
+  IconRobot,
+  IconQrcode,
+  IconSend,
+  IconUser,
 } from "@tabler/icons-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useMemo, useState } from "react";
@@ -36,7 +43,7 @@ import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
 import { authApi, getHealthStatus } from "../api/appClient";
 import { notifications } from "@mantine/notifications";
-import { useAuth } from "../providers/AuthProvider";
+import { useAuth } from "../providers/AuthContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { hasOfflineData } from "../utils/offlineCache";
 import { AppFooter } from "../components/AppFooter";
@@ -44,16 +51,129 @@ import { InstallAppButton } from "../components/InstallAppButton";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
-type LoginStatus = {
-  status?: string;
-  token?: string;
+const LOGIN_WAIT_SECONDS = 5 * 60;
+const PASSWORD_LOGIN_IDENTIFIER_KEY = "passwordLoginIdentifier";
+const LOGIN_METHOD_KEY = "loginMethod";
+
+type LoginJobStatus = {
   profile?: UserProfile;
-  job?: { profile?: UserProfile; [key: string]: unknown };
+  stage?: string | null;
+  status?: string | null;
+  friendRequestSentAt?: string | null;
+  botUserFriendCode?: string | number | null;
+  createdAt?: string | null;
   error?: string | null;
   [key: string]: unknown;
 };
 
+type LoginStatus = {
+  status?: string;
+  token?: string;
+  profile?: UserProfile;
+  job?: LoginJobStatus;
+  error?: string | null;
+  [key: string]: unknown;
+};
+
+type LoginRequestBody = {
+  skipAuth?: boolean;
+  token?: string | null;
+  jobId?: string;
+  botFriendCode?: string | number | null;
+  createdAt?: string | null;
+  job?: LoginJobStatus;
+};
+
 type PasswordLoginIdentifier = "friendCode" | "username";
+type LoginMethod = "bot_sends_request" | "user_sends_request";
+
+function clearPendingLoginStorage() {
+  try {
+    localStorage.removeItem("pendingLoginJobId");
+    localStorage.removeItem("pendingLoginBotFriendCode");
+    localStorage.removeItem("pendingLoginCreatedAt");
+  } catch {
+    // localStorage may be unavailable.
+  }
+}
+
+function persistPendingLoginStorage(
+  jobId: string,
+  botFriendCode: string,
+  createdAt: string,
+) {
+  try {
+    localStorage.setItem("pendingLoginJobId", jobId);
+    if (botFriendCode) {
+      localStorage.setItem("pendingLoginBotFriendCode", botFriendCode);
+    } else {
+      localStorage.removeItem("pendingLoginBotFriendCode");
+    }
+    if (createdAt) {
+      localStorage.setItem("pendingLoginCreatedAt", createdAt);
+    } else {
+      localStorage.removeItem("pendingLoginCreatedAt");
+    }
+  } catch {
+    // localStorage may be unavailable.
+  }
+}
+
+function persistLastLoginAccount(account?: {
+  friendCode?: string | number | null;
+  username?: string | null;
+}) {
+  try {
+    const friendCode = account?.friendCode;
+    const username = account?.username;
+    if (friendCode) {
+      localStorage.setItem("lastFriendCode", String(friendCode));
+    }
+    if (username) {
+      localStorage.setItem("lastUsername", username);
+    }
+  } catch {
+    // localStorage may be unavailable.
+  }
+}
+
+function readPasswordLoginIdentifier(): PasswordLoginIdentifier {
+  try {
+    const cached = localStorage.getItem(PASSWORD_LOGIN_IDENTIFIER_KEY);
+    return cached === "friendCode" || cached === "username"
+      ? cached
+      : "username";
+  } catch {
+    return "username";
+  }
+}
+
+function persistPasswordLoginIdentifier(identifier: PasswordLoginIdentifier) {
+  try {
+    localStorage.setItem(PASSWORD_LOGIN_IDENTIFIER_KEY, identifier);
+  } catch {
+    // localStorage may be unavailable.
+  }
+}
+
+function readLoginMethod(): LoginMethod {
+  try {
+    const cached = localStorage.getItem(LOGIN_METHOD_KEY);
+    return cached === "bot_sends_request" || cached === "user_sends_request"
+      ? cached
+      : "bot_sends_request";
+  } catch {
+    return "bot_sends_request";
+  }
+}
+
+function persistLoginMethod(method: LoginMethod) {
+  try {
+    localStorage.setItem(LOGIN_METHOD_KEY, method);
+  } catch {
+    // localStorage may be unavailable.
+  }
+}
 
 function FriendCodeGuide() {
   const [opened, { toggle }] = useDisclosure(false);
@@ -101,6 +221,139 @@ function FriendCodeGuide() {
   );
 }
 
+function LoginMethodCard({
+  active,
+  description,
+  disabled,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  description: string;
+  disabled: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Paper
+      component="button"
+      type="button"
+      withBorder
+      radius="md"
+      p="sm"
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        width: "100%",
+        textAlign: "left",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+        borderColor: active
+          ? "var(--mantine-color-blue-6)"
+          : "var(--mantine-color-default-border)",
+        background: active
+          ? "var(--mantine-color-blue-light)"
+          : "var(--mantine-color-body)",
+      }}
+    >
+      <Group gap="sm" wrap="nowrap" align="flex-start">
+        <Box
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 8,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            background: active
+              ? "var(--mantine-color-blue-filled)"
+              : "var(--mantine-color-gray-light)",
+            color: active ? "white" : "var(--mantine-color-dimmed)",
+          }}
+        >
+          {icon}
+        </Box>
+        <Stack gap={2} style={{ minWidth: 0 }}>
+          <Group gap={6} wrap="nowrap">
+            <Text size="sm" fw={700}>
+              {active ? "✓ " : ""}
+              {label}
+            </Text>
+          </Group>
+          <Text size="xs" c="dimmed" lineClamp={2}>
+            {description}
+          </Text>
+        </Stack>
+      </Group>
+    </Paper>
+  );
+}
+
+function IdentifierCard({
+  active,
+  disabled,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  disabled: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Paper
+      component="button"
+      type="button"
+      withBorder
+      radius="md"
+      p="sm"
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        width: "100%",
+        textAlign: "left",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+        borderColor: active
+          ? "var(--mantine-color-blue-6)"
+          : "var(--mantine-color-default-border)",
+        background: active
+          ? "var(--mantine-color-blue-light)"
+          : "var(--mantine-color-body)",
+      }}
+    >
+      <Group gap="sm" wrap="nowrap">
+        <Box
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 8,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            background: active
+              ? "var(--mantine-color-blue-filled)"
+              : "var(--mantine-color-gray-light)",
+            color: active ? "white" : "var(--mantine-color-dimmed)",
+          }}
+        >
+          {icon}
+        </Box>
+        <Text size="sm" fw={700}>
+          {active ? "✓ " : ""}
+          {label}
+        </Text>
+      </Group>
+    </Paper>
+  );
+}
+
 export default function LoginPage() {
   useDocumentTitle("登陆");
   const navigate = useNavigate();
@@ -134,19 +387,12 @@ export default function LoginPage() {
     }
   });
   const [passwordLoginIdentifier, setPasswordLoginIdentifier] =
-    useState<PasswordLoginIdentifier>(() => {
-      try {
-        return localStorage.getItem("lastUsername") ? "username" : "friendCode";
-      } catch {
-        return "friendCode";
-      }
-    });
+    useState<PasswordLoginIdentifier>(() => readPasswordLoginIdentifier());
   const [passwordLoginPassword, setPasswordLoginPassword] = useState("");
   const [passwordLoginLoading, setPasswordLoginLoading] = useState(false);
-  const [loginMethod, setLoginMethod] = useState<
-    "bot_sends_request" | "user_sends_request" | null
-  >("bot_sends_request");
-  const [_health, setHealth] = useState("");
+  const [loginMethod, setLoginMethod] =
+    useState<LoginMethod>(() => readLoginMethod());
+  const [, setHealth] = useState("");
   const [jobId, setJobId] = useState(() => {
     try {
       return localStorage.getItem("pendingLoginJobId") || "";
@@ -157,7 +403,7 @@ export default function LoginPage() {
   // QR-login (other tab) reports its busy state up so we can lock the
   // friend-code tab while it's running, and vice-versa via `polling`.
   const [qrBusy, setQrBusy] = useState(false);
-  const [_jobStatus, setJobStatus] = useState("");
+  const [, setJobStatus] = useState("");
   const [polling, setPolling] = useState(() => {
     try {
       return !!localStorage.getItem("pendingLoginJobId");
@@ -188,10 +434,9 @@ export default function LoginPage() {
   });
   const [timeLeft, setTimeLeft] = useState(0);
 
-  const totalWaitSeconds = 5 * 60;
   const remainingPercent = Math.min(
     100,
-    Math.max(0, (timeLeft / totalWaitSeconds) * 100),
+    Math.max(0, (timeLeft / LOGIN_WAIT_SECONDS) * 100),
   );
 
   const canLogin = useMemo(
@@ -236,7 +481,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (token) {
       // Exiting offline mode when logging in with a real token
-      if (offline) setOffline(false);
+      if (offline) {setOffline(false);}
       navigate("/app", { replace: true });
     }
   }, [token, navigate, offline, setOffline]);
@@ -249,7 +494,7 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (!jobId || polling === false) return;
+    if (!jobId || polling === false) {return;}
 
     let consecutiveFails = 0;
     const MAX_FAILS = 5;
@@ -293,9 +538,7 @@ export default function LoginPage() {
         if (res.status === 404) {
           setPolling(false);
           setJobId("");
-          try {
-            localStorage.removeItem("pendingLoginJobId");
-          } catch {}
+          clearPendingLoginStorage();
           return;
         }
         scheduleNext(1_000);
@@ -305,18 +548,18 @@ export default function LoginPage() {
       const data = res.body as LoginStatus;
       setJobStatus(JSON.stringify(data, null, 2));
 
-      const stage = (data as any)?.job?.stage;
-      if (stage) setJobStage(stage);
+      const stage = data.job?.stage;
+      if (stage) {setJobStage(stage);}
 
-      const jobSt = (data as any)?.job?.status ?? data?.status;
-      if (jobSt) setJobStatusValue(String(jobSt));
+      const jobSt = data.job?.status ?? data?.status;
+      if (jobSt) {setJobStatusValue(String(jobSt));}
 
-      const sentAt = (data as any)?.job?.friendRequestSentAt;
-      if (sentAt) setFriendRequestSentAt(sentAt);
-      const botFriendCode = (data as any)?.job?.botUserFriendCode;
-      if (botFriendCode) setAssignedBotFriendCode(String(botFriendCode));
-      const createdAt = (data as any)?.job?.createdAt;
-      if (createdAt) setLoginCreatedAt(String(createdAt));
+      const sentAt = data.job?.friendRequestSentAt;
+      if (sentAt) {setFriendRequestSentAt(sentAt);}
+      const botFriendCode = data.job?.botUserFriendCode;
+      if (botFriendCode) {setAssignedBotFriendCode(String(botFriendCode));}
+      const createdAt = data.job?.createdAt;
+      if (createdAt) {setLoginCreatedAt(String(createdAt));}
 
       const profileFromStatus =
         (data as LoginStatus)?.profile ??
@@ -324,17 +567,14 @@ export default function LoginPage() {
         null;
       if (profileFromStatus) {
         setProfile(profileFromStatus);
+        persistLastLoginAccount({ username: profileFromStatus.username });
       }
 
       if (data?.token) {
         setToken(data.token);
         recordAnalyticsEvent("login_success", { method: "friend_code" });
         setPolling(false);
-        try {
-          localStorage.removeItem("pendingLoginJobId");
-          localStorage.removeItem("pendingLoginBotFriendCode");
-          localStorage.removeItem("pendingLoginCreatedAt");
-        } catch {}
+        clearPendingLoginStorage();
         notifications.show({
           title: "登录成功",
           message: "欢迎使用 maimai Score Hub！",
@@ -348,11 +588,7 @@ export default function LoginPage() {
         setJobStage("");
         setJobStatusValue("");
         setProfile(null);
-        try {
-          localStorage.removeItem("pendingLoginJobId");
-          localStorage.removeItem("pendingLoginBotFriendCode");
-          localStorage.removeItem("pendingLoginCreatedAt");
-        } catch {}
+        clearPendingLoginStorage();
         notifications.show({
           title: "登录失败",
           message: String(data?.job?.error || "未知错误"),
@@ -364,7 +600,7 @@ export default function LoginPage() {
     };
 
     const scheduleNext = (ms: number) => {
-      if (cancelled) return;
+      if (cancelled) {return;}
       scheduled = setTimeout(() => {
         void runOnce();
       }, ms);
@@ -373,20 +609,20 @@ export default function LoginPage() {
     void runOnce();
     return () => {
       cancelled = true;
-      if (scheduled !== null) clearTimeout(scheduled);
+      if (scheduled !== null) {clearTimeout(scheduled);}
     };
   }, [jobId, polling, setToken, navigate]);
 
   useEffect(() => {
     if (jobStage !== "wait_acceptance" || !friendRequestSentAt) {
-      if (timeLeft !== 0) setTimeLeft(0);
+      setTimeLeft((current) => (current === 0 ? current : 0));
       return;
     }
 
     const interval = setInterval(() => {
       const now = Date.now();
       const sentAt = new Date(friendRequestSentAt).getTime();
-      const end = sentAt + totalWaitSeconds * 1000;
+      const end = sentAt + LOGIN_WAIT_SECONDS * 1000;
       const left = Math.max(0, Math.ceil((end - now) / 1000));
       setTimeLeft(left);
     }, 500);
@@ -410,7 +646,9 @@ export default function LoginPage() {
     const trimmedCode = friendCode.trim();
     try {
       localStorage.setItem("lastFriendCode", trimmedCode);
-    } catch {}
+    } catch {
+      // localStorage may be unavailable.
+    }
 
     const res = await authApi.loginRequest({
       body: {
@@ -420,7 +658,7 @@ export default function LoginPage() {
     });
 
     if (res.status === 201 && res.body) {
-      const body = res.body as any;
+      const body = res.body as LoginRequestBody;
       // Handle skipAuth mode - direct token response
       if (body.skipAuth) {
         setToken(String(body.token ?? ""));
@@ -442,21 +680,9 @@ export default function LoginPage() {
         const createdAt = String(body.createdAt ?? body.job?.createdAt ?? "");
         setAssignedBotFriendCode(botFriendCode);
         setLoginCreatedAt(createdAt);
-        if (body.job?.stage) setJobStage(String(body.job.stage));
+        if (body.job?.stage) {setJobStage(String(body.job.stage));}
         setPolling(true);
-        try {
-          localStorage.setItem("pendingLoginJobId", body.jobId);
-          if (botFriendCode) {
-            localStorage.setItem("pendingLoginBotFriendCode", botFriendCode);
-          } else {
-            localStorage.removeItem("pendingLoginBotFriendCode");
-          }
-          if (createdAt) {
-            localStorage.setItem("pendingLoginCreatedAt", createdAt);
-          } else {
-            localStorage.removeItem("pendingLoginCreatedAt");
-          }
-        } catch {}
+        persistPendingLoginStorage(body.jobId, botFriendCode, createdAt);
       }
     } else {
       notifications.show({
@@ -507,14 +733,7 @@ export default function LoginPage() {
         const user = res.body.user as
           | { friendCode?: string; username?: string | null }
           | undefined;
-        try {
-          if (user?.friendCode) {
-            localStorage.setItem("lastFriendCode", user.friendCode);
-          }
-          if (user?.username) {
-            localStorage.setItem("lastUsername", user.username);
-          }
-        } catch {}
+        persistLastLoginAccount(user);
         setToken(String(res.body.token));
         recordAnalyticsEvent("login_success", { method: "password" });
         setPasswordLoginPassword("");
@@ -553,7 +772,7 @@ export default function LoginPage() {
   };
 
   const wakeLoginJob = async () => {
-    if (!jobId) return;
+    if (!jobId) {return;}
     setLoading(true);
     try {
       const res = await authApi.verifyLoginRequest({
@@ -561,9 +780,9 @@ export default function LoginPage() {
         body: undefined,
       });
       if (res.status === 200) {
-        const job = (res.body as any)?.job;
+        const job = (res.body as { job?: LoginJobStatus } | null)?.job;
         const stage = job?.stage;
-        if (stage) setJobStage(String(stage));
+        if (stage) {setJobStage(String(stage));}
         if (job?.friendRequestSentAt) {
           setFriendRequestSentAt(String(job.friendRequestSentAt));
         }
@@ -621,7 +840,7 @@ export default function LoginPage() {
           <Container size="sm" style={{ maxWidth: 600, width: "100%" }}>
             <PageHeader
               title={"欢迎！"}
-              description={"使用 maimai NET 好友代码登录以继续"}
+              description={"使用 maimai NET 好友代码登录以继续，未注册将自动创建账号"}
             />
           </Container>
         </Box>
@@ -737,9 +956,30 @@ export default function LoginPage() {
                 <>
                   <Tabs defaultValue="friendCode" keepMounted={false}>
                     <Tabs.List grow>
-                      <Tabs.Tab value="friendCode">好友码登录</Tabs.Tab>
-                      <Tabs.Tab value="password">密码登录</Tabs.Tab>
-                      <Tabs.Tab value="qr">神秘二维码登录</Tabs.Tab>
+                      <Tabs.Tab
+                        value="friendCode"
+                      >
+                        <Group gap={4} wrap="nowrap" justify="center">
+                          <IconId size={16} />
+                          <span>好友码</span>
+                        </Group>
+                      </Tabs.Tab>
+                      <Tabs.Tab
+                        value="password"
+                      >
+                        <Group gap={4} wrap="nowrap" justify="center">
+                          <IconUser size={16} />
+                          <span>账号密码</span>
+                        </Group>
+                      </Tabs.Tab>
+                      <Tabs.Tab
+                        value="qr"
+                      >
+                        <Group gap={4} wrap="nowrap" justify="center">
+                          <IconQrcode size={16} />
+                          <span>二维码</span>
+                        </Group>
+                      </Tabs.Tab>
                     </Tabs.List>
 
                     <Tabs.Panel value="friendCode" pt="md">
@@ -749,6 +989,7 @@ export default function LoginPage() {
                             <TextInput
                               label="好友代码"
                               placeholder="请输入 NET 好友代码"
+                              leftSection={<IconId size={16} />}
                               value={friendCode}
                               onChange={(e) => {
                                 const val = e.currentTarget.value;
@@ -791,39 +1032,43 @@ export default function LoginPage() {
 
                           <Stack gap={6}>
                             <Text size="sm" fw={500}>
-                              好友申请方式
+                              申请方向
                             </Text>
-                            <SegmentedControl
-                              value={loginMethod ?? ""}
-                              onChange={(value) =>
-                                setLoginMethod(
-                                  value as
-                                    | "bot_sends_request"
-                                    | "user_sends_request",
-                                )
-                              }
-                              disabled={polling || qrBusy}
-                              data={[
-                                {
-                                  label: "Bot 向我发送",
-                                  value: "bot_sends_request",
-                                },
-                                {
-                                  label: "我向 Bot 发送",
-                                  value: "user_sends_request",
-                                },
-                              ]}
-                            />
+                            <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
+                              <LoginMethodCard
+                                active={loginMethod === "bot_sends_request"}
+                                disabled={polling || qrBusy}
+                                icon={<IconRobot size={18} />}
+                                label="Bot 向我发送"
+                                description="按页面提示接受好友申请"
+                                onClick={() => {
+                                  setLoginMethod("bot_sends_request");
+                                  persistLoginMethod("bot_sends_request");
+                                }}
+                              />
+                              <LoginMethodCard
+                                active={loginMethod === "user_sends_request"}
+                                disabled={polling || qrBusy}
+                                icon={<IconSend size={18} />}
+                                label="我向 Bot 发送"
+                                description="手动向分配的 Bot 好友码发送申请"
+                                onClick={() => {
+                                  setLoginMethod("user_sends_request");
+                                  persistLoginMethod("user_sends_request");
+                                }}
+                              />
+                            </SimpleGrid>
                           </Stack>
 
                           <Group justify="center" gap="sm">
-                            <Button
-                              onClick={startLogin}
-                              disabled={!canLogin || polling}
-                              loading={loading}
-                            >
-                              登录账户
-                            </Button>
+                          <Button
+                            onClick={startLogin}
+                            disabled={!canLogin || polling}
+                            loading={loading}
+                            leftSection={<IconLogin2 size={16} />}
+                          >
+                            登录账户
+                          </Button>
                             {hasOfflineData() && (
                               <Button
                                 variant="outline"
@@ -864,23 +1109,42 @@ export default function LoginPage() {
                     <Tabs.Panel value="password" pt="md">
                       <Paper shadow="xs" p="lg" radius="md" withBorder>
                         <Stack gap="md">
-                          <SegmentedControl
-                            value={passwordLoginIdentifier}
-                            onChange={(value) =>
-                              setPasswordLoginIdentifier(
-                                value as PasswordLoginIdentifier,
-                              )
-                            }
-                            disabled={polling || qrBusy || passwordLoginLoading}
-                            data={[
-                              { label: "好友码", value: "friendCode" },
-                              { label: "用户名", value: "username" },
-                            ]}
-                          />
+                          <Stack gap={6}>
+                            <Text size="sm" fw={500}>
+                              账号类型
+                            </Text>
+                            <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
+                              <IdentifierCard
+                                active={passwordLoginIdentifier === "username"}
+                                disabled={
+                                  polling || qrBusy || passwordLoginLoading
+                                }
+                                icon={<IconUser size={18} />}
+                                label="用户名"
+                                onClick={() => {
+                                  setPasswordLoginIdentifier("username");
+                                  persistPasswordLoginIdentifier("username");
+                                }}
+                              />
+                              <IdentifierCard
+                                active={passwordLoginIdentifier === "friendCode"}
+                                disabled={
+                                  polling || qrBusy || passwordLoginLoading
+                                }
+                                icon={<IconId size={18} />}
+                                label="好友代码"
+                                onClick={() => {
+                                  setPasswordLoginIdentifier("friendCode");
+                                  persistPasswordLoginIdentifier("friendCode");
+                                }}
+                              />
+                            </SimpleGrid>
+                          </Stack>
                           {passwordLoginIdentifier === "friendCode" ? (
                             <TextInput
                               label="好友码"
                               placeholder="15 位好友码"
+                              leftSection={<IconId size={16} />}
                               value={passwordFriendCode}
                               onChange={(event) => {
                                 const value = event.currentTarget.value;
@@ -902,6 +1166,7 @@ export default function LoginPage() {
                             <TextInput
                               label="用户名"
                               placeholder="自定义用户名"
+                              leftSection={<IconUser size={16} />}
                               value={passwordUsername}
                               onChange={(event) =>
                                 setPasswordUsername(event.currentTarget.value)
@@ -914,6 +1179,7 @@ export default function LoginPage() {
                           <PasswordInput
                             label="密码"
                             placeholder="请输入密码"
+                            leftSection={<IconPassword size={16} />}
                             value={passwordLoginPassword}
                             onChange={(event) =>
                               setPasswordLoginPassword(event.currentTarget.value)
@@ -929,6 +1195,7 @@ export default function LoginPage() {
                             onClick={startPasswordLogin}
                             disabled={!canPasswordLogin}
                             loading={passwordLoginLoading}
+                            leftSection={<IconLogin2 size={16} />}
                           >
                             密码登录
                           </Button>

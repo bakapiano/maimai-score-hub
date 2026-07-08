@@ -16,13 +16,13 @@ import { useMemo, useState, useTransition } from "react";
 
 import { type DetailedMusicScoreCardProps } from "../../components/MusicScoreCard";
 import { PlateGridView } from "../../components/PlateGridView";
+import { ScoreSummaryCard } from "../../components/ScoreSummaryBadges";
 import {
-  ScoreSummaryCard,
   calculateAverageScore,
   summarizeRanks,
   summarizeStatuses,
   useBadgeScopeFilter,
-} from "../../components/ScoreSummaryBadges";
+} from "../../components/ScoreSummaryBadges.model";
 import { PLAN_OPTIONS, type PlatePlan } from "../../constants/platePlan";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
 import type { SyncScore } from "../../types/syncScore";
@@ -32,7 +32,11 @@ import {
   MAI_LEGACY_VERSIONS,
 } from "../../constants/versions";
 import { downloadBlob } from "../../utils/downloadBlob";
-import { useAuth } from "../../providers/AuthProvider";
+import { useAuth } from "../../providers/AuthContext";
+import {
+  getRatingFloors,
+} from "../../utils/ratingFloors";
+import { buildScoreDetailFromEntry } from "../../utils/scoreDetail";
 
 type ChartEntry = {
   music: MusicRow;
@@ -54,24 +58,24 @@ type VersionBucket = {
 
 const parseLevelValue = (value: string) => {
   const match = /^([0-9]+(?:\.[0-9]+)?)(\+)?$/.exec(value.trim());
-  if (!match) return null;
+  if (!match) {return null;}
   const base = parseFloat(match[1]);
-  if (!Number.isFinite(base)) return null;
+  if (!Number.isFinite(base)) {return null;}
   return base + (match[2] ? 0.1 : 0);
 };
 
 const normalizeLevelKey = (chart: MusicChartPayload) => {
-  if (chart.level) return chart.level;
+  if (chart.level) {return chart.level;}
   if (typeof chart.detailLevel === "number")
-    return chart.detailLevel.toFixed(1);
+    {return chart.detailLevel.toFixed(1);}
   return "?";
 };
 
 const detailSortValue = (chart: MusicChartPayload) => {
-  if (typeof chart.detailLevel === "number") return chart.detailLevel;
+  if (typeof chart.detailLevel === "number") {return chart.detailLevel;}
   if (chart.level) {
     const parsed = parseLevelValue(chart.level);
-    if (parsed !== null) return parsed;
+    if (parsed !== null) {return parsed;}
   }
   return -Infinity;
 };
@@ -93,12 +97,12 @@ const buildBuckets = (
     const versionKey = music.version || "未知版本";
     const levelMap =
       versionMap.get(versionKey) ?? new Map<string, ChartEntry[]>();
-    if (!versionMap.has(versionKey)) versionMap.set(versionKey, levelMap);
+    if (!versionMap.has(versionKey)) {versionMap.set(versionKey, levelMap);}
 
     charts.forEach((chart, idx) => {
       const levelKey = normalizeLevelKey(chart);
       const list = levelMap.get(levelKey) ?? [];
-      if (!levelMap.has(levelKey)) levelMap.set(levelKey, list);
+      if (!levelMap.has(levelKey)) {levelMap.set(levelKey, list);}
 
       list.push({
         music,
@@ -131,8 +135,8 @@ const buildBuckets = (
   buckets.sort((a, b) => {
     const aUnknown = a.versionKey === "未知版本";
     const bUnknown = b.versionKey === "未知版本";
-    if (aUnknown && !bUnknown) return 1;
-    if (!aUnknown && bUnknown) return -1;
+    if (aUnknown && !bUnknown) {return 1;}
+    if (!aUnknown && bUnknown) {return -1;}
     return (
       getVersionSortIndex(a.versionKey) - getVersionSortIndex(b.versionKey)
     );
@@ -153,12 +157,35 @@ type VersionScoresTabProps = {
   loading: boolean;
 };
 
+function getVisibleVersionLevels(
+  current: VersionBucket | undefined,
+  showAllLevels: boolean,
+) {
+  if (!current) {
+    return [];
+  }
+  return (showAllLevels
+    ? current.levels
+    : current.levels.filter((lvl) => (lvl.levelNumeric ?? 0) >= 13)
+  )
+    .map((lvl) =>
+      current.versionKey === "__mai__"
+        ? lvl
+        : {
+            ...lvl,
+            items: lvl.items.filter((entry) => entry.chartIndex !== 4),
+          },
+    )
+    .filter((lvl) => lvl.items.length > 0);
+}
+
 export function VersionScoresTab({
   musics,
   scores,
   loading,
 }: VersionScoresTabProps) {
   const { token } = useAuth();
+  const ratingFloors = useMemo(() => getRatingFloors(scores), [scores]);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [exporting, setExporting] = useState(false);
@@ -173,30 +200,7 @@ export function VersionScoresTab({
     useState<DetailedMusicScoreCardProps | null>(null);
 
   const handleScoreClick = (entry: ChartEntry) => {
-    setSelectedScore({
-      musicId: entry.music.id,
-      chartIndex: entry.chartIndex,
-      type: entry.music.type,
-      rating: entry.score?.rating ?? null,
-      score: entry.score?.score || null,
-      fs: entry.score?.fs ?? null,
-      fc: entry.score?.fc ?? null,
-      dxScore: entry.score?.dxScore || null,
-      chartPayload: entry.chart || null,
-      songMetadata: {
-        title: entry.music.title,
-        artist: entry.music.artist,
-        category: entry.music.category,
-        isNew: entry.music.isNew,
-        bpm: entry.music.bpm,
-        version: entry.music.version,
-      },
-      bpm:
-        typeof entry.music.bpm === "number"
-          ? entry.music.bpm
-          : parseInt(entry.music.bpm as string) || null,
-      noteDesigner: entry.chart?.charter || null,
-    });
+    setSelectedScore(buildScoreDetailFromEntry(entry, ratingFloors));
     setModalOpened(true);
   };
 
@@ -221,7 +225,7 @@ export function VersionScoresTab({
       const indices = group.versions
         .map((v) => result.findIndex((b) => b.versionKey === v))
         .filter((i) => i !== -1);
-      if (indices.length <= 1) continue;
+      if (indices.length <= 1) {continue;}
 
       // Merge into the first one
       const mergedLevelMap = new Map<string, ChartEntry[]>();
@@ -229,7 +233,7 @@ export function VersionScoresTab({
         for (const level of result[idx].levels) {
           const list = mergedLevelMap.get(level.levelKey) ?? [];
           if (!mergedLevelMap.has(level.levelKey))
-            mergedLevelMap.set(level.levelKey, list);
+            {mergedLevelMap.set(level.levelKey, list);}
           list.push(...level.items);
         }
       }
@@ -262,13 +266,13 @@ export function VersionScoresTab({
     const legacyBuckets = mergedBuckets.filter((b) =>
       MAI_LEGACY_VERSIONS.includes(b.versionKey),
     );
-    if (legacyBuckets.length === 0) return null;
+    if (legacyBuckets.length === 0) {return null;}
     const mergedLevelMap = new Map<string, ChartEntry[]>();
     for (const bucket of legacyBuckets) {
       for (const level of bucket.levels) {
         const list = mergedLevelMap.get(level.levelKey) ?? [];
         if (!mergedLevelMap.has(level.levelKey))
-          mergedLevelMap.set(level.levelKey, list);
+          {mergedLevelMap.set(level.levelKey, list);}
         list.push(...level.items);
       }
     }
@@ -312,9 +316,17 @@ export function VersionScoresTab({
   }));
   const current =
     allBuckets.find((b) => b.versionKey === selectedVersion) ?? allBuckets[0];
+  const visibleLevels = useMemo(
+    () => getVisibleVersionLevels(current, showAllLevels),
+    [current, showAllLevels],
+  );
+  const visibleEntries = useMemo(
+    () => visibleLevels.flatMap((lvl) => lvl.items),
+    [visibleLevels],
+  );
 
   const handleExport = async () => {
-    if (!token || !current) return;
+    if (!token || !current) {return;}
     setExporting(true);
     try {
       const params = new URLSearchParams({
@@ -411,59 +423,14 @@ export function VersionScoresTab({
           />
           <Stack gap="md">
             <ScoreSummaryCard
-              rankSummary={summarizeRanks(
-                (showAllLevels
-                  ? current.levels
-                  : current.levels.filter(
-                      (lvl) => (lvl.levelNumeric ?? 0) >= 13,
-                    )
-                ).flatMap((lvl) =>
-                  current.versionKey === "__mai__"
-                    ? lvl.items
-                    : lvl.items.filter((e) => e.chartIndex !== 4),
-                ),
-              )}
-              statusSummary={summarizeStatuses(
-                (showAllLevels
-                  ? current.levels
-                  : current.levels.filter(
-                      (lvl) => (lvl.levelNumeric ?? 0) >= 13,
-                    )
-                ).flatMap((lvl) =>
-                  current.versionKey === "__mai__"
-                    ? lvl.items
-                    : lvl.items.filter((e) => e.chartIndex !== 4),
-                ),
-              )}
-              averageScore={calculateAverageScore(
-                (showAllLevels
-                  ? current.levels
-                  : current.levels.filter(
-                      (lvl) => (lvl.levelNumeric ?? 0) >= 13,
-                    )
-                ).flatMap((lvl) =>
-                  current.versionKey === "__mai__"
-                    ? lvl.items
-                    : lvl.items.filter((e) => e.chartIndex !== 4),
-                ),
-              )}
+              rankSummary={summarizeRanks(visibleEntries)}
+              statusSummary={summarizeStatuses(visibleEntries)}
+              averageScore={calculateAverageScore(visibleEntries)}
               filter={pageFilter}
               onFilterChange={setPageFilter}
             />
             <PlateGridView
-              levels={(showAllLevels
-                ? current.levels
-                : current.levels.filter((lvl) => (lvl.levelNumeric ?? 0) >= 13)
-              )
-                .map((lvl) =>
-                  current.versionKey === "__mai__"
-                    ? lvl
-                    : {
-                        ...lvl,
-                        items: lvl.items.filter((e) => e.chartIndex !== 4),
-                      },
-                )
-                .filter((lvl) => lvl.items.length > 0)}
+              levels={visibleLevels}
               plan={platePlan}
               onCardClick={handleScoreClick}
               pageFilter={pageFilter}
