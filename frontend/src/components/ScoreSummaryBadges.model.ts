@@ -6,7 +6,7 @@ export const rankOrder = ["SSS+", "SSS", "SS+", "SS", "S+", "S"] as const;
 export type RankBucket = (typeof rankOrder)[number];
 
 export const fcOrder = ["ap+", "ap", "fc+", "fc"] as const;
-export const fsOrder = ["fsd+", "fsd", "fs+", "fs"] as const;
+export const fsOrder = ["fdx+", "fdx", "fs+", "fs"] as const;
 export type FcBucket = (typeof fcOrder)[number];
 export type FsBucket = (typeof fsOrder)[number];
 
@@ -40,6 +40,109 @@ const RANK_THRESHOLD: Record<RankBucket, number> = {
   SS: 99,
   "S+": 98,
   S: 97,
+};
+
+const FC_STATUS_RANK: Record<string, number> = {
+  fc: 0,
+  "fc+": 1,
+  fcp: 1,
+  ap: 2,
+  "ap+": 3,
+  app: 3,
+};
+
+const FS_STATUS_RANK: Record<string, number> = {
+  fs: 0,
+  "fs+": 1,
+  fsp: 1,
+  fdx: 2,
+  fsd: 2,
+  "fdx+": 3,
+  fdxp: 3,
+  "fsd+": 3,
+  fsdp: 3,
+};
+
+const FC_BUCKET_RANK: Record<FcBucket, number> = {
+  fc: 0,
+  "fc+": 1,
+  ap: 2,
+  "ap+": 3,
+};
+
+const FS_BUCKET_RANK: Record<FsBucket, number> = {
+  fs: 0,
+  "fs+": 1,
+  fdx: 2,
+  "fdx+": 3,
+};
+
+const normalizeStatus = (value?: string | null) =>
+  value?.trim().toLowerCase() ?? "";
+
+export const normalizeFcStatus = (
+  value?: string | null,
+): FcBucket | null => {
+  switch (normalizeStatus(value)) {
+    case "fc":
+      return "fc";
+    case "fc+":
+    case "fcp":
+      return "fc+";
+    case "ap":
+      return "ap";
+    case "ap+":
+    case "app":
+      return "ap+";
+    default:
+      return null;
+  }
+};
+
+export const normalizeFsStatus = (
+  value?: string | null,
+): FsBucket | null => {
+  switch (normalizeStatus(value)) {
+    case "fs":
+      return "fs";
+    case "fs+":
+    case "fsp":
+      return "fs+";
+    case "fdx":
+    case "fsd":
+      return "fdx";
+    case "fdx+":
+    case "fdxp":
+    case "fsd+":
+    case "fsdp":
+      return "fdx+";
+    default:
+      return null;
+  }
+};
+
+export const statusMeetsFcBucket = (
+  value: string | null | undefined,
+  bucket: string,
+) => {
+  const threshold = FC_BUCKET_RANK[bucket as FcBucket];
+  if (threshold === undefined) {
+    return false;
+  }
+  const rank = FC_STATUS_RANK[normalizeStatus(value)];
+  return rank !== undefined && rank >= threshold;
+};
+
+export const statusMeetsFsBucket = (
+  value: string | null | undefined,
+  bucket: string,
+) => {
+  const threshold = FS_BUCKET_RANK[bucket as FsBucket];
+  if (threshold === undefined) {
+    return false;
+  }
+  const rank = FS_STATUS_RANK[normalizeStatus(value)];
+  return rank !== undefined && rank >= threshold;
 };
 
 const emptyCounts = (): Record<RankBucket, number> => ({
@@ -118,9 +221,9 @@ const entryMatchesBadge = (
     return Number.isFinite(val) && val >= threshold;
   }
   if (kind === "fc") {
-    return entry.score?.fc?.toLowerCase?.() === bucket;
+    return statusMeetsFcBucket(entry.score?.fc, bucket);
   }
-  return entry.score?.fs?.toLowerCase?.() === bucket;
+  return statusMeetsFsBucket(entry.score?.fs, bucket);
 };
 
 export const cycleBadgeFilter = (
@@ -206,13 +309,15 @@ export const summarizeStatuses = <T extends ScoreEntry>(
 ): StatusSummary => {
   const { fc, fs } = emptyStatusCounts();
   for (const entry of entries) {
-    const fcVal = entry.score?.fc?.toLowerCase?.() as FcBucket | undefined;
-    const fsVal = entry.score?.fs?.toLowerCase?.() as FsBucket | undefined;
-    if (fcVal && fcVal in fc) {
-      fc[fcVal] += 1;
+    for (const key of fcOrder) {
+      if (statusMeetsFcBucket(entry.score?.fc, key)) {
+        fc[key] += 1;
+      }
     }
-    if (fsVal && fsVal in fs) {
-      fs[fsVal] += 1;
+    for (const key of fsOrder) {
+      if (statusMeetsFsBucket(entry.score?.fs, key)) {
+        fs[key] += 1;
+      }
     }
   }
   return { fc, fs, total: entries.length };

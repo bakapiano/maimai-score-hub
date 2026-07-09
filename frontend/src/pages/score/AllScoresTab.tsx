@@ -2,10 +2,7 @@ import {
   ActionIcon,
   Alert,
   Box,
-  Button,
-  Card,
   Checkbox,
-  Collapse,
   Divider,
   Group,
   Image,
@@ -26,7 +23,6 @@ import {
   IconAlertCircle,
   IconChevronDown,
   IconChevronUp,
-  IconFilter,
   IconSelector,
   IconX,
 } from "@tabler/icons-react";
@@ -55,6 +51,10 @@ import {
   type DetailedMusicScoreCardProps,
 } from "../../components/MusicScoreCard";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
+import {
+  DesktopFilterCard,
+  MobileFilterModalButton,
+} from "../../components/ResponsiveFilterPanel";
 import { useMusic } from "../../providers/MusicContext";
 import {
   getRatingFloorByIsNew,
@@ -341,7 +341,6 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
   const [pageSize, setPageSize] = useState(20);
   const [sortKey, setSortKey] = useState<SortKey>("rating");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
-  const [filterOpen, setFilterOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   // Modal state
@@ -558,6 +557,281 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
     setDetailLevelMax("");
   };
 
+  const filterPanelContent = (
+    <Stack gap="md">
+      <Box>
+        <Group justify="space-between" align="center" mb="xs">
+          <Text size="xs" fw={600} c="dimmed">
+            筛选条件
+          </Text>
+          {hasActiveFilters && (
+            <Tooltip label="清除所有筛选">
+              <ActionIcon variant="light" color="red" onClick={clearAllFilters}>
+                <IconX size={16} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </Group>
+        <SimpleGrid cols={{ base: 1, sm: 3, md: 4 }} spacing="sm">
+          <MultiSelect
+            label="分类"
+            placeholder="全部"
+            data={filterOptions.categories}
+            value={categoryFilter}
+            onChange={(value) =>
+              startTransition(() => setCategoryFilter(value))
+            }
+            clearable
+            searchable
+            size="xs"
+          />
+          <MultiSelect
+            label="铺面类型"
+            placeholder="全部"
+            data={filterOptions.versions}
+            value={versionFilter}
+            onChange={(value) =>
+              startTransition(() => setVersionFilter(value))
+            }
+            clearable
+            size="xs"
+          />
+          <MultiSelect
+            label="难度"
+            placeholder="全部"
+            data={filterOptions.difficulties}
+            value={difficultyFilter}
+            onChange={(value) =>
+              startTransition(() => setDifficultyFilter(value))
+            }
+            clearable
+            size="xs"
+          />
+          <MultiSelect
+            label="版本"
+            placeholder="全部"
+            data={filterOptions.musicVersions}
+            value={musicVersionFilter}
+            onChange={(value) =>
+              startTransition(() => setMusicVersionFilter(value))
+            }
+            clearable
+            searchable
+            size="xs"
+          />
+          <MultiSelect
+            label="谱师"
+            placeholder="全部"
+            data={filterOptions.designers}
+            value={designerFilter}
+            onChange={(value) =>
+              startTransition(() => setDesignerFilter(value))
+            }
+            clearable
+            searchable
+            size="xs"
+          />
+          <Group gap="xs" align="flex-end">
+            <NumberInput
+              label="定数范围"
+              placeholder="下限"
+              value={detailLevelMin}
+              onChange={(value) =>
+                startTransition(() => setDetailLevelMin(value))
+              }
+              min={1}
+              max={15}
+              step={0.1}
+              decimalScale={1}
+              size="xs"
+              style={{ flex: 1 }}
+            />
+            <Text size="xs" c="dimmed" pb={6}>
+              -
+            </Text>
+            <NumberInput
+              placeholder="上限"
+              value={detailLevelMax}
+              onChange={(value) =>
+                startTransition(() => setDetailLevelMax(value))
+              }
+              min={1}
+              max={15}
+              step={0.1}
+              decimalScale={1}
+              size="xs"
+              style={{ flex: 1 }}
+            />
+          </Group>
+        </SimpleGrid>
+      </Box>
+
+      <Divider />
+
+      <Box>
+        <Text size="xs" fw={600} c="dimmed" mb="xs">
+          显示列
+        </Text>
+        <SimpleGrid cols={{ base: 2, sm: 5, md: 7 }} spacing="xs">
+          <Checkbox
+            label="封面"
+            size="xs"
+            checked={showCover}
+            onChange={(e) =>
+              canHideColumn || !showCover
+                ? setShowCover(e.currentTarget.checked)
+                : null
+            }
+            disabled={showCover && !canHideColumn}
+          />
+          <Checkbox
+            label="曲名"
+            size="xs"
+            checked={showTitle}
+            onChange={(e) =>
+              canHideColumn || !showTitle
+                ? setShowTitle(e.currentTarget.checked)
+                : null
+            }
+            disabled={showTitle && !canHideColumn}
+          />
+          <Checkbox
+            label="分类"
+            size="xs"
+            checked={showCategory}
+            onChange={(e) =>
+              canHideColumn || !showCategory
+                ? setShowCategory(e.currentTarget.checked)
+                : null
+            }
+            disabled={showCategory && !canHideColumn}
+          />
+          <Checkbox
+            label="铺面类型"
+            size="xs"
+            checked={showVersion}
+            onChange={(e) =>
+              canHideColumn || !showVersion
+                ? setShowVersion(e.currentTarget.checked)
+                : null
+            }
+            disabled={showVersion && !canHideColumn}
+          />
+          <Checkbox
+            label="版本"
+            size="xs"
+            checked={showMusicVersion}
+            onChange={(e) =>
+              canHideColumn || !showMusicVersion
+                ? setShowMusicVersion(e.currentTarget.checked)
+                : null
+            }
+            disabled={showMusicVersion && !canHideColumn}
+          />
+          <Checkbox
+            label="难度"
+            size="xs"
+            checked={showDifficulty}
+            onChange={(e) =>
+              canHideColumn || !showDifficulty
+                ? setShowDifficulty(e.currentTarget.checked)
+                : null
+            }
+            disabled={showDifficulty && !canHideColumn}
+          />
+          <Checkbox
+            label="定数"
+            size="xs"
+            checked={showDetailLevel}
+            onChange={(e) =>
+              canHideColumn || !showDetailLevel
+                ? setShowDetailLevel(e.currentTarget.checked)
+                : null
+            }
+            disabled={showDetailLevel && !canHideColumn}
+          />
+          <Checkbox
+            label="谱师"
+            size="xs"
+            checked={showDesigner}
+            onChange={(e) =>
+              canHideColumn || !showDesigner
+                ? setShowDesigner(e.currentTarget.checked)
+                : null
+            }
+            disabled={showDesigner && !canHideColumn}
+          />
+          <Checkbox
+            label="达成率"
+            size="xs"
+            checked={showScore}
+            onChange={(e) =>
+              canHideColumn || !showScore
+                ? setShowScore(e.currentTarget.checked)
+                : null
+            }
+            disabled={showScore && !canHideColumn}
+          />
+          <Checkbox
+            label="评级"
+            size="xs"
+            checked={showRank}
+            onChange={(e) =>
+              canHideColumn || !showRank
+                ? setShowRank(e.currentTarget.checked)
+                : null
+            }
+            disabled={showRank && !canHideColumn}
+          />
+          <Checkbox
+            label="FC"
+            size="xs"
+            checked={showFc}
+            onChange={(e) =>
+              canHideColumn || !showFc
+                ? setShowFc(e.currentTarget.checked)
+                : null
+            }
+            disabled={showFc && !canHideColumn}
+          />
+          <Checkbox
+            label="FS"
+            size="xs"
+            checked={showFs}
+            onChange={(e) =>
+              canHideColumn || !showFs
+                ? setShowFs(e.currentTarget.checked)
+                : null
+            }
+            disabled={showFs && !canHideColumn}
+          />
+          <Checkbox
+            label="DX分数"
+            size="xs"
+            checked={showDxScore}
+            onChange={(e) =>
+              canHideColumn || !showDxScore
+                ? setShowDxScore(e.currentTarget.checked)
+                : null
+            }
+            disabled={showDxScore && !canHideColumn}
+          />
+          <Checkbox
+            label="Rating"
+            size="xs"
+            checked={showRating}
+            onChange={(e) =>
+              canHideColumn || !showRating
+                ? setShowRating(e.currentTarget.checked)
+                : null
+            }
+            disabled={showRating && !canHideColumn}
+          />
+        </SimpleGrid>
+      </Box>
+    </Stack>
+  );
+
   return (
     <Stack gap="md">
       <ScoreDetailModal
@@ -576,33 +850,11 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
         </Alert>
       )}
 
-      <Group gap={8} align="center">
-        <Title order={4} size="h5">
-          全部成绩
-        </Title>
-      </Group>
-
-      {/* Filter Header */}
-      <Group>
-        <Group gap="xs">
-          <Button
-            variant={filterOpen ? "filled" : "light"}
-            size="xs"
-            leftSection={<IconFilter size={16} />}
-            onClick={() => setFilterOpen((v) => !v)}
-          >
-            筛选
-            {hasActiveFilters && ` (${filteredScores.length})`}
-          </Button>
-          {hasActiveFilters && (
-            <Tooltip label="清除所有筛选">
-              <ActionIcon variant="light" color="red" onClick={clearAllFilters}>
-                <IconX size={16} />
-              </ActionIcon>
-            </Tooltip>
-          )}
-        </Group>
-        <Group gap="sm">
+      <Group justify="space-between" align="center" gap="sm">
+        <Group gap="sm" align="baseline">
+          <Title order={4} size="h5">
+            全部成绩
+          </Title>
           <Text size="sm">
             共 {scores.length} 条记录
             {filteredScores.length !== scores.length && (
@@ -610,278 +862,12 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
             )}
           </Text>
         </Group>
+        <MobileFilterModalButton active={hasActiveFilters}>
+          {filterPanelContent}
+        </MobileFilterModalButton>
       </Group>
 
-      {/* Filter Panel */}
-      <Collapse in={filterOpen}>
-        <Card shadow="none" radius="md" p="md" withBorder>
-          <Stack gap="md">
-            {/* Filters */}
-            <Box>
-              <Text size="xs" fw={600} c="dimmed" mb="xs">
-                筛选条件
-              </Text>
-              <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="sm">
-                <MultiSelect
-                  label="分类"
-                  placeholder="全部"
-                  data={filterOptions.categories}
-                  value={categoryFilter}
-                  onChange={(value) =>
-                    startTransition(() => setCategoryFilter(value))
-                  }
-                  clearable
-                  searchable
-                  size="xs"
-                />
-                <MultiSelect
-                  label="铺面类型"
-                  placeholder="全部"
-                  data={filterOptions.versions}
-                  value={versionFilter}
-                  onChange={(value) =>
-                    startTransition(() => setVersionFilter(value))
-                  }
-                  clearable
-                  size="xs"
-                />
-                <MultiSelect
-                  label="难度"
-                  placeholder="全部"
-                  data={filterOptions.difficulties}
-                  value={difficultyFilter}
-                  onChange={(value) =>
-                    startTransition(() => setDifficultyFilter(value))
-                  }
-                  clearable
-                  size="xs"
-                />
-                <MultiSelect
-                  label="版本"
-                  placeholder="全部"
-                  data={filterOptions.musicVersions}
-                  value={musicVersionFilter}
-                  onChange={(value) =>
-                    startTransition(() => setMusicVersionFilter(value))
-                  }
-                  clearable
-                  searchable
-                  size="xs"
-                />
-                <MultiSelect
-                  label="谱师"
-                  placeholder="全部"
-                  data={filterOptions.designers}
-                  value={designerFilter}
-                  onChange={(value) =>
-                    startTransition(() => setDesignerFilter(value))
-                  }
-                  clearable
-                  searchable
-                  size="xs"
-                />
-                <Group gap="xs" align="flex-end">
-                  <NumberInput
-                    label="定数范围"
-                    placeholder="下限"
-                    value={detailLevelMin}
-                    onChange={(value) =>
-                      startTransition(() => setDetailLevelMin(value))
-                    }
-                    min={1}
-                    max={15}
-                    step={0.1}
-                    decimalScale={1}
-                    size="xs"
-                    style={{ flex: 1 }}
-                  />
-                  <Text size="xs" c="dimmed" pb={6}>
-                    -
-                  </Text>
-                  <NumberInput
-                    placeholder="上限"
-                    value={detailLevelMax}
-                    onChange={(value) =>
-                      startTransition(() => setDetailLevelMax(value))
-                    }
-                    min={1}
-                    max={15}
-                    step={0.1}
-                    decimalScale={1}
-                    size="xs"
-                    style={{ flex: 1 }}
-                  />
-                </Group>
-              </SimpleGrid>
-            </Box>
-
-            <Divider />
-
-            {/* Column Visibility */}
-            <Box>
-              <Text size="xs" fw={600} c="dimmed" mb="xs">
-                显示列
-              </Text>
-              <SimpleGrid cols={{ base: 3, sm: 5, md: 7 }} spacing="xs">
-                <Checkbox
-                  label="封面"
-                  size="xs"
-                  checked={showCover}
-                  onChange={(e) =>
-                    canHideColumn || !showCover
-                      ? setShowCover(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showCover && !canHideColumn}
-                />
-                <Checkbox
-                  label="曲名"
-                  size="xs"
-                  checked={showTitle}
-                  onChange={(e) =>
-                    canHideColumn || !showTitle
-                      ? setShowTitle(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showTitle && !canHideColumn}
-                />
-                <Checkbox
-                  label="分类"
-                  size="xs"
-                  checked={showCategory}
-                  onChange={(e) =>
-                    canHideColumn || !showCategory
-                      ? setShowCategory(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showCategory && !canHideColumn}
-                />
-                <Checkbox
-                  label="铺面类型"
-                  size="xs"
-                  checked={showVersion}
-                  onChange={(e) =>
-                    canHideColumn || !showVersion
-                      ? setShowVersion(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showVersion && !canHideColumn}
-                />
-                <Checkbox
-                  label="版本"
-                  size="xs"
-                  checked={showMusicVersion}
-                  onChange={(e) =>
-                    canHideColumn || !showMusicVersion
-                      ? setShowMusicVersion(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showMusicVersion && !canHideColumn}
-                />
-                <Checkbox
-                  label="难度"
-                  size="xs"
-                  checked={showDifficulty}
-                  onChange={(e) =>
-                    canHideColumn || !showDifficulty
-                      ? setShowDifficulty(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showDifficulty && !canHideColumn}
-                />
-                <Checkbox
-                  label="定数"
-                  size="xs"
-                  checked={showDetailLevel}
-                  onChange={(e) =>
-                    canHideColumn || !showDetailLevel
-                      ? setShowDetailLevel(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showDetailLevel && !canHideColumn}
-                />
-                <Checkbox
-                  label="谱师"
-                  size="xs"
-                  checked={showDesigner}
-                  onChange={(e) =>
-                    canHideColumn || !showDesigner
-                      ? setShowDesigner(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showDesigner && !canHideColumn}
-                />
-                <Checkbox
-                  label="达成率"
-                  size="xs"
-                  checked={showScore}
-                  onChange={(e) =>
-                    canHideColumn || !showScore
-                      ? setShowScore(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showScore && !canHideColumn}
-                />
-                <Checkbox
-                  label="评级"
-                  size="xs"
-                  checked={showRank}
-                  onChange={(e) =>
-                    canHideColumn || !showRank
-                      ? setShowRank(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showRank && !canHideColumn}
-                />
-                <Checkbox
-                  label="FC"
-                  size="xs"
-                  checked={showFc}
-                  onChange={(e) =>
-                    canHideColumn || !showFc
-                      ? setShowFc(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showFc && !canHideColumn}
-                />
-                <Checkbox
-                  label="FS"
-                  size="xs"
-                  checked={showFs}
-                  onChange={(e) =>
-                    canHideColumn || !showFs
-                      ? setShowFs(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showFs && !canHideColumn}
-                />
-                <Checkbox
-                  label="DX分数"
-                  size="xs"
-                  checked={showDxScore}
-                  onChange={(e) =>
-                    canHideColumn || !showDxScore
-                      ? setShowDxScore(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showDxScore && !canHideColumn}
-                />
-                <Checkbox
-                  label="Rating"
-                  size="xs"
-                  checked={showRating}
-                  onChange={(e) =>
-                    canHideColumn || !showRating
-                      ? setShowRating(e.currentTarget.checked)
-                      : null
-                  }
-                  disabled={showRating && !canHideColumn}
-                />
-              </SimpleGrid>
-            </Box>
-          </Stack>
-        </Card>
-      </Collapse>
+      <DesktopFilterCard>{filterPanelContent}</DesktopFilterCard>
 
       {/* Score Summary */}
       {filteredScores.length > 0 && (

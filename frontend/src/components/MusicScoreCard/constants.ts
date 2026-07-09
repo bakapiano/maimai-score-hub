@@ -36,14 +36,21 @@ export const DETAILED_COVER_SIZE = 280;
 // FC/FS display name mapping
 export const FC_NAMES: Record<string, string> = {
   fc: "FC",
+  "fc+": "FC+",
   fcp: "FC+",
   ap: "AP",
+  "ap+": "AP+",
   app: "AP+",
 };
 
 export const FS_NAMES: Record<string, string> = {
   fs: "FS",
+  "fs+": "FS+",
   fsp: "FS+",
-  fsd: "FSD",
-  fsdp: "FSD+",
+  fdx: "FDX",
+  "fdx+": "FDX+",
+  fdxp: "FDX+",
+  fsd: "FDX",
+  "fsd+": "FDX+",
+  fsdp: "FDX+",
 };

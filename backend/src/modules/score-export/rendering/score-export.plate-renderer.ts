@@ -17,6 +17,51 @@ export const PLATE_CARD_SIZE = 100;
 export const PLATE_CARD_GAP = 15;
 export const PLATE_CARD_STEP = PLATE_CARD_SIZE + PLATE_CARD_GAP;
 
+const FC_STATUS_RANK: Record<string, number> = {
+  fc: 0,
+  'fc+': 1,
+  fcp: 1,
+  ap: 2,
+  'ap+': 3,
+  app: 3,
+};
+
+const FS_STATUS_RANK: Record<string, number> = {
+  fs: 0,
+  'fs+': 1,
+  fsp: 1,
+  fdx: 2,
+  fsd: 2,
+  'fdx+': 3,
+  fdxp: 3,
+  'fsd+': 3,
+  fsdp: 3,
+};
+
+function statusRank(
+  table: Record<string, number>,
+  value: string | null | undefined,
+): number {
+  if (!value) {
+    return -1;
+  }
+  return table[value.trim().toLowerCase()] ?? -1;
+}
+
+function hasFcAtLeast(
+  value: string | null | undefined,
+  target: 'fc' | 'fc+' | 'ap' | 'ap+',
+) {
+  return statusRank(FC_STATUS_RANK, value) >= FC_STATUS_RANK[target];
+}
+
+function hasFsAtLeast(
+  value: string | null | undefined,
+  target: 'fs' | 'fs+' | 'fdx' | 'fdx+',
+) {
+  return statusRank(FS_STATUS_RANK, value) >= FS_STATUS_RANK[target];
+}
+
 export function isPlateCompleted(entry: ChartEntry, plan: PlatePlan): boolean {
   if (!entry.score) {
     return false;
@@ -31,11 +76,11 @@ export function isPlateCompleted(entry: ChartEntry, plan: PlatePlan): boolean {
       return !isNaN(val) && val >= 100;
     }
     case 'ji':
-      return !!entry.score.fc;
+      return hasFcAtLeast(entry.score.fc, 'fc');
     case 'shen':
-      return entry.score.fc === 'ap' || entry.score.fc === 'app';
+      return hasFcAtLeast(entry.score.fc, 'ap');
     case 'wuwu':
-      return entry.score.fs === 'fsd' || entry.score.fs === 'fsdp';
+      return hasFsAtLeast(entry.score.fs, 'fdx');
   }
 }
 

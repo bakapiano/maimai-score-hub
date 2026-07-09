@@ -1,5 +1,6 @@
 import { ActionIcon, Box, Card, Group, Stack, Text } from "@mantine/core";
 import React, { useState } from "react";
+import { useMediaQuery } from "@mantine/hooks";
 
 import { renderMusicIcon, renderRank } from "./MusicScoreCard";
 import {
@@ -120,6 +121,8 @@ const ExpandButton = ({
 );
 
 const statusLabel = (key: FcBucket | FsBucket) => key.toUpperCase();
+const MOBILE_COLLAPSED_RANKS = ["SSS+", "SSS"] as RankBucket[];
+const MOBILE_COLLAPSED_FC = ["ap", "fc"] as FcBucket[];
 
 // Main component - inline display with expand button
 export type CombinedBadgesProps = {
@@ -138,11 +141,14 @@ export function CombinedBadges({
   onFilterChange,
 }: CombinedBadgesProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const isMobile = useMediaQuery("(max-width: 48em)");
 
   const rankList = expanded ? rankOrder : (["SSS+", "SSS"] as RankBucket[]);
   const fcList = expanded
     ? fcOrder
-    : (["ap+", "ap", "fc+", "fc"] as FcBucket[]);
+    : isMobile
+      ? MOBILE_COLLAPSED_FC
+      : (["ap+", "ap", "fc+", "fc"] as FcBucket[]);
   const fsList = expanded ? fsOrder : ([] as FsBucket[]);
 
   const activeOf = (kind: BadgeFilterKind, bucket: string) =>
@@ -228,13 +234,18 @@ export function ScoreSummaryCard({
 }: ScoreSummaryCardProps) {
   const [rankExpanded, setRankExpanded] = useState(defaultExpanded);
   const [statusExpanded, setStatusExpanded] = useState(defaultExpanded);
+  const isMobile = useMediaQuery("(max-width: 48em)");
 
   const rankList = rankExpanded
     ? rankOrder
-    : (["SSS+", "SSS", "SS+", "SS"] as RankBucket[]);
+    : isMobile
+      ? MOBILE_COLLAPSED_RANKS
+      : (["SSS+", "SSS", "SS+", "SS"] as RankBucket[]);
   const fcList = statusExpanded
     ? fcOrder
-    : (["ap+", "ap", "fc+", "fc"] as FcBucket[]);
+    : isMobile
+      ? MOBILE_COLLAPSED_FC
+      : (["ap+", "ap", "fc+", "fc"] as FcBucket[]);
   const fsList = statusExpanded ? fsOrder : ([] as FsBucket[]);
 
   const activeOf = (kind: BadgeFilterKind, bucket: string) =>

@@ -235,7 +235,7 @@ function getSyncStatusView({
   }
   if (!syncStatus) {
     return lastSync
-      ? { color: "green", label: "已同步", text: "可以随时更新最新成绩" }
+      ? { color: "cyan", label: "已同步", text: "可以随时更新最新成绩" }
       : { color: "gray", label: "未同步", text: "完成首次同步后即可查看成绩" };
   }
   if (syncStatus.status === "completed") {

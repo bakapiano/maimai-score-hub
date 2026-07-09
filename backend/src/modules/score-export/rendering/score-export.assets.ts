@@ -64,24 +64,33 @@ export async function loadDiffCards(): Promise<(CanvasImage | null)[]> {
 
 const FC_ASSET: Record<string, string> = {
   fc: 'UI_MSS_MBase_Icon_FC.png',
+  'fc+': 'UI_MSS_MBase_Icon_FCp.png',
   fcp: 'UI_MSS_MBase_Icon_FCp.png',
   ap: 'UI_MSS_MBase_Icon_AP.png',
+  'ap+': 'UI_MSS_MBase_Icon_APp.png',
   app: 'UI_MSS_MBase_Icon_APp.png',
 };
 
 const FS_ASSET: Record<string, string> = {
   fs: 'UI_MSS_MBase_Icon_FS.png',
+  'fs+': 'UI_MSS_MBase_Icon_FSp.png',
   fsp: 'UI_MSS_MBase_Icon_FSp.png',
+  fdx: 'UI_MSS_MBase_Icon_FSD.png',
+  'fdx+': 'UI_MSS_MBase_Icon_FSDp.png',
+  fdxp: 'UI_MSS_MBase_Icon_FSDp.png',
   fsd: 'UI_MSS_MBase_Icon_FSD.png',
+  'fsd+': 'UI_MSS_MBase_Icon_FSDp.png',
   fsdp: 'UI_MSS_MBase_Icon_FSDp.png',
 };
 
 export async function loadFcAsset(key: string): Promise<CanvasImage | null> {
-  return FC_ASSET[key] ? loadAsset(FC_ASSET[key]) : null;
+  const normalized = key.toLowerCase();
+  return FC_ASSET[normalized] ? loadAsset(FC_ASSET[normalized]) : null;
 }
 
 export async function loadFsAsset(key: string): Promise<CanvasImage | null> {
-  return FS_ASSET[key] ? loadAsset(FS_ASSET[key]) : null;
+  const normalized = key.toLowerCase();
+  return FS_ASSET[normalized] ? loadAsset(FS_ASSET[normalized]) : null;
 }
 
 const RANK_FILE: Record<string, string> = {

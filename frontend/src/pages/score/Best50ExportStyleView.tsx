@@ -26,15 +26,22 @@ const ID_COLORS = [
 
 const FC_ASSET: Record<string, string> = {
   fc: "UI_MSS_MBase_Icon_FC.png",
+  "fc+": "UI_MSS_MBase_Icon_FCp.png",
   fcp: "UI_MSS_MBase_Icon_FCp.png",
   ap: "UI_MSS_MBase_Icon_AP.png",
+  "ap+": "UI_MSS_MBase_Icon_APp.png",
   app: "UI_MSS_MBase_Icon_APp.png",
 };
 
 const FS_ASSET: Record<string, string> = {
   fs: "UI_MSS_MBase_Icon_FS.png",
+  "fs+": "UI_MSS_MBase_Icon_FSp.png",
   fsp: "UI_MSS_MBase_Icon_FSp.png",
+  fdx: "UI_MSS_MBase_Icon_FSD.png",
+  "fdx+": "UI_MSS_MBase_Icon_FSDp.png",
+  fdxp: "UI_MSS_MBase_Icon_FSDp.png",
   fsd: "UI_MSS_MBase_Icon_FSD.png",
+  "fsd+": "UI_MSS_MBase_Icon_FSDp.png",
   fsdp: "UI_MSS_MBase_Icon_FSDp.png",
 };
 
@@ -312,8 +319,8 @@ function ExportScoreCard({
   const textColor = "#ffffff";
   const rank = getRankFromScore(card.scoreText);
   const rankAsset = rank ? RANK_ASSET[rank] : null;
-  const fcAsset = card.fc ? FC_ASSET[card.fc] : null;
-  const fsAsset = card.fs ? FS_ASSET[card.fs] : null;
+  const fcAsset = card.fc ? FC_ASSET[card.fc.toLowerCase()] : null;
+  const fsAsset = card.fs ? FS_ASSET[card.fs.toLowerCase()] : null;
   const typeAsset = card.type === "dx" ? "DX.png" : "SD.png";
   const ratingText =
     typeof card.rating === "number" ? Math.round(card.rating) : "-";

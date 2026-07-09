@@ -47,7 +47,6 @@ import { useAuth } from "../providers/AuthContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { hasOfflineData } from "../utils/offlineCache";
 import { AppFooter } from "../components/AppFooter";
-import { InstallAppButton } from "../components/InstallAppButton";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
@@ -817,10 +816,7 @@ export default function LoginPage() {
   return (
     <AppShell header={{ height: 56 }} padding={0}>
       <AppShell.Header>
-        <AppHeader
-          showProfile={false}
-          rightSection={<InstallAppButton variant="subtle" />}
-        />
+        <AppHeader showProfile={false} />
       </AppShell.Header>
 
       <AppShell.Main

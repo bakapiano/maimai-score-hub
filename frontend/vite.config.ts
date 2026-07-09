@@ -2,6 +2,9 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, URL } from "node:url";
 
+const apiProxyTarget =
+  process.env.FRONTEND_API_PROXY_TARGET ?? "http://127.0.0.1:9050";
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -35,7 +38,11 @@ export default defineConfig({
         target: "http://127.0.0.1:3002",
         changeOrigin: true,
       },
-      "/api": "http://127.0.0.1:9050",
+      "/api": {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: true,
+      },
       "/maimai-mobile/img": {
         target: "https://maimai.wahlap.com",
         changeOrigin: true,

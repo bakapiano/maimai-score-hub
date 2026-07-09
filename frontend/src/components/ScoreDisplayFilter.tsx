@@ -1,9 +1,11 @@
 import {
   ActionIcon,
+  Box,
   Group,
   NumberInput,
   Popover,
   SegmentedControl,
+  SimpleGrid,
   Stack,
   Switch,
   Text,
@@ -21,51 +23,39 @@ type ScoreDisplayFilterProps = {
   onChange: (value: DisplayFilterSettings) => void;
 };
 
-export function ScoreDisplayFilter({ value, onChange }: ScoreDisplayFilterProps) {
-  const [opened, setOpened] = useState(false);
-
+export function ScoreDisplayFilterContent({
+  value,
+  onChange,
+}: ScoreDisplayFilterProps) {
   const update = (patch: Partial<DisplayFilterSettings>) => {
     onChange({ ...value, ...patch });
   };
 
   return (
-    <Popover
-      opened={opened}
-      onChange={setOpened}
-      position="bottom-end"
-      shadow="md"
-      withArrow
-    >
-      <Popover.Target>
-        <ActionIcon
-          variant="default"
-          size="md"
-          onClick={() => setOpened((o) => !o)}
-          aria-label="显示与筛选"
-        >
-          <IconAdjustments size={16} />
-        </ActionIcon>
-      </Popover.Target>
-      <Popover.Dropdown>
-        <Stack gap="md" style={{ minWidth: 220 }}>
-          <Text fw={600} size="sm">
-            显示设置
-          </Text>
+    <Stack gap="md">
+      <Box>
+        <Text size="xs" fw={600} c="dimmed" mb="xs">
+          筛选条件
+        </Text>
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
           <Stack gap="xs">
+            <Text size="xs" fw={500}>
+              显示设置
+            </Text>
             <Switch
-              size="xs"
+              size="sm"
               label="FC 图标"
               checked={value.showFc}
               onChange={(e) => update({ showFc: e.currentTarget.checked })}
             />
             <Switch
-              size="xs"
+              size="sm"
               label="FDX 图标"
               checked={value.showFs}
               onChange={(e) => update({ showFs: e.currentTarget.checked })}
             />
             <Switch
-              size="xs"
+              size="sm"
               label="显示分数"
               checked={value.showScore}
               onChange={(e) => update({ showScore: e.currentTarget.checked })}
@@ -100,10 +90,10 @@ export function ScoreDisplayFilter({ value, onChange }: ScoreDisplayFilterProps)
             )}
           </Stack>
 
-          <Text fw={600} size="sm">
-            筛选
-          </Text>
           <Stack gap="xs">
+            <Text size="xs" fw={500}>
+              分数范围
+            </Text>
             <Group gap="xs" align="end">
               <NumberInput
                 label="分数下限"
@@ -135,7 +125,37 @@ export function ScoreDisplayFilter({ value, onChange }: ScoreDisplayFilterProps)
               />
             </Group>
           </Stack>
-        </Stack>
+        </SimpleGrid>
+      </Box>
+    </Stack>
+  );
+}
+
+export function ScoreDisplayFilter({ value, onChange }: ScoreDisplayFilterProps) {
+  const [opened, setOpened] = useState(false);
+
+  return (
+    <Popover
+      opened={opened}
+      onChange={setOpened}
+      position="bottom-end"
+      shadow="md"
+      withArrow
+    >
+      <Popover.Target>
+        <ActionIcon
+          variant="default"
+          size="md"
+          onClick={() => setOpened((o) => !o)}
+          aria-label="显示与筛选"
+        >
+          <IconAdjustments size={16} />
+        </ActionIcon>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Box style={{ minWidth: 280 }}>
+          <ScoreDisplayFilterContent value={value} onChange={onChange} />
+        </Box>
       </Popover.Dropdown>
     </Popover>
   );

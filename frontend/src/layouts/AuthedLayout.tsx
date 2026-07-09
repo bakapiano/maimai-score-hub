@@ -4,14 +4,17 @@ import {
   AppShell,
   Box,
   Burger,
+  Drawer,
   Group,
   NavLink,
   Stack,
+  Text,
   ThemeIcon,
   useComputedColorScheme,
 } from "@mantine/core";
 import {
   IconBug,
+  IconDownload,
   IconHome,
   IconInfoCircle,
   IconMusic,
@@ -26,7 +29,9 @@ import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { AppFooter } from "../components/AppFooter";
+import { InstallAppButton } from "../components/InstallAppButton";
 import { useAuth } from "../providers/AuthContext";
+import { usePwaInstall } from "../hooks/usePwaInstall";
 import { useDisclosure } from "@mantine/hooks";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { getCachedProfile } from "../utils/offlineCache";
@@ -101,13 +106,91 @@ function readCachedMiniProfile(friendCode?: string | null): MiniProfile | null {
   return { avatarUrl: cached.avatarUrl, username: cached.username };
 }
 
+function InstallAppGuideModal({
+  opened,
+  onClose,
+}: {
+  opened: boolean;
+  onClose: () => void;
+}) {
+  const { status } = usePwaInstall();
+  const touchStartX = useRef<number | null>(null);
+
+  return (
+    <Drawer
+      opened={opened}
+      onClose={onClose}
+      title="安装应用"
+      position="right"
+      size="sm"
+      lockScroll={false}
+      onTouchStart={(event) => {
+        touchStartX.current = event.touches[0]?.clientX ?? null;
+      }}
+      onTouchEnd={(event) => {
+        const startX = touchStartX.current;
+        touchStartX.current = null;
+        if (startX === null) {
+          return;
+        }
+        const endX = event.changedTouches[0]?.clientX ?? startX;
+        if (endX - startX > 50) {
+          onClose();
+        }
+      }}
+    >
+      <Box style={{ height: "100%" }}>
+        <Stack gap="lg">
+          <div>
+            <Text size="sm" fw={500} mb="xs">
+              应用
+            </Text>
+            {status === "prompt" && (
+              <Stack gap="xs">
+                <Text size="sm" c="dimmed">
+                  将 maimai Score Hub 安装为应用后，可以从桌面或主屏幕直接打开。
+                </Text>
+                <InstallAppButton fullWidth variant="filled" />
+              </Stack>
+            )}
+            {status === "ios" && (
+              <Stack gap="xs">
+                <Text size="sm">
+                  iOS 需要通过 Safari 的分享菜单添加到主屏幕。
+                </Text>
+                <Text size="sm" c="dimmed">
+                  点击底部分享按钮，然后选择“添加到主屏幕”。
+                </Text>
+              </Stack>
+            )}
+            {status === "installed" && (
+              <Text size="sm" c="dimmed">
+                应用已经安装，或当前正在以应用模式运行。
+              </Text>
+            )}
+            {status === "unavailable" && (
+              <Text size="sm" c="dimmed">
+                当前浏览器暂未提供安装入口。可以尝试使用 Chrome、Edge 或移动端浏览器的菜单添加到主屏幕。
+              </Text>
+            )}
+          </div>
+        </Stack>
+      </Box>
+    </Drawer>
+  );
+}
+
 export default function AuthedLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { clearToken, offline, setOffline, profile: authProfile } = useAuth();
-  const [opened, { toggle, close }] = useDisclosure(false);
+  const [opened, { toggle, close: closeNav }] = useDisclosure(false);
   const [settingsOpened, { open: openSettings, close: closeSettings }] =
     useDisclosure(false);
+  const [
+    installGuideOpened,
+    { open: openInstallGuide, close: closeInstallGuide },
+  ] = useDisclosure(false);
   // useMantineColorScheme returns the raw setting ("light" | "dark" |
   // "auto"). For visual conditionals like the header background we need
   // the RESOLVED scheme — useComputedColorScheme resolves "auto" against
@@ -175,7 +258,7 @@ export default function AuthedLayout() {
           if (startX === null) {return;}
           const endX = event.changedTouches[0]?.clientX ?? startX;
           if (startX - endX > 50) {
-            close();
+            closeNav();
           }
         }}
       >
@@ -198,7 +281,7 @@ export default function AuthedLayout() {
                     </ThemeIcon>
                   }
                   active={location.pathname === page.to}
-                  onClick={close}
+                  onClick={closeNav}
                   style={isDisabled ? { opacity: 0.5 } : undefined}
                 />
                 );
@@ -212,8 +295,21 @@ export default function AuthedLayout() {
                 </ThemeIcon>
               }
               onClick={() => {
-                close();
+                closeNav();
                 openSettings();
+              }}
+            />
+
+            <NavLink
+              label="安装应用"
+              leftSection={
+                <ThemeIcon size={28} radius="md" color="cyan">
+                  <IconDownload size={18} />
+                </ThemeIcon>
+              }
+              onClick={() => {
+                closeNav();
+                openInstallGuide();
               }}
             />
 
@@ -226,13 +322,17 @@ export default function AuthedLayout() {
                   <IconInfoCircle size={18} />
                 </ThemeIcon>
               }
-              onClick={close}
+              onClick={closeNav}
             />
           </Group>
         </Stack>
       </AppShell.Navbar>
 
       <SettingsPanel opened={settingsOpened} onClose={closeSettings} />
+      <InstallAppGuideModal
+        opened={installGuideOpened}
+        onClose={closeInstallGuide}
+      />
 
       <AppShell.Main
         style={{
@@ -270,7 +370,7 @@ export default function AuthedLayout() {
         </Box>
         {currentPage && (
           <Box
-            py={"lg"}
+            py={{ base: "xs", sm: "lg" }}
             px="md"
             style={{
               backgroundColor: headerBg,
@@ -280,6 +380,7 @@ export default function AuthedLayout() {
               <PageHeader
                 title={currentPage.title}
                 description={currentPage.description}
+                hideDescriptionOnMobile
               />
             </div>
           </Box>

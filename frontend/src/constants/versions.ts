@@ -1,5 +1,6 @@
 // Version order for sorting (oldest first)
 export const VERSION_ORDER: string[] = [
+  "舞萌DX 2026",
   "舞萌DX 2025",
   "舞萌DX 2024",
   "舞萌DX 2023",
@@ -42,6 +43,7 @@ export const VERSION_DISPLAY_NAME: Record<string, string> = {
   "舞萌DX 2023": "舞萌DX 2023 (祭祝代)",
   "舞萌DX 2024": "舞萌DX 2024 (双宴代)",
   "舞萌DX 2025": "舞萌DX 2025 (镜彩代)",
+  "舞萌DX 2026": "舞萌DX 2026",
 };
 
 /**

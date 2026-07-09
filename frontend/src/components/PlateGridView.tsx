@@ -13,6 +13,8 @@ import type { SyncScore } from "../types/syncScore";
 import { CombinedBadges } from "./ScoreSummaryBadges";
 import {
   matchesBadgeFilter,
+  statusMeetsFcBucket,
+  statusMeetsFsBucket,
   summarizeRanks,
   summarizeStatuses,
   type BadgeFilter,
@@ -32,7 +34,16 @@ type LevelGroup = {
   items: ChartEntry[];
 };
 
-function isCompleted(entry: ChartEntry, plan: PlatePlan): boolean {
+export type PlateProgressEntry = {
+  score?: Pick<SyncScore, "score" | "fc" | "fs">;
+};
+
+export type PlateCompletionDisplayMode = "classic" | "check";
+
+export function isPlateEntryCompleted(
+  entry: PlateProgressEntry,
+  plan: PlatePlan,
+): boolean {
   if (!entry.score) {return false;}
   switch (plan) {
     case "jiang": {
@@ -42,27 +53,108 @@ function isCompleted(entry: ChartEntry, plan: PlatePlan): boolean {
       return !isNaN(val) && val >= 100;
     }
     case "ji":
-      return !!entry.score.fc;
+      return statusMeetsFcBucket(entry.score.fc, "fc");
     case "shen":
-      return entry.score.fc === "ap" || entry.score.fc === "app";
+      return statusMeetsFcBucket(entry.score.fc, "ap");
     case "wuwu":
-      return entry.score.fs === "fsd" || entry.score.fs === "fsdp";
+      return statusMeetsFsBucket(entry.score.fs, "fdx");
   }
 }
 
 const CARD_SIZE = 64;
 const CARD_BORDER = 3;
 
+function CompletedCheckOverlay() {
+  return (
+    <Box
+      style={{
+        position: "absolute",
+        inset: 0,
+        background:
+          "linear-gradient(180deg, rgba(31, 41, 55, 0.42) 0%, rgba(15, 23, 42, 0.58) 100%)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        pointerEvents: "none",
+        zIndex: 4,
+      }}
+    >
+      <Box
+        style={{
+          width: 42,
+          height: 42,
+          borderRadius: 999,
+          border: "3px solid rgb(0, 220, 165)",
+          color: "rgb(0, 220, 165)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow:
+            "0 1px 6px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.35)",
+          textShadow: "0 1px 4px rgba(0,0,0,0.65)",
+          transform: "rotate(-8deg)",
+        }}
+      >
+        <Text fw={900} style={{ fontSize: 29, lineHeight: 1 }}>
+          ✓
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
+function CompletedClassicOverlay({ children }: { children: React.ReactNode }) {
+  return (
+    <Box
+      style={{
+        position: "absolute",
+        inset: 0,
+        background:
+          "linear-gradient(180deg, rgba(31, 41, 55, 0.42) 0%, rgba(15, 23, 42, 0.58) 100%)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 2,
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+function PlateRankBadge({ rank }: { rank: string }) {
+  return (
+    <Box
+      h={26}
+      px={4}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: 6,
+        background: "rgba(16, 20, 28, 0.68)",
+        boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
+        backdropFilter: "blur(1px)",
+        WebkitBackdropFilter: "blur(1px)",
+      }}
+    >
+      {renderRank(rank, { compact: true, width: 48 })}
+    </Box>
+  );
+}
+
 function PlateCard({
   entry,
   plan,
+  completionMode,
   onClick,
 }: {
   entry: ChartEntry;
   plan: PlatePlan;
+  completionMode: PlateCompletionDisplayMode;
   onClick?: () => void;
 }) {
-  const completed = isCompleted(entry, plan);
+  const completed = isPlateEntryCompleted(entry, plan);
   const coverUrl = getCoverUrl(entry.music.id);
 
   // Determine which icon to show based on plan (matching reference project)
@@ -82,7 +174,7 @@ function PlateCard({
   // For 将牌 mode, show rank for both completed and uncompleted (if has score)
   const rank =
     plan === "jiang" ? getRankFromScore(entry.score?.score ?? null) : null;
-  const showRank = rank && rank !== "N/A";
+  const displayRank = rank && rank !== "N/A" ? rank : null;
 
   const diffColor = LEVEL_COLORS[entry.chartIndex] ?? "#888";
 
@@ -107,39 +199,20 @@ function PlateCard({
         fit="cover"
       />
 
-      {/* Completed overlay with gradient */}
-      {completed && (
-        <Box
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(180deg, rgba(94, 209, 225, 0.55) 0%, rgba(189, 195, 254, 0.55) 100%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
+      {completed && completionMode === "check" && <CompletedCheckOverlay />}
+
+      {completed && completionMode === "classic" && (
+        <CompletedClassicOverlay>
           {planIcon ? (
             <Image src={planIcon} w={36} h={36} referrerPolicy="no-referrer" />
-          ) : showRank ? (
-            <Text
-              fw={900}
-              size="18px"
-              style={{
-                textShadow:
-                  "-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000",
-                lineHeight: 1,
-              }}
-            >
-              {renderRank(rank, { compact: true, stroke: true })}
-            </Text>
+          ) : displayRank ? (
+            <PlateRankBadge rank={displayRank} />
           ) : null}
-        </Box>
+        </CompletedClassicOverlay>
       )}
 
       {/* Uncompleted but has score: show rank without overlay */}
-      {!completed && showRank && (
+      {!completed && displayRank && (
         <Box
           style={{
             position: "absolute",
@@ -147,19 +220,10 @@ function PlateCard({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            zIndex: 3,
           }}
         >
-          <Text
-            fw={900}
-            size="18px"
-            style={{
-              textShadow:
-                "-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000",
-              lineHeight: 1,
-            }}
-          >
-            {renderRank(rank, { compact: true, stroke: true })}
-          </Text>
+          <PlateRankBadge rank={displayRank} />
         </Box>
       )}
     </Box>
@@ -169,6 +233,7 @@ function PlateCard({
 type PlateGridViewProps = {
   levels: LevelGroup[];
   plan: PlatePlan;
+  completionMode?: PlateCompletionDisplayMode;
   onCardClick?: (entry: ChartEntry) => void;
   pageFilter?: BadgeFilter;
   sectionFilters?: Record<string, BadgeFilter>;
@@ -178,6 +243,7 @@ type PlateGridViewProps = {
 export function PlateGridView({
   levels,
   plan,
+  completionMode = "check",
   onCardClick,
   pageFilter = null,
   sectionFilters,
@@ -210,6 +276,7 @@ export function PlateGridView({
                   key={`${entry.music.id}-${entry.chartIndex}`}
                   entry={entry}
                   plan={plan}
+                  completionMode={completionMode}
                   onClick={onCardClick ? () => onCardClick(entry) : undefined}
                 />
               ))}

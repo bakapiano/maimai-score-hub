@@ -27,6 +27,9 @@ const STATUS_ASSET: Record<string, string> = {
   fs: "UI_MSS_MBase_Icon_FS.png",
   "fs+": "UI_MSS_MBase_Icon_FSp.png",
   fsp: "UI_MSS_MBase_Icon_FSp.png",
+  fdx: "UI_MSS_MBase_Icon_FSD.png",
+  "fdx+": "UI_MSS_MBase_Icon_FSDp.png",
+  fdxp: "UI_MSS_MBase_Icon_FSDp.png",
   fsd: "UI_MSS_MBase_Icon_FSD.png",
   "fsd+": "UI_MSS_MBase_Icon_FSDp.png",
   fsdp: "UI_MSS_MBase_Icon_FSDp.png",
@@ -135,5 +138,25 @@ export function getCoverUrl(musicId: string): string {
  * Get FC/FS icon URL
  */
 export function getIconUrl(icon: string): string {
-  return `/maimai-mobile/img/music_icon_${icon}.png`;
+  return `/maimai-mobile/img/music_icon_${normalizeRemoteIconKey(icon)}.png`;
+}
+
+function normalizeRemoteIconKey(icon: string): string {
+  switch (icon.toLowerCase()) {
+    case "fc+":
+      return "fcp";
+    case "ap+":
+      return "app";
+    case "fs+":
+      return "fsp";
+    case "fdx+":
+    case "fdxp":
+    case "fsd+":
+    case "fsdp":
+      return "fdxp";
+    case "fsd":
+      return "fdx";
+    default:
+      return icon.toLowerCase();
+  }
 }

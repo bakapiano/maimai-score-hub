@@ -31,6 +31,7 @@ const VERSION_MAP: Record<string, string> = {
   'maimai でらっくす FESTiVAL': '舞萌DX 2023',
   'maimai でらっくす BUDDiES': '舞萌DX 2024',
   'maimai でらっくす PRiSM': '舞萌DX 2025',
+  'maimai でらっくす PRiSM PLUS': '舞萌DX 2026',
 };
 
 function mapVersion(version: string | null | undefined): string | null {

@@ -5,6 +5,7 @@ import {
   LoadingOverlay,
   SegmentedControl,
   Select,
+  SimpleGrid,
   Stack,
   Switch,
   Text,
@@ -15,8 +16,16 @@ import type { MusicChartPayload, MusicRow } from "../../types/music";
 import { useMemo, useState, useTransition } from "react";
 
 import { type DetailedMusicScoreCardProps } from "../../components/MusicScoreCard";
-import { PlateGridView } from "../../components/PlateGridView";
+import {
+  type PlateCompletionDisplayMode,
+  isPlateEntryCompleted,
+  PlateGridView,
+} from "../../components/PlateGridView";
 import { ScoreSummaryCard } from "../../components/ScoreSummaryBadges";
+import {
+  DesktopFilterCard,
+  MobileFilterModalButton,
+} from "../../components/ResponsiveFilterPanel";
 import {
   calculateAverageScore,
   summarizeRanks,
@@ -150,12 +159,80 @@ const MERGE_GROUPS: { key: string; versions: string[] }[] = [
   { key: "maimai", versions: ["maimai", "maimai+"] },
 ];
 
+const VERSION_FILTER_CACHE_KEY = "score_version_filter_settings";
+
+type VersionFilterSettings = {
+  platePlan: PlatePlan;
+  showAllLevels: boolean;
+  hideCompleted: boolean;
+  completionMode: PlateCompletionDisplayMode;
+};
+
+const DEFAULT_VERSION_FILTER_SETTINGS: VersionFilterSettings = {
+  platePlan: "jiang",
+  showAllLevels: false,
+  hideCompleted: false,
+  completionMode: "check",
+};
+
 type VersionScoresTabProps = {
   musics: MusicRow[];
   scores: SyncScore[];
   lastSyncAt: string | null;
   loading: boolean;
 };
+
+function readVersionFilterSettings(): VersionFilterSettings {
+  if (typeof window === "undefined") {
+    return DEFAULT_VERSION_FILTER_SETTINGS;
+  }
+  try {
+    const raw = window.localStorage.getItem(VERSION_FILTER_CACHE_KEY);
+    if (!raw) {
+      return DEFAULT_VERSION_FILTER_SETTINGS;
+    }
+    const parsed = JSON.parse(raw) as Partial<VersionFilterSettings>;
+    const validPlatePlans: PlatePlan[] = ["jiang", "ji", "shen", "wuwu"];
+    const validCompletionModes: PlateCompletionDisplayMode[] = [
+      "check",
+      "classic",
+    ];
+    return {
+      platePlan: validPlatePlans.includes(parsed.platePlan as PlatePlan)
+        ? (parsed.platePlan as PlatePlan)
+        : DEFAULT_VERSION_FILTER_SETTINGS.platePlan,
+      showAllLevels:
+        typeof parsed.showAllLevels === "boolean"
+          ? parsed.showAllLevels
+          : DEFAULT_VERSION_FILTER_SETTINGS.showAllLevels,
+      hideCompleted:
+        typeof parsed.hideCompleted === "boolean"
+          ? parsed.hideCompleted
+          : DEFAULT_VERSION_FILTER_SETTINGS.hideCompleted,
+      completionMode: validCompletionModes.includes(
+        parsed.completionMode as PlateCompletionDisplayMode,
+      )
+        ? (parsed.completionMode as PlateCompletionDisplayMode)
+        : DEFAULT_VERSION_FILTER_SETTINGS.completionMode,
+    };
+  } catch {
+    return DEFAULT_VERSION_FILTER_SETTINGS;
+  }
+}
+
+function writeVersionFilterSettings(settings: VersionFilterSettings) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(
+      VERSION_FILTER_CACHE_KEY,
+      JSON.stringify(settings),
+    );
+  } catch {
+    // Ignore storage quota/private-mode failures.
+  }
+}
 
 function getVisibleVersionLevels(
   current: VersionBucket | undefined,
@@ -189,10 +266,21 @@ export function VersionScoresTab({
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [exporting, setExporting] = useState(false);
-  const [platePlan, setPlatePlan] = useState<PlatePlan>("jiang");
-  const [showAllLevels, setShowAllLevels] = useState(false);
+  const [filterSettings, setFilterSettings] = useState<VersionFilterSettings>(
+    () => readVersionFilterSettings(),
+  );
+  const { platePlan, showAllLevels, hideCompleted, completionMode } =
+    filterSettings;
   const { pageFilter, sectionFilters, setPageFilter, setSectionFilter } =
     useBadgeScopeFilter();
+
+  const updateFilterSettings = (patch: Partial<VersionFilterSettings>) => {
+    setFilterSettings((current) => {
+      const next = { ...current, ...patch };
+      writeVersionFilterSettings(next);
+      return next;
+    });
+  };
 
   // Modal state for score detail
   const [modalOpened, setModalOpened] = useState(false);
@@ -316,10 +404,21 @@ export function VersionScoresTab({
   }));
   const current =
     allBuckets.find((b) => b.versionKey === selectedVersion) ?? allBuckets[0];
-  const visibleLevels = useMemo(
-    () => getVisibleVersionLevels(current, showAllLevels),
-    [current, showAllLevels],
-  );
+  const visibleLevels = useMemo(() => {
+    const levels = getVisibleVersionLevels(current, showAllLevels);
+    if (!hideCompleted) {
+      return levels;
+    }
+
+    return levels
+      .map((level) => ({
+        ...level,
+        items: level.items.filter(
+          (entry) => !isPlateEntryCompleted(entry, platePlan),
+        ),
+      }))
+      .filter((level) => level.items.length > 0);
+  }, [current, hideCompleted, platePlan, showAllLevels]);
   const visibleEntries = useMemo(
     () => visibleLevels.flatMap((lvl) => lvl.items),
     [visibleLevels],
@@ -352,6 +451,77 @@ export function VersionScoresTab({
     }
   };
 
+  const hasActiveVersionFilter =
+    showAllLevels !== DEFAULT_VERSION_FILTER_SETTINGS.showAllLevels ||
+    hideCompleted !== DEFAULT_VERSION_FILTER_SETTINGS.hideCompleted ||
+    completionMode !== DEFAULT_VERSION_FILTER_SETTINGS.completionMode;
+
+  const versionFilterContent = (
+    <Stack gap="md">
+      <Box>
+        <Text size="xs" fw={600} c="dimmed" mb="xs">
+          筛选条件
+        </Text>
+        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+          <Stack gap={4}>
+            <Text size="xs" fw={500}>
+              显示
+            </Text>
+            <SegmentedControl
+              size="xs"
+              value={completionMode}
+              onChange={(value) =>
+                startTransition(() =>
+                  updateFilterSettings({
+                    completionMode: value as PlateCompletionDisplayMode,
+                  }),
+                )
+              }
+              data={[
+                { value: "check", label: "达成图" },
+                { value: "classic", label: "成绩图" },
+              ]}
+            />
+          </Stack>
+          <Stack gap={4}>
+            <Text size="xs" fw={500}>
+              等级范围
+            </Text>
+            <Switch
+              size="sm"
+              label="显示全部等级"
+              checked={showAllLevels}
+              onChange={(e) =>
+                startTransition(() =>
+                  updateFilterSettings({
+                    showAllLevels: e.currentTarget.checked,
+                  }),
+                )
+              }
+            />
+          </Stack>
+          <Stack gap={4}>
+            <Text size="xs" fw={500}>
+              完成状态
+            </Text>
+            <Switch
+              size="sm"
+              label="隐藏已达成"
+              checked={hideCompleted}
+              onChange={(e) =>
+                startTransition(() =>
+                  updateFilterSettings({
+                    hideCompleted: e.currentTarget.checked,
+                  }),
+                )
+              }
+            />
+          </Stack>
+        </SimpleGrid>
+      </Box>
+    </Stack>
+  );
+
   return (
     <Stack gap="md">
       <ScoreDetailModal
@@ -364,25 +534,11 @@ export function VersionScoresTab({
           <Title order={4} size="h5">
             按版本查看
           </Title>
-          <SegmentedControl
-            size="xs"
-            value={platePlan}
-            onChange={(v) =>
-              startTransition(() => setPlatePlan(v as PlatePlan))
-            }
-            data={PLAN_OPTIONS}
-          />
         </Group>
         <Group gap="xs" align="center">
-          <Switch
-            size="xs"
-            labelPosition="left"
-            label="显示全部"
-            checked={showAllLevels}
-            onChange={(e) =>
-              startTransition(() => setShowAllLevels(e.currentTarget.checked))
-            }
-          />
+          <MobileFilterModalButton active={hasActiveVersionFilter}>
+            {versionFilterContent}
+          </MobileFilterModalButton>
           <Button
             size="xs"
             variant="default"
@@ -397,15 +553,46 @@ export function VersionScoresTab({
       </Group>
 
       {buckets.length > 0 && (
-        <Select
-          data={versionOptions}
-          value={current?.versionKey ?? null}
-          onChange={(value) => startTransition(() => setSelectedVersion(value))}
-          placeholder="选择要查看的版本"
-          clearable={false}
-          searchable
-          disabled={isPending}
-        />
+        <Group gap="xs" wrap="nowrap" align="center">
+          <Select
+            data={versionOptions}
+            value={current?.versionKey ?? null}
+            onChange={(value) =>
+              startTransition(() => setSelectedVersion(value))
+            }
+            placeholder="选择要查看的版本"
+            clearable={false}
+            disabled={isPending}
+            style={{ flex: 1, minWidth: 0 }}
+          />
+          <SegmentedControl
+            visibleFrom="sm"
+            size="xs"
+            value={platePlan}
+            onChange={(v) =>
+              startTransition(() =>
+                updateFilterSettings({ platePlan: v as PlatePlan }),
+              )
+            }
+            data={PLAN_OPTIONS}
+            style={{ flexShrink: 0 }}
+          />
+          <Select
+            hiddenFrom="sm"
+            data={PLAN_OPTIONS}
+            value={platePlan}
+            onChange={(value) =>
+              value
+                ? startTransition(() =>
+                    updateFilterSettings({ platePlan: value as PlatePlan }),
+                  )
+                : undefined
+            }
+            clearable={false}
+            disabled={isPending}
+            styles={{ root: { width: 112, flexShrink: 0 } }}
+          />
+        </Group>
       )}
 
       {loading ? (
@@ -429,9 +616,11 @@ export function VersionScoresTab({
               filter={pageFilter}
               onFilterChange={setPageFilter}
             />
+            <DesktopFilterCard>{versionFilterContent}</DesktopFilterCard>
             <PlateGridView
               levels={visibleLevels}
               plan={platePlan}
+              completionMode={completionMode}
               onCardClick={handleScoreClick}
               pageFilter={pageFilter}
               sectionFilters={sectionFilters}

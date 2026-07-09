@@ -41,8 +41,12 @@ import {
 } from "../../components/MusicScoreCard";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
 import {
-  ScoreDisplayFilter,
+  ScoreDisplayFilterContent,
 } from "../../components/ScoreDisplayFilter";
+import {
+  DesktopFilterCard,
+  MobileFilterModalButton,
+} from "../../components/ResponsiveFilterPanel";
 import {
   DEFAULT_DISPLAY_FILTER,
   type DisplayFilterSettings,
@@ -300,6 +304,22 @@ export function LevelScoresTab({
     }
   };
 
+  const hasActiveDisplayFilter =
+    displayFilter.showFc !== DEFAULT_DISPLAY_FILTER.showFc ||
+    displayFilter.showFs !== DEFAULT_DISPLAY_FILTER.showFs ||
+    displayFilter.showScore !== DEFAULT_DISPLAY_FILTER.showScore ||
+    displayFilter.scoreDisplayMode !== DEFAULT_DISPLAY_FILTER.scoreDisplayMode ||
+    displayFilter.scoreDecimals !== DEFAULT_DISPLAY_FILTER.scoreDecimals ||
+    displayFilter.scoreMin !== DEFAULT_DISPLAY_FILTER.scoreMin ||
+    displayFilter.scoreMax !== DEFAULT_DISPLAY_FILTER.scoreMax;
+
+  const displayFilterContent = (
+    <ScoreDisplayFilterContent
+      value={displayFilter}
+      onChange={setDisplayFilter}
+    />
+  );
+
   return (
     <Stack gap="md">
       <ScoreDetailModal
@@ -313,10 +333,9 @@ export function LevelScoresTab({
             按详细定数查看
           </Title>
           <Group gap="xs">
-            <ScoreDisplayFilter
-              value={displayFilter}
-              onChange={setDisplayFilter}
-            />
+            <MobileFilterModalButton active={hasActiveDisplayFilter}>
+              {displayFilterContent}
+            </MobileFilterModalButton>
             <Button
               size="xs"
               variant="default"
@@ -415,6 +434,10 @@ export function LevelScoresTab({
           filter={pageFilter}
           onFilterChange={setPageFilter}
         />
+      )}
+
+      {current && (
+        <DesktopFilterCard>{displayFilterContent}</DesktopFilterCard>
       )}
 
       <Box pos="relative" mih={200}>
