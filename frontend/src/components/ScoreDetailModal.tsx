@@ -12,6 +12,7 @@ import {
   Stack,
   Table,
   Text,
+  Switch,
 } from "@mantine/core";
 import { IconChevronDown, IconChevronUp, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
@@ -25,6 +26,10 @@ import {
   ScoreSummary,
   ScoreVerificationSection,
 } from "./ScoreDetailSummary";
+import {
+  ScoreDetailBudgetTable,
+  TARGET_ACHIEVEMENT_OPTIONS,
+} from "./ScoreDetailBudgetTable";
 import classes from "./ScoreDetailModal.module.css";
 
 export interface ScoreDetailModalProps {
@@ -35,6 +40,7 @@ export interface ScoreDetailModalProps {
 
 type NoteKey = "tap" | "hold" | "slide" | "touch" | "break";
 type CalculatorMode = "0+" | "100-" | "101-";
+type CalculatorTableMode = "budget" | "legacy";
 type JudgementKey = "perfect" | "great" | "good" | "miss";
 
 type NoteStats = {
@@ -56,6 +62,9 @@ const NOTE_ROWS: Array<{
   { key: "touch", label: "TOUCH", weight: 1, color: "cyan" },
   { key: "break", label: "BREAK", weight: 5, color: "orange" },
 ];
+
+const NOTE_ARRAY_ROWS_DX: NoteKey[] = ["tap", "hold", "slide", "touch", "break"];
+const NOTE_ARRAY_ROWS_SD: NoteKey[] = ["tap", "hold", "slide", "break"];
 
 const BASIC_WEIGHTS = {
   perfect: {
@@ -156,8 +165,9 @@ function getNoteStats(notes: unknown): NoteStats {
   const counts = emptyCounts();
 
   if (Array.isArray(notes)) {
-    NOTE_ROWS.forEach((row, index) => {
-      counts[row.key] = toFiniteNumber(notes[index]);
+    const rows = notes.length >= 5 ? NOTE_ARRAY_ROWS_DX : NOTE_ARRAY_ROWS_SD;
+    rows.forEach((key, index) => {
+      counts[key] = toFiniteNumber(notes[index]);
     });
     const total = sumNumericValues(NOTE_ROWS.map((row) => counts[row.key]));
     return {
@@ -463,8 +473,11 @@ function ChartDetails({
   maxDxScore: number | null;
 }) {
   const [opened, setOpened] = useState(false);
+  const [calculatorTableMode, setCalculatorTableMode] =
+    useState<CalculatorTableMode>("budget");
   const [calculatorMode, setCalculatorMode] =
     useState<CalculatorMode>("101-");
+  const [targetAchievement, setTargetAchievement] = useState("100.5");
   const [noteSourceValue, setNoteSourceValue] = useState("main");
   const noteSources = useMemo(
     () => getNoteSources(scoreData.chartPayload?.notes),
@@ -517,7 +530,7 @@ function ChartDetails({
 
       <Collapse in={opened}>
         <Stack gap="sm">
-        <Group className={classes.calculatorControls} gap="xs" align="center">
+        <Group className={classes.calculatorControls} gap="xs" align="center" wrap="wrap">
           {noteSources.length > 1 ? (
             <SegmentedControl
               size="xs"
@@ -529,90 +542,128 @@ function ChartDetails({
               }))}
             />
           ) : null}
-          <Select
-            size="xs"
-            w={96}
-            value={calculatorMode}
-            onChange={(value) =>
-              setCalculatorMode((value ?? "101-") as CalculatorMode)
-            }
-            data={[
-              { value: "0+", label: "0+" },
-              { value: "100-", label: "100-" },
-              { value: "101-", label: "101-" },
-            ]}
-            allowDeselect={false}
-            comboboxProps={{ shadow: "md" }}
-          />
-          <Text size="xs" c="dimmed">
-            {calculatorMode === "0+"
-              ? "绝对达成率"
-              : `距离 ${calculatorMode.replace("-", "%")} 的损失`}
-          </Text>
+          <Group gap="xs" align="center" wrap="nowrap">
+            <Switch
+              size="xs"
+              checked={calculatorTableMode === "budget"}
+              onChange={(event) =>
+                setCalculatorTableMode(
+                  event.currentTarget.checked ? "budget" : "legacy",
+                )
+              }
+              onLabel="新"
+              offLabel="旧"
+              label={calculatorTableMode === "budget" ? "目标容错" : "旧表格"}
+            />
+            {calculatorTableMode === "budget" ? (
+              <Select
+                size="xs"
+                w={112}
+                value={targetAchievement}
+                onChange={(value) => setTargetAchievement(value ?? "100.5")}
+                data={TARGET_ACHIEVEMENT_OPTIONS}
+                allowDeselect={false}
+                comboboxProps={{ shadow: "md" }}
+                aria-label="目标达成率"
+              />
+            ) : (
+              <>
+                <Select
+                  size="xs"
+                  w={96}
+                  value={calculatorMode}
+                  onChange={(value) =>
+                    setCalculatorMode((value ?? "101-") as CalculatorMode)
+                  }
+                  data={[
+                    { value: "0+", label: "0+" },
+                    { value: "100-", label: "100-" },
+                    { value: "101-", label: "101-" },
+                  ]}
+                  allowDeselect={false}
+                  comboboxProps={{ shadow: "md" }}
+                />
+                <Text size="xs" c="dimmed">
+                  {calculatorMode === "0+"
+                    ? "绝对达成率"
+                    : `距离 ${calculatorMode.replace("-", "%")} 的损失`}
+                </Text>
+              </>
+            )}
+          </Group>
         </Group>
 
         {activeNoteStats.hasBreakdown ? (
-          <Box className={classes.calculatorTableWrap}>
-            <Table
-              className={classes.calculatorTable}
-              striped
-              highlightOnHover
-              withTableBorder
-              horizontalSpacing="xs"
-              layout="fixed"
-            >
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Note</Table.Th>
-                  <Table.Th>物量</Table.Th>
-                  <Table.Th c="orange">PERFECT</Table.Th>
-                  <Table.Th c="pink">GREAT</Table.Th>
-                  <Table.Th c="green">GOOD</Table.Th>
-                  <Table.Th c="gray">MISS</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {calculatorRows.map((row) => (
-                  <Table.Tr key={`${calculatorMode}:${row.key}`}>
-                    <Table.Td>
-                      <Badge variant="light" color={row.color}>
-                        {row.label}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      {row.count !== null ? (
-                        <NumberFormatter value={row.count} thousandSeparator />
-                      ) : (
-                        "-"
-                      )}
-                    </Table.Td>
-                    {row.key === "total" || row.count === 0 ? (
-                      <>
-                        <Table.Td>-</Table.Td>
-                        <Table.Td>-</Table.Td>
-                        <Table.Td>-</Table.Td>
-                        <Table.Td>-</Table.Td>
-                      </>
-                    ) : (
-                      (["perfect", "great", "good", "miss"] as const).map(
-                        (judgement) => (
-                          <Table.Td key={judgement}>
-                            {getCalculatorCell(
-                              row.key as NoteKey,
-                              judgement,
-                              activeNoteStats,
-                              achievementWeightTotal,
-                              calculatorMode,
-                            )}
-                          </Table.Td>
-                        ),
-                      )
-                    )}
+          calculatorTableMode === "budget" ? (
+            <ScoreDetailBudgetTable
+              noteStats={activeNoteStats}
+              achievementWeightTotal={achievementWeightTotal}
+              targetAchievement={Number(targetAchievement)}
+            />
+          ) : (
+            <Box className={classes.calculatorTableWrap}>
+              <Table
+                className={classes.calculatorTable}
+                striped
+                highlightOnHover
+                withTableBorder
+                withColumnBorders
+                horizontalSpacing="xs"
+                layout="fixed"
+              >
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Note</Table.Th>
+                    <Table.Th>物量</Table.Th>
+                    <Table.Th c="orange">PERFECT</Table.Th>
+                    <Table.Th c="pink">GREAT</Table.Th>
+                    <Table.Th c="green">GOOD</Table.Th>
+                    <Table.Th c="gray">MISS</Table.Th>
                   </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Box>
+                </Table.Thead>
+                <Table.Tbody>
+                  {calculatorRows.map((row) => (
+                    <Table.Tr key={`${calculatorMode}:${row.key}`}>
+                      <Table.Td>
+                        <Badge variant="light" color={row.color}>
+                          {row.label}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td>
+                        {row.count !== null ? (
+                          <NumberFormatter value={row.count} thousandSeparator />
+                        ) : (
+                          "-"
+                        )}
+                      </Table.Td>
+                      {row.key === "total" || row.count === 0 ? (
+                        <>
+                          <Table.Td>-</Table.Td>
+                          <Table.Td>-</Table.Td>
+                          <Table.Td>-</Table.Td>
+                          <Table.Td>-</Table.Td>
+                        </>
+                      ) : (
+                        (["perfect", "great", "good", "miss"] as const).map(
+                          (judgement) => (
+                            <Table.Td key={judgement}>
+                              {getCalculatorCell(
+                                row.key as NoteKey,
+                                judgement,
+                                activeNoteStats,
+                                achievementWeightTotal,
+                                calculatorMode,
+                              )}
+                            </Table.Td>
+                          ),
+                        )
+                      )}
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Box>
+          )
         ) : (
           <Paper withBorder className={classes.emptyChartData}>
             <Text size="sm" c="dimmed">

@@ -229,16 +229,138 @@
   justify-content: space-between;
 }
 
+.budgetSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.budgetMetric {
+  min-width: 0;
+  padding: 10px 12px;
+  background: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-6));
+}
+
+.budgetMetricValue {
+  font-size: 1rem;
+  line-height: 1.2;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
 .calculatorTableWrap {
   width: 100%;
   height: 100%;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 .calculatorTable {
   width: 100%;
   height: 100%;
   table-layout: fixed;
+}
+
+.budgetTable {
+  min-width: 580px;
+}
+
+.equivalentTable {
+  min-width: 0;
+}
+
+.equivalentCellLine {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.equivalentScoreBadge {
+  flex: 0 0 auto;
+  min-width: 38px;
+  padding-inline: 4px;
+}
+
+.equivalentTable td {
+  white-space: nowrap;
+}
+
+.judgementPerfect {
+  color: light-dark(var(--mantine-color-yellow-7), var(--mantine-color-yellow-4));
+}
+
+.judgementGreat {
+  color: light-dark(var(--mantine-color-pink-6), var(--mantine-color-pink-4));
+}
+
+.judgementGood {
+  color: light-dark(var(--mantine-color-green-7), var(--mantine-color-green-4));
+}
+
+.judgementMiss {
+  color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-4));
+}
+
+.noteCountCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.breakEquivalentPanel {
+  padding: 10px 12px;
+  background: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-6));
+}
+
+.breakEquivalentHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.breakEquivalentGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.breakEquivalentRow {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.breakEquivalentJudgement {
+  min-width: 0;
+}
+
+.breakEquivalentItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: var(--mantine-radius-sm);
+  background: light-dark(var(--mantine-color-white), var(--mantine-color-dark-7));
+}
+
+.equivalentScoreText {
+  flex: 0 0 34px;
+  min-width: 34px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.breakEquivalentItem :global(.mantine-Text-root:last-child) {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .calculatorTable th,
@@ -256,6 +378,12 @@
 .calculatorTable th:nth-child(2),
 .calculatorTable td:nth-child(2) {
   width: 12%;
+}
+
+.calculatorTable.equivalentTable th,
+.calculatorTable.equivalentTable td {
+  width: 20%;
+  text-align: center;
 }
 
 @media (max-width: 48em) {
@@ -320,14 +448,79 @@
     justify-content: flex-start;
   }
 
+  .budgetSummaryGrid {
+    gap: 6px;
+  }
+
+  .budgetMetric {
+    padding: 8px;
+  }
+
+  .budgetMetricValue {
+    font-size: 0.86rem;
+  }
+
+  .budgetTable {
+    min-width: 540px;
+  }
+
+  .equivalentTable {
+    min-width: 0;
+  }
+
+  .equivalentTable {
+    table-layout: fixed;
+  }
+
+  .equivalentTable th,
+  .equivalentTable td {
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
   .calculatorTable th,
   .calculatorTable td {
-    padding-inline: 3px;
+    padding-inline: 2px;
     font-size: 0.72rem;
   }
 
   .calculatorTable [class*="mantine-Badge-root"] {
-    padding-inline: 4px;
+    padding-inline: 3px;
     font-size: 0.62rem;
+  }
+
+  .equivalentCellLine {
+    gap: 2px;
+  }
+
+  .equivalentScoreBadge {
+    min-width: 32px;
+  }
+
+  .noteCountCell {
+    gap: 3px;
+  }
+
+  .breakEquivalentPanel {
+    padding: 8px;
+  }
+
+  .breakEquivalentGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .breakEquivalentRow {
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .breakEquivalentItem {
+    padding: 6px;
+  }
+
+  .equivalentScoreText {
+    flex-basis: 30px;
+    min-width: 30px;
   }
 }
