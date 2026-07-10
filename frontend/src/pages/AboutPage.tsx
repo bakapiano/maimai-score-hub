@@ -58,7 +58,7 @@ export default function AboutPage() {
               >
                 返回
               </Button>
-              <Paper withBorder shadow="sm" p="xl" radius="md">
+              <Paper withBorder shadow="sm" p="xl">
                 <Stack gap="md">
                   <Group gap="sm">
                     <ThemeIcon
@@ -135,7 +135,7 @@ export default function AboutPage() {
                 </Stack>
               </Paper>
 
-              <Paper withBorder shadow="sm" p="xl" radius="md">
+              <Paper withBorder shadow="sm" p="xl">
                 <Stack gap="md">
                   <Group gap="sm">
                     <ThemeIcon
@@ -171,7 +171,7 @@ export default function AboutPage() {
                 </Stack>
               </Paper>
 
-              <Paper withBorder shadow="sm" p="xl" radius="md">
+              <Paper withBorder shadow="sm" p="xl">
                 <Stack gap="md">
                   <Group gap="sm">
                     <ThemeIcon

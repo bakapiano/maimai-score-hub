@@ -10,6 +10,7 @@ import { MusicProvider } from "./providers/MusicProvider";
 import { Notifications } from "@mantine/notifications";
 import { ObservabilityReporter } from "./components/ObservabilityReporter";
 import { PwaInstallProvider } from "./providers/PwaInstallProvider";
+import { appTheme } from "./theme";
 
 // Lazy-loaded routes for code splitting
 const AuthedLayout = lazy(() => import("./layouts/AuthedLayout"));
@@ -39,12 +40,10 @@ function DefaultRedirect() {
 }
 
 function App() {
-  const systemSans =
-    "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji'";
   return (
     <MantineProvider
       // defaultColorScheme="dark"
-      theme={{ fontFamily: systemSans, headings: { fontFamily: systemSans } }}
+      theme={appTheme}
     >
       <Notifications position="top-center" />
       <PwaInstallProvider>

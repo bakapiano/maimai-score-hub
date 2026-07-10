@@ -258,7 +258,7 @@ export function ScoreSummaryCard({
       : undefined;
 
   return (
-    <Card shadow="none" radius="md" p="sm" withBorder>
+    <Card shadow="none" p="sm" withBorder>
       <Stack gap="sm">
         {/* 达成率统计 */}
         <Box>

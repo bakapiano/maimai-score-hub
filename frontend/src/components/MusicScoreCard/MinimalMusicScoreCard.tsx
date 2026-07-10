@@ -171,7 +171,6 @@ export function MinimalMusicScoreCard({
     <Card
       withBorder
       padding="0"
-      radius="sm"
       style={{
         backgroundColor: difficultyColor,
         border: `3px solid ${difficultyColor}`,

@@ -400,7 +400,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
           )}
         </Stack>
       ) : (
-        <Card withBorder shadow="none" padding="lg" radius="md">
+        <Card withBorder shadow="none" padding="lg">
           <Group justify="center" py="xs">
             <Text c="dimmed" size="sm">
               {loading ? "加载中..." : "暂无 B50 数据"}
@@ -418,7 +418,7 @@ function Best50RatingCard({
   ratingSummary: RatingSummary;
 }) {
   return (
-    <Card withBorder shadow="none" padding="lg" radius="md">
+    <Card withBorder shadow="none" padding="lg">
       <Group justify="space-between" align="center" wrap="wrap">
         <Stack gap={4}>
           <Group gap={6} align="center">

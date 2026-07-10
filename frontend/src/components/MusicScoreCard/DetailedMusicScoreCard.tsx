@@ -515,7 +515,6 @@ export function DetailedMusicScoreCard(props: DetailedMusicScoreCardProps) {
     <Card
       withBorder
       padding={0}
-      radius="lg"
       style={{
         overflow: "hidden",
         backgroundColor: "#1a1a2e",

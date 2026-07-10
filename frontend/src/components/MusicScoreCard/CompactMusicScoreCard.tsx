@@ -38,7 +38,6 @@ export function CompactMusicScoreCard({
     <Card
       withBorder
       padding="0"
-      radius="md"
       style={{
         backgroundColor: difficultyColor,
         border: `3px solid ${difficultyColor}`,

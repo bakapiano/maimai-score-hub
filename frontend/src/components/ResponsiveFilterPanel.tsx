@@ -14,7 +14,7 @@ type MobileFilterModalButtonProps = {
 
 export function DesktopFilterCard({ children }: FilterCardProps) {
   return (
-    <Card shadow="none" radius="md" p="md" withBorder visibleFrom="sm">
+    <Card shadow="none" p="md" withBorder visibleFrom="sm">
       {children}
     </Card>
   );

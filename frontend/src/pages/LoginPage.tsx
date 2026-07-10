@@ -240,7 +240,6 @@ function LoginMethodCard({
       component="button"
       type="button"
       withBorder
-      radius="md"
       p="sm"
       disabled={disabled}
       onClick={onClick}
@@ -309,7 +308,6 @@ function IdentifierCard({
       component="button"
       type="button"
       withBorder
-      radius="md"
       p="sm"
       disabled={disabled}
       onClick={onClick}
@@ -905,7 +903,7 @@ export default function LoginPage() {
                     <Text size="sm">
                       请登录 maimai NET，向下面这个 Bot 好友码发送好友申请。
                     </Text>
-                    <Paper withBorder radius="md" p="sm">
+                    <Paper withBorder p="sm">
                       <Group justify="space-between" align="center">
                         <Text fw={700} size="lg">
                           {assignedBotFriendCode || "等待分配 Bot..."}
@@ -979,7 +977,7 @@ export default function LoginPage() {
                     </Tabs.List>
 
                     <Tabs.Panel value="friendCode" pt="md">
-                      <Paper shadow="xs" p="lg" radius="md" withBorder>
+                      <Paper shadow="xs" p="lg" withBorder>
                         <Stack gap="md">
                           <Group align="flex-end" gap="xs">
                             <TextInput
@@ -1103,7 +1101,7 @@ export default function LoginPage() {
                     </Tabs.Panel>
 
                     <Tabs.Panel value="password" pt="md">
-                      <Paper shadow="xs" p="lg" radius="md" withBorder>
+                      <Paper shadow="xs" p="lg" withBorder>
                         <Stack gap="md">
                           <Stack gap={6}>
                             <Text size="sm" fw={500}>
@@ -1203,7 +1201,7 @@ export default function LoginPage() {
                     </Tabs.Panel>
 
                     <Tabs.Panel value="qr" pt="md">
-                      <Paper shadow="xs" p="lg" radius="md" withBorder>
+                      <Paper shadow="xs" p="lg" withBorder>
                         <QrLoginForm
                           onSuccess={(t) => {
                             setToken(t);

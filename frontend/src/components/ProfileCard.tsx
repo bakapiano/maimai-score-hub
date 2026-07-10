@@ -77,7 +77,7 @@ export function ProfileCard({ profile }: Props) {
     : AVATAR_PLACEHOLDER;
 
   return (
-    <Card withBorder shadow="xs" padding={0} radius="md">
+    <Card withBorder shadow="xs" padding={0}>
       <Box className={classes.scrollArea}>
         <Group
           className={classes.profileBody}

@@ -37,7 +37,6 @@ export function MusicScoreCard({
     <Card
       withBorder
       padding="sm"
-      radius="md"
       style={{
         overflow: "hidden",
         backgroundColor: difficultyColor,

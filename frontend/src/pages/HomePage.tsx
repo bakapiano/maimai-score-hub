@@ -91,7 +91,7 @@ export default function HomePage() {
                 opacity: disabled ? 0.5 : 1,
               }}
             >
-              <Card withBorder shadow="sm" padding="lg" radius="md">
+              <Card withBorder shadow="sm" padding="lg">
                 <Group wrap="nowrap">
                   <ThemeIcon size={48} radius="md" color={banner.color}>
                     <banner.icon size={28} />

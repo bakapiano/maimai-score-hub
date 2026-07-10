@@ -225,7 +225,7 @@ export function CabinetBindingCard({
   };
 
   return (
-    <Card withBorder padding="md" radius="md">
+    <Card withBorder padding="md">
       <Stack gap="md">
         <Group justify="space-between" align="center">
           <Badge color="orange" variant="light" size="sm">

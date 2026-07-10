@@ -8,7 +8,6 @@ import {
   Divider,
   Group,
   Loader,
-  Paper,
   PasswordInput,
   Progress,
   SimpleGrid,
@@ -18,11 +17,15 @@ import {
   TextInput,
 } from "@mantine/core";
 import {
+  IconChartBar,
+  IconCheck,
   IconCloudUpload,
+  IconClock,
   IconKey,
   IconLogin,
   IconPassword,
   IconRefresh,
+  IconSend,
   IconUser,
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
@@ -46,6 +49,7 @@ import {
 } from "../api/jobClient";
 import { ProfileCard } from "../components/ProfileCard";
 import { CabinetBindingCard } from "../components/CabinetBindingCard";
+import { SyncMetric } from "../components/SyncMetric";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { type AuthProfile, useAuth } from "../providers/AuthContext";
@@ -122,6 +126,38 @@ function formatDate(dateString: string) {
   });
 }
 
+function formatRelativeDate(dateString: string) {
+  const date = new Date(dateString);
+  const now = new Date();
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const daysAgo = Math.round(
+    (startOfToday.getTime() - startOfDate.getTime()) / (24 * 60 * 60 * 1000),
+  );
+  const time = date.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  if (daysAgo === 0) {return `今天 ${time}`;}
+  if (daysAgo === 1) {return `昨天 ${time}`;}
+  return formatDate(dateString);
+}
+
+function formatElapsedTime(dateString: string) {
+  const elapsedMs = Math.max(0, Date.now() - new Date(dateString).getTime());
+  const elapsedHours = Math.floor(elapsedMs / (60 * 60 * 1000));
+  if (elapsedHours < 24) {return `${Math.max(1, elapsedHours)} 小时前`;}
+
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  if (elapsedDays < 30) {return `${elapsedDays} 天前`;}
+
+  const elapsedMonths = Math.floor(elapsedDays / 30);
+  if (elapsedMonths < 12) {return `${elapsedMonths} 个月前`;}
+
+  return `${Math.floor(elapsedMonths / 12)} 年前`;
+}
+
 function exportStatusColor(status: string) {
   return status === "success" ? "green" : status === "skipped" ? "yellow" : "red";
 }
@@ -184,12 +220,10 @@ function SectionHeader({
   icon,
   color,
   title,
-  subtitle,
 }: {
   icon: React.ReactNode;
   color: string;
   title: string;
-  subtitle?: React.ReactNode;
 }) {
   return (
     <Group gap="sm" align="center" mb={4}>
@@ -207,16 +241,9 @@ function SectionHeader({
       >
         {icon}
       </Box>
-      <Stack gap={0}>
-        <Text fw={700} size="lg" style={{ lineHeight: 1.2 }}>
-          {title}
-        </Text>
-        {subtitle && (
-          <Text size="xs" c="dimmed">
-            {subtitle}
-          </Text>
-        )}
-      </Stack>
+      <Text fw={700} size="lg" style={{ lineHeight: 1.2 }}>
+        {title}
+      </Text>
     </Group>
   );
 }
@@ -235,7 +262,11 @@ function getSyncStatusView({
   }
   if (!syncStatus) {
     return lastSync
-      ? { color: "cyan", label: "已同步", text: "可以随时更新最新成绩" }
+      ? {
+          color: "green",
+          label: `上次更新 ${formatElapsedTime(lastSync.createdAt)}`,
+          text: "点击开始同步数据",
+        }
       : { color: "gray", label: "未同步", text: "完成首次同步后即可查看成绩" };
   }
   if (syncStatus.status === "completed") {
@@ -306,31 +337,6 @@ function AutoExportBadges({
         </Badge>
       )}
     </Group>
-  );
-}
-
-function SyncStatTile({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Paper
-      withBorder={false}
-      radius="md"
-      p="sm"
-      style={{
-        background: "var(--mantine-color-gray-light)",
-        minHeight: 64,
-      }}
-    >
-      <Text size="xs" c="dimmed" mb={4}>
-        {label}
-      </Text>
-      {children}
-    </Paper>
   );
 }
 
@@ -832,7 +838,6 @@ export default function SyncPage() {
     loading: pageLoading,
     syncStatus,
   });
-
   return (
     <Box style={{ position: "relative" }}>
       {offline && (
@@ -877,7 +882,7 @@ export default function SyncPage() {
         )}
 
         {pageLoading && !profile?.profile && (
-          <Card withBorder padding="md" radius="md" h={160}>
+          <Card withBorder padding="md" h={160}>
             <Group justify="center" py="md" h={160}>
               <Loader size="sm" />
             </Group>
@@ -892,99 +897,44 @@ export default function SyncPage() {
             icon={<IconCloudUpload size={18} />}
             color="blue"
             title="同步成绩"
-            subtitle="从 maimai DX NET 拉取最新游戏成绩"
           />
 
           <Card
             withBorder
-            padding="md"
-            radius="md"
-            style={{
-              borderLeft: `4px solid var(--mantine-color-${syncStatusView.color}-6)`,
-            }}
+            padding="lg"
           >
-            <Stack gap="md">
-              <Group justify="space-between" align="flex-start" wrap="wrap">
-                <Group gap="xs" align="center">
-                  <Badge
-                    variant="light"
-                    color={syncStatusView.color}
-                    radius="md"
-                    size="lg"
-                  >
-                    {syncStatusView.label}
-                  </Badge>
-                  {syncing && <Loader size="xs" />}
-                  <Text size="sm" c="dimmed">
-                    {syncStatusView.text}
-                  </Text>
-                </Group>
-                <Button
-                  onClick={startSync}
-                  disabled={!profile?.friendCode || syncing || pageLoading}
-                  loading={syncing}
-                  variant={lastSync ? "light" : "filled"}
-                  leftSection={<IconRefresh size={16} />}
-                >
-                  {lastSync ? "更新数据" : "开始同步"}
-                </Button>
-              </Group>
-
-              <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="sm">
-                <SyncStatTile label="上次同步">
+            <Stack gap="lg">
+              <SimpleGrid cols={{ base: 1, xs: 3 }} spacing={{ base: "xs", xs: "lg" }}>
+                <SyncMetric icon={<IconClock size={18} />} label="最近同步">
                   <Text size="sm" fw={600}>
-                    {lastSync ? formatDate(lastSync.createdAt) : "暂无记录"}
+                    {lastSync ? formatRelativeDate(lastSync.createdAt) : "暂无记录"}
                   </Text>
-                </SyncStatTile>
-                <SyncStatTile label="记录条数">
-                  <Badge variant="light" size="lg" radius="md">
-                    {lastSync ? `${lastSync.scoreCount} 条` : "-"}
-                  </Badge>
-                </SyncStatTile>
-                <SyncStatTile label="自动导出">
+                </SyncMetric>
+                <SyncMetric icon={<IconChartBar size={18} />} label="成绩记录">
+                  <Text size="sm" fw={600}>
+                    {lastSync ? lastSync.scoreCount.toLocaleString("zh-CN") : "-"}
+                    {lastSync && (
+                      <Text component="span" size="xs" fw={400} c="dimmed" ml={4}>
+                        条
+                      </Text>
+                    )}
+                  </Text>
+                </SyncMetric>
+                <SyncMetric icon={<IconSend size={18} />} label="自动导出">
                   <AutoExportBadges result={lastSync?.autoExportResult} />
-                </SyncStatTile>
+                </SyncMetric>
               </SimpleGrid>
 
-              <Divider variant="dashed" />
-
-              <Group justify="space-between" align="center">
-                <Stack gap={2}>
-                  <Text size="xs" c="dimmed">
-                    当前阶段
-                  </Text>
-                  <Text size="sm" fw={600}>
-                    {getSyncStageText(syncStatus)}
-                  </Text>
-                </Stack>
-                {syncStatus && (
-                  <Badge
-                    variant="light"
-                    color={
-                      syncStatus.status === "completed"
-                        ? "green"
-                        : syncStatus.status === "failed" ||
-                            syncStatus.status === "canceled"
-                          ? "red"
-                          : syncStatus.status === "queued"
-                            ? "gray"
-                            : "blue"
-                    }
-                    radius="md"
-                  >
-                    {syncStatus.status}
-                  </Badge>
-                )}
-              </Group>
+              <Divider />
 
               {progress && syncStatus?.stage === "update_score" && (
                 <Stack gap="xs">
                   <Group justify="space-between" align="center">
-                    <Text size="sm" c="dimmed">
-                      更新进度
-                    </Text>
                     <Text size="sm" fw={600}>
-                      {progress.completedDiffs.length} / {progress.totalDiffs}
+                      正在更新成绩
+                    </Text>
+                    <Text size="sm" fw={700} c="blue.7">
+                      {Math.round(progress.percent)}%
                     </Text>
                   </Group>
                   <Progress
@@ -1023,11 +973,66 @@ export default function SyncPage() {
                   )}
                 </Stack>
               )}
+
+              <Group justify="space-between" align="center" wrap="wrap">
+                <Group gap="sm" align="center" wrap="nowrap">
+                  <Box
+                    style={{
+                      width: 42,
+                      height: 42,
+                      flex: "0 0 auto",
+                      borderRadius: 14,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: `var(--mantine-color-${syncStatusView.color}-7)`,
+                      background: `var(--mantine-color-${syncStatusView.color}-light)`,
+                    }}
+                  >
+                    {pageLoading || syncing ? (
+                      <Loader size="sm" color={syncStatusView.color} />
+                    ) : (
+                      <IconCheck size={22} />
+                    )}
+                  </Box>
+                  <Stack gap={1}>
+                    <Group gap="xs">
+                      <Text fw={700} size="md">
+                        {syncStatusView.label}
+                      </Text>
+                      {syncStatus && (
+                        <Badge
+                          variant="light"
+                          color={syncStatusView.color}
+                          radius="xl"
+                          size="sm"
+                        >
+                          {getSyncStageText(syncStatus)}
+                        </Badge>
+                      )}
+                    </Group>
+                    <Text size="sm" c="dimmed">
+                      {syncStatusView.text}
+                    </Text>
+                  </Stack>
+                </Group>
+                <Button
+                  onClick={startSync}
+                  disabled={!profile?.friendCode || syncing || pageLoading}
+                  loading={syncing}
+                  variant="filled"
+                  leftSection={<IconRefresh size={16} />}
+                  w={{ base: "100%", xs: "auto" }}
+                  styles={{ root: { flexShrink: 0 } }}
+                >
+                  {lastSync ? "更新成绩" : "开始同步"}
+                </Button>
+              </Group>
             </Stack>
           </Card>
 
           {pageLoading && (
-            <Card withBorder padding="md" radius="md">
+            <Card withBorder padding="md">
               <Stack gap="sm" align="center">
                 <Loader size="sm" />
                 <Text size="sm" c="dimmed">
@@ -1093,7 +1098,6 @@ export default function SyncPage() {
               icon={<IconRefresh size={18} />}
               color="grape"
               title="神秘二维码绑定"
-              subtitle="绑定后可在推分时自动同步成绩"
             />
             <CabinetBindingCard
               token={token}
@@ -1111,11 +1115,10 @@ export default function SyncPage() {
             icon={<IconCloudUpload size={18} />}
             color="teal"
             title="更新查分器"
-            subtitle="配置 token 后，同步完成会自动导出到对应查分器"
           />
 
           {/* Diving-Fish Section */}
-          <Card withBorder padding="md" radius="md">
+          <Card withBorder padding="md">
             <Stack gap="md">
               <Anchor
                 href="https://www.diving-fish.com/maimaidx/prober/"
@@ -1370,7 +1373,7 @@ export default function SyncPage() {
           </Card>
 
           {/* LXNS Section */}
-          <Card withBorder padding="md" radius="md">
+          <Card withBorder padding="md">
             <Stack gap="md">
               <Anchor
                 href="https://maimai.lxns.net/"
