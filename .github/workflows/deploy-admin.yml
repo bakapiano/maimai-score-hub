@@ -30,30 +30,33 @@ jobs:
           ls -lh /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz
 
       - name: Upload source archive
-        timeout-minutes: 3
+        timeout-minutes: 8
         env:
           FRONTEND_HOST: ${{ secrets.FRONTEND_HOST }}
           FRONTEND_USER: ${{ secrets.FRONTEND_USER }}
           FRONTEND_PORT: ${{ secrets.FRONTEND_PORT }}
-          BACKEND_HOST: ${{ secrets.BACKEND_HOST }}
-          BACKEND_USER: ${{ secrets.BACKEND_USER }}
-          BACKEND_PORT: ${{ secrets.BACKEND_PORT }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
           set -euo pipefail
           FRONTEND_PORT="${FRONTEND_PORT:-22}"
-          BACKEND_PORT="${BACKEND_PORT:-22}"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/admin_deploy_key
           chmod 600 ~/.ssh/admin_deploy_key
           timeout 30s ssh-keyscan -p "$FRONTEND_PORT" "$FRONTEND_HOST" >> ~/.ssh/known_hosts
-          timeout 30s ssh-keyscan -p "$BACKEND_PORT" "$BACKEND_HOST" >> ~/.ssh/known_hosts
-          timeout 180s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
-            -J "$BACKEND_USER@$BACKEND_HOST:$BACKEND_PORT" \
-            -p "$FRONTEND_PORT" -i ~/.ssh/admin_deploy_key \
-            "$FRONTEND_USER@$FRONTEND_HOST" \
-            "cat > /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz" \
-            < /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz
+          uploaded=0
+          for attempt in 1 2 3; do
+            if timeout 120s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+              -p "$FRONTEND_PORT" -i ~/.ssh/admin_deploy_key \
+              "$FRONTEND_USER@$FRONTEND_HOST" \
+              "cat > /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz" \
+              < /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz; then
+              uploaded=1
+              break
+            fi
+            echo "Upload attempt $attempt failed; retrying direct SSH..."
+            sleep $((attempt * 10))
+          done
+          test "$uploaded" -eq 1
 
       - name: Deploy via SSH
         timeout-minutes: 30
@@ -63,10 +66,6 @@ jobs:
           username: ${{ secrets.FRONTEND_USER }}
           port: ${{ secrets.FRONTEND_PORT }}
           key: ${{ secrets.SSH_KEY }}
-          proxy_host: ${{ secrets.BACKEND_HOST }}
-          proxy_username: ${{ secrets.BACKEND_USER }}
-          proxy_port: ${{ secrets.BACKEND_PORT }}
-          proxy_key: ${{ secrets.SSH_KEY }}
           command_timeout: 30m
           script: |
             ADMIN_PATH="${{ secrets.ADMIN_PATH }}"
