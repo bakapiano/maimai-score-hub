@@ -1,22 +1,29 @@
 .scrollArea {
   max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: thin;
+  overflow: hidden;
   padding-inline: var(--mantine-spacing-md);
 }
 
 .profileBody {
+  --profile-block-height: 108px;
+  --profile-rank-height: 36px;
+  --profile-star-height: 30px;
+  --profile-badge-height: 1.75rem;
+  --profile-badge-font: 0.8125rem;
+  --profile-name-size: var(--mantine-font-size-lg);
+
   width: 100%;
-  min-width: max-content;
+  min-width: 0;
   padding: var(--mantine-spacing-md) 0;
+  align-items: stretch;
   color: light-dark(var(--mantine-color-black), var(--mantine-color-dark-0));
 }
 
 .avatarFrame {
   flex-shrink: 0;
-  width: 94px;
-  height: 108px;
+  align-self: center;
+  width: var(--profile-block-height);
+  height: var(--profile-block-height);
   border-radius: 8px;
   overflow: hidden;
   background: var(--mantine-color-gray-light);
@@ -24,55 +31,210 @@
 
 .summary {
   flex: 1 1 auto;
-  min-width: 260px;
-  overflow: visible;
+  min-width: 0;
+  height: var(--profile-block-height);
+  overflow: hidden;
   padding-right: var(--mantine-spacing-md);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .metaRow {
   min-width: 0;
+  width: 100%;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
+  container-type: inline-size;
+  container-name: profile-meta;
 }
 
 .titleBadge {
-  flex: none;
-  max-width: 220px;
+  flex: 1 1 160px;
+  width: 160px;
+  max-width: 160px;
+  min-width: 0;
+  height: var(--profile-badge-height);
+  font-size: var(--profile-badge-font);
   overflow: hidden;
-  text-overflow: ellipsis;
   text-transform: none;
   cursor: inherit;
 }
 
+.titleBadgeLabel {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+.titleTrack,
+.titleTrackScrolling {
+  display: inline-flex;
+  width: max-content;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.titleTrackScrolling {
+  animation: title-marquee 9s linear infinite;
+}
+
+.titleText {
+  flex: 0 0 auto;
+}
+
+.titleTrackScrolling .titleText {
+  padding-right: 2em;
+}
+
+@keyframes title-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .titleTrackScrolling {
+    animation: none;
+  }
+
+  .titleTrackScrolling .titleText:last-child {
+    display: none;
+  }
+
+  .titleBadgeLabel {
+    text-overflow: ellipsis;
+  }
+
+  .titleTrackScrolling,
+  .titleTrack {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .titleText {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 0;
+  }
+}
+
 .ratingBadge {
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  height: var(--profile-badge-height);
+  font-size: var(--profile-badge-font);
+}
+
+.ratingPrefix {
+  display: inline;
+}
+
+/* Narrow meta row: drop "DX 评分: " so the number still fits beside the title */
+@container profile-meta (max-width: 300px) {
+  .ratingPrefix {
+    display: none;
+  }
+}
+
+.username {
+  flex: 0 0 auto;
+  min-width: 0;
+  font-size: var(--profile-name-size);
+  line-height: 1.2;
+  word-break: break-all;
+}
+
+.divider {
+  flex: 0 0 auto;
+  margin-block: 0;
 }
 
 .rankRow {
   flex: 0 0 auto;
-  margin-top: 10px;
+  height: var(--profile-rank-height);
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .courseRank {
   flex: 0 0 auto;
-  height: 36px;
+  height: var(--profile-rank-height);
   width: auto;
+  max-width: 42%;
+  object-fit: contain;
 }
 
 .classRankFrame {
-  flex: 0 0 78px;
-  height: 36px;
+  flex: 0 1 auto;
+  max-width: 78px;
+  height: var(--profile-rank-height);
   overflow: hidden;
   display: flex;
   align-items: center;
 }
 
+.classRank {
+  height: var(--profile-rank-height) !important;
+  width: auto !important;
+}
+
 .starGroup {
   flex: 0 0 auto;
-  height: 36px;
+  height: var(--profile-rank-height);
   align-items: center;
 }
 
 .starIcon {
-  height: 30px;
+  height: var(--profile-star-height);
   width: auto;
+}
+
+.starCount {
+  font-size: inherit;
+  line-height: 1;
+}
+
+/* Compact player plate: avatar + summary share one height token */
+@media (max-width: 480px) {
+  .scrollArea {
+    padding-inline: var(--mantine-spacing-sm);
+  }
+
+  .profileBody {
+    --profile-block-height: 82px;
+    --profile-rank-height: 26px;
+    --profile-star-height: 20px;
+    --profile-badge-height: 1.4rem;
+    --profile-badge-font: 0.7rem;
+    --profile-name-size: var(--mantine-font-size-sm);
+
+    padding: var(--mantine-spacing-sm) 0;
+    gap: var(--mantine-spacing-sm);
+  }
+
+  .avatarFrame {
+    border-radius: 6px;
+  }
+
+  .summary {
+    padding-right: 0;
+  }
+
+  .titleBadge,
+  .ratingBadge {
+    padding-inline: 0.5rem;
+  }
+
+  .classRankFrame {
+    max-width: 56px;
+  }
 }

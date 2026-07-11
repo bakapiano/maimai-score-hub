@@ -393,7 +393,7 @@ function ExportScoreCard({
         className={classes.musicId}
         style={{ color: ID_COLORS[chartIndex] ?? textColor }}
       >
-        {card.musicId}
+        #{card.musicId}
       </div>
     </>
   );

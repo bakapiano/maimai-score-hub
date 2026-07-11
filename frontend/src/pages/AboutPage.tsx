@@ -1,5 +1,6 @@
 import {
   Anchor,
+  AppShell,
   Box,
   Button,
   Container,
@@ -18,26 +19,91 @@ import {
   IconBrandQq,
   IconHeart,
   IconLink,
+  IconLogin,
   IconUsers,
 } from "@tabler/icons-react";
+import { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { AppFooter } from "../components/AppFooter";
 import { AppHeader } from "../components/AppHeader";
-import { AppShell } from "@mantine/core";
-import { useNavigate } from "react-router-dom";
+import type { MiniProfile } from "../components/MiniProfileCard";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { useAuth } from "../providers/AuthContext";
+import { getCachedProfile } from "../utils/offlineCache";
+
+function resolveHeaderProfile(
+  authProfile: ReturnType<typeof useAuth>["profile"],
+  offline: boolean,
+): MiniProfile | null {
+  const cached = getCachedProfile();
+  const cachedMini = cached
+    ? { avatarUrl: cached.avatarUrl, username: cached.username }
+    : null;
+
+  if (offline) {
+    return cachedMini;
+  }
+  if (authProfile?.profile) {
+    return {
+      avatarUrl: authProfile.profile.avatarUrl,
+      username: authProfile.profile.username,
+    };
+  }
+  if (authProfile) {
+    return {
+      avatarUrl: cachedMini?.avatarUrl ?? null,
+      username: authProfile.username ?? cachedMini?.username ?? null,
+    };
+  }
+  return cachedMini;
+}
 
 export default function AboutPage() {
   useDocumentTitle("关于网站");
   const navigate = useNavigate();
+  const {
+    token,
+    clearToken,
+    offline,
+    setOffline,
+    profile: authProfile,
+  } = useAuth();
+  const isAuthed = Boolean(token) || offline;
+
+  const profile = useMemo(
+    () => (isAuthed ? resolveHeaderProfile(authProfile, offline) : null),
+    [isAuthed, authProfile, offline],
+  );
+
+  const handleLogout = () => {
+    if (offline) {
+      setOffline(false);
+    }
+    clearToken();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <AppShell header={{ height: 56 }} padding={0}>
       <AppShell.Header>
         <AppHeader
-          profile={null}
-          onLogout={() => navigate("/login")}
-          offline={false}
+          profile={profile}
+          onLogout={handleLogout}
+          offline={offline}
+          showProfile={isAuthed}
+          rightSection={
+            isAuthed ? undefined : (
+              <Button
+                size="sm"
+                variant="light"
+                leftSection={<IconLogin size={16} />}
+                onClick={() => navigate("/login")}
+              >
+                登录
+              </Button>
+            )
+          }
         />
       </AppShell.Header>
       <AppShell.Main

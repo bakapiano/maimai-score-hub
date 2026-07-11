@@ -3,6 +3,7 @@
  * 从 Friend VS HTML 页面中提取歌曲成绩信息
  */
 
+import { decodeHtmlEntities } from "@maimai-score-hub/shared";
 import type { FriendVsSong, ChartType } from "../../types.ts";
 
 const songBlockAnchor =
@@ -142,13 +143,13 @@ function cloneRegex(regex: RegExp): RegExp {
 }
 
 function normalizeText(value: string): string {
-  return decodeHtml(value.trim());
+  return decodeHtmlEntities(value.trim());
 }
 
 function normalizeCategoryText(value: string): string {
   // Replace all whitespace (including full-width spaces) with a single half-width space
   const trimmed = value.replace(/\s+/g, ' ').trim();
-  return decodeHtml(trimmed);
+  return decodeHtmlEntities(trimmed);
 }
 
 function normalizeScore(value: string): string | null {
@@ -157,17 +158,4 @@ function normalizeScore(value: string): string | null {
     return null;
   }
   return cleaned;
-}
-
-function decodeHtml(content: string): string {
-  return content
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x([\da-fA-F]+);/g, (_, hex) =>
-      String.fromCharCode(parseInt(hex, 16))
-    )
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)));
 }

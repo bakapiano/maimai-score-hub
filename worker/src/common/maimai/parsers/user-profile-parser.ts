@@ -2,6 +2,7 @@
  * 舞萌用户资料相关页面解析器。
  */
 
+import { decodeHtmlEntities } from "@maimai-score-hub/shared";
 import type { UserProfile } from "../../types.ts";
 
 /**
@@ -23,15 +24,16 @@ export function parseUserProfile(html: string): UserProfile | null {
   const titleColor = titleMatch
     ? (titleMatch[1].match(/trophy_([A-Za-z0-9_-]+)/)?.[1] ?? null)
     : null;
-  const title = titleMatch ? titleMatch[2] : null;
+  const title = titleMatch ? decodeHtmlEntities(titleMatch[2]) : null;
 
-  const username = firstMatch(
+  const usernameRaw = firstMatch(
     /<div class="name_block f_l f_16">([\s\S]*?)<\/div>/i,
   );
 
-  if (username === null) {
+  if (usernameRaw === null) {
     return null;
   }
+  const username = decodeHtmlEntities(usernameRaw);
 
   const ratingBgUrl = firstMatch(
     /<img[^>]+src="([^"]+rating_base[^"]*)"[^>]*class="h_30 f_r"/i,

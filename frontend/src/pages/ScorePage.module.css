@@ -1,0 +1,41 @@
+.tabsRoot {
+  container-type: inline-size;
+  container-name: score-tabs;
+}
+
+.tabsList {
+  flex-wrap: nowrap;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tabLabelShort {
+  display: none;
+}
+
+/* Narrow score page: tighter tabs, hide icons, shorten labels */
+@container score-tabs (max-width: 420px) {
+  .tabsList {
+    gap: 0;
+  }
+
+  .tab {
+    flex: 1 1 0;
+    justify-content: center;
+    padding-inline: 0.4rem;
+    font-size: 0.78rem;
+  }
+
+  .tab :global([data-position="left"]) {
+    display: none;
+  }
+
+  .tabLabelFull {
+    display: none;
+  }
+
+  .tabLabelShort {
+    display: inline;
+  }
+}

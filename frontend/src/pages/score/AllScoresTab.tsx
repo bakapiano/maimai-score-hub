@@ -16,6 +16,7 @@ import {
   Stack,
   Table,
   Text,
+  TextInput,
   Title,
   Tooltip,
 } from "@mantine/core";
@@ -23,6 +24,7 @@ import {
   IconAlertCircle,
   IconChevronDown,
   IconChevronUp,
+  IconSearch,
   IconSelector,
   IconX,
 } from "@tabler/icons-react";
@@ -217,6 +219,21 @@ function matchesDetailLevelFilter(
   return true;
 }
 
+function scoreMatchesSearch(
+  score: SyncScore,
+  query: string,
+  musicMap: Map<string, MusicRow>,
+) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  const music = musicMap.get(score.musicId);
+  const title = (music?.title || "").toLowerCase();
+  const musicId = (score.musicId || "").toLowerCase();
+  return title.includes(normalized) || musicId.includes(normalized);
+}
+
 function scoreMatchesFilters(
   score: SyncScore,
   filters: ScoreFilterState,
@@ -390,6 +407,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
   };
 
   // Filters
+  const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [versionFilter, setVersionFilter] = useState<string[]>([]);
   const [difficultyFilter, setDifficultyFilter] = useState<string[]>([]);
@@ -463,15 +481,12 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
   );
   const filteredScores = useMemo(
     () =>
-      scores.filter((score) =>
-        scoreMatchesFilters(score, filters, musicMap, chartMap),
+      scores.filter(
+        (score) =>
+          scoreMatchesSearch(score, searchQuery, musicMap) &&
+          scoreMatchesFilters(score, filters, musicMap, chartMap),
       ),
-    [
-      scores,
-      musicMap,
-      chartMap,
-      filters,
-    ],
+    [scores, searchQuery, musicMap, chartMap, filters],
   );
 
   // Sorted scores
@@ -832,6 +847,29 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
     </Stack>
   );
 
+  const searchInput = (
+    <TextInput
+      placeholder="搜索曲名"
+      leftSection={<IconSearch size={16} />}
+      value={searchQuery}
+      onChange={(event) => setSearchQuery(event.currentTarget.value)}
+      rightSection={
+        searchQuery ? (
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="sm"
+            aria-label="清除搜索"
+            onClick={() => setSearchQuery("")}
+          >
+            <IconX size={14} />
+          </ActionIcon>
+        ) : null
+      }
+      size="sm"
+    />
+  );
+
   return (
     <Stack gap="md">
       <ScoreDetailModal
@@ -867,7 +905,16 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
         </MobileFilterModalButton>
       </Group>
 
-      <DesktopFilterCard>{filterPanelContent}</DesktopFilterCard>
+      {/* Mobile: search stays outside the filter modal */}
+      <Box hiddenFrom="sm">{searchInput}</Box>
+
+      <DesktopFilterCard>
+        <Stack gap="md">
+          {filterPanelContent}
+          <Divider />
+          {searchInput}
+        </Stack>
+      </DesktopFilterCard>
 
       {/* Score Summary */}
       {filteredScores.length > 0 && (

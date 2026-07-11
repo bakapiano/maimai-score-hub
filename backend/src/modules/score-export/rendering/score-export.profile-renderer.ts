@@ -1,3 +1,4 @@
+import { decodeHtmlEntities } from '@maimai-score-hub/shared';
 import { FONT_FAMILY } from './score-export.constants';
 import { loadAsset } from './score-export.assets';
 import type { UserNetProfile } from '../../users/user.types';
@@ -111,7 +112,11 @@ async function drawNameAndRanks(
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = 'rgba(0,0,0,1)';
-  ctx.fillText(profile?.username ?? '', PX + 145, 135);
+  ctx.fillText(
+    profile?.username ? decodeHtmlEntities(profile.username) : '',
+    PX + 145,
+    135,
+  );
 }
 
 function drawTitle(
@@ -124,7 +129,7 @@ function drawTitle(
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(0,0,0,0.8)';
-    ctx.fillText(profile.title, PX + 270, 173);
+    ctx.fillText(decodeHtmlEntities(profile.title), PX + 270, 173);
   }
 }
 

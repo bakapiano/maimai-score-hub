@@ -2,6 +2,7 @@
  * 舞萌好友列表页面解析器。
  */
 
+import { decodeHtmlEntities } from "@maimai-score-hub/shared";
 import type { FriendInfo } from "../../types.ts";
 
 /**
@@ -42,7 +43,9 @@ export function parseFriendList(html: string): FriendInfo[] {
     const nameMatch = block.match(
       /<div class="name_block[^"]*">([\s\S]*?)<\/div>/,
     );
-    const userName = nameMatch ? nameMatch[1].trim() : null;
+    const userName = nameMatch
+      ? decodeHtmlEntities(nameMatch[1].trim())
+      : null;
 
     const ratingMatch = block.match(/<div class="rating_block">(\d+)<\/div>/);
     const rating = ratingMatch ? parseInt(ratingMatch[1], 10) : null;
@@ -58,7 +61,9 @@ export function parseFriendList(html: string): FriendInfo[] {
     const titleColor = titleBlockMatch
       ? (titleBlockMatch[1].match(/trophy_([A-Za-z0-9_-]+)/)?.[1] ?? null)
       : null;
-    const title = titleBlockMatch ? titleBlockMatch[2].trim() : null;
+    const title = titleBlockMatch
+      ? decodeHtmlEntities(titleBlockMatch[2].trim())
+      : null;
 
     const ratingBgMatch = block.match(
       /<img[^>]+src="([^"]+rating_base[^"]*)"[^>]*class="h_30 f_r"/i,

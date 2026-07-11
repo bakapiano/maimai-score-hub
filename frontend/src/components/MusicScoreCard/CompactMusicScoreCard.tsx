@@ -3,8 +3,8 @@ import {
   COMPACT_COVER_SIZE,
   DIFFICULTY_NAMES,
   GLASS_TEXT_SHADOW,
+  GOLD_SCORE_STROKE_STYLE,
   LEVEL_COLORS,
-  TEXT_STROKE_GOLD_BLACK,
 } from "./constants";
 import { getCoverUrl, getIconUrl, getRankFromScore, renderRank } from "./utils";
 
@@ -214,8 +214,7 @@ export function CompactMusicScoreCard({
             <Text
               fw={900}
               size="lg"
-              c="#f5d142"
-              style={{ textShadow: TEXT_STROKE_GOLD_BLACK }}
+              style={GOLD_SCORE_STROKE_STYLE}
               mb={-12}
             >
               {score || "N/A"}
@@ -223,8 +222,7 @@ export function CompactMusicScoreCard({
             <Text
               fw={900}
               size="lg"
-              c="#f5d142"
-              style={{ textShadow: TEXT_STROKE_GOLD_BLACK }}
+              style={GOLD_SCORE_STROKE_STYLE}
               mb={-12}
             >
               {renderRank(rank)}
@@ -232,11 +230,7 @@ export function CompactMusicScoreCard({
           </Box>
         </Box>
 
-        <Box
-          style={{
-            pointerEvents: "none",
-          }}
-        >
+        <Box style={{ pointerEvents: "none" }}>
           <Text
             fw={900}
             size="12"
