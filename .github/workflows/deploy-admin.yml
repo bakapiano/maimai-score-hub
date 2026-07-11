@@ -50,13 +50,15 @@ jobs:
           if [ -n "$WEB_DEPLOY_PROXY_HOST" ]; then
             WEB_DEPLOY_PROXY_PORT="${WEB_DEPLOY_PROXY_PORT:-22}"
             timeout 30s ssh-keyscan -p "$WEB_DEPLOY_PROXY_PORT" "$WEB_DEPLOY_PROXY_HOST" >> ~/.ssh/known_hosts
-            SSH_PROXY_ARGS=(-J "$WEB_DEPLOY_PROXY_USER@$WEB_DEPLOY_PROXY_HOST:$WEB_DEPLOY_PROXY_PORT")
+            SSH_PROXY_ARGS=(
+              -o "ProxyCommand=ssh -i ~/.ssh/admin_deploy_key -o IdentitiesOnly=yes -p $WEB_DEPLOY_PROXY_PORT -W %h:%p $WEB_DEPLOY_PROXY_USER@$WEB_DEPLOY_PROXY_HOST"
+            )
           fi
           uploaded=0
           for attempt in 1 2 3; do
             if timeout 120s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
               "${SSH_PROXY_ARGS[@]}" \
-              -p "$FRONTEND_PORT" -i ~/.ssh/admin_deploy_key \
+              -o IdentitiesOnly=yes -p "$FRONTEND_PORT" -i ~/.ssh/admin_deploy_key \
               "$FRONTEND_USER@$FRONTEND_HOST" \
               "cat > /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz" \
               < /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz; then
