@@ -1,89 +1,40 @@
-# Frontend zero-downtime deploy
+# Frontend deploy
 
-The frontend is a static Vite app served by a single nginx container. CI builds
-the Vite `dist/` bundle on GitHub Actions; the target host only builds the
-lightweight `frontend/Dockerfile.runtime` nginx image. Recreating
-that container drops the `8848:80` port briefly, so normal `docker compose up -d
---build` is not a zero-downtime deploy.
+Production frontend files are served directly by the host nginx on Server 5
+(`175.178.13.169`). Production deploys do not build or run a frontend Docker
+container.
 
-The standalone admin portal is served by a separate nginx container on
-`127.0.0.1:8849` and is exposed publicly under `/admin/` by the frontend nginx
-reverse proxy. Changes to `frontend/nginx.conf` still require a frontend
-container rollout; admin-only UI changes use the admin deploy workflow.
+## CI/CD
 
-Use `scripts/deploy-zero-downtime.sh` for regular frontend releases. It keeps
-the current nginx container running, builds a candidate image, probes the
-candidate on a temporary localhost port, then copies the built static files into
-the running container:
-
-1. hashed assets and secondary static files are copied first;
-2. old hashed assets are kept so existing browser tabs can still load chunks;
-3. `manifest.webmanifest`, `sw.js`, then `index.html` are replaced last with
-   same-directory `mv`;
-4. the public URL is probed after publish.
-
-## First run
-
-Start the service once if it is not already running:
+Run the manual workflow:
 
 ```bash
-npm --prefix shared install
-npm --prefix shared run build
-npm --prefix frontend install --install-links=true
-npm --prefix frontend run build
-docker compose -f frontend/docker-compose.yml up -d --build frontend
+gh workflow run deploy-frontend.yml --ref <branch>
 ```
 
-After that, deploy without recreating the container:
+The workflow:
 
-```bash
-frontend/scripts/deploy-zero-downtime.sh
+1. builds `frontend/dist` on GitHub Actions;
+2. uploads a compressed static bundle to Server 5;
+3. extracts it under
+   `/var/lib/maimai-score-hub-web/frontend-releases/<commit>`;
+4. atomically switches the `frontend-current` symlink;
+5. validates host nginx and probes both public frontend hostnames locally.
+
+The nginx document root is:
+
+```text
+/var/lib/maimai-score-hub-web/frontend-current
 ```
 
-To print the deploy plan without touching Docker:
+Old releases remain available for an immediate symlink rollback.
 
-```bash
-frontend/scripts/deploy-zero-downtime.sh --plan
-```
+## Host nginx
 
-If the service is absent and you intentionally want the script to start it:
+Tracked host configuration lives under `backend/host-nginx/`. The host nginx
+serves Frontend and Admin, terminates TLS for all public domains, and proxies
+API traffic to the backend load balancer on `127.0.0.1:8090`.
 
-```bash
-frontend/scripts/deploy-zero-downtime.sh --bootstrap
-```
-
-`--bootstrap` is not a zero-downtime operation when no frontend is currently
-serving; it only removes the manual first-start step.
-
-## Side probe
-
-Run the probe in a separate shell before starting a deploy:
-
-```bash
-frontend/scripts/probe-frontend-availability.sh \
-  --url http://127.0.0.1:8848/ \
-  --duration 90 \
-  --interval-ms 100 \
-  --log-file /tmp/frontend-deploy-probe.csv
-```
-
-In another shell:
-
-```bash
-frontend/scripts/deploy-zero-downtime.sh
-```
-
-The probe exits non-zero if any request times out or returns a non-2xx/3xx
-status.
-
-## Notes
-
-- This flow is for static frontend releases. nginx config changes still require
-  a separate, explicit nginx reload or container rollout.
-- The `/admin/` reverse proxy lives in frontend nginx. Deploy `admin` for admin
-  app changes, but deploy `frontend` when changing the proxy route itself.
-- The deploy workflow supplies `FRONTEND_DOCKERFILE=frontend/Dockerfile.runtime`
-  so candidate images use the bundle built and tested on GitHub Actions. Running
-  the script manually without that variable retains the source-build fallback.
-- Because old hashed assets are retained, periodically prune very old files if
-  the container writable layer grows too large.
+The Docker-based `frontend/docker-compose.yml` and
+`scripts/deploy-zero-downtime.sh` remain available for local or standalone
+deployments; they are not used by production CI/CD.

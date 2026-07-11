@@ -2,7 +2,7 @@ services:
   frontend:
     build:
       context: ..
-      dockerfile: frontend/Dockerfile.runtime
+      dockerfile: frontend/Dockerfile
     restart: unless-stopped
     networks:
       - maimai-web

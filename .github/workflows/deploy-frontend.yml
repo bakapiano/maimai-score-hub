@@ -23,21 +23,18 @@ jobs:
           name: frontend-dist
           path: frontend/dist
 
-      - name: Package runtime
+      - name: Package static release
         run: |
           tar -czf /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz \
-            frontend
+            -C frontend/dist .
           ls -lh /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz
 
-      - name: Upload source archive
+      - name: Upload static release
         timeout-minutes: 8
         env:
           FRONTEND_HOST: ${{ secrets.FRONTEND_HOST }}
           FRONTEND_USER: ${{ secrets.FRONTEND_USER }}
           FRONTEND_PORT: ${{ secrets.FRONTEND_PORT }}
-          WEB_DEPLOY_PROXY_HOST: ${{ secrets.WEB_DEPLOY_PROXY_HOST }}
-          WEB_DEPLOY_PROXY_USER: ${{ secrets.WEB_DEPLOY_PROXY_USER }}
-          WEB_DEPLOY_PROXY_PORT: ${{ secrets.WEB_DEPLOY_PROXY_PORT }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
           set -euo pipefail
@@ -46,125 +43,64 @@ jobs:
           printf '%s\n' "$SSH_KEY" > ~/.ssh/frontend_deploy_key
           chmod 600 ~/.ssh/frontend_deploy_key
           timeout 30s ssh-keyscan -p "$FRONTEND_PORT" "$FRONTEND_HOST" >> ~/.ssh/known_hosts
-          SSH_PROXY_ARGS=()
-          if [ -n "$WEB_DEPLOY_PROXY_HOST" ]; then
-            WEB_DEPLOY_PROXY_PORT="${WEB_DEPLOY_PROXY_PORT:-22}"
-            timeout 30s ssh-keyscan -p "$WEB_DEPLOY_PROXY_PORT" "$WEB_DEPLOY_PROXY_HOST" >> ~/.ssh/known_hosts
-            SSH_PROXY_ARGS=(
-              -o "ProxyCommand=ssh -i ~/.ssh/frontend_deploy_key -o IdentitiesOnly=yes -p $WEB_DEPLOY_PROXY_PORT -W %h:%p $WEB_DEPLOY_PROXY_USER@$WEB_DEPLOY_PROXY_HOST"
-            )
-          fi
           uploaded=0
           for attempt in 1 2 3; do
-            if timeout 120s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
-              "${SSH_PROXY_ARGS[@]}" \
-              -o IdentitiesOnly=yes -p "$FRONTEND_PORT" -i ~/.ssh/frontend_deploy_key \
+            if timeout 120s ssh -C -o IdentitiesOnly=yes -o ConnectTimeout=20 \
+              -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+              -p "$FRONTEND_PORT" -i ~/.ssh/frontend_deploy_key \
               "$FRONTEND_USER@$FRONTEND_HOST" \
               "cat > /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz" \
               < /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz; then
               uploaded=1
               break
             fi
-            echo "Upload attempt $attempt failed; retrying direct SSH..."
+            echo "Upload attempt $attempt failed; retrying..."
             sleep $((attempt * 10))
           done
           test "$uploaded" -eq 1
 
-      - name: Deploy via SSH
-        timeout-minutes: 30
+      - name: Activate static release
+        timeout-minutes: 10
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.FRONTEND_HOST }}
           username: ${{ secrets.FRONTEND_USER }}
           port: ${{ secrets.FRONTEND_PORT }}
           key: ${{ secrets.SSH_KEY }}
-          proxy_host: ${{ secrets.WEB_DEPLOY_PROXY_HOST }}
-          proxy_username: ${{ secrets.WEB_DEPLOY_PROXY_USER }}
-          proxy_port: ${{ secrets.WEB_DEPLOY_PROXY_PORT }}
-          proxy_key: ${{ secrets.SSH_KEY }}
-          command_timeout: 30m
+          command_timeout: 10m
           script: |
-            DEPLOY_PATH="${{ secrets.FRONTEND_PATH }}"
-            SOURCE_ARCHIVE="/tmp/maimai-score-hub-frontend-${{ github.sha }}.tgz"
-            if [ -z "$DEPLOY_PATH" ]; then
-              echo "❌ FRONTEND_PATH secret is required"
-              exit 1
-            fi
-            if [ ! -f "$SOURCE_ARCHIVE" ]; then
-              echo "❌ Source archive not found: $SOURCE_ARCHIVE"
-              exit 1
-            fi
+            set -eu
+            WEB_ROOT="${{ secrets.FRONTEND_PATH }}"
+            ARCHIVE="/tmp/maimai-score-hub-frontend-${{ github.sha }}.tgz"
+            RELEASE="${{ github.sha }}"
+            RELEASE_DIR="$WEB_ROOT/frontend-releases/$RELEASE"
+            INCOMING="$WEB_ROOT/frontend-releases/.incoming-$RELEASE"
 
-            mkdir -p "$DEPLOY_PATH"
-            cd "$DEPLOY_PATH"
-            sudo chown -R "$USER:$USER" "$(pwd)" || true
-            rm -rf frontend shared
-            tar -xzf "$SOURCE_ARCHIVE" -C "$DEPLOY_PATH"
-            rm -f "$SOURCE_ARCHIVE"
-            printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
+            test -n "$WEB_ROOT"
+            test -f "$ARCHIVE"
+            install -d -m 755 "$WEB_ROOT/frontend-releases"
+            rm -rf -- "$INCOMING"
+            install -d -m 755 "$INCOMING"
+            tar -xzf "$ARCHIVE" -C "$INCOMING"
+            test -s "$INCOMING/index.html"
+            chmod -R a+rX "$INCOMING"
 
-            # Cap docker build cache before build to avoid ENOSPC
-            # mid-build silently falling back to stale layers.
-            sudo docker builder prune --force --keep-storage=2GB || true
-
-            PROBE_LOG="/tmp/maimai-score-hub-frontend-probe-${{ github.sha }}.csv"
-            PROBE_STOP="/tmp/maimai-score-hub-frontend-probe-${{ github.sha }}.stop"
-            rm -f "$PROBE_STOP"
-            PROBE_PID=""
-            if curl -fsS http://127.0.0.1:8848/ >/dev/null; then
-              echo "Starting side probe during frontend deploy"
-              bash frontend/scripts/probe-frontend-availability.sh \
-                --url http://127.0.0.1:8848/ \
-                --duration 900 \
-                --interval-ms 100 \
-                --timeout 2 \
-                --log-file "$PROBE_LOG" \
-                --stop-file "$PROBE_STOP" &
-              PROBE_PID="$!"
-              # Give the probe time to capture pre-deploy availability.
-              sleep 2
+            if [ -d "$RELEASE_DIR" ]; then
+              rm -rf -- "$INCOMING"
             else
-              echo "Frontend is not currently reachable on localhost:8848; skipping zero-downtime side probe for bootstrap."
+              mv "$INCOMING" "$RELEASE_DIR"
             fi
 
-            DEPLOY_STATUS=0
-            sudo docker network create maimai-web >/dev/null 2>&1 || true
+            test -s "$RELEASE_DIR/index.html"
+            rm -f -- "$WEB_ROOT/frontend-current.next"
+            ln -s "frontend-releases/$RELEASE" "$WEB_ROOT/frontend-current.next"
+            mv -Tf "$WEB_ROOT/frontend-current.next" "$WEB_ROOT/frontend-current"
+            printf '%s\n' "$RELEASE" > "$WEB_ROOT/.frontend-revision"
+            rm -f -- "$ARCHIVE"
 
-            sudo COMPOSE_FILE="$DEPLOY_PATH/frontend/docker-compose.yml" \
-              FRONTEND_HEALTH_URL="http://127.0.0.1:8848/" \
-              FRONTEND_DOCKERFILE="$DEPLOY_PATH/frontend/Dockerfile.runtime" \
-              bash frontend/scripts/deploy-zero-downtime.sh --bootstrap || DEPLOY_STATUS=$?
-
-            PROBE_STATUS=0
-            if [ -n "$PROBE_PID" ]; then
-              touch "$PROBE_STOP"
-              wait "$PROBE_PID" || PROBE_STATUS=$?
-              echo "Side probe log: $PROBE_LOG"
-              tail -n 20 "$PROBE_LOG" || true
-            fi
-
-            sudo docker image prune -f
-            # Cap docker build cache so the disk doesn't fill up.
-            # The frontend host has limited disk, and BuildKit cache can
-            # grow enough to break later deployments.
-            sudo docker builder prune --force --keep-storage=2GB || true
-
-            if [ "$DEPLOY_STATUS" -ne 0 ]; then
-              echo "Frontend deploy failed with status $DEPLOY_STATUS"
-              exit "$DEPLOY_STATUS"
-            fi
-            if [ "$PROBE_STATUS" -ne 0 ]; then
-              echo "Frontend side probe detected downtime"
-              exit "$PROBE_STATUS"
-            fi
-
-            for i in 1 2 3 4 5; do
-              if curl -fsS http://localhost:8848 >/dev/null; then
-                echo "Health check passed"
-                exit 0
-              fi
-              echo "Attempt $i failed, retrying in 5 seconds..."
-              sleep 5
-            done
-            echo "Health check failed after 5 attempts"
-            exit 1
+            nginx -t
+            curl --resolve maiscorehub.bakapiano.com:443:127.0.0.1 \
+              -fsS https://maiscorehub.bakapiano.com/ >/dev/null
+            curl --resolve maimai.bakapiano.com:443:127.0.0.1 \
+              -fsS https://maimai.bakapiano.com/ >/dev/null
+            echo "Frontend static release activated: $RELEASE"

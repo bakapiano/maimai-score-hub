@@ -23,21 +23,18 @@ jobs:
           name: admin-dist
           path: admin/dist
 
-      - name: Package runtime
+      - name: Package static release
         run: |
           tar -czf /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz \
-            admin
+            -C admin/dist .
           ls -lh /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz
 
-      - name: Upload source archive
+      - name: Upload static release
         timeout-minutes: 8
         env:
           FRONTEND_HOST: ${{ secrets.FRONTEND_HOST }}
           FRONTEND_USER: ${{ secrets.FRONTEND_USER }}
           FRONTEND_PORT: ${{ secrets.FRONTEND_PORT }}
-          WEB_DEPLOY_PROXY_HOST: ${{ secrets.WEB_DEPLOY_PROXY_HOST }}
-          WEB_DEPLOY_PROXY_USER: ${{ secrets.WEB_DEPLOY_PROXY_USER }}
-          WEB_DEPLOY_PROXY_PORT: ${{ secrets.WEB_DEPLOY_PROXY_PORT }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
           set -euo pipefail
@@ -46,85 +43,64 @@ jobs:
           printf '%s\n' "$SSH_KEY" > ~/.ssh/admin_deploy_key
           chmod 600 ~/.ssh/admin_deploy_key
           timeout 30s ssh-keyscan -p "$FRONTEND_PORT" "$FRONTEND_HOST" >> ~/.ssh/known_hosts
-          SSH_PROXY_ARGS=()
-          if [ -n "$WEB_DEPLOY_PROXY_HOST" ]; then
-            WEB_DEPLOY_PROXY_PORT="${WEB_DEPLOY_PROXY_PORT:-22}"
-            timeout 30s ssh-keyscan -p "$WEB_DEPLOY_PROXY_PORT" "$WEB_DEPLOY_PROXY_HOST" >> ~/.ssh/known_hosts
-            SSH_PROXY_ARGS=(
-              -o "ProxyCommand=ssh -i ~/.ssh/admin_deploy_key -o IdentitiesOnly=yes -p $WEB_DEPLOY_PROXY_PORT -W %h:%p $WEB_DEPLOY_PROXY_USER@$WEB_DEPLOY_PROXY_HOST"
-            )
-          fi
           uploaded=0
           for attempt in 1 2 3; do
-            if timeout 120s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
-              "${SSH_PROXY_ARGS[@]}" \
-              -o IdentitiesOnly=yes -p "$FRONTEND_PORT" -i ~/.ssh/admin_deploy_key \
+            if timeout 120s ssh -C -o IdentitiesOnly=yes -o ConnectTimeout=20 \
+              -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+              -p "$FRONTEND_PORT" -i ~/.ssh/admin_deploy_key \
               "$FRONTEND_USER@$FRONTEND_HOST" \
               "cat > /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz" \
               < /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz; then
               uploaded=1
               break
             fi
-            echo "Upload attempt $attempt failed; retrying direct SSH..."
+            echo "Upload attempt $attempt failed; retrying..."
             sleep $((attempt * 10))
           done
           test "$uploaded" -eq 1
 
-      - name: Deploy via SSH
-        timeout-minutes: 30
+      - name: Activate static release
+        timeout-minutes: 10
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.FRONTEND_HOST }}
           username: ${{ secrets.FRONTEND_USER }}
           port: ${{ secrets.FRONTEND_PORT }}
           key: ${{ secrets.SSH_KEY }}
-          proxy_host: ${{ secrets.WEB_DEPLOY_PROXY_HOST }}
-          proxy_username: ${{ secrets.WEB_DEPLOY_PROXY_USER }}
-          proxy_port: ${{ secrets.WEB_DEPLOY_PROXY_PORT }}
-          proxy_key: ${{ secrets.SSH_KEY }}
-          command_timeout: 30m
+          command_timeout: 10m
           script: |
-            ADMIN_PATH="${{ secrets.ADMIN_PATH }}"
-            FRONTEND_PATH="${{ secrets.FRONTEND_PATH }}"
-            DEPLOY_PATH="${ADMIN_PATH:-$FRONTEND_PATH}"
-            SOURCE_ARCHIVE="/tmp/maimai-score-hub-admin-${{ github.sha }}.tgz"
-            if [ -z "$DEPLOY_PATH" ]; then
-              echo "❌ ADMIN_PATH or FRONTEND_PATH secret is required"
-              exit 1
-            fi
-            if [ ! -f "$SOURCE_ARCHIVE" ]; then
-              echo "❌ Source archive not found: $SOURCE_ARCHIVE"
-              exit 1
-            fi
+            set -eu
+            WEB_ROOT="${{ secrets.ADMIN_PATH }}"
+            ARCHIVE="/tmp/maimai-score-hub-admin-${{ github.sha }}.tgz"
+            RELEASE="${{ github.sha }}"
+            RELEASE_DIR="$WEB_ROOT/admin-releases/$RELEASE"
+            INCOMING="$WEB_ROOT/admin-releases/.incoming-$RELEASE"
 
-            mkdir -p "$DEPLOY_PATH"
-            cd "$DEPLOY_PATH"
-            sudo chown -R "$USER:$USER" "$(pwd)" || true
-            rm -rf admin shared
-            tar -xzf "$SOURCE_ARCHIVE" -C "$DEPLOY_PATH"
-            rm -f "$SOURCE_ARCHIVE"
-            printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.admin-deploy-revision"
+            test -n "$WEB_ROOT"
+            test -f "$ARCHIVE"
+            install -d -m 755 "$WEB_ROOT/admin-releases"
+            rm -rf -- "$INCOMING"
+            install -d -m 755 "$INCOMING/admin"
+            tar -xzf "$ARCHIVE" -C "$INCOMING/admin"
+            test -s "$INCOMING/admin/index.html"
+            chmod -R a+rX "$INCOMING"
 
-            sudo docker builder prune --force --keep-storage=2GB || true
-
-            if command -v docker-compose >/dev/null 2>&1; then
-              COMPOSE_CMD="docker-compose"
+            if [ -d "$RELEASE_DIR" ]; then
+              rm -rf -- "$INCOMING"
             else
-              COMPOSE_CMD="docker compose"
+              mv "$INCOMING" "$RELEASE_DIR"
             fi
 
-            sudo docker network create maimai-web >/dev/null 2>&1 || true
-            sudo $COMPOSE_CMD -f admin/docker-compose.yml up -d --build admin
-            sudo docker image prune -f
-            sudo docker builder prune --force --keep-storage=2GB || true
+            test -s "$RELEASE_DIR/admin/index.html"
+            rm -f -- "$WEB_ROOT/admin-current.next"
+            ln -s "admin-releases/$RELEASE" "$WEB_ROOT/admin-current.next"
+            mv -Tf "$WEB_ROOT/admin-current.next" "$WEB_ROOT/admin-current"
+            printf '%s\n' "$RELEASE" > "$WEB_ROOT/.admin-revision"
+            rm -f -- "$ARCHIVE"
 
-            for i in 1 2 3 4 5; do
-              if curl -fsS http://127.0.0.1:8849/admin/ >/dev/null; then
-                echo "Admin health check passed"
-                exit 0
-              fi
-              echo "Attempt $i failed, retrying in 5 seconds..."
-              sleep 5
-            done
-            echo "Admin health check failed after 5 attempts"
-            exit 1
+            nginx -t
+            curl --resolve maiscorehub.bakapiano.com:443:127.0.0.1 \
+              -fsS https://maiscorehub.bakapiano.com/admin/ >/dev/null
+            curl --resolve maimai.bakapiano.com:443:127.0.0.1 \
+              -fsS https://maimai.bakapiano.com/admin/ >/dev/null
+            echo "Admin static release activated: $RELEASE"

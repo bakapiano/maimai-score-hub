@@ -275,7 +275,7 @@ jobs:
 
             roll_one_replica
             roll_one_replica
-            sudo $COMPOSE_CMD --profile edge up -d nginx edge
+            sudo $COMPOSE_CMD up -d nginx
 
             # Final state check via nginx (the public path users hit)
             for i in 1 2 3 4 5; do

@@ -2,7 +2,7 @@ services:
   admin:
     build:
       context: ..
-      dockerfile: admin/Dockerfile.runtime
+      dockerfile: admin/Dockerfile
     restart: unless-stopped
     networks:
       - maimai-web
