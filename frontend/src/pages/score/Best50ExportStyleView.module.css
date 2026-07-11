@@ -21,24 +21,21 @@
   gap: 8px;
   flex-wrap: wrap;
   min-height: 28px;
+  font-family: var(--mantine-font-family);
 }
 
 .sectionTitle {
-  color: rgba(0, 0, 0, 0.82);
-  font-size: 20px;
+  color: light-dark(var(--mantine-color-dark-7), var(--mantine-color-gray-0));
+  font-size: var(--mantine-h5-font-size, 1.125rem);
   font-weight: 700;
   line-height: 1.3;
-  -webkit-text-stroke: 3px #fff;
-  paint-order: stroke fill;
 }
 
 .sectionRating {
-  color: rgba(0, 0, 0, 0.72);
-  font-size: 16px;
-  font-weight: 700;
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
   line-height: 1.3;
-  -webkit-text-stroke: 2px #fff;
-  paint-order: stroke fill;
 }
 
 .cardGrid {
@@ -147,11 +144,10 @@
   font-weight: 700;
   white-space: nowrap;
   text-overflow: ellipsis;
-  text-shadow:
-    -1px -1px #000,
-    1px -1px #000,
-    -1px 1px #000,
-    1px 1px #000;
+  /* Stroke behind fill — avoids text-shadow miter spikes */
+  -webkit-text-stroke: 2.25px #000;
+  paint-order: stroke fill;
+  text-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.28);
   pointer-events: none;
 }
 
@@ -190,11 +186,9 @@
   text-align: center;
   white-space: nowrap;
   text-overflow: ellipsis;
-  text-shadow:
-    -1px -1px #000,
-    1px -1px #000,
-    -1px 1px #000,
-    1px 1px #000;
+  -webkit-text-stroke: 2px #000;
+  paint-order: stroke fill;
+  text-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.28);
   pointer-events: none;
 }
 
@@ -236,11 +230,8 @@
   font-weight: 700;
   line-height: 1;
   text-align: center;
-  text-shadow:
-    -1px -1px #000,
-    1px -1px #000,
-    -1px 1px #000,
-    1px 1px #000;
+  -webkit-text-stroke: 1.6px #000;
+  paint-order: stroke fill;
   pointer-events: none;
 }
 
@@ -279,13 +270,20 @@
 .musicId {
   position: absolute;
   left: 4.545%;
-  top: 81.651%;
+  /* Align with .typeBadge (DX/SD) on the same baseline row */
+  top: 83%;
   width: 13.258%;
-  height: 17.431%;
+  height: 12.844%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
-  font-size: clamp(8px, 3.8cqw, 12px);
+  box-sizing: border-box;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-size: clamp(7px, 3.4cqw, 11px);
   font-weight: 700;
-  line-height: 1.55;
+  line-height: 1;
   text-align: center;
   white-space: nowrap;
   pointer-events: none;

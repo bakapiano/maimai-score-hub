@@ -2,6 +2,7 @@
  * 舞萌好友详情页最近事件解析器。
  */
 
+import { decodeHtmlEntities } from "@maimai-score-hub/shared";
 import type {
   FriendRecentEvent,
   FriendRecentEventDifficulty,
@@ -82,7 +83,7 @@ function extractFcFs(
 
 function extractSongName(content: string): string | null {
   const match = /「([\s\S]*?)」/.exec(content);
-  return match ? decodeHtml(stripTags(match[1]).trim()) : null;
+  return match ? decodeHtmlEntities(stripTags(match[1]).trim()) : null;
 }
 
 function extractDifficulty(content: string): {
@@ -102,12 +103,12 @@ function extractDifficulty(content: string): {
 
   return {
     difficulty,
-    difficultyImageUrl: decodeHtml(match[1]),
+    difficultyImageUrl: decodeHtmlEntities(match[1]),
   };
 }
 
 function normalizeText(content: string): string {
-  return decodeHtml(
+  return decodeHtmlEntities(
     stripTags(content.replace(/<br\s*\/?>/gi, " "))
       .replace(/\s+/g, " ")
       .trim(),
@@ -116,17 +117,4 @@ function normalizeText(content: string): string {
 
 function stripTags(content: string): string {
   return content.replace(/<[^>]+>/g, " ");
-}
-
-function decodeHtml(content: string): string {
-  return content
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x([\da-fA-F]+);/g, (_, hex) =>
-      String.fromCharCode(parseInt(hex, 16)),
-    )
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)));
 }

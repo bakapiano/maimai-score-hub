@@ -17,15 +17,20 @@ export const DIFFICULTY_NAMES = [
 ];
 
 export const WHITE_TEXT_STROKE =
-  "-1px 0 black, 0 1px black, 1px 0 black, 0 -1px black";
+  "-1px 0 0 black, 0 1px 0 black, 1px 0 0 black, 0 -1px 0 black, -1px -1px 0 black, 1px -1px 0 black, -1px 1px 0 black, 1px 1px 0 black";
 
 export const GLASS_TEXT_SHADOW = "0 2px 6px rgba(0,0,0,0.55)";
 
-// Gold glow plus tight black outline (gold stays visible, outline stays crisp)
+/** Prefer CSS `-webkit-text-stroke` + `paint-order: stroke fill` over this. */
 export const TEXT_STROKE_GOLD_BLACK =
-  "0 0 0 #f5d142, 0 0 2px #f5d142, -1px -1px #000, 1px -1px #000, -1px 1px #000, 1px 1px #000";
+  "0 0 2px #f5d142, -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000";
 
-export const STROKE_STYLE = {} as const;
+export const GOLD_SCORE_STROKE_STYLE = {
+  color: "#f5d142",
+  WebkitTextStroke: "2.25px #000",
+  paintOrder: "stroke fill",
+  textShadow: "0 1px 1.5px rgba(0,0,0,0.3)",
+} as const;
 
 // Cover sizes
 export const COVER_SIZE = 200;

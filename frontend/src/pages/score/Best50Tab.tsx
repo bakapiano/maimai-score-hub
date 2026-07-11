@@ -1,11 +1,10 @@
 import {
   Badge,
-  Box,
   Button,
   Card,
   Divider,
   Group,
-  Modal,
+  SegmentedControl,
   Stack,
   Text,
   Title,
@@ -15,22 +14,24 @@ import {
   type DetailedMusicScoreCardProps,
 } from "../../components/MusicScoreCard";
 
+import { Best50ExportStyleView } from "./Best50ExportStyleView";
 import {
-  Best50ExportStyleCardPreview,
-  Best50ExportStyleView,
-} from "./Best50ExportStyleView";
-import { IconTrophy, IconDownload, IconSettings } from "@tabler/icons-react";
+  IconDownload,
+  IconLayoutGrid,
+  IconRectangle,
+  IconTrophy,
+} from "@tabler/icons-react";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
-import type { MusicChartPayload, MusicRow } from "../../types/music";
 import type { SyncScore } from "../../types/syncScore";
 import { downloadBlob } from "../../utils/downloadBlob";
 import {
   getRatingFloorByIsNew,
   getRatingFloors,
 } from "../../utils/ratingFloors";
-import { type ReactNode, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "../../providers/AuthContext";
 import { useMusic } from "../../providers/MusicContext";
+import classes from "./Best50Tab.module.css";
 
 type RatingSummary = {
   newTop: SyncScore[];
@@ -90,10 +91,6 @@ type Best50TabProps = {
 };
 
 type Best50ViewMode = "cards" | "export";
-type ChartLookup = MusicChartPayload & {
-  musicId: string;
-  chartIndex: number;
-};
 
 const B50_VIEW_MODE_STORAGE_KEY = "score_b50_view_mode";
 
@@ -127,11 +124,6 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
   const [exporting, setExporting] = useState(false);
   const [viewMode, setViewMode] =
     useState<Best50ViewMode>(readInitialViewMode);
-  const [styleModalOpened, setStyleModalOpened] = useState(false);
-
-  const sampleScore = ratingSummary
-    ? (ratingSummary.newTop[0] ?? ratingSummary.oldTop[0] ?? null)
-    : null;
 
   const handleScoreClick = (
     score: SyncScore,
@@ -199,7 +191,6 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
   const handleViewModeSelect = (mode: Best50ViewMode) => {
     setViewMode(mode);
     persistViewMode(mode);
-    setStyleModalOpened(false);
   };
 
   return (
@@ -209,72 +200,45 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
         onClose={() => setModalOpened(false)}
         scoreData={selectedScore}
       />
-      <Modal
-        opened={styleModalOpened}
-        onClose={() => setStyleModalOpened(false)}
-        title="B50 样式"
-        lockScroll={false}
-        centered
-        size="lg"
+      <Group
+        justify="space-between"
+        align="center"
+        wrap="nowrap"
+        gap="sm"
+        style={{ width: "100%" }}
       >
-        <Box
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: 12,
-          }}
-        >
-          <StyleChoice
-            label="卡片"
-            active={viewMode === "export"}
-            onSelect={() => handleViewModeSelect("export")}
-          >
-            {sampleScore ? (
-              <Best50ExportStyleCardPreview
-                score={sampleScore}
-                musicMap={musicMap}
-                chartMap={chartMap}
-              />
-            ) : (
-              <Text c="dimmed" size="sm">
-                暂无示例
-              </Text>
-            )}
-          </StyleChoice>
-
-          <StyleChoice
-            label="单图"
-            active={viewMode === "cards"}
-            onSelect={() => handleViewModeSelect("cards")}
-          >
-            {sampleScore ? (
-              <CompactMusicScoreCardPreview
-                score={sampleScore}
-                musicMap={musicMap}
-                chartMap={chartMap}
-              />
-            ) : (
-              <Text c="dimmed" size="sm">
-                暂无示例
-              </Text>
-            )}
-          </StyleChoice>
-        </Box>
-      </Modal>
-      <Group justify="space-between" align="center" wrap="wrap">
-        <Title size="h3" order={4}>
+        <Title size="h3" order={4} style={{ flexShrink: 0 }}>
           Best 50
         </Title>
-        <Group gap="xs" wrap="nowrap">
-          <Button
+        <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+          <SegmentedControl
             size="xs"
-            variant="default"
-            leftSection={<IconSettings size={14} />}
-            onClick={() => setStyleModalOpened(true)}
+            value={viewMode}
+            onChange={(value) =>
+              handleViewModeSelect(value as Best50ViewMode)
+            }
             disabled={!ratingSummary}
-          >
-            样式
-          </Button>
+            data={[
+              {
+                value: "export",
+                label: (
+                  <Group gap={6} justify="center" wrap="nowrap">
+                    <IconRectangle size={16} />
+                    <span>卡片</span>
+                  </Group>
+                ),
+              },
+              {
+                value: "cards",
+                label: (
+                  <Group gap={6} justify="center" wrap="nowrap">
+                    <IconLayoutGrid size={16} />
+                    <span>单图</span>
+                  </Group>
+                ),
+              },
+            ]}
+          />
           <Button
             size="xs"
             variant="default"
@@ -304,12 +268,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
                 <Title size="h3" order={5}>
                   现版本 Best 15
                 </Title>
-                <Group
-                  gap="sm"
-                  align="stretch"
-                  wrap="wrap"
-                  style={{ width: "100%" }}
-                >
+                <div className={classes.cardGrid}>
                   {ratingSummary.newTop.slice(0, 15).map((score, idx) => {
                     const music = musicMap.get(score.musicId);
                     const chart =
@@ -345,7 +304,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
                   {ratingSummary.newTop.length === 0 && (
                     <Text c="dimmed">暂无新曲</Text>
                   )}
-                </Group>
+                </div>
               </Stack>
 
               <Stack gap={8}>
@@ -353,12 +312,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
                 <Title size={"h3"} order={5}>
                   旧版本 Best 35
                 </Title>
-                <Group
-                  gap="sm"
-                  align="stretch"
-                  wrap="wrap"
-                  style={{ width: "100%" }}
-                >
+                <div className={classes.cardGrid}>
                   {ratingSummary.oldTop.slice(0, 35).map((score, idx) => {
                     const music = musicMap.get(score.musicId);
                     const chart =
@@ -394,7 +348,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
                   {ratingSummary.oldTop.length === 0 && (
                     <Text c="dimmed">暂无旧曲</Text>
                   )}
-                </Group>
+                </div>
               </Stack>
             </>
           )}
@@ -469,101 +423,5 @@ function Best50RatingCard({
         </Group>
       </Group>
     </Card>
-  );
-}
-
-type StyleChoiceProps = {
-  label: string;
-  active: boolean;
-  children: ReactNode;
-  onSelect: () => void;
-};
-
-function StyleChoice({ label, active, children, onSelect }: StyleChoiceProps) {
-  return (
-    <Box
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        minWidth: 0,
-        padding: 12,
-        borderRadius: 8,
-        border: active
-          ? "2px solid var(--mantine-color-blue-6)"
-          : "1px solid var(--mantine-color-default-border)",
-        background: active
-          ? "var(--mantine-color-blue-light)"
-          : "var(--mantine-color-body)",
-        cursor: "pointer",
-      }}
-    >
-      <Group justify="space-between" align="center" gap="xs">
-        <Text fw={700} size="sm">
-          {label}
-        </Text>
-        {active ? (
-          <Badge size="sm" variant="filled">
-            当前
-          </Badge>
-        ) : null}
-      </Group>
-      <Box
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: 132,
-          overflow: "hidden",
-        }}
-      >
-        {children}
-      </Box>
-    </Box>
-  );
-}
-
-function CompactMusicScoreCardPreview({
-  score,
-  musicMap,
-  chartMap,
-}: {
-  score: SyncScore;
-  musicMap: Map<string, MusicRow>;
-  chartMap: Map<number, ChartLookup>;
-}) {
-  const music = musicMap.get(score.musicId);
-  const chart =
-    score.cid !== null && score.cid !== undefined
-      ? chartMap.get(score.cid)
-      : undefined;
-
-  return (
-    <CompactMusicScoreCard
-      musicId={score.musicId}
-      chartIndex={score.chartIndex}
-      type={score.type}
-      rating={score.rating ?? null}
-      score={score.score || null}
-      fs={score.fs || null}
-      fc={score.fc || null}
-      chartPayload={chart || null}
-      songMetadata={music || null}
-      bpm={
-        typeof music?.bpm === "number"
-          ? music.bpm
-          : parseInt(music?.bpm as string) || null
-      }
-      noteDesigner={chart?.charter || null}
-    />
   );
 }

@@ -19,6 +19,7 @@ import { useMusic } from "../providers/MusicContext";
 import { cacheSyncLatest, getCachedSyncLatest } from "../utils/offlineCache";
 import { fetchLatestSync } from "../api/syncLatest";
 import { runWhenIdle, scheduleIdleTask } from "../utils/idle";
+import classes from "./ScorePage.module.css";
 
 function readCachedScores() {
   const cached = getCachedSyncLatest();
@@ -177,22 +178,34 @@ export default function ScorePage() {
             transition: "filter 120ms ease, opacity 120ms ease",
           }}
         >
-          <Tabs defaultValue="best" keepMounted={false}>
-            <Tabs.List style={{ flexWrap: "nowrap", overflowX: "auto" }}>
+          <Tabs
+            defaultValue="best"
+            keepMounted={false}
+            classNames={{
+              root: classes.tabsRoot,
+              list: classes.tabsList,
+              tab: classes.tab,
+            }}
+          >
+            <Tabs.List>
               <Tabs.Tab value="best" leftSection={<IconTrophy size={16} />}>
-                B50
+                <span className={classes.tabLabelFull}>B50</span>
+                <span className={classes.tabLabelShort}>B50</span>
               </Tabs.Tab>
               <Tabs.Tab value="levels" leftSection={<IconChartBar size={16} />}>
-                按等级
+                <span className={classes.tabLabelFull}>按等级</span>
+                <span className={classes.tabLabelShort}>等级</span>
               </Tabs.Tab>
               <Tabs.Tab
                 value="versions"
                 leftSection={<IconCalendarStar size={16} />}
               >
-                按版本
+                <span className={classes.tabLabelFull}>按版本</span>
+                <span className={classes.tabLabelShort}>版本</span>
               </Tabs.Tab>
               <Tabs.Tab value="all" leftSection={<IconList size={16} />}>
-                全部成绩
+                <span className={classes.tabLabelFull}>全部成绩</span>
+                <span className={classes.tabLabelShort}>全部</span>
               </Tabs.Tab>
             </Tabs.List>
 
