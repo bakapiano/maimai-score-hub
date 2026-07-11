@@ -13,6 +13,7 @@ import { IconLinkOff, IconUpload } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
+import { apiUrl } from "../api/baseUrl";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { AppCard } from "./AppCard";
 
@@ -62,7 +63,7 @@ export function CabinetBindingCard({
   useEffect(() => setAutoUpdate(initialAutoUpdate), [initialAutoUpdate]);
 
   const refreshFromServer = useCallback(async () => {
-    const res = await fetch("/api/v1/me", {
+    const res = await fetch(apiUrl("/me"), {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) {
@@ -80,7 +81,7 @@ export function CabinetBindingCard({
         inputType: typeof formData === "string" ? "text" : "image",
       });
       try {
-        const res = await fetch("/api/v1/me/cabinet", {
+        const res = await fetch(apiUrl("/me/cabinet"), {
           method: "PUT",
           headers:
             typeof formData === "string"
@@ -165,7 +166,7 @@ export function CabinetBindingCard({
   const toggleAutoUpdate = async (enabled: boolean) => {
     setBusy("toggle");
     try {
-      const res = await fetch("/api/v1/me", {
+      const res = await fetch(apiUrl("/me"), {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -207,7 +208,7 @@ export function CabinetBindingCard({
     }
     setBusy("unbind");
     try {
-      const res = await fetch("/api/v1/me/cabinet", {
+      const res = await fetch(apiUrl("/me/cabinet"), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

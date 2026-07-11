@@ -146,6 +146,33 @@ services:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./covers:/covers:ro
 
+  edge:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    profiles:
+      - edge
+    depends_on:
+      - nginx
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./edge-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${EDGE_TLS_DIR:-/etc/maimai-score-hub/tls/api.maiscorehub.bakapiano.com}:/etc/nginx/tls:ro
+      - ${EDGE_ACME_WEBROOT:-/var/lib/maimai-score-hub/acme}:/var/www/acme:ro
+      - edge_cache:/var/cache/nginx
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget --no-check-certificate -qO- --header="Host: api.maiscorehub.bakapiano.com" https://127.0.0.1/api/v1/health >/dev/null',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   mongo_data:
   redis_data:
+  edge_cache:

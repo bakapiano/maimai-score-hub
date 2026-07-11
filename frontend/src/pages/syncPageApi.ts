@@ -1,4 +1,5 @@
 import { syncApi, usersApi } from "../api/appClient";
+import { apiUrl, getApiPath } from "../api/baseUrl";
 
 import { fetchLatestSync } from "../api/syncLatest";
 
@@ -94,7 +95,11 @@ async function fetchFallback<T>(
   input: RequestInfo | URL,
   init?: RequestInit,
 ) {
-  const res = await fetch(input, init);
+  const resolvedInput =
+    typeof input === "string" && getApiPath(input).startsWith("/api/v1/")
+      ? apiUrl(input)
+      : input;
+  const res = await fetch(resolvedInput, init);
   const text = await res.text();
   const data = text ? (JSON.parse(text) as T) : (null as T);
   return { ok: res.ok, status: res.status, data };
@@ -104,7 +109,7 @@ export async function fetchSyncPageJson<T>(
   input: RequestInfo | URL,
   init?: RequestInit,
 ) {
-  const path = typeof input === "string" ? input : input.toString();
+  const path = getApiPath(input);
   const method = (init?.method ?? "GET").toUpperCase();
   const authorization = getAuthorization(init);
 

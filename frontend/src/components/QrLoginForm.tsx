@@ -20,6 +20,7 @@ import { IconInfoCircle, IconQrcode, IconUpload } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
+import { apiUrl } from "../api/baseUrl";
 
 const QR_ATTEMPT_KEY = "pendingQrLoginAttemptId";
 const SLOW_JOB_NOTICE_MS = 30_000;
@@ -38,7 +39,7 @@ type QrLoginJson = {
 };
 
 async function postQrLogin(payload: FormData | string) {
-  const res = await fetch("/api/v1/auth/qr-login", {
+  const res = await fetch(apiUrl("/auth/qr-login"), {
     method: "POST",
     headers:
       typeof payload === "string"
@@ -147,7 +148,7 @@ export function QrLoginForm({
       return pollWithBackoff<string>(
         async () => {
           const { body } = await fetchForPoll(
-            `/api/v1/auth/qr-login/${attemptId}`,
+            apiUrl(`/auth/qr-login/${attemptId}`),
             { signal },
           );
           const json = body as {

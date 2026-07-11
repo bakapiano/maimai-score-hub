@@ -7,11 +7,12 @@ import {
   type JobResponse,
   type JobVerifyResponse,
 } from "@maimai-score-hub/shared";
+import { API_BASE_URL } from "./baseUrl";
 
 const { jobContract } = sharedContract;
 
 const client = initClient(jobContract, {
-  baseUrl: "/api/v1",
+  baseUrl: API_BASE_URL,
 });
 
 export class JobApiError extends Error {

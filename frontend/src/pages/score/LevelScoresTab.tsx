@@ -40,6 +40,7 @@ import {
   type DetailedMusicScoreCardProps,
 } from "../../components/MusicScoreCard";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
+import { apiUrl } from "../../api/baseUrl";
 import {
   ScoreDisplayFilterContent,
 } from "../../components/ScoreDisplayFilter";
@@ -286,7 +287,9 @@ export function LevelScoresTab({
     setExporting(true);
     try {
       const res = await fetch(
-        `/api/v1/me/score-exports/level?level=${encodeURIComponent(current.levelKey)}`,
+        apiUrl(
+          `/me/score-exports/level?level=${encodeURIComponent(current.levelKey)}`,
+        ),
         {
           headers: { Authorization: `Bearer ${token}` },
         },

@@ -36,6 +36,7 @@ import {
 } from "../../components/ScoreSummaryBadges.model";
 import { PLAN_OPTIONS, type PlatePlan } from "../../constants/platePlan";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
+import { apiUrl } from "../../api/baseUrl";
 import type { SyncScore } from "../../types/syncScore";
 import {
   getVersionSortIndex,
@@ -499,7 +500,7 @@ export function VersionScoresTab({
         plan: platePlan,
       });
       const res = await fetch(
-        `/api/v1/me/score-exports/version?${params.toString()}`,
+        apiUrl(`/me/score-exports/version?${params.toString()}`),
         {
           headers: { Authorization: `Bearer ${token}` },
         },

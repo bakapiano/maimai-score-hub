@@ -1,3 +1,5 @@
+import { apiUrl } from "../api/baseUrl";
+
 type AttrValue = string | number | boolean | null;
 type Attrs = Record<string, AttrValue | AttrValue[]>;
 
@@ -149,17 +151,23 @@ async function postBatch(
   if (!body.events.length) {
     return;
   }
+  const endpoint = apiUrl(path);
   const raw = JSON.stringify(body);
-  if (useBeacon && navigator.sendBeacon) {
+  const endpointOrigin = new URL(endpoint, window.location.href).origin;
+  if (
+    useBeacon &&
+    endpointOrigin === window.location.origin &&
+    navigator.sendBeacon
+  ) {
     const sent = navigator.sendBeacon(
-      path,
+      endpoint,
       new Blob([raw], { type: "application/json" }),
     );
     if (sent) {
       return;
     }
   }
-  await fetch(path, {
+  await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: raw,

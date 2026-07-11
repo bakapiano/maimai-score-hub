@@ -275,11 +275,13 @@ jobs:
 
             roll_one_replica
             roll_one_replica
-            sudo $COMPOSE_CMD up -d nginx
+            sudo $COMPOSE_CMD --profile edge up -d nginx edge
 
             # Final state check via nginx (the public path users hit)
             for i in 1 2 3 4 5; do
-              if curl -fsS http://localhost:8090/api/v1/health; then
+              if curl -fsS http://localhost:8090/api/v1/health \
+                && curl --resolve api.maiscorehub.bakapiano.com:443:127.0.0.1 \
+                  -fsS https://api.maiscorehub.bakapiano.com/api/v1/health; then
                 echo "✅ Deployment successful"
                 sudo $COMPOSE_CMD ps backend
                 # Clean up dangling images

@@ -8,6 +8,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
+import { apiUrl } from "../api/baseUrl";
 import { useAuth } from "../providers/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { usersApi } from "../api/appClient";
@@ -313,7 +314,7 @@ export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps)
 
     setDeletingAccount(true);
     try {
-      const res = await fetch("/api/v1/me", {
+      const res = await fetch(apiUrl("/me"), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

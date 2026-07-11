@@ -1,5 +1,7 @@
 // Utility functions for Music Score Card components
 
+import { apiUrl } from "../../api/baseUrl";
+
 const RANK_ASSET: Record<string, string> = {
   "SSS+": "UI_TTR_Rank_SSSp.png",
   SSS: "UI_TTR_Rank_SSS.png",
@@ -131,7 +133,7 @@ export function getRankFromScore(score: string | null): string {
  * v=3: bust browser cache after enabling webp content-negotiation
  */
 export function getCoverUrl(musicId: string): string {
-  return `/api/v1/catalog/covers/${musicId}?v=3`;
+  return apiUrl(`/catalog/covers/${musicId}?v=3`);
 }
 
 /**

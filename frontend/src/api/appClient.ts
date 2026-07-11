@@ -1,5 +1,6 @@
 import { initClient } from "@ts-rest/core";
 import * as sharedContract from "@maimai-score-hub/shared";
+import { API_BASE_URL, apiUrl } from "./baseUrl";
 
 const {
   appContract,
@@ -10,7 +11,7 @@ const {
   usersContract,
 } = sharedContract;
 
-const withApiBase = (baseUrl = "/api/v1") => ({ baseUrl });
+const withApiBase = (baseUrl = API_BASE_URL) => ({ baseUrl });
 
 export const appApi = initClient(appContract as any, withApiBase()) as any;
 export const authApi = initClient(authContract as any, withApiBase()) as any;
@@ -20,7 +21,7 @@ export const musicApi = initClient(musicContract as any, withApiBase()) as any;
 export const jobApi = initClient(jobContract as any, withApiBase()) as any;
 
 export async function getHealthStatus() {
-  const res = await fetch("/api/v1/health");
+  const res = await fetch(apiUrl("/health"));
   const text = await res.text();
   return {
     ok: res.ok,
