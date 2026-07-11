@@ -554,6 +554,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
     (showRating ? 1 : 0);
 
   const hasActiveFilters =
+    searchQuery.trim().length > 0 ||
     categoryFilter.length > 0 ||
     versionFilter.length > 0 ||
     difficultyFilter.length > 0 ||
@@ -563,6 +564,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
     typeof detailLevelMax === "number";
 
   const clearAllFilters = () => {
+    setSearchQuery("");
     setCategoryFilter([]);
     setVersionFilter([]);
     setDifficultyFilter([]);
