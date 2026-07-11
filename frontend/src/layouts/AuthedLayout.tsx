@@ -3,13 +3,14 @@ import {
   Anchor,
   AppShell,
   Box,
-  Burger,
   Drawer,
   Group,
+  Menu,
   NavLink,
   Stack,
   Text,
   ThemeIcon,
+  UnstyledButton,
   useComputedColorScheme,
 } from "@mantine/core";
 import {
@@ -27,7 +28,6 @@ import { useMemo, useRef } from "react";
 import { type MiniProfile } from "../components/MiniProfileCard";
 import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
-import { SettingsPanel } from "../components/SettingsPanel";
 import { AppFooter } from "../components/AppFooter";
 import { InstallAppButton } from "../components/InstallAppButton";
 import { useAuth } from "../providers/AuthContext";
@@ -72,6 +72,14 @@ const pages: PageMeta[] = [
     color: "grape",
   },
   {
+    label: "网站设置",
+    to: "/app/settings",
+    title: "网站设置",
+    description: "主题、账号和本地缓存",
+    icon: <IconSettings size={18} />,
+    color: "gray",
+  },
+  {
     label: "Debug",
     to: "/app/debug",
     title: "调试工具",
@@ -92,7 +100,9 @@ function readLastFriendCode() {
 
 function readCachedMiniProfile(friendCode?: string | null): MiniProfile | null {
   const cached = getCachedProfile();
-  if (!cached) {return null;}
+  if (!cached) {
+    return null;
+  }
 
   const knownFriendCode = friendCode ?? readLastFriendCode();
   if (
@@ -170,7 +180,8 @@ function InstallAppGuideModal({
             )}
             {status === "unavailable" && (
               <Text size="sm" c="dimmed">
-                当前浏览器暂未提供安装入口。可以尝试使用 Chrome、Edge 或移动端浏览器的菜单添加到主屏幕。
+                当前浏览器暂未提供安装入口。可以尝试使用 Chrome、Edge
+                或移动端浏览器的菜单添加到主屏幕。
               </Text>
             )}
           </div>
@@ -180,13 +191,103 @@ function InstallAppGuideModal({
   );
 }
 
+function MobileBottomNav({
+  pathname,
+  colorScheme,
+  onNavigate,
+}: {
+  pathname: string;
+  colorScheme: "light" | "dark";
+  onNavigate: (to: string) => void;
+}) {
+  const items = [
+    {
+      label: "更新",
+      icon: <IconRefresh size={22} />,
+      color: "blue",
+      active: pathname === "/app/sync",
+      onClick: () => onNavigate("/app/sync"),
+    },
+    {
+      label: "成绩",
+      icon: <IconMusic size={22} />,
+      color: "grape",
+      active: pathname === "/app/scores",
+      onClick: () => onNavigate("/app/scores"),
+    },
+    {
+      label: "设置",
+      icon: <IconSettings size={22} />,
+      color: "gray",
+      active: pathname === "/app/settings",
+      onClick: () => onNavigate("/app/settings"),
+    },
+  ];
+
+  const backgroundColor =
+    colorScheme === "dark"
+      ? "var(--mantine-color-dark-7)"
+      : "var(--mantine-color-white)";
+
+  return (
+    <Box
+      hiddenFrom="sm"
+      style={{
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1900,
+        boxSizing: "border-box",
+        height: "calc(56px + env(safe-area-inset-bottom))",
+        padding: "0 12px env(safe-area-inset-bottom)",
+        borderTop: `1px solid ${
+          colorScheme === "dark"
+            ? "var(--mantine-color-dark-4)"
+            : "var(--mantine-color-gray-2)"
+        }`,
+        backgroundColor,
+      }}
+    >
+      <Group h="100%" gap={4} wrap="nowrap" justify="space-between">
+        {items.map((item) => {
+          const color = item.active
+            ? `var(--mantine-color-${item.color}-7)`
+            : "var(--mantine-color-dimmed)";
+          return (
+            <UnstyledButton
+              key={item.label}
+              onClick={item.onClick}
+              aria-current={item.active ? "page" : undefined}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                height: "100%",
+                borderRadius: 8,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 2,
+                color,
+              }}
+            >
+              {item.icon}
+              <Text size="xs" fw={item.active ? 700 : 500} lh={1.1}>
+                {item.label}
+              </Text>
+            </UnstyledButton>
+          );
+        })}
+      </Group>
+    </Box>
+  );
+}
+
 export default function AuthedLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { clearToken, offline, setOffline, profile: authProfile } = useAuth();
-  const [opened, { toggle, close: closeNav }] = useDisclosure(false);
-  const [settingsOpened, { open: openSettings, close: closeSettings }] =
-    useDisclosure(false);
   const [
     installGuideOpened,
     { open: openInstallGuide, close: closeInstallGuide },
@@ -200,7 +301,6 @@ export default function AuthedLayout() {
     () => readCachedMiniProfile(authProfile?.friendCode),
     [authProfile?.friendCode],
   );
-  const touchStartX = useRef<number | null>(null);
 
   const currentPage = pages.find((p) => p.to === location.pathname);
   useDocumentTitle(currentPage?.title ?? null);
@@ -232,36 +332,49 @@ export default function AuthedLayout() {
       ? "var(--mantine-color-dark-6)"
       : "var(--mantine-color-gray-0)";
 
+  const mobileProfileMenuItems = (
+    <>
+      <Menu.Item
+        leftSection={<IconHome size={16} />}
+        onClick={() => navigate("/app")}
+      >
+        网站首页
+      </Menu.Item>
+      <Menu.Item
+        leftSection={<IconDownload size={16} />}
+        onClick={openInstallGuide}
+      >
+        安装应用
+      </Menu.Item>
+      <Menu.Item
+        leftSection={<IconInfoCircle size={16} />}
+        onClick={() => navigate("/about")}
+      >
+        关于网站
+      </Menu.Item>
+    </>
+  );
+
   return (
     <AppShell
       header={{ height: 56 }}
       navbar={{
         width: 220,
         breakpoint: "sm",
-        collapsed: { mobile: !opened },
+        collapsed: { mobile: true },
       }}
       padding={0}
     >
       <AppShell.Header>
-        <AppHeader profile={profile} onLogout={handleLogout} offline={offline} />
+        <AppHeader
+          profile={profile}
+          onLogout={handleLogout}
+          offline={offline}
+          profileMenuItems={mobileProfileMenuItems}
+        />
       </AppShell.Header>
 
-      <AppShell.Navbar
-        p="md"
-        withBorder
-        onTouchStart={(event) => {
-          touchStartX.current = event.touches[0]?.clientX ?? null;
-        }}
-        onTouchEnd={(event) => {
-          const startX = touchStartX.current;
-          touchStartX.current = null;
-          if (startX === null) {return;}
-          const endX = event.changedTouches[0]?.clientX ?? startX;
-          if (startX - endX > 50) {
-            closeNav();
-          }
-        }}
-      >
+      <AppShell.Navbar p="md" withBorder>
         <Stack h="100%">
           {/* Top: Navigation links */}
           <Group gap={4}>
@@ -270,35 +383,21 @@ export default function AuthedLayout() {
               .map((page) => {
                 const isDisabled = offline && page.to === "/app/sync";
                 return (
-                <NavLink
-                  key={page.to}
-                  component={Link}
-                  to={page.to}
-                  label={page.label}
-                  leftSection={
-                    <ThemeIcon size={28} radius="md" color={page.color}>
-                      {page.icon}
-                    </ThemeIcon>
-                  }
-                  active={location.pathname === page.to}
-                  onClick={closeNav}
-                  style={isDisabled ? { opacity: 0.5 } : undefined}
-                />
+                  <NavLink
+                    key={page.to}
+                    component={Link}
+                    to={page.to}
+                    label={page.label}
+                    leftSection={
+                      <ThemeIcon size={28} radius="md" color={page.color}>
+                        {page.icon}
+                      </ThemeIcon>
+                    }
+                    active={location.pathname === page.to}
+                    style={isDisabled ? { opacity: 0.5 } : undefined}
+                  />
                 );
               })}
-
-            <NavLink
-              label="网站设置"
-              leftSection={
-                <ThemeIcon size={28} radius="md" color="gray">
-                  <IconSettings size={18} />
-                </ThemeIcon>
-              }
-              onClick={() => {
-                closeNav();
-                openSettings();
-              }}
-            />
 
             <NavLink
               label="安装应用"
@@ -308,7 +407,6 @@ export default function AuthedLayout() {
                 </ThemeIcon>
               }
               onClick={() => {
-                closeNav();
                 openInstallGuide();
               }}
             />
@@ -322,55 +420,32 @@ export default function AuthedLayout() {
                   <IconInfoCircle size={18} />
                 </ThemeIcon>
               }
-              onClick={closeNav}
             />
           </Group>
         </Stack>
       </AppShell.Navbar>
 
-      <SettingsPanel opened={settingsOpened} onClose={closeSettings} />
       <InstallAppGuideModal
         opened={installGuideOpened}
         onClose={closeInstallGuide}
       />
 
       <AppShell.Main
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          minHeight: "100vh",
-        }}
+        className="msh-authed-main"
+        style={
+          {
+            display: "flex",
+            flexDirection: "column",
+            minHeight: "100vh",
+            paddingBottom: "var(--msh-mobile-bottom-nav-height)",
+            "--msh-mobile-page-background": headerBg,
+          } as React.CSSProperties
+        }
       >
-        <Box
-          hiddenFrom="sm"
-          style={{
-            position: "fixed",
-            left: 16,
-            bottom: 16,
-            zIndex: 2000,
-          }}
-        >
-          <Box
-            w={48}
-            h={48}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor:
-                colorScheme === "dark"
-                  ? "var(--mantine-color-dark-4)"
-                  : "var(--mantine-color-gray-2)",
-              borderRadius: 999,
-              boxShadow: "var(--mantine-shadow-sm)",
-            }}
-          >
-            <Burger opened={opened} onClick={toggle} size="sm" />
-          </Box>
-        </Box>
         {currentPage && (
           <Box
-            py={{ base: "xs", sm: "lg" }}
+            visibleFrom="sm"
+            py="lg"
             px="md"
             style={{
               backgroundColor: headerBg,
@@ -419,12 +494,17 @@ export default function AuthedLayout() {
               width: "100%",
             }}
           >
-            <Outlet context={{ openSettings }} />
+            <Outlet />
           </div>
         </Box>
 
         <AppFooter />
       </AppShell.Main>
+      <MobileBottomNav
+        pathname={location.pathname}
+        colorScheme={colorScheme}
+        onNavigate={(to) => navigate(to)}
+      />
     </AppShell>
   );
 }

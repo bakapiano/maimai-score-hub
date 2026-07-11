@@ -73,6 +73,14 @@ module.exports = {
       max_restarts: 5,
     },
     {
+      name: "msh-admin",
+      script: path.join(root, "admin", "node_modules", "vite", "bin", "vite.js"),
+      args: "--host 127.0.0.1 --port 3002",
+      cwd: path.join(root, "admin"),
+      autorestart: true,
+      max_restarts: 5,
+    },
+    {
       name: "msh-worker",
       script: process.execPath,
       args: "--enable-source-maps --experimental-strip-types src/index.ts",

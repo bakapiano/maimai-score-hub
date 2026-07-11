@@ -1,0 +1,21 @@
+services:
+  admin:
+    build:
+      context: ..
+      dockerfile: admin/Dockerfile
+    restart: unless-stopped
+    networks:
+      - maimai-web
+    ports:
+      - "8849:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/admin/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+networks:
+  maimai-web:
+    external: true
+    name: maimai-web

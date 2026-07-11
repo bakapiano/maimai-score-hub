@@ -4,7 +4,6 @@ import {
   Badge,
   Box,
   Button,
-  Card,
   Divider,
   Group,
   Loader,
@@ -49,6 +48,7 @@ import {
 } from "../api/jobClient";
 import { ProfileCard } from "../components/ProfileCard";
 import { CabinetBindingCard } from "../components/CabinetBindingCard";
+import { AppCard } from "../components/AppCard";
 import { SyncMetric } from "../components/SyncMetric";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { recordAnalyticsEvent } from "../utils/observability";
@@ -213,7 +213,7 @@ function rememberLastSync(data: LatestSyncPayload | null | undefined) {
 
 /**
  * Section heading used at the top level of SyncPage. Keeps the visual
- * rhythm consistent across "同步成绩 / 神秘二维码绑定 /
+ * rhythm consistent across "同步成绩 / 二维码绑定 /
  * 更新查分器" without each section reinventing its own title row.
  */
 function SectionHeader({
@@ -882,11 +882,11 @@ export default function SyncPage() {
         )}
 
         {pageLoading && !profile?.profile && (
-          <Card withBorder padding="md" h={160}>
-            <Group justify="center" py="md" h={160}>
+          <AppCard h={160}>
+            <Group justify="center" h="100%">
               <Loader size="sm" />
             </Group>
-          </Card>
+          </AppCard>
         )}
 
         {profile?.profile && <ProfileCard profile={profile.profile} />}
@@ -899,10 +899,7 @@ export default function SyncPage() {
             title="同步成绩"
           />
 
-          <Card
-            withBorder
-            padding="lg"
-          >
+          <AppCard>
             <Stack gap="lg">
               <SimpleGrid cols={{ base: 1, xs: 3 }} spacing={{ base: "xs", xs: "lg" }}>
                 <SyncMetric icon={<IconClock size={18} />} label="最近同步">
@@ -1020,7 +1017,7 @@ export default function SyncPage() {
                   onClick={startSync}
                   disabled={!profile?.friendCode || syncing || pageLoading}
                   loading={syncing}
-                  variant="filled"
+                  variant="light"
                   leftSection={<IconRefresh size={16} />}
                   w={{ base: "100%", xs: "auto" }}
                   styles={{ root: { flexShrink: 0 } }}
@@ -1029,18 +1026,7 @@ export default function SyncPage() {
                 </Button>
               </Group>
             </Stack>
-          </Card>
-
-          {pageLoading && (
-            <Card withBorder padding="md">
-              <Stack gap="sm" align="center">
-                <Loader size="sm" />
-                <Text size="sm" c="dimmed">
-                  加载中...
-                </Text>
-              </Stack>
-            </Card>
-          )}
+          </AppCard>
 
           {syncError && <Alert color="red">{syncError}</Alert>}
 
@@ -1097,7 +1083,7 @@ export default function SyncPage() {
             <SectionHeader
               icon={<IconRefresh size={18} />}
               color="grape"
-              title="神秘二维码绑定"
+              title="二维码绑定"
             />
             <CabinetBindingCard
               token={token}
@@ -1118,7 +1104,7 @@ export default function SyncPage() {
           />
 
           {/* Diving-Fish Section */}
-          <Card withBorder padding="md">
+          <AppCard>
             <Stack gap="md">
               <Anchor
                 href="https://www.diving-fish.com/maimaidx/prober/"
@@ -1370,10 +1356,10 @@ export default function SyncPage() {
                 </Tabs.Panel>
               </Tabs>
             </Stack>
-          </Card>
+          </AppCard>
 
           {/* LXNS Section */}
-          <Card withBorder padding="md">
+          <AppCard>
             <Stack gap="md">
               <Anchor
                 href="https://maimai.lxns.net/"
@@ -1425,7 +1411,7 @@ export default function SyncPage() {
                 </Group>
               </Stack>
             </Stack>
-          </Card>
+          </AppCard>
         </Stack>
       </Stack>
     </Box>

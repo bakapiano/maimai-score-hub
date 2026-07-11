@@ -69,9 +69,9 @@ export type DivingFishTokenBody = z.infer<typeof DivingFishTokenBodySchema>;
  *  - JSON body  : { qrCode: "SGWCMAID..." }
  *  - multipart  : field `image` (PNG/JPG of the player's card QR)
  *
- * On success returns { ok: true, cabinetUserId }.
- * On id-mismatch (fewer than 5 score rows match), HTTP 409 with
- *   { error: "user id not match" }.
+ * With 4+ stored scores, identity requires every row to match up to a maximum
+ * of 10 rows. With fewer than 4 scores, binding uses the same name + B50
+ * rating reverse lookup as QR login. Mismatches return HTTP 409.
  */
 export const BindCabinetQrBodySchema = z.object({
   qrCode: z.string().min(1).optional(),
@@ -79,6 +79,13 @@ export const BindCabinetQrBodySchema = z.object({
 
 export const BindCabinetQrResponseSchema = z.object({
   ok: z.literal(true),
+});
+
+export const BindCabinetQrMismatchSchema = z.object({
+  error: z.string(),
+  verification: z.enum(["scores", "profile"]),
+  matchedRows: z.number().int().nonnegative(),
+  requiredRows: z.number().int().positive().nullable(),
 });
 
 export type BindCabinetQrBody = z.infer<typeof BindCabinetQrBodySchema>;

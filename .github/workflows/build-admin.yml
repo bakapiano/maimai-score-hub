@@ -1,0 +1,46 @@
+name: build admin
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "admin/**"
+      - "shared/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "admin/**"
+      - "shared/**"
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install shared dependencies
+        run: npm --prefix ../shared install
+
+      - name: Build shared package
+        run: npm --prefix ../shared run build
+
+      - name: Install dependencies
+        run: npm install --install-links=true
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

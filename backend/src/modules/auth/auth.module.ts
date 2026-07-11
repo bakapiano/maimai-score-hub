@@ -13,6 +13,7 @@ import {
   QrLoginAttemptSchema,
 } from './schemas/qr-login-attempt.schema';
 import { QrLoginService } from './services/qr-login.service';
+import { CabinetIdentityMatcherService } from './services/cabinet-identity-matcher.service';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { UsersModule } from '../users/users.module';
 import { randomBytes } from 'node:crypto';
@@ -39,7 +40,17 @@ import { randomBytes } from 'node:crypto';
     BotsModule,
     forwardRef(() => JobModule),
   ],
-  providers: [AuthService, AuthGuard, QrLoginService],
-  exports: [AuthService, AuthGuard, QrLoginService],
+  providers: [
+    AuthService,
+    AuthGuard,
+    CabinetIdentityMatcherService,
+    QrLoginService,
+  ],
+  exports: [
+    AuthService,
+    AuthGuard,
+    CabinetIdentityMatcherService,
+    QrLoginService,
+  ],
 })
 export class AuthModule {}

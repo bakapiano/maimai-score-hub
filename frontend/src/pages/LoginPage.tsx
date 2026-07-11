@@ -37,6 +37,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useMemo, useState } from "react";
 
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
+import { AppCard } from "../components/AppCard";
 import { QrLoginForm } from "../components/QrLoginForm";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { AppHeader } from "../components/AppHeader";
@@ -977,7 +978,7 @@ export default function LoginPage() {
                     </Tabs.List>
 
                     <Tabs.Panel value="friendCode" pt="md">
-                      <Paper shadow="xs" p="lg" withBorder>
+                      <AppCard>
                         <Stack gap="md">
                           <Group align="flex-end" gap="xs">
                             <TextInput
@@ -1097,11 +1098,11 @@ export default function LoginPage() {
                               </Group>
                             )}
                         </Stack>
-                      </Paper>
+                      </AppCard>
                     </Tabs.Panel>
 
                     <Tabs.Panel value="password" pt="md">
-                      <Paper shadow="xs" p="lg" withBorder>
+                      <AppCard>
                         <Stack gap="md">
                           <Stack gap={6}>
                             <Text size="sm" fw={500}>
@@ -1197,11 +1198,11 @@ export default function LoginPage() {
                             密码需要先在已登录账号的设置中创建。
                           </Text>
                         </Stack>
-                      </Paper>
+                      </AppCard>
                     </Tabs.Panel>
 
                     <Tabs.Panel value="qr" pt="md">
-                      <Paper shadow="xs" p="lg" withBorder>
+                      <AppCard>
                         <QrLoginForm
                           onSuccess={(t) => {
                             setToken(t);
@@ -1213,7 +1214,7 @@ export default function LoginPage() {
                           onBusyChange={setQrBusy}
                           disabled={polling}
                         />
-                      </Paper>
+                      </AppCard>
                     </Tabs.Panel>
                   </Tabs>
 

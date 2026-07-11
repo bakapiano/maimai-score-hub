@@ -1,0 +1,99 @@
+name: deploy admin
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-admin
+  cancel-in-progress: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-admin.yml
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package source
+        run: |
+          tar -czf /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz \
+            admin shared
+          ls -lh /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz
+
+      - name: Upload source archive
+        timeout-minutes: 3
+        env:
+          FRONTEND_HOST: ${{ secrets.FRONTEND_HOST }}
+          FRONTEND_USER: ${{ secrets.FRONTEND_USER }}
+          FRONTEND_PORT: ${{ secrets.FRONTEND_PORT }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          set -euo pipefail
+          FRONTEND_PORT="${FRONTEND_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/admin_deploy_key
+          chmod 600 ~/.ssh/admin_deploy_key
+          timeout 30s ssh-keyscan -p "$FRONTEND_PORT" "$FRONTEND_HOST" >> ~/.ssh/known_hosts
+          timeout 180s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+            -p "$FRONTEND_PORT" -i ~/.ssh/admin_deploy_key \
+            "$FRONTEND_USER@$FRONTEND_HOST" \
+            "cat > /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz" \
+            < /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz
+
+      - name: Deploy via SSH
+        timeout-minutes: 30
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.FRONTEND_HOST }}
+          username: ${{ secrets.FRONTEND_USER }}
+          port: ${{ secrets.FRONTEND_PORT }}
+          key: ${{ secrets.SSH_KEY }}
+          command_timeout: 30m
+          script: |
+            ADMIN_PATH="${{ secrets.ADMIN_PATH }}"
+            FRONTEND_PATH="${{ secrets.FRONTEND_PATH }}"
+            DEPLOY_PATH="${ADMIN_PATH:-$FRONTEND_PATH}"
+            SOURCE_ARCHIVE="/tmp/maimai-score-hub-admin-${{ github.sha }}.tgz"
+            if [ -z "$DEPLOY_PATH" ]; then
+              echo "❌ ADMIN_PATH or FRONTEND_PATH secret is required"
+              exit 1
+            fi
+            if [ ! -f "$SOURCE_ARCHIVE" ]; then
+              echo "❌ Source archive not found: $SOURCE_ARCHIVE"
+              exit 1
+            fi
+
+            mkdir -p "$DEPLOY_PATH"
+            cd "$DEPLOY_PATH"
+            sudo chown -R "$USER:$USER" "$(pwd)" || true
+            rm -rf admin shared
+            tar -xzf "$SOURCE_ARCHIVE" -C "$DEPLOY_PATH"
+            rm -f "$SOURCE_ARCHIVE"
+            printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.admin-deploy-revision"
+
+            sudo docker builder prune --force --keep-storage=2GB || true
+
+            if command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
+            else
+              COMPOSE_CMD="docker compose"
+            fi
+
+            sudo docker network create maimai-web >/dev/null 2>&1 || true
+            sudo $COMPOSE_CMD -f admin/docker-compose.yml up -d --build admin
+            sudo docker image prune -f
+            sudo docker builder prune --force --keep-storage=2GB || true
+
+            for i in 1 2 3 4 5; do
+              if curl -fsS http://127.0.0.1:8849/admin/ >/dev/null; then
+                echo "Admin health check passed"
+                exit 0
+              fi
+              echo "Attempt $i failed, retrying in 5 seconds..."
+              sleep 5
+            done
+            echo "Admin health check failed after 5 attempts"
+            exit 1

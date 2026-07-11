@@ -97,6 +97,8 @@ jobs:
             fi
 
             DEPLOY_STATUS=0
+            sudo docker network create maimai-web >/dev/null 2>&1 || true
+
             sudo COMPOSE_FILE="$DEPLOY_PATH/frontend/docker-compose.yml" \
               FRONTEND_HEALTH_URL="http://127.0.0.1:8848/" \
               bash frontend/scripts/deploy-zero-downtime.sh --bootstrap || DEPLOY_STATUS=$?

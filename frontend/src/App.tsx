@@ -16,6 +16,7 @@ import { appTheme } from "./theme";
 const AuthedLayout = lazy(() => import("./layouts/AuthedLayout"));
 const HomePage = lazy(() => import("./pages/HomePage"));
 const ScorePage = lazy(() => import("./pages/ScorePage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const SyncPage = lazy(() => import("./pages/SyncPage"));
 const AboutPage = lazy(() => import("./pages/AboutPage"));
 
@@ -64,6 +65,7 @@ function App() {
                     <Route path="/app" element={<HomePage />} />
                     <Route path="/app/sync" element={<SyncPage />} />
                     <Route path="/app/scores" element={<ScorePage />} />
+                    <Route path="/app/settings" element={<SettingsPage />} />
                   </Route>
                   <Route path="/about" element={<AboutPage />} />
                   <Route path="*" element={<DefaultRedirect />} />

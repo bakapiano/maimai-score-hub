@@ -7,17 +7,32 @@ import type { SyncDocument, SyncScore } from '../../sync/schemas/sync.schema';
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
 import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
 import { decodeQrImage } from '../../../common/qr-decode';
+import { CabinetIdentityMatcherService } from '../../auth/services/cabinet-identity-matcher.service';
 
 /**
- * Minimum number of (musicId,level) rows that must match between
- * the user's stored sync and the cabinet's GetUserRivalMusicApi response
- * for us to accept the QR-derived cabinetUserId as belonging to this user.
- *
- * If the user's stored sync has fewer than this many rows, we just require
- * "all of them match" (capped at the row count). This handles brand-new
- * accounts with very few plays without weakening the check for typical users.
+ * Accounts with fewer than four stored score rows use the name + B50 rating
+ * identity resolver shared with QR login. Otherwise every stored row is
+ * required, capped at ten matches for accounts with more scores.
  */
-const MIN_MATCH_ROWS = 10;
+const MAX_SCORE_MATCH_ROWS = 10;
+const MIN_SCORES_FOR_SCORE_MATCH = 4;
+
+export type CabinetBindResult =
+  | { ok: true; cabinetUserId: number }
+  | {
+      ok: false;
+      reason: 'mismatch';
+      verification: 'scores';
+      matchedRows: number;
+      requiredRows: number;
+    }
+  | {
+      ok: false;
+      reason: 'mismatch';
+      verification: 'profile';
+      matchedRows: 0;
+      requiredRows: null;
+    };
 
 /**
  * Convert deluxScore string (sometimes formatted like "1234" or "1,234")
@@ -62,6 +77,7 @@ export class CabinetService {
     @InjectModel(SyncEntity.name)
     private readonly syncModel: Model<SyncDocument>,
     private readonly sdgb: SdgbJobDispatcher,
+    private readonly identityMatcher: CabinetIdentityMatcherService,
   ) {}
 
   /**
@@ -76,47 +92,68 @@ export class CabinetService {
 
   /**
    * Bind flow:
-   *   1. Make sure the user has at least one previous sync (we need scores
-   *      to verify identity against).
-   *   2. Ask sdgb-worker to scan the QR — returns cabinetUserId + the
+   *   1. Ask sdgb-worker to scan the QR — returns cabinetUserId + the
    *      cabinet's view of that user's rival music.
-   *   3. Compare against our stored scores by (musicId,level). When at least
-   *      MIN_MATCH_ROWS rows match exactly on both achievement and
-   *      deluxscoreMax, we accept the binding.
+   *   2. With at least four stored scores, compare every row up to a maximum
+   *      of ten exact matches.
+   *   3. With fewer than four stored scores, resolve the friendCode using the
+   *      same name + B50 rating flow as QR login.
    */
   async bindByQr(
     friendCode: string,
     qrCode: string,
-  ): Promise<
-    | { ok: true; cabinetUserId: number }
-    | { ok: false; reason: 'no-sync' | 'mismatch'; matchedRows: number }
-  > {
+  ): Promise<CabinetBindResult> {
     const sync = await this.syncModel
       .findOne({ friendCode })
       .sort({ createdAt: -1 })
       .lean();
     const localScores: SyncScore[] = sync?.scores ?? [];
-    if (!localScores.length) {
-      return { ok: false, reason: 'no-sync', matchedRows: 0 };
-    }
 
-    const { cabinetUserId, music } = await this.sdgb.scanQr(
+    const scan = await this.sdgb.scanQr(
       { qrCode },
       { tag: `bind:${friendCode}`, timeoutMs: 120_000 },
     );
 
-    // Effective threshold: usually MIN_MATCH_ROWS, but if the user has
-    // synced fewer than that we just require all of them to match.
-    const required = Math.min(MIN_MATCH_ROWS, localScores.length);
-    const matchedRows = this.countMatchingRows(localScores, music, required);
+    if (localScores.length < MIN_SCORES_FOR_SCORE_MATCH) {
+      const identity = await this.identityMatcher.match(scan, {
+        tagPrefix: 'cabinet-bind',
+        context: `Cabinet-bind fc=${friendCode}`,
+      });
+      this.logger.log(
+        `bindByQr profile fc=${friendCode} resolvedFc=${identity.friendCode} cabinetUserId=${scan.cabinetUserId}`,
+      );
+      if (identity.friendCode !== friendCode) {
+        return {
+          ok: false,
+          reason: 'mismatch',
+          verification: 'profile',
+          matchedRows: 0,
+          requiredRows: null,
+        };
+      }
+      return { ok: true, cabinetUserId: scan.cabinetUserId };
+    }
+
+    const requiredRows = Math.min(MAX_SCORE_MATCH_ROWS, localScores.length);
+    const matchedRows = this.countMatchingRows(
+      localScores,
+      scan.music,
+      requiredRows,
+    );
     this.logger.log(
-      `bindByQr fc=${friendCode} cabinetUserId=${cabinetUserId} matched=${matchedRows}/${required}`,
+      `bindByQr scores fc=${friendCode} cabinetUserId=${scan.cabinetUserId} matched=${matchedRows}/${requiredRows}`,
     );
 
-    if (matchedRows < required) {
-      return { ok: false, reason: 'mismatch', matchedRows };
+    if (matchedRows < requiredRows) {
+      return {
+        ok: false,
+        reason: 'mismatch',
+        verification: 'scores',
+        matchedRows,
+        requiredRows,
+      };
     }
-    return { ok: true, cabinetUserId };
+    return { ok: true, cabinetUserId: scan.cabinetUserId };
   }
 
   /**
@@ -132,7 +169,7 @@ export class CabinetService {
   private countMatchingRows(
     localScores: SyncScore[],
     cabinetMusic: SdgbWorkerMusicEntry[],
-    earlyExitAt: number = MIN_MATCH_ROWS,
+    earlyExitAt: number = MAX_SCORE_MATCH_ROWS,
   ): number {
     const cabinetMap = new Map<string, { ach: number; dx: number }>();
     for (const m of cabinetMusic) {

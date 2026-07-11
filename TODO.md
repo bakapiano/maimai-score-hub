@@ -62,3 +62,7 @@ get_user_recent event 很容易用 add rival 把好友数量撑爆到100
     如果要执行，自己call sdgb worker add rival，而不是 先 add rival 再去 queue job
 
 [] 前端 fc > fc+ > ap > ap+ 统计数量的时候计数有问题
+
+07/11
+[] OCR 封面 / 曲名
+[] 二维码更新成绩

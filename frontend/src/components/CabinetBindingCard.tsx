@@ -1,9 +1,7 @@
 import {
-  Alert,
   Badge,
   Box,
   Button,
-  Card,
   FileButton,
   Group,
   PasswordInput,
@@ -16,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
 import { recordAnalyticsEvent } from "../utils/observability";
+import { AppCard } from "./AppCard";
 
 /**
  * Cabinet (sdgb) binding + auto-update opt-in.
@@ -39,6 +38,12 @@ type ProfileResp = {
   hasCabinetUserId: boolean;
   autoUpdate: boolean;
 };
+
+function getBindMismatchMessage(json: Record<string, unknown> | null): string {
+  return json?.verification === "profile"
+    ? "二维码反查出的好友码与当前登录账号不一致"
+    : `匹配成绩条数：${json?.matchedRows ?? 0}（需要至少 ${json?.requiredRows ?? 10} 条）`;
+}
 
 export function CabinetBindingCard({
   token,
@@ -107,8 +112,8 @@ export function CabinetBindingCard({
         if (res.status === 409) {
           notifications.show({
             color: "red",
-            title: "user id not match",
-            message: `匹配成绩条数: ${json?.matchedRows ?? 0} (需要至少 5 条)`,
+            title: "二维码与当前账号不匹配",
+            message: getBindMismatchMessage(json),
           });
           return;
         }
@@ -137,7 +142,9 @@ export function CabinetBindingCard({
   );
 
   const onPickFile = (file: File | null) => {
-    if (!file) {return;}
+    if (!file) {
+      return;
+    }
     const fd = new FormData();
     fd.append("image", file);
     void submitBind(fd);
@@ -225,7 +232,7 @@ export function CabinetBindingCard({
   };
 
   return (
-    <Card withBorder padding="md">
+    <AppCard>
       <Stack gap="md">
         <Group justify="space-between" align="center">
           <Badge color="orange" variant="light" size="sm">
@@ -271,10 +278,6 @@ export function CabinetBindingCard({
           </>
         ) : (
           <>
-            <Alert color="yellow" variant="light">
-              请在绑定二维码前至少完成一次成绩同步
-            </Alert>
-
             <Stack gap="sm">
               <FileButton
                 onChange={onPickFile}
@@ -333,6 +336,6 @@ export function CabinetBindingCard({
           </>
         )}
       </Stack>
-    </Card>
+    </AppCard>
   );
 }

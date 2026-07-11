@@ -17,10 +17,12 @@ import { useMemo, useState, useTransition } from "react";
 
 import { type DetailedMusicScoreCardProps } from "../../components/MusicScoreCard";
 import {
-  type PlateCompletionDisplayMode,
-  isPlateEntryCompleted,
   PlateGridView,
 } from "../../components/PlateGridView";
+import {
+  type PlateCompletionDisplayMode,
+  isPlateEntryCompleted,
+} from "../../components/PlateGridView.model";
 import { ScoreSummaryCard } from "../../components/ScoreSummaryBadges";
 import {
   DesktopFilterCard,
@@ -232,6 +234,70 @@ function writeVersionFilterSettings(settings: VersionFilterSettings) {
   } catch {
     // Ignore storage quota/private-mode failures.
   }
+}
+
+function VersionFilterContent({
+  settings,
+  onChange,
+}: {
+  settings: VersionFilterSettings;
+  onChange: (patch: Partial<VersionFilterSettings>) => void;
+}) {
+  return (
+    <Stack gap="md">
+      <Box>
+        <Text size="xs" fw={600} c="dimmed" mb="xs">
+          筛选条件
+        </Text>
+        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+          <Stack gap={4}>
+            <Text size="xs" fw={500}>
+              显示
+            </Text>
+            <SegmentedControl
+              size="xs"
+              value={settings.completionMode}
+              onChange={(value) =>
+                onChange({
+                  completionMode: value as PlateCompletionDisplayMode,
+                })
+              }
+              data={[
+                { value: "check", label: "达成图" },
+                { value: "classic", label: "成绩图" },
+              ]}
+            />
+          </Stack>
+          <Stack gap={4}>
+            <Text size="xs" fw={500}>
+              等级范围
+            </Text>
+            <Switch
+              size="sm"
+              label="显示全部等级"
+              checked={settings.showAllLevels}
+              onChange={(event) =>
+                onChange({ showAllLevels: event.currentTarget.checked })
+              }
+            />
+          </Stack>
+          <Stack gap={4}>
+            <Text size="xs" fw={500}>
+              完成状态
+            </Text>
+            <Switch
+              size="sm"
+              label="隐藏已达成"
+              checked={settings.hideCompleted}
+              onChange={(event) =>
+                onChange({ hideCompleted: event.currentTarget.checked })
+              }
+            />
+          </Stack>
+        </SimpleGrid>
+      </Box>
+    </Stack>
+  );
 }
 
 function getVisibleVersionLevels(
@@ -457,69 +523,12 @@ export function VersionScoresTab({
     completionMode !== DEFAULT_VERSION_FILTER_SETTINGS.completionMode;
 
   const versionFilterContent = (
-    <Stack gap="md">
-      <Box>
-        <Text size="xs" fw={600} c="dimmed" mb="xs">
-          筛选条件
-        </Text>
-        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
-          <Stack gap={4}>
-            <Text size="xs" fw={500}>
-              显示
-            </Text>
-            <SegmentedControl
-              size="xs"
-              value={completionMode}
-              onChange={(value) =>
-                startTransition(() =>
-                  updateFilterSettings({
-                    completionMode: value as PlateCompletionDisplayMode,
-                  }),
-                )
-              }
-              data={[
-                { value: "check", label: "达成图" },
-                { value: "classic", label: "成绩图" },
-              ]}
-            />
-          </Stack>
-          <Stack gap={4}>
-            <Text size="xs" fw={500}>
-              等级范围
-            </Text>
-            <Switch
-              size="sm"
-              label="显示全部等级"
-              checked={showAllLevels}
-              onChange={(e) =>
-                startTransition(() =>
-                  updateFilterSettings({
-                    showAllLevels: e.currentTarget.checked,
-                  }),
-                )
-              }
-            />
-          </Stack>
-          <Stack gap={4}>
-            <Text size="xs" fw={500}>
-              完成状态
-            </Text>
-            <Switch
-              size="sm"
-              label="隐藏已达成"
-              checked={hideCompleted}
-              onChange={(e) =>
-                startTransition(() =>
-                  updateFilterSettings({
-                    hideCompleted: e.currentTarget.checked,
-                  }),
-                )
-              }
-            />
-          </Stack>
-        </SimpleGrid>
-      </Box>
-    </Stack>
+    <VersionFilterContent
+      settings={filterSettings}
+      onChange={(patch) =>
+        startTransition(() => updateFilterSettings(patch))
+      }
+    />
   );
 
   return (

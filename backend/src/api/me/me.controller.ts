@@ -210,15 +210,20 @@ export class MeController {
     ) {
       throw new BadRequestException('该账号已绑定二维码，无法重复绑定');
     }
-    const result = await this.cabinet.bindByQr(user.friendCode, qrCode);
+    let result: Awaited<ReturnType<CabinetService['bindByQr']>>;
+    try {
+      result = await this.cabinet.bindByQr(user.friendCode, qrCode);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(message);
+    }
 
     if (!result.ok) {
-      if (result.reason === 'no-sync') {
-        throw new BadRequestException('请先完成一次成绩同步后再绑定二维码');
-      }
       throw new ConflictException({
         error: 'user id not match',
+        verification: result.verification,
         matchedRows: result.matchedRows,
+        requiredRows: result.requiredRows,
       });
     }
 

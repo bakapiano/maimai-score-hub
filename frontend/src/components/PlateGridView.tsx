@@ -10,11 +10,13 @@ import {
 import { LEVEL_COLORS } from "./MusicScoreCard/constants";
 import type { PlatePlan } from "../constants/platePlan";
 import type { SyncScore } from "../types/syncScore";
-import { CombinedBadges } from "./ScoreSummaryBadges";
+import {
+  isPlateEntryCompleted,
+  type PlateCompletionDisplayMode,
+} from "./PlateGridView.model";
+import { ScoreSectionSummary } from "./ScoreSummaryBadges";
 import {
   matchesBadgeFilter,
-  statusMeetsFcBucket,
-  statusMeetsFsBucket,
   summarizeRanks,
   summarizeStatuses,
   type BadgeFilter,
@@ -33,33 +35,6 @@ type LevelGroup = {
   levelNumeric: number | null;
   items: ChartEntry[];
 };
-
-export type PlateProgressEntry = {
-  score?: Pick<SyncScore, "score" | "fc" | "fs">;
-};
-
-export type PlateCompletionDisplayMode = "classic" | "check";
-
-export function isPlateEntryCompleted(
-  entry: PlateProgressEntry,
-  plan: PlatePlan,
-): boolean {
-  if (!entry.score) {return false;}
-  switch (plan) {
-    case "jiang": {
-      const scoreText = entry.score.score ?? null;
-      if (!scoreText) {return false;}
-      const val = parseFloat(scoreText.replace("%", ""));
-      return !isNaN(val) && val >= 100;
-    }
-    case "ji":
-      return statusMeetsFcBucket(entry.score.fc, "fc");
-    case "shen":
-      return statusMeetsFcBucket(entry.score.fc, "ap");
-    case "wuwu":
-      return statusMeetsFsBucket(entry.score.fs, "fdx");
-  }
-}
 
 const CARD_SIZE = 64;
 const CARD_BORDER = 3;
@@ -259,8 +234,8 @@ export function PlateGridView({
         );
         return (
           <Stack key={level.levelKey} gap="xs">
-            <Text fw={700}>{level.levelKey}</Text>
-            <CombinedBadges
+            <ScoreSectionSummary
+              title={level.levelKey}
               rankSummary={summarizeRanks(level.items)}
               statusSummary={summarizeStatuses(level.items)}
               filter={sectionFilter}

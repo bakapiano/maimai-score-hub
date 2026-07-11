@@ -1,6 +1,7 @@
-import { Button, Card, Modal } from "@mantine/core";
+import { Button, Modal } from "@mantine/core";
 import { IconFilter } from "@tabler/icons-react";
 import { useState, type ReactNode } from "react";
+import { AppCard } from "./AppCard";
 
 type FilterCardProps = {
   children: ReactNode;
@@ -14,9 +15,9 @@ type MobileFilterModalButtonProps = {
 
 export function DesktopFilterCard({ children }: FilterCardProps) {
   return (
-    <Card shadow="none" p="md" withBorder visibleFrom="sm">
+    <AppCard visibleFrom="sm">
       {children}
-    </Card>
+    </AppCard>
   );
 }
 

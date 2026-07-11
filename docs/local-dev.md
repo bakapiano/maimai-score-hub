@@ -63,6 +63,7 @@ The repo includes a PM2-based local dev supervisor. It starts:
 - Memurai on `127.0.0.1:6379`
 - backend on `127.0.0.1:9050`
 - frontend on `127.0.0.1:3001`
+- admin portal on `127.0.0.1:3002` (`/admin/`)
 - DXNet worker (`msh-worker`) connected to local backend/Redis
 - sdgb-worker (`msh-sdgb-worker`) connected to local backend/Redis
 - Microsoft Dev Tunnel for frontend public access
@@ -207,6 +208,11 @@ npm run start:dev
 
 ```powershell
 cd D:\maimaidx-prober-proxy-updater\frontend
+npm run dev
+```
+
+```powershell
+cd D:\maimaidx-prober-proxy-updater\admin
 npm run dev
 ```
 

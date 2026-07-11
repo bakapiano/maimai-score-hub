@@ -1,7 +1,6 @@
 .scrollArea {
   max-width: 100%;
   overflow: hidden;
-  padding-inline: var(--mantine-spacing-md);
 }
 
 .profileBody {
@@ -10,11 +9,11 @@
   --profile-star-height: 30px;
   --profile-badge-height: 1.75rem;
   --profile-badge-font: 0.8125rem;
+  --profile-badge-radius: 10px;
   --profile-name-size: var(--mantine-font-size-lg);
 
   width: 100%;
   min-width: 0;
-  padding: var(--mantine-spacing-md) 0;
   align-items: stretch;
   color: light-dark(var(--mantine-color-black), var(--mantine-color-dark-0));
 }
@@ -34,7 +33,6 @@
   min-width: 0;
   height: var(--profile-block-height);
   overflow: hidden;
-  padding-right: var(--mantine-spacing-md);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -56,6 +54,7 @@
   min-width: 0;
   height: var(--profile-badge-height);
   font-size: var(--profile-badge-font);
+  border-radius: var(--profile-badge-radius);
   overflow: hidden;
   text-transform: none;
   cursor: inherit;
@@ -130,17 +129,12 @@
   flex: 0 0 auto;
   height: var(--profile-badge-height);
   font-size: var(--profile-badge-font);
+  border-radius: var(--profile-badge-radius);
+  text-transform: none;
 }
 
 .ratingPrefix {
   display: inline;
-}
-
-/* Narrow meta row: drop "DX 评分: " so the number still fits beside the title */
-@container profile-meta (max-width: 300px) {
-  .ratingPrefix {
-    display: none;
-  }
 }
 
 .username {
@@ -205,10 +199,6 @@
 
 /* Compact player plate: avatar + summary share one height token */
 @media (max-width: 480px) {
-  .scrollArea {
-    padding-inline: var(--mantine-spacing-sm);
-  }
-
   .profileBody {
     --profile-block-height: 82px;
     --profile-rank-height: 26px;
@@ -217,16 +207,11 @@
     --profile-badge-font: 0.7rem;
     --profile-name-size: var(--mantine-font-size-sm);
 
-    padding: var(--mantine-spacing-sm) 0;
     gap: var(--mantine-spacing-sm);
   }
 
   .avatarFrame {
     border-radius: 6px;
-  }
-
-  .summary {
-    padding-right: 0;
   }
 
   .titleBadge,

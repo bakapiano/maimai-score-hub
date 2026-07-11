@@ -1,7 +1,6 @@
 import {
   Box,
   Button,
-  Drawer,
   Group,
   SegmentedControl,
   Stack,
@@ -14,16 +13,11 @@ import {
   IconSun,
   IconTrash,
 } from "@tabler/icons-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import { AccountSettingsSection } from "./SettingsPanelAccountSection";
 import { InstallAppButton } from "./InstallAppButton";
 import { usePwaInstall } from "../hooks/usePwaInstall";
-
-type Props = {
-  opened: boolean;
-  onClose: () => void;
-};
 
 function InstallAppSettingsSection() {
   const { status } = usePwaInstall();
@@ -147,9 +141,8 @@ function preserveSessionCache() {
   }
 }
 
-export function SettingsPanel({ opened, onClose }: Props) {
+export function SettingsContent({ onClose = () => {} }: { onClose?: () => void }) {
   const { colorScheme, setColorScheme } = useMantineColorScheme();
-  const touchStartX = useRef<number | null>(null);
   const [clearing, setClearing] = useState(false);
 
   const handleClearCache = () => {
@@ -164,42 +157,19 @@ export function SettingsPanel({ opened, onClose }: Props) {
   };
 
   return (
-    <Drawer
-      opened={opened}
-      onClose={onClose}
-      title="网站设置"
-      position="right"
-      size="sm"
-      lockScroll={false}
-      onTouchStart={(event) => {
-        touchStartX.current = event.touches[0]?.clientX ?? null;
-      }}
-      onTouchEnd={(event) => {
-        const startX = touchStartX.current;
-        touchStartX.current = null;
-        if (startX === null) {
-          return;
-        }
-        const endX = event.changedTouches[0]?.clientX ?? startX;
-        if (endX - startX > 50) {
-          onClose();
-        }
-      }}
-    >
-      <Box style={{ height: "100%" }}>
-        <Stack gap="lg">
-          <AppearanceSettingsSection
-            colorScheme={colorScheme}
-            onChange={setColorScheme}
-          />
-          <InstallAppSettingsSection />
-          <CacheSettingsSection
-            clearing={clearing}
-            onClearCache={handleClearCache}
-          />
-          <AccountSettingsSection onClose={onClose} />
-        </Stack>
-      </Box>
-    </Drawer>
+    <Box style={{ height: "100%" }}>
+      <Stack gap="lg">
+        <AppearanceSettingsSection
+          colorScheme={colorScheme}
+          onChange={setColorScheme}
+        />
+        <InstallAppSettingsSection />
+        <CacheSettingsSection
+          clearing={clearing}
+          onClearCache={handleClearCache}
+        />
+        <AccountSettingsSection onClose={onClose} />
+      </Stack>
+    </Box>
   );
 }

@@ -1,5 +1,4 @@
 import {
-  Card,
   Group,
   SimpleGrid,
   Stack,
@@ -14,15 +13,17 @@ import {
   IconSettings,
 } from "@tabler/icons-react";
 
-import { useNavigate, useOutletContext } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../providers/AuthContext";
+import { AppCard } from "../components/AppCard";
 
 type Banner = {
   title: string;
   description: string;
   icon: typeof IconRefresh;
   color: string;
-} & ({ to: string } | { action: "openSettings" });
+  to: string;
+};
 
 const banners: Banner[] = [
   {
@@ -44,7 +45,7 @@ const banners: Banner[] = [
     description: "主题、账号、危险操作",
     icon: IconSettings,
     color: "gray",
-    action: "openSettings",
+    to: "/app/settings",
   },
   {
     title: "关于网站",
@@ -55,35 +56,25 @@ const banners: Banner[] = [
   },
 ];
 
-type AuthedOutlet = { openSettings: () => void };
-
 export default function HomePage() {
   const navigate = useNavigate();
   const { offline } = useAuth();
-  const { openSettings } = useOutletContext<AuthedOutlet>();
 
   const handleClick = (banner: Banner) => {
-    if ("action" in banner && banner.action === "openSettings") {
-      openSettings();
-      return;
-    }
-    if ("to" in banner) {
-      navigate(banner.to);
-    }
+    navigate(banner.to);
   };
 
   const isDisabled = (banner: Banner) =>
-    offline && "to" in banner && banner.to === "/app/sync";
+    offline && banner.to === "/app/sync";
 
   return (
     <Stack gap="md">
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
         {banners.map((banner) => {
           const disabled = isDisabled(banner);
-          const key = "to" in banner ? banner.to : banner.action;
           return (
             <UnstyledButton
-              key={key}
+              key={banner.to}
               onClick={() => handleClick(banner)}
               disabled={disabled}
               style={{
@@ -91,7 +82,7 @@ export default function HomePage() {
                 opacity: disabled ? 0.5 : 1,
               }}
             >
-              <Card withBorder shadow="sm" padding="lg">
+              <AppCard>
                 <Group wrap="nowrap">
                   <ThemeIcon size={48} radius="md" color={banner.color}>
                     <banner.icon size={28} />
@@ -105,7 +96,7 @@ export default function HomePage() {
                     </Text>
                   </div>
                 </Group>
-              </Card>
+              </AppCard>
             </UnstyledButton>
           );
         })}

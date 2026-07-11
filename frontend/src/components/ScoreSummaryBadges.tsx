@@ -1,8 +1,9 @@
-import { ActionIcon, Box, Card, Group, Stack, Text } from "@mantine/core";
+import { ActionIcon, Box, Group, Stack, Text } from "@mantine/core";
 import React, { useState } from "react";
 import { useMediaQuery } from "@mantine/hooks";
 
 import { renderMusicIcon, renderRank } from "./MusicScoreCard";
+import { AppCard } from "./AppCard";
 import {
   cycleBadgeFilter,
   fcOrder,
@@ -18,12 +19,53 @@ import {
   type StatusSummary,
 } from "./ScoreSummaryBadges.model";
 
+const COMPACT_STAT_MIN_WIDTH = 128;
+const COMPACT_STAT_HEIGHT = 34;
+const COMPACT_STAT_PADDING = "2px 6px";
+const DENSE_STAT_WIDTH = 96;
+const DENSE_RANK_WIDTH = 34;
+
+function getStatItemLayout(compact: boolean, dense: boolean) {
+  if (dense) {
+    return {
+      width: DENSE_STAT_WIDTH,
+      minWidth: DENSE_STAT_WIDTH,
+      height: COMPACT_STAT_HEIGHT,
+      padding: "2px 4px",
+      gap: 2,
+      labelWidth: 40,
+      textSize: "11px",
+    } as const;
+  }
+  if (compact) {
+    return {
+      width: "fit-content",
+      minWidth: COMPACT_STAT_MIN_WIDTH,
+      height: COMPACT_STAT_HEIGHT,
+      padding: COMPACT_STAT_PADDING,
+      gap: 4,
+      labelWidth: 52,
+      textSize: "xs",
+    } as const;
+  }
+  return {
+    width: "fit-content",
+    minWidth: 150,
+    height: 40,
+    padding: "4px 8px",
+    gap: 4,
+    labelWidth: 72,
+    textSize: "sm",
+  } as const;
+}
+
 // Shared StatItem component
 const StatItem = ({
   count,
   total,
   labelNode,
   compact = false,
+  dense = false,
   active = null,
   onClick,
 }: {
@@ -31,9 +73,11 @@ const StatItem = ({
   total: number;
   labelNode: React.ReactNode;
   compact?: boolean;
+  dense?: boolean;
   active?: BadgeFilterMode | null;
   onClick?: () => void;
 }) => {
+  const layout = getStatItemLayout(compact, dense);
   const backgroundColor =
     active === "include"
       ? "var(--mantine-color-blue-light)"
@@ -58,10 +102,10 @@ const StatItem = ({
             : undefined
       }
       style={{
-        width: "fit-content",
-        minWidth: compact ? 128 : 150,
-        height: compact ? 34 : 40,
-        padding: compact ? "2px 6px" : "4px 8px",
+        width: layout.width,
+        minWidth: layout.minWidth,
+        height: layout.height,
+        padding: layout.padding,
         borderRadius: 6,
         boxSizing: "border-box",
         backgroundColor,
@@ -70,10 +114,15 @@ const StatItem = ({
         userSelect: "none",
       }}
     >
-      <Group gap={4} justify="space-between" wrap="nowrap" h="100%">
+      <Group
+        gap={layout.gap}
+        justify="space-between"
+        wrap="nowrap"
+        h="100%"
+      >
         <Box
           style={{
-            width: compact ? 52 : 72,
+            width: layout.labelWidth,
             height: "100%",
             display: "flex",
             alignItems: "center",
@@ -84,12 +133,12 @@ const StatItem = ({
           {labelNode}
         </Box>
         <Text
-          size={compact ? "xs" : "sm"}
+          size={layout.textSize}
           fw={600}
           style={{ whiteSpace: "nowrap", flexShrink: 0 }}
         >
           {count}
-          <Text span size="xs" fw={400}>
+          <Text span size={layout.textSize} fw={400}>
             /{total}
           </Text>
         </Text>
@@ -131,6 +180,8 @@ export type CombinedBadgesProps = {
   defaultExpanded?: boolean;
   filter?: BadgeFilter;
   onFilterChange?: (next: BadgeFilter) => void;
+  leadingContent?: React.ReactNode;
+  dense?: boolean;
 };
 
 export function CombinedBadges({
@@ -139,6 +190,8 @@ export function CombinedBadges({
   defaultExpanded = false,
   filter = null,
   onFilterChange,
+  leadingContent,
+  dense = false,
 }: CombinedBadgesProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const isMobile = useMediaQuery("(max-width: 48em)");
@@ -162,17 +215,22 @@ export function CombinedBadges({
 
   return (
     <Group gap={6} wrap="wrap" align="center">
+      {leadingContent}
       {rankList.map((r) => (
         <StatItem
           key={r}
           count={rankSummary.counts[r]}
           total={rankSummary.total}
           compact
+          dense={dense}
           active={activeOf("rank", r)}
           onClick={clickOf("rank", r)}
           labelNode={
             <Text size="xs" fw={600}>
-              {renderRank(r, { compact: true })}
+              {renderRank(r, {
+                compact: true,
+                width: dense ? DENSE_RANK_WIDTH : undefined,
+              })}
             </Text>
           }
         />
@@ -183,6 +241,7 @@ export function CombinedBadges({
           count={statusSummary.fc[key]}
           total={statusSummary.total}
           compact
+          dense={dense}
           active={activeOf("fc", key)}
           onClick={clickOf("fc", key)}
           labelNode={renderMusicIcon(key, {
@@ -197,6 +256,7 @@ export function CombinedBadges({
           count={statusSummary.fs[key]}
           total={statusSummary.total}
           compact
+          dense={dense}
           active={activeOf("fs", key)}
           onClick={clickOf("fs", key)}
           labelNode={renderMusicIcon(key, {
@@ -210,6 +270,58 @@ export function CombinedBadges({
         onClick={() => setExpanded((prev) => !prev)}
       />
     </Group>
+  );
+}
+
+export type ScoreSectionSummaryProps = CombinedBadgesProps & {
+  title: React.ReactNode;
+};
+
+export function ScoreSectionSummary({
+  title,
+  ...badgeProps
+}: ScoreSectionSummaryProps) {
+  const isMobile = useMediaQuery("(max-width: 48em)");
+  const titleWithTotal = (
+    <>
+      {title}
+      <Text component="span" size="xs" fw={500} c="dimmed" ml={4}>
+        ({badgeProps.statusSummary.total})
+      </Text>
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <CombinedBadges
+        {...badgeProps}
+        dense
+        leadingContent={
+          <Box
+            style={{
+              width: DENSE_STAT_WIDTH,
+              minWidth: DENSE_STAT_WIDTH,
+              height: COMPACT_STAT_HEIGHT,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-start",
+              flexShrink: 0,
+            }}
+          >
+            <Text fw={700} style={{ whiteSpace: "nowrap" }}>
+              {titleWithTotal}
+            </Text>
+          </Box>
+        }
+      />
+    );
+  }
+
+  return (
+    <Stack gap="xs">
+      <Text fw={700}>{titleWithTotal}</Text>
+      <CombinedBadges {...badgeProps} />
+    </Stack>
   );
 }
 
@@ -258,7 +370,7 @@ export function ScoreSummaryCard({
       : undefined;
 
   return (
-    <Card shadow="none" p="sm" withBorder>
+    <AppCard>
       <Stack gap="sm">
         {/* 达成率统计 */}
         <Box>
@@ -335,6 +447,6 @@ export function ScoreSummaryCard({
           </Group>
         )}
       </Stack>
-    </Card>
+    </AppCard>
   );
 }

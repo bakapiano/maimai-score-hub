@@ -11,7 +11,7 @@ import {
   Title,
 } from "@mantine/core";
 import {
-  CombinedBadges,
+  ScoreSectionSummary,
   ScoreSummaryCard,
 } from "../../components/ScoreSummaryBadges";
 import {
@@ -330,7 +330,7 @@ export function LevelScoresTab({
       <Box>
         <Group justify="space-between" align="center" mb="sm">
           <Title order={4} size="h5">
-            按详细定数查看
+            按定数查看
           </Title>
           <Group gap="xs">
             <MobileFilterModalButton active={hasActiveDisplayFilter}>
@@ -478,10 +478,8 @@ export function LevelScoresTab({
               );
               return (
                 <Stack key={sectionKey} gap="xs">
-                  <Group align="center">
-                    <Text fw={700}>{detail.detailKey}</Text>
-                  </Group>
-                  <CombinedBadges
+                  <ScoreSectionSummary
+                    title={detail.detailKey}
                     rankSummary={summarizeRanks(baseItems)}
                     statusSummary={summarizeStatuses(baseItems)}
                     filter={sectionFilter}

@@ -54,7 +54,7 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | PATCH  | `/me`                           | body: `divingFishImportToken?`, `lxnsImportToken?`, `autoUpdate?` | 更新导入 token 和自动更新开关。保存 token 后同步完成会默认自动导出到对应查分器；开启自动更新前必须已绑定机台二维码；返回脱敏后的用户资料。 |
 | PUT    | `/me/password`                  | body: `username?`, `currentPassword?`, `newPassword?`             | 已登录用户设置/修改用户名和密码。已有密码时需要 `currentPassword`。                                                                        |
 | POST   | `/me/prober-tokens/diving-fish` | body: `username`, `password`                                      | 用 Diving Fish 账号密码一次性获取 import token；用户名密码不保存。                                                                         |
-| PUT    | `/me/cabinet`                   | JSON body: `qrCode?`，或 multipart field: `image`                 | 绑定机台 `cabinetUserId`。要求账号尚未绑定，并且已完成过成绩同步；匹配失败返回 409。                                                       |
+| PUT    | `/me/cabinet`                   | JSON body: `qrCode?`，或 multipart field: `image`                 | 绑定机台 `cabinetUserId`。少于 4 条成绩时使用二维码登录同款反查；4 条以上时最多匹配 10 条，不足 10 条则全部匹配；失败返回 409。                 |
 | DELETE | `/me/cabinet`                   | -                                                                 | 解绑机台 userId，并关闭自动更新。                                                                                                          |
 | DELETE | `/me`                           | -                                                                 | 删除当前账号及相关数据，返回删除统计。                                                                                                     |
 

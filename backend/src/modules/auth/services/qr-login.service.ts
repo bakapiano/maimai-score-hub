@@ -4,24 +4,17 @@ import type { Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 
-import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
-
-import { BotFriendSnapshotService } from '../../bots/services/bot-friend-snapshot.service';
-import { BotStatusService } from '../../bots/services/bot-status.service';
-import { JobService } from '../../job/services/job.service';
-import { MusicEntity } from '../../music/schemas/music.schema';
-import type {
-  ChartPayload,
-  MusicDocument,
-} from '../../music/schemas/music.schema';
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
 import { UsersService } from '../../users/services/users.service';
-import { getRating } from '../../../common/rating';
 import {
   QrLoginAttemptEntity,
   type QrLoginAttemptDocument,
   type QrLoginStatus,
 } from '../schemas/qr-login-attempt.schema';
+import {
+  CabinetIdentityMatcherService,
+  type PreparedCabinetIdentity,
+} from './cabinet-identity-matcher.service';
 
 export interface QrLoginFastResult {
   kind: 'fast';
@@ -77,12 +70,8 @@ export class QrLoginService {
   constructor(
     private readonly sdgb: SdgbJobDispatcher,
     private readonly users: UsersService,
-    private readonly botStatus: BotStatusService,
-    private readonly snapshot: BotFriendSnapshotService,
-    private readonly jobs: JobService,
+    private readonly identityMatcher: CabinetIdentityMatcherService,
     private readonly jwt: JwtService,
-    @InjectModel(MusicEntity.name)
-    private readonly musicModel: Model<MusicDocument>,
     @InjectModel(QrLoginAttemptEntity.name)
     private readonly attemptModel: Model<QrLoginAttemptDocument>,
   ) {}
@@ -110,74 +99,51 @@ export class QrLoginService {
       throw err;
     }
 
-    const cabinetUserId = scan.cabinetUserId;
-    const rivalName = scan.rivalName;
-
     // Fast path.
-    const existing = await this.users.findByCabinetUserId(cabinetUserId);
+    const existing = await this.users.findByCabinetUserId(scan.cabinetUserId);
     if (existing) {
       this.logger.log(
-        `QR-login fast path: cabinetUid=${cabinetUserId} → friendCode=${existing.friendCode}`,
+        `QR-login fast path: cabinetUid=${scan.cabinetUserId} → friendCode=${existing.friendCode}`,
       );
       return { kind: 'fast', ...(await this.signFor(existing as never)) };
     }
 
-    if (!rivalName) {
-      throw new Error('cabinet did not return rival name; cannot match');
-    }
-
-    const myRating = await this.computeB50(scan.music);
-    if (myRating === null) {
-      throw new Error(
-        '无法从机台成绩计算 rating（可能 music 表未同步），请稍后重试',
-      );
-    }
-
-    // Pick a bot up-front so we can record it on the attempt and fail
-    // fast if there isn't one.
-    const bot = await this.botStatus.pickAvailableCabinetBot();
-    if (!bot) {
-      throw new Error(
-        '当前没有可用的、配置了 cabinetUserId 的 bot，请稍后重试或使用 friendCode 登录',
-      );
-    }
+    const identity = await this.identityMatcher.prepare(scan);
 
     const attemptId = randomUUID();
     await this.attemptModel.create({
       id: attemptId,
       status: 'pending' as QrLoginStatus,
-      cabinetUserId,
-      rivalName,
-      computedRating: myRating,
-      botUserFriendCode: bot.friendCode,
+      cabinetUserId: identity.cabinetUserId,
+      rivalName: identity.rivalName,
+      computedRating: identity.rating,
+      botUserFriendCode: identity.bot.friendCode,
       resolvedFriendCode: null,
       token: null,
       error: null,
     });
     this.logger.log(
-      `QR-login slow path enqueued attemptId=${attemptId} cabinetUid=${cabinetUserId} name=${rivalName} rating=${myRating} bot=${bot.friendCode}`,
+      `QR-login slow path enqueued attemptId=${attemptId} cabinetUid=${identity.cabinetUserId} name=${identity.rivalName} rating=${identity.rating} bot=${identity.bot.friendCode}`,
     );
 
     // Fire and forget — FE polls.
-    this.runSlowPath(attemptId, cabinetUserId, rivalName, myRating, bot).catch(
-      (err) => {
-        this.logger.error(
-          `QR-login slow path attemptId=${attemptId} crashed: ${err instanceof Error ? err.message : err}`,
-        );
-        // Best effort: persist the failure so polling FE sees it.
-        this.attemptModel
-          .updateOne(
-            { id: attemptId },
-            {
-              $set: {
-                status: 'failed',
-                error: err instanceof Error ? err.message : String(err),
-              },
+    this.runSlowPath(attemptId, identity).catch((err) => {
+      this.logger.error(
+        `QR-login slow path attemptId=${attemptId} crashed: ${err instanceof Error ? err.message : err}`,
+      );
+      // Best effort: persist the failure so polling FE sees it.
+      this.attemptModel
+        .updateOne(
+          { id: attemptId },
+          {
+            $set: {
+              status: 'failed',
+              error: err instanceof Error ? err.message : String(err),
             },
-          )
-          .catch(() => {});
-      },
-    );
+          },
+        )
+        .catch(() => {});
+    });
 
     return { kind: 'async', attemptId };
   }
@@ -188,29 +154,19 @@ export class QrLoginService {
    */
   private async runSlowPath(
     attemptId: string,
-    cabinetUserId: number,
-    rivalName: string,
-    myRating: number,
-    bot: { friendCode: string; cabinetUserId: number },
+    identity: PreparedCabinetIdentity,
   ): Promise<void> {
-    const triggeredAt = await this.addQrLoginRival(
-      attemptId,
-      cabinetUserId,
-      bot,
-    );
-    await this.dispatchFriendListRefresh(attemptId, bot.friendCode);
-    const friends = await this.waitFreshSnapshot(
-      attemptId,
-      bot.friendCode,
-      triggeredAt,
-    );
-    const friendCode = this.findUniqueFriendCode(friends, rivalName, myRating);
+    const friendCode = await this.identityMatcher.resolveFriendCode(identity, {
+      tagPrefix: 'qr-login',
+      context: `QR-login attemptId=${attemptId}`,
+      onStage: (stage) => this.setAttemptStatus(attemptId, stage),
+    });
     const placeholderProfile = {
       avatarUrl: null,
       title: null,
       titleColor: null,
-      username: rivalName,
-      rating: myRating,
+      username: identity.rivalName,
+      rating: identity.rating,
       ratingBgUrl: null,
       courseRankUrl: null,
       classRankUrl: null,
@@ -219,7 +175,7 @@ export class QrLoginService {
     const user = await this.findOrCreateQrUser(
       attemptId,
       friendCode,
-      cabinetUserId,
+      identity.cabinetUserId,
       placeholderProfile,
     );
     const signed = await this.signFor(user as never);
@@ -241,110 +197,6 @@ export class QrLoginService {
       { id: attemptId },
       { $set: { status, ...extra } },
     );
-  }
-
-  private async addQrLoginRival(
-    attemptId: string,
-    cabinetUserId: number,
-    bot: { friendCode: string; cabinetUserId: number },
-  ): Promise<Date> {
-    await this.setAttemptStatus(attemptId, 'adding_rival');
-    const rival = await this.sdgb.addRival(
-      {
-        botCabinetUserId: bot.cabinetUserId,
-        targetCabinetUserId: cabinetUserId,
-      },
-      { tag: `qr-login-add:${cabinetUserId}`, timeoutMs: 60_000 },
-    );
-    this.logger.log(
-      `QR-login attemptId=${attemptId} addRival rc1=${rival.returnCode1} rc2=${rival.returnCode2}`,
-    );
-    return new Date();
-  }
-
-  private async dispatchFriendListRefresh(
-    attemptId: string,
-    botFriendCode: string,
-  ): Promise<void> {
-    await this.setAttemptStatus(attemptId, 'waiting_snapshot');
-    const refreshJob = await this.jobs.create({
-      friendCode: botFriendCode,
-      jobType: 'get_full_friend_list',
-      botUserFriendCode: botFriendCode,
-      cancelActiveJobs: false,
-    });
-    this.logger.log(
-      `QR-login attemptId=${attemptId} dispatched full friend-list refresh job=${refreshJob.jobId} bot=${botFriendCode}`,
-    );
-  }
-
-  private async waitFreshSnapshot(
-    attemptId: string,
-    botFriendCode: string,
-    triggeredAt: Date,
-  ): Promise<
-    Array<{
-      friendCode: string;
-      userName: string | null;
-      rating: number | null;
-    }>
-  > {
-    const snap = await this.pollFreshSnapshot(botFriendCode, triggeredAt);
-    if (!snap?.updatedAt) {
-      throw new Error(
-        '未在超时时间内拿到 bot 最新好友列表快照（worker 未上报），请稍后重试',
-      );
-    }
-    this.logger.log(
-      `QR-login attemptId=${attemptId} snapshot updatedAt=${snap.updatedAt.toISOString()} friends=${snap.friends.length}`,
-    );
-    return snap.friends;
-  }
-
-  private async pollFreshSnapshot(botFriendCode: string, triggeredAt: Date) {
-    const SNAPSHOT_WAIT_DEADLINE_MS = 90_000;
-    const SNAPSHOT_POLL_INTERVAL_MS = 2_000;
-    const deadline = Date.now() + SNAPSHOT_WAIT_DEADLINE_MS;
-    let snap = await this.snapshot.get(botFriendCode);
-    while (
-      Date.now() < deadline &&
-      (!snap?.updatedAt || snap.updatedAt.getTime() <= triggeredAt.getTime())
-    ) {
-      await new Promise((r) => setTimeout(r, SNAPSHOT_POLL_INTERVAL_MS));
-      snap = await this.snapshot.get(botFriendCode);
-    }
-    return snap?.updatedAt && snap.updatedAt.getTime() > triggeredAt.getTime()
-      ? snap
-      : null;
-  }
-
-  private findUniqueFriendCode(
-    friends: Array<{
-      friendCode: string;
-      userName: string | null;
-      rating: number | null;
-    }>,
-    rivalName: string,
-    myRating: number,
-  ): string {
-    const matches = friends.filter(
-      (c) => c.userName === rivalName && c.rating === myRating,
-    );
-    if (matches.length === 0) {
-      const sample = friends
-        .slice(0, 5)
-        .map((c) => `${c.friendCode}(${c.userName}|${c.rating})`)
-        .join(', ');
-      throw new Error(
-        `bot 好友列表里未找到 name=${rivalName} rating=${myRating} 的记录 (sample: ${sample})`,
-      );
-    }
-    if (matches.length > 1) {
-      throw new Error(
-        `候选好友里找到 ${matches.length} 个 name=${rivalName} rating=${myRating} 的记录，请使用 friendCode 登录`,
-      );
-    }
-    return matches[0].friendCode;
   }
 
   private async findOrCreateQrUser(
@@ -436,69 +288,6 @@ export class QrLoginService {
           .filter((name): name is string => Boolean(name)),
       ),
     ];
-  }
-
-  /** Standard maimai b50: top 15 new + top 35 old, sum of per-row ratings. */
-  private async computeB50(
-    music: SdgbWorkerMusicEntry[],
-  ): Promise<number | null> {
-    const allMusic = (await this.musicModel.find().lean()) as Array<{
-      id: string;
-      isNew?: boolean | null;
-      charts?: ChartPayload[];
-    }>;
-    const byNumericId = new Map<
-      number,
-      { isNew: boolean | null; charts: ChartPayload[] }
-    >();
-    for (const m of allMusic) {
-      const num = Number(m.id);
-      if (!Number.isFinite(num)) {
-        continue;
-      }
-      byNumericId.set(num, { isNew: m.isNew ?? null, charts: m.charts ?? [] });
-    }
-
-    type Row = { isNew: boolean | null; rating: number };
-    const rows: Row[] = [];
-    for (const entry of music) {
-      const meta = byNumericId.get(entry.musicId);
-      if (!meta) {
-        continue;
-      }
-      for (const detail of entry.userRivalMusicDetailList ?? []) {
-        if (detail.level === 10) {
-          continue;
-        } // utage
-        const chart = meta.charts[detail.level];
-        const detailLevel = chart?.detailLevel ?? null;
-        if (detailLevel === null || detailLevel === undefined) {
-          continue;
-        }
-        const achv = detail.achievement / 10000;
-        const rating = getRating(detailLevel, achv);
-        if (!Number.isFinite(rating) || rating <= 0) {
-          continue;
-        }
-        rows.push({ isNew: meta.isNew, rating });
-      }
-    }
-    if (!rows.length) {
-      return null;
-    }
-
-    const news = rows
-      .filter((r) => r.isNew === true)
-      .sort((a, b) => b.rating - a.rating)
-      .slice(0, 15);
-    const olds = rows
-      .filter((r) => r.isNew === false)
-      .sort((a, b) => b.rating - a.rating)
-      .slice(0, 35);
-    return (
-      news.reduce((s, r) => s + r.rating, 0) +
-      olds.reduce((s, r) => s + r.rating, 0)
-    );
   }
 
   private async signFor(user: {

@@ -2,6 +2,7 @@ import { initContract } from "@ts-rest/core";
 
 import {
   BindCabinetQrBodySchema,
+  BindCabinetQrMismatchSchema,
   BindCabinetQrResponseSchema,
   DivingFishTokenBodySchema,
   DivingFishTokenResponseSchema,
@@ -59,7 +60,7 @@ export const usersContract = c.router({
     body: BindCabinetQrBodySchema,
     responses: {
       201: BindCabinetQrResponseSchema,
-      409: c.type<{ error: string }>(),
+      409: BindCabinetQrMismatchSchema,
       400: c.type<{ error: string }>(),
     },
   },

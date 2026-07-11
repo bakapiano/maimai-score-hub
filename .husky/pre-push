@@ -1,2 +1,4 @@
 npm --prefix backend run lint:check
 npm --prefix backend run typecheck
+npm --prefix frontend run lint:check
+npm --prefix frontend run typecheck

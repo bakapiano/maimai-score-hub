@@ -6,7 +6,6 @@ import {
   Container,
   Divider,
   Group,
-  Paper,
   Stack,
   Text,
   ThemeIcon,
@@ -27,6 +26,7 @@ import { useNavigate } from "react-router-dom";
 
 import { AppFooter } from "../components/AppFooter";
 import { AppHeader } from "../components/AppHeader";
+import { AppCard } from "../components/AppCard";
 import type { MiniProfile } from "../components/MiniProfileCard";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useAuth } from "../providers/AuthContext";
@@ -124,7 +124,7 @@ export default function AboutPage() {
               >
                 返回
               </Button>
-              <Paper withBorder shadow="sm" p="xl">
+              <AppCard>
                 <Stack gap="md">
                   <Group gap="sm">
                     <ThemeIcon
@@ -199,9 +199,9 @@ export default function AboutPage() {
                     </Group>
                   </Stack>
                 </Stack>
-              </Paper>
+              </AppCard>
 
-              <Paper withBorder shadow="sm" p="xl">
+              <AppCard>
                 <Stack gap="md">
                   <Group gap="sm">
                     <ThemeIcon
@@ -235,9 +235,9 @@ export default function AboutPage() {
                     </Anchor>
                   </Group>
                 </Stack>
-              </Paper>
+              </AppCard>
 
-              <Paper withBorder shadow="sm" p="xl">
+              <AppCard>
                 <Stack gap="md">
                   <Group gap="sm">
                     <ThemeIcon
@@ -276,7 +276,7 @@ export default function AboutPage() {
                     <Text size="sm">QQ 5群：1098992498</Text>
                   </Group>
                 </Stack>
-              </Paper>
+              </AppCard>
             </Stack>
           </Container>
         </Box>

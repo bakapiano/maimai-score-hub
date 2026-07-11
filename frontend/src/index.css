@@ -3,6 +3,20 @@ html {
   scrollbar-gutter: stable;
 }
 
+:root {
+  --msh-mobile-bottom-nav-height: 0px;
+}
+
+@media (max-width: 48em) {
+  :root {
+    --msh-mobile-bottom-nav-height: calc(56px + env(safe-area-inset-bottom));
+  }
+
+  .msh-authed-main {
+    background-color: var(--msh-mobile-page-background);
+  }
+}
+
 /* Prevent Mantine AppShell.Main from creating its own scrollbar */
 .mantine-AppShell-main {
   overflow: visible !important;

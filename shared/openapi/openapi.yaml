@@ -679,6 +679,31 @@ paths:
           description: "400"
         "409":
           description: "409"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  verification:
+                    type: string
+                    enum:
+                      - scores
+                      - profile
+                  matchedRows:
+                    type: integer
+                    minimum: 0
+                  requiredRows:
+                    type: integer
+                    minimum: 0
+                    exclusiveMinimum: 0
+                    nullable: true
+                required:
+                  - error
+                  - verification
+                  - matchedRows
+                  - requiredRows
     delete:
       tags: *a3
       parameters: []

@@ -1,7 +1,6 @@
 import {
   Badge,
   Button,
-  Card,
   Divider,
   Group,
   SegmentedControl,
@@ -22,6 +21,7 @@ import {
   IconTrophy,
 } from "@tabler/icons-react";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
+import { AppCard } from "../../components/AppCard";
 import type { SyncScore } from "../../types/syncScore";
 import { downloadBlob } from "../../utils/downloadBlob";
 import {
@@ -354,13 +354,13 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
           )}
         </Stack>
       ) : (
-        <Card withBorder shadow="none" padding="lg">
-          <Group justify="center" py="xs">
+        <AppCard>
+          <Group justify="center">
             <Text c="dimmed" size="sm">
               {loading ? "加载中..." : "暂无 B50 数据"}
             </Text>
           </Group>
-        </Card>
+        </AppCard>
       )}
     </Stack>
   );
@@ -372,7 +372,7 @@ function Best50RatingCard({
   ratingSummary: RatingSummary;
 }) {
   return (
-    <Card withBorder shadow="none" padding="lg">
+    <AppCard>
       <Group justify="space-between" align="center" wrap="wrap">
         <Stack gap={4}>
           <Group gap={6} align="center">
@@ -422,6 +422,6 @@ function Best50RatingCard({
           </Stack>
         </Group>
       </Group>
-    </Card>
+    </AppCard>
   );
 }

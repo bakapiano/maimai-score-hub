@@ -9,7 +9,10 @@ export const appTheme = createTheme({
   fontFamily: systemSans,
   headings: { fontFamily: systemSans },
   components: {
-    Card: Card.extend({ defaultProps: { radius: CARD_RADIUS } }),
+    Card: Card.extend({
+      defaultProps: { radius: CARD_RADIUS, shadow: "none" },
+      styles: { root: { boxShadow: "none" } },
+    }),
     Paper: Paper.extend({ defaultProps: { radius: CARD_RADIUS } }),
   },
 });

@@ -1,6 +1,6 @@
 import { Avatar, Group, Menu, Text, UnstyledButton } from "@mantine/core";
 import { IconCopy, IconLogin, IconLogout } from "@tabler/icons-react";
-import type { SyntheticEvent } from "react";
+import type { ReactNode, SyntheticEvent } from "react";
 
 import { normalizeMaimaiImgUrl } from "../utils/maimaiImages";
 import { notifications } from "@mantine/notifications";
@@ -18,6 +18,9 @@ type Props = {
 type HeaderProps = Props & {
   onLogout?: () => void;
   offline?: boolean;
+  menuItems?: ReactNode;
+  menuPosition?: "bottom-end" | "bottom-start";
+  showUsernameOnMobile?: boolean;
 };
 
 const AVATAR_PLACEHOLDER_SRC = "/avatar-placeholder.svg";
@@ -38,25 +41,23 @@ function handleAvatarImageError(event: SyntheticEvent<HTMLImageElement>) {
 }
 
 // Compact version for header with dropdown menu
-export function HeaderProfileCard({ profile, onLogout, offline }: HeaderProps) {
+export function HeaderProfileCard({
+  profile,
+  onLogout,
+  offline,
+  menuItems,
+  menuPosition = "bottom-end",
+  showUsernameOnMobile = false,
+}: HeaderProps) {
   const navigate = useNavigate();
 
   // In offline mode, show menu with login option
   if (offline) {
     return (
-      <Menu shadow="md" width={160} position="bottom-end">
+      <Menu shadow="md" width={190} position={menuPosition}>
         <Menu.Target>
           <UnstyledButton>
             <Group gap="xs" wrap="nowrap">
-              <Text
-                size="sm"
-                fw={500}
-                lineClamp={1}
-                style={{ maxWidth: 120 }}
-                visibleFrom="sm"
-              >
-                {profile?.username ?? "离线模式"}
-              </Text>
               <Avatar
                 src={getAvatarSrc(profile)}
                 alt={profile?.username ?? "avatar"}
@@ -68,11 +69,22 @@ export function HeaderProfileCard({ profile, onLogout, offline }: HeaderProps) {
                   style: { transformOrigin: "center" },
                 }}
               />
+              <Text
+                size="sm"
+                fw={500}
+                lineClamp={1}
+                style={{ maxWidth: 120 }}
+                visibleFrom={showUsernameOnMobile ? undefined : "sm"}
+              >
+                {profile?.username ?? "离线模式"}
+              </Text>
             </Group>
           </UnstyledButton>
         </Menu.Target>
 
         <Menu.Dropdown>
+          {menuItems}
+          {menuItems ? <Menu.Divider /> : null}
           <Menu.Item
             leftSection={<IconLogin size={16} />}
             onClick={() => {
@@ -92,19 +104,10 @@ export function HeaderProfileCard({ profile, onLogout, offline }: HeaderProps) {
   // The label falls back to "我的账号"; avatar falls back to the same
   // placeholder ProfileCard uses.
   return (
-    <Menu shadow="md" width={160} position="bottom-end">
+    <Menu shadow="md" width={190} position={menuPosition}>
       <Menu.Target>
         <UnstyledButton>
           <Group gap="xs" wrap="nowrap">
-            <Text
-              size="sm"
-              fw={500}
-              lineClamp={1}
-              style={{ maxWidth: 120 }}
-              visibleFrom="sm"
-            >
-              {profile?.username ?? "我的账号"}
-            </Text>
             <Avatar
               src={getAvatarSrc(profile)}
               alt={profile?.username ?? "avatar"}
@@ -116,11 +119,22 @@ export function HeaderProfileCard({ profile, onLogout, offline }: HeaderProps) {
                 style: { transformOrigin: "center" },
               }}
             />
+            <Text
+              size="sm"
+              fw={500}
+              lineClamp={1}
+              style={{ maxWidth: 120 }}
+              visibleFrom={showUsernameOnMobile ? undefined : "sm"}
+            >
+              {profile?.username ?? "我的账号"}
+            </Text>
           </Group>
         </UnstyledButton>
       </Menu.Target>
 
       <Menu.Dropdown>
+        {menuItems}
+        {menuItems ? <Menu.Divider /> : null}
         <Menu.Item
           leftSection={<IconCopy size={16} />}
           onClick={() => {

@@ -2,7 +2,6 @@ import { decodeHtmlEntities } from "@maimai-score-hub/shared";
 import {
   Badge,
   Box,
-  Card,
   Divider,
   Group,
   Image,
@@ -11,6 +10,7 @@ import {
 } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 import { normalizeMaimaiImgUrl } from "../utils/maimaiImages";
+import { AppCard } from "./AppCard";
 import classes from "./ProfileCard.module.css";
 
 export type UserProfile = {
@@ -183,7 +183,7 @@ export function ProfileCard({ profile }: Props) {
     : AVATAR_PLACEHOLDER;
 
   return (
-    <Card withBorder shadow="xs" padding={0}>
+    <AppCard>
       <Box className={classes.scrollArea}>
         <Group
           className={classes.profileBody}
@@ -215,10 +215,11 @@ export function ProfileCard({ profile }: Props) {
                 <Badge
                   className={classes.ratingBadge}
                   size="md"
+                  radius={10}
                   variant="gradient"
                   gradient={getDeluxeRatingGradient(profile.rating)}
                 >
-                  <span className={classes.ratingPrefix}>DX 评分: </span>
+                  <span className={classes.ratingPrefix}>Rating: </span>
                   {profile.rating}
                 </Badge>
               )}
@@ -274,6 +275,6 @@ export function ProfileCard({ profile }: Props) {
           </Stack>
         </Group>
       </Box>
-    </Card>
+    </AppCard>
   );
 }
