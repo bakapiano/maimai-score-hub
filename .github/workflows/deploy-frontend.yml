@@ -17,10 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Package source
+      - name: Download production bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Package runtime
         run: |
           tar -czf /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz \
-            frontend shared
+            frontend
           ls -lh /tmp/maimai-score-hub-frontend-${GITHUB_SHA}.tgz
 
       - name: Upload source archive
@@ -101,6 +107,7 @@ jobs:
 
             sudo COMPOSE_FILE="$DEPLOY_PATH/frontend/docker-compose.yml" \
               FRONTEND_HEALTH_URL="http://127.0.0.1:8848/" \
+              FRONTEND_DOCKERFILE="$DEPLOY_PATH/frontend/Dockerfile.runtime" \
               bash frontend/scripts/deploy-zero-downtime.sh --bootstrap || DEPLOY_STATUS=$?
 
             PROBE_STATUS=0

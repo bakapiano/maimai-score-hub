@@ -17,10 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Package source
+      - name: Download production bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: admin-dist
+          path: admin/dist
+
+      - name: Package runtime
         run: |
           tar -czf /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz \
-            admin shared
+            admin
           ls -lh /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz
 
       - name: Upload source archive

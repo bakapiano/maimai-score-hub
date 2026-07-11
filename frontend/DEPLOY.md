@@ -1,6 +1,8 @@
 # Frontend zero-downtime deploy
 
-The frontend is a static Vite app served by a single nginx container. Recreating
+The frontend is a static Vite app served by a single nginx container. CI builds
+the Vite `dist/` bundle on GitHub Actions; the target host only builds the
+lightweight `frontend/Dockerfile.runtime` nginx image. Recreating
 that container drops the `8848:80` port briefly, so normal `docker compose up -d
 --build` is not a zero-downtime deploy.
 
@@ -25,6 +27,10 @@ the running container:
 Start the service once if it is not already running:
 
 ```bash
+npm --prefix shared install
+npm --prefix shared run build
+npm --prefix frontend install --install-links=true
+npm --prefix frontend run build
 docker compose -f frontend/docker-compose.yml up -d --build frontend
 ```
 
@@ -76,7 +82,8 @@ status.
   a separate, explicit nginx reload or container rollout.
 - The `/admin/` reverse proxy lives in frontend nginx. Deploy `admin` for admin
   app changes, but deploy `frontend` when changing the proxy route itself.
-- The script uses the existing Dockerfile for the build, so the candidate
-  artifact matches the image-based deployment path.
+- The deploy workflow supplies `FRONTEND_DOCKERFILE=frontend/Dockerfile.runtime`
+  so candidate images use the bundle built and tested on GitHub Actions. Running
+  the script manually without that variable retains the source-build fallback.
 - Because old hashed assets are retained, periodically prune very old files if
   the container writable layer grows too large.

@@ -26,12 +26,13 @@ Use the manual workflow:
 gh workflow run deploy-admin.yml --ref <branch>
 ```
 
-The workflow uploads `admin/` and `shared/` to the same Server 3 deploy path
-used by the main frontend, then runs:
+The workflow builds `admin/dist` on GitHub Actions and uploads the runtime
+bundle to the Server 2 web deploy path shared with the main frontend. The
+target host only builds the lightweight nginx runtime image, then runs:
 
 ```bash
 docker compose -f admin/docker-compose.yml up -d --build admin
 ```
 
 If the `/admin/` reverse-proxy route changes, deploy the main frontend first so
-the Server 3 nginx config is updated, then deploy admin.
+the Server 2 frontend nginx config is updated, then deploy admin.

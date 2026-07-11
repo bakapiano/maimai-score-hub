@@ -12,6 +12,7 @@ IMAGE_REPO="${FRONTEND_IMAGE_REPO:-maimai-score-hub-frontend}"
 REVISION="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || date +%Y%m%d%H%M%S)"
 IMAGE_TAG="${FRONTEND_IMAGE_TAG:-deploy-$REVISION-$(date +%Y%m%d%H%M%S)}"
 IMAGE="$IMAGE_REPO:$IMAGE_TAG"
+DOCKERFILE="${FRONTEND_DOCKERFILE:-$FRONTEND_DIR/Dockerfile}"
 
 BOOTSTRAP=0
 SKIP_CANDIDATE_PROBE=0
@@ -39,6 +40,7 @@ Environment:
   FRONTEND_HEALTH_URL       Public URL to verify after publish. Default: http://127.0.0.1:8848/
   FRONTEND_IMAGE_REPO       Temporary build image repo. Default: maimai-score-hub-frontend
   FRONTEND_IMAGE_TAG        Temporary build image tag. Default: deploy-<git>-<timestamp>
+  FRONTEND_DOCKERFILE       Candidate Dockerfile. Default: frontend/Dockerfile
   FRONTEND_COMPOSE_CMD      Compose command. Default: docker-compose if present, otherwise docker compose
 EOF
 }
@@ -167,6 +169,10 @@ if [[ ! -f "$COMPOSE_FILE" ]]; then
   echo "Compose file not found: $COMPOSE_FILE" >&2
   exit 1
 fi
+if [[ ! -f "$DOCKERFILE" ]]; then
+  echo "Dockerfile not found: $DOCKERFILE" >&2
+  exit 1
+fi
 
 ACTIVE_CONTAINER="$(container_id)"
 if ! is_running_container "$ACTIVE_CONTAINER"; then
@@ -189,7 +195,7 @@ DIST_DIR="$WORK_DIR/dist"
 mkdir -p "$DIST_DIR"
 
 log "Building candidate image $IMAGE"
-run docker build -t "$IMAGE" -f "$FRONTEND_DIR/Dockerfile" "$ROOT_DIR"
+run docker build -t "$IMAGE" -f "$DOCKERFILE" "$ROOT_DIR"
 
 if [[ "$DRY_RUN" -eq 0 && "$SKIP_CANDIDATE_PROBE" -eq 0 ]]; then
   log "Starting candidate container on an ephemeral localhost port"
