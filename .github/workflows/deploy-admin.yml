@@ -35,6 +35,9 @@ jobs:
           FRONTEND_HOST: ${{ secrets.FRONTEND_HOST }}
           FRONTEND_USER: ${{ secrets.FRONTEND_USER }}
           FRONTEND_PORT: ${{ secrets.FRONTEND_PORT }}
+          WEB_DEPLOY_PROXY_HOST: ${{ secrets.WEB_DEPLOY_PROXY_HOST }}
+          WEB_DEPLOY_PROXY_USER: ${{ secrets.WEB_DEPLOY_PROXY_USER }}
+          WEB_DEPLOY_PROXY_PORT: ${{ secrets.WEB_DEPLOY_PROXY_PORT }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
           set -euo pipefail
@@ -43,9 +46,16 @@ jobs:
           printf '%s\n' "$SSH_KEY" > ~/.ssh/admin_deploy_key
           chmod 600 ~/.ssh/admin_deploy_key
           timeout 30s ssh-keyscan -p "$FRONTEND_PORT" "$FRONTEND_HOST" >> ~/.ssh/known_hosts
+          SSH_PROXY_ARGS=()
+          if [ -n "$WEB_DEPLOY_PROXY_HOST" ]; then
+            WEB_DEPLOY_PROXY_PORT="${WEB_DEPLOY_PROXY_PORT:-22}"
+            timeout 30s ssh-keyscan -p "$WEB_DEPLOY_PROXY_PORT" "$WEB_DEPLOY_PROXY_HOST" >> ~/.ssh/known_hosts
+            SSH_PROXY_ARGS=(-J "$WEB_DEPLOY_PROXY_USER@$WEB_DEPLOY_PROXY_HOST:$WEB_DEPLOY_PROXY_PORT")
+          fi
           uploaded=0
           for attempt in 1 2 3; do
             if timeout 120s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+              "${SSH_PROXY_ARGS[@]}" \
               -p "$FRONTEND_PORT" -i ~/.ssh/admin_deploy_key \
               "$FRONTEND_USER@$FRONTEND_HOST" \
               "cat > /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz" \
@@ -66,6 +76,10 @@ jobs:
           username: ${{ secrets.FRONTEND_USER }}
           port: ${{ secrets.FRONTEND_PORT }}
           key: ${{ secrets.SSH_KEY }}
+          proxy_host: ${{ secrets.WEB_DEPLOY_PROXY_HOST }}
+          proxy_username: ${{ secrets.WEB_DEPLOY_PROXY_USER }}
+          proxy_port: ${{ secrets.WEB_DEPLOY_PROXY_PORT }}
+          proxy_key: ${{ secrets.SSH_KEY }}
           command_timeout: 30m
           script: |
             ADMIN_PATH="${{ secrets.ADMIN_PATH }}"
