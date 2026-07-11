@@ -66,3 +66,4 @@ get_user_recent event 很容易用 add rival 把好友数量撑爆到100
 07/11
 [] OCR 封面 / 曲名
 [] 二维码更新成绩
+[] 别名搜索
