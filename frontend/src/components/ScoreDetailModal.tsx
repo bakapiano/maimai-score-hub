@@ -719,7 +719,7 @@ export function ScoreDetailModal({
       onClose={onClose}
       fullScreen={fullScreen}
       centered={!fullScreen}
-      lockScroll={false}
+      lockScroll
       size="lg"
       classNames={{
         inner: classes.modalInner,

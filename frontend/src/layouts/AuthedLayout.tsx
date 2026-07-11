@@ -239,8 +239,8 @@ function MobileBottomNav({
         bottom: 0,
         zIndex: 1900,
         boxSizing: "border-box",
-        height: "calc(56px + env(safe-area-inset-bottom))",
-        padding: "0 12px env(safe-area-inset-bottom)",
+        height: "var(--msh-mobile-bottom-nav-height)",
+        padding: "0 12px var(--msh-mobile-safe-area-bottom)",
         borderTop: `1px solid ${
           colorScheme === "dark"
             ? "var(--mantine-color-dark-4)"

@@ -1,15 +1,14 @@
-/* Reserve scrollbar space when needed without forcing an always-visible bar. */
-html {
-  scrollbar-gutter: stable;
-}
-
 :root {
+  --msh-mobile-safe-area-bottom: 0px;
   --msh-mobile-bottom-nav-height: 0px;
 }
 
 @media (max-width: 48em) {
   :root {
-    --msh-mobile-bottom-nav-height: calc(56px + env(safe-area-inset-bottom));
+    --msh-mobile-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --msh-mobile-bottom-nav-height: calc(
+      56px + var(--msh-mobile-safe-area-bottom)
+    );
   }
 
   .msh-authed-main {

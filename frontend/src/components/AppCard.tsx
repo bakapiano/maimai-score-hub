@@ -22,7 +22,7 @@ export function AppCard(props: AppCardProps) {
       {...props}
       withBorder
       shadow="none"
-      p={{ base: "sm", sm: "md" }}
+      p={{ base: "md", sm: "lg" }}
     />
   );
 }

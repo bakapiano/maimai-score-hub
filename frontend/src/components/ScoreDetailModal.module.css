@@ -36,6 +36,7 @@
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8));
 }
 
