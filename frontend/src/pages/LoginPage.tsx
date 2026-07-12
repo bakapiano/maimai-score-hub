@@ -32,6 +32,7 @@ import {
   IconQrcode,
   IconSend,
   IconUser,
+  IconWifiOff,
 } from "@tabler/icons-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useMemo, useState } from "react";
@@ -1055,19 +1056,20 @@ export default function LoginPage() {
                             </SimpleGrid>
                           </Stack>
 
-                          <Group justify="center" gap="sm">
-                          <Button
-                            onClick={startLogin}
-                            disabled={!canLogin || polling}
-                            loading={loading}
-                            leftSection={<IconLogin2 size={16} />}
-                          >
-                            登录账户
-                          </Button>
+                          <Group grow w="100%" gap="sm">
+                            <Button
+                              onClick={startLogin}
+                              disabled={!canLogin || polling}
+                              loading={loading}
+                              leftSection={<IconLogin2 size={16} />}
+                            >
+                              登录账户
+                            </Button>
                             {hasOfflineData() && (
                               <Button
                                 variant="outline"
                                 color="gray"
+                                leftSection={<IconWifiOff size={16} />}
                                 onClick={() => {
                                   setOffline(true);
                                   navigate("/app", { replace: true });
@@ -1194,9 +1196,6 @@ export default function LoginPage() {
                           >
                             密码登录
                           </Button>
-                          <Text size="xs" c="dimmed">
-                            密码需要先在已登录账号的设置中创建。
-                          </Text>
                         </Stack>
                       </AppCard>
                     </Tabs.Panel>

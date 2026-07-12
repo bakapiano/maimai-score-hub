@@ -6,7 +6,7 @@ import {
   fetchForPoll,
   pollWithBackoff,
 } from "../utils/poll";
-import { IconInfoCircle } from "@tabler/icons-react";
+import { IconInfoCircle, IconQrcode } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
@@ -305,6 +305,7 @@ export function QrLoginForm({
     <Stack gap="md">
       <Stack gap="sm">
         <QrCredentialInput
+          label="二维码"
           value={qrText}
           onChange={setQrText}
           onFile={(file) => {
@@ -321,8 +322,9 @@ export function QrLoginForm({
           onClick={() => void submit(qrText.trim())}
           disabled={!qrText.trim() || busy || disabled}
           loading={busy}
+          leftSection={<IconQrcode size={16} />}
         >
-          登录
+          二维码登录
         </Button>
       </Stack>
 

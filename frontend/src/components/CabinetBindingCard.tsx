@@ -1,6 +1,6 @@
-import { Badge, Button, Group, Stack, Switch, Text } from "@mantine/core";
-import { IconLinkOff } from "@tabler/icons-react";
-import { useCallback, useEffect, useState } from "react";
+import { Badge, Box, Button, Group, Stack, Switch, Text } from "@mantine/core";
+import { IconLink, IconLinkOff } from "@tabler/icons-react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
 import { apiUrl } from "../api/baseUrl";
@@ -22,6 +22,7 @@ export interface CabinetCardProps {
   /** Whether the user has bound a cabinet user id at all. */
   hasCabinetUserId: boolean;
   autoUpdate: boolean;
+  header?: ReactNode;
   /** Called after a successful bind / toggle so the parent can re-pull profile. */
   onChanged?: () => void;
 }
@@ -41,6 +42,7 @@ export function CabinetBindingCard({
   token,
   hasCabinetUserId: initialHasCabinet,
   autoUpdate: initialAutoUpdate,
+  header,
   onChanged,
 }: CabinetCardProps) {
   const [hasCabinetUserId, setHasCabinetUserId] =
@@ -226,6 +228,7 @@ export function CabinetBindingCard({
   return (
     <AppCard>
       <Stack gap="md">
+        {header}
         {hasCabinetUserId ? (
           <>
             <Switch
@@ -259,8 +262,8 @@ export function CabinetBindingCard({
             </Group>
           </>
         ) : (
-          <>
-            <Stack gap="sm">
+          <Group gap="xs" align="flex-start" wrap="wrap">
+            <Box style={{ flex: "1 1 280px", minWidth: 0 }}>
               <QrCredentialInput
                 value={qrText}
                 onChange={setQrText}
@@ -269,16 +272,19 @@ export function CabinetBindingCard({
                 disabled={busy !== null}
                 loading={busy === "bind"}
               />
-              <Button
-                fullWidth
-                onClick={onSubmitText}
-                loading={busy === "bind"}
-                disabled={!qrText.trim() || busy !== null}
-              >
-                提交二维码
-              </Button>
-            </Stack>
-          </>
+            </Box>
+            <Button
+              w={{ base: "100%", xs: "auto" }}
+              miw={{ xs: 112 }}
+              styles={{ root: { flexShrink: 0 } }}
+              onClick={onSubmitText}
+              loading={busy === "bind"}
+              disabled={!qrText.trim() || busy !== null}
+              leftSection={<IconLink size={16} />}
+            >
+              提交绑定
+            </Button>
+          </Group>
         )}
       </Stack>
     </AppCard>

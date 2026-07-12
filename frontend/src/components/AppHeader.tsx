@@ -93,7 +93,27 @@ export function AppHeader({
               menuPosition="bottom-start"
               showUsernameOnMobile
             />
-          ) : null)}
+          ) : (
+            <Group
+              gap="sm"
+              wrap="nowrap"
+              style={{ minWidth: 0, cursor: "pointer" }}
+              onClick={() => navigate("/")}
+            >
+              <Box w={32} h={32} style={{ flexShrink: 0 }}>
+                <Image
+                  src="/favicon.png"
+                  alt=""
+                  width={32}
+                  height={32}
+                  fit="cover"
+                />
+              </Box>
+              <Text fw={700} lineClamp={1} style={{ minWidth: 0 }}>
+                maimai Score Hub
+              </Text>
+            </Group>
+          ))}
       </Group>
     </>
   );

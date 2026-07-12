@@ -1,31 +1,25 @@
 import {
   Alert,
-  Anchor,
   Badge,
   Box,
   Button,
   Divider,
   Group,
   Loader,
-  PasswordInput,
   Progress,
   SimpleGrid,
   Stack,
-  Tabs,
   Text,
-  TextInput,
 } from "@mantine/core";
 import {
   IconChartBar,
   IconCheck,
   IconCloudUpload,
   IconClock,
-  IconKey,
   IconLogin,
-  IconPassword,
+  IconQrcode,
   IconRefresh,
   IconSend,
-  IconUser,
   IconX,
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
@@ -42,7 +36,6 @@ import {
   getActiveCabinetScoreJob,
   getCabinetScoreJob,
 } from "../api/cabinetScoreJobClient";
-import { fetchSyncPageJson } from "./syncPageApi";
 import {
   cacheSyncLatest,
   getCachedSyncLatest,
@@ -59,6 +52,7 @@ import {
 import { ProfileCard } from "../components/ProfileCard";
 import { CabinetBindingCard } from "../components/CabinetBindingCard";
 import { AppCard } from "../components/AppCard";
+import { ProberUpdateCard } from "../components/ProberUpdateCard";
 import { RadioCardGroup } from "../components/RadioCardGroup";
 import { QrCredentialInput } from "../components/QrCredentialInput";
 import { SyncMetric } from "../components/SyncMetric";
@@ -69,37 +63,6 @@ import { useNavigate } from "react-router-dom";
 import { runWhenIdle, scheduleIdleTask } from "../utils/idle";
 
 type UserProfileResponse = AuthProfile;
-
-type ExportTarget = "diving-fish" | "lxns";
-type ExportProviderKey = "divingFish" | "lxns";
-type ProberExportProviderResult = {
-  status: "success" | "failed" | "skipped";
-  exported?: number;
-  skipped?: number;
-  scores?: number;
-  message?: string;
-  response?: { creates?: number; updates?: number; data?: unknown[] };
-};
-type ProberExportJob = {
-  id: string;
-  status:
-    | "queued"
-    | "processing"
-    | "completed"
-    | "partial_failed"
-    | "failed"
-    | "skipped";
-  result?: {
-    divingFish?: ProberExportProviderResult | null;
-    lxns?: ProberExportProviderResult | null;
-  } | null;
-  error?: string | null;
-};
-type ProberExportCreateResponse = {
-  exportJobId: string;
-  status: ProberExportJob["status"];
-  job: ProberExportJob;
-};
 
 type LastSyncInfo = {
   id: string;
@@ -260,30 +223,28 @@ function rememberLastSync(data: LatestSyncPayload | null | undefined) {
  */
 function SectionHeader({
   icon,
-  color,
   title,
 }: {
   icon: React.ReactNode;
-  color: string;
   title: string;
 }) {
   return (
-    <Group gap="sm" align="center" mb={4}>
+    <Group gap="xs" align="center">
       <Box
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
+          width: 28,
+          height: 28,
+          borderRadius: 7,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: `var(--mantine-color-${color}-light)`,
-          color: `var(--mantine-color-${color}-filled)`,
+          background: "var(--mantine-color-gray-light)",
+          color: "var(--mantine-color-gray-light-color)",
         }}
       >
         {icon}
       </Box>
-      <Text fw={700} size="lg" style={{ lineHeight: 1.2 }}>
+      <Text fw={700} size="md" style={{ lineHeight: 1.2 }}>
         {title}
       </Text>
     </Group>
@@ -470,21 +431,6 @@ export default function SyncPage() {
     readCachedLastSyncSummary(),
   );
 
-  // Token settings
-  const [divingFishToken, setDivingFishToken] = useState("");
-  const [lxnsToken, setLxnsToken] = useState("");
-  const [editingDivingFishToken, setEditingDivingFishToken] = useState(false);
-  const [editingLxnsToken, setEditingLxnsToken] = useState(false);
-
-  // Diving-Fish login mode: "token" or "login"
-  const [divingFishMode, setDivingFishMode] = useState<"token" | "login">(
-    "token",
-  );
-  // Diving-Fish login credentials (not saved, only used to fetch token)
-  const [divingFishUsername, setDivingFishUsername] = useState("");
-  const [divingFishPassword, setDivingFishPassword] = useState("");
-  const [fetchingDivingFishToken, setFetchingDivingFishToken] = useState(false);
-
   // Sync job state
   const [syncMethod, setSyncMethod] = useState<"dxnet_bot" | "cabinet_qr">(
     () =>
@@ -512,11 +458,6 @@ export default function SyncPage() {
   );
   const syncStage = syncStatus?.stage;
   const syncFriendRequestSentAt = syncStatus?.friendRequestSentAt;
-
-  // Export state
-  const [exportLoading, setExportLoading] = useState<
-    "diving-fish" | "lxns" | null
-  >(null);
 
   // Loading state
   const [loading, setLoading] = useState(true);
@@ -654,42 +595,6 @@ export default function SyncPage() {
       setQrText("");
     }
   }, [syncMethod]);
-
-  // Save tokens (silent, returns success)
-  // Only sends token fields that the user has actually entered a value for
-  const saveTokens = async (): Promise<boolean> => {
-    if (!token) {
-      return false;
-    }
-
-    const body: Record<string, string | null> = {};
-    if (divingFishToken) {
-      body.divingFishImportToken = divingFishToken;
-    }
-    if (lxnsToken) {
-      body.lxnsImportToken = lxnsToken;
-    }
-
-    // Nothing to save
-    if (Object.keys(body).length === 0) {
-      return true;
-    }
-
-    const res = await fetchSyncPageJson<unknown>("/api/v1/me", {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (res.ok) {
-      loadProfile();
-      return true;
-    }
-    return false;
-  };
 
   const startUpdateScoreJob = useCallback(
     async (friendshipJobId?: string) => {
@@ -960,119 +865,6 @@ export default function SyncPage() {
     }
   };
 
-  const exportProviderKey = (target: ExportTarget): ExportProviderKey =>
-    target === "diving-fish" ? "divingFish" : "lxns";
-
-  const exportProviderName = (target: ExportTarget) =>
-    target === "diving-fish" ? "Diving-Fish" : "落雪查分器";
-
-  const pollProberExportJob = async (
-    exportJobId: string,
-    target: ExportTarget,
-  ): Promise<ProberExportJob> => {
-    if (!token) {
-      throw new Error("需要登录");
-    }
-    const terminal = new Set([
-      "completed",
-      "partial_failed",
-      "failed",
-      "skipped",
-    ]);
-    for (let i = 0; i < 240; i++) {
-      const res = await fetchSyncPageJson<ProberExportJob>(
-        `/api/v1/me/sync/prober-export-jobs/${encodeURIComponent(exportJobId)}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      if (!res.ok || !res.data) {
-        throw new Error(`查询导出任务失败 (HTTP ${res.status})`);
-      }
-      if (terminal.has(res.data.status)) {
-        const result = res.data.result?.[exportProviderKey(target)];
-        if (result?.status === "failed" || res.data.status === "failed") {
-          throw new Error(result?.message || res.data.error || "导出失败");
-        }
-        return res.data;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
-    throw new Error("导出仍在处理中，请稍后查看结果");
-  };
-
-  const queueExport = async (target: ExportTarget) => {
-    if (!token) {
-      return;
-    }
-    setExportLoading(target);
-    recordAnalyticsEvent("export_started", { provider: target });
-    try {
-      const saved = await saveTokens();
-      if (!saved) {
-        throw new Error("Token 保存失败");
-      }
-
-      const path =
-        target === "diving-fish"
-          ? "/api/v1/me/sync/latest/exports/diving-fish"
-          : "/api/v1/me/sync/latest/exports/lxns";
-      const res = await fetchSyncPageJson<ProberExportCreateResponse>(path, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!res.ok || !res.data?.exportJobId) {
-        const data = res.data as { message?: string } | null;
-        throw new Error(
-          (data?.message || `HTTP ${res.status}`) + " 请检查 Token 是否正确！",
-        );
-      }
-
-      notifications.show({
-        title: "已加入导出队列",
-        message: `正在导出到 ${exportProviderName(target)}`,
-        color: "blue",
-      });
-
-      const job = await pollProberExportJob(res.data.exportJobId, target);
-      const result = job.result?.[exportProviderKey(target)];
-      const scores = result?.scores;
-      const exported = result?.exported;
-
-      notifications.show({
-        title: result?.status === "skipped" ? "无需导出" : "导出成功",
-        message:
-          exported !== undefined
-            ? `成绩已导出到 ${exportProviderName(target)}（共 ${scores ?? "?"} 条成绩，导出 ${exported} 条）`
-            : result?.message || `成绩已导出到 ${exportProviderName(target)}`,
-        color: result?.status === "skipped" ? "yellow" : "green",
-      });
-      recordAnalyticsEvent("export_completed", {
-        provider: target,
-        status: result?.status ?? job.status,
-      });
-    } catch (error) {
-      recordAnalyticsEvent("export_failed", {
-        provider: target,
-        errorClass: error instanceof Error ? error.name : "Error",
-      });
-      notifications.show({
-        title: "导出失败",
-        message: error instanceof Error ? error.message : "未知错误",
-        color: "red",
-      });
-    } finally {
-      setExportLoading(null);
-    }
-  };
-
-  const exportToDivingFish = () => queueExport("diving-fish");
-  const exportToLxns = () => queueExport("lxns");
-
   // Compute sync progress
   const getSyncProgress = () => {
     if (!syncStatus?.scoreProgress) {
@@ -1099,6 +891,8 @@ export default function SyncPage() {
       : getSyncStageText(syncStatus);
   const effectiveSyncJobStatus =
     syncMethod === "cabinet_qr" ? cabinetStatus?.status : syncStatus?.status;
+  const cabinetBindingRequired =
+    syncMethod === "cabinet_qr" && !profile?.hasCabinetUserId;
   return (
     <Box style={{ position: "relative" }}>
       {offline && (
@@ -1154,15 +948,13 @@ export default function SyncPage() {
 
         {/* Sync Section */}
         <Stack gap="md">
-          <SectionHeader
-            icon={<IconCloudUpload size={18} />}
-            color="blue"
-            title="同步成绩"
-          />
-
           <Stack gap="xs">
             <AppCard compact>
               <Stack gap="md">
+                <SectionHeader
+                  icon={<IconCloudUpload size={16} />}
+                  title="同步成绩"
+                />
                 <RadioCardGroup
                   value={syncMethod}
                   disabled={syncing}
@@ -1183,107 +975,109 @@ export default function SyncPage() {
                   ]}
                 />
 
-                {syncMethod === "cabinet_qr" && (
-                  <Stack gap="sm">
-                    {!profile?.hasCabinetUserId && (
-                      <Alert color="orange" variant="light">
-                        请先在下方完成二维码绑定，再使用二维码更新成绩。
-                      </Alert>
-                    )}
-                    <QrCredentialInput
-                      value={qrText}
-                      onChange={setQrText}
-                      onFile={(file) => {
-                        const form = new FormData();
-                        form.append("image", file);
-                        void startCabinetSync(form);
-                      }}
+                {syncMethod === "cabinet_qr" &&
+                  (cabinetBindingRequired ? (
+                    <Alert color="orange" variant="light">
+                      请先在下方完成二维码绑定后再使用。
+                    </Alert>
+                  ) : (
+                    <Stack gap="sm">
+                      <QrCredentialInput
+                        value={qrText}
+                        onChange={setQrText}
+                        onFile={(file) => {
+                          const form = new FormData();
+                          form.append("image", file);
+                          void startCabinetSync(form);
+                        }}
+                        disabled={
+                          syncing || pageLoading || !profile?.hasCabinetUserId
+                        }
+                        loading={syncing}
+                      />
+                      {cabinetStatus?.progress && (
+                        <Text size="sm" c="dimmed">
+                          已读取 {cabinetStatus.progress.detailsFetched}{" "}
+                          条成绩详情
+                        </Text>
+                      )}
+                    </Stack>
+                  ))}
+
+                {!cabinetBindingRequired && (
+                  <Group justify="space-between" align="center" wrap="wrap">
+                    <Group gap="sm" align="center" wrap="nowrap">
+                      <Box
+                        style={{
+                          width: 42,
+                          height: 42,
+                          flex: "0 0 auto",
+                          borderRadius: 14,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: `var(--mantine-color-${syncStatusView.color}-7)`,
+                          background: `var(--mantine-color-${syncStatusView.color}-light)`,
+                        }}
+                      >
+                        {pageLoading ||
+                        syncing ||
+                        effectiveSyncJobStatus === "queued" ||
+                        effectiveSyncJobStatus === "processing" ? (
+                          <Loader size="sm" color={syncStatusView.color} />
+                        ) : effectiveSyncJobStatus === "failed" ||
+                          effectiveSyncJobStatus === "canceled" ? (
+                          <IconX size={22} />
+                        ) : effectiveSyncJobStatus === "completed" ? (
+                          <IconCheck size={22} />
+                        ) : (
+                          <IconRefresh size={22} />
+                        )}
+                      </Box>
+                      <Stack gap={1}>
+                        <Group gap="xs">
+                          <Text fw={700} size="md">
+                            {syncStatusView.label}
+                          </Text>
+                          {(syncStatus || cabinetStatus) && (
+                            <Badge
+                              variant="light"
+                              color={syncStatusView.color}
+                              radius="xl"
+                              size="sm"
+                            >
+                              {syncStageText}
+                            </Badge>
+                          )}
+                        </Group>
+                        <Text size="sm" c="dimmed">
+                          {syncStatusView.text}
+                        </Text>
+                      </Stack>
+                    </Group>
+                    <Button
+                      onClick={startSync}
                       disabled={
-                        syncing || pageLoading || !profile?.hasCabinetUserId
+                        syncing ||
+                        pageLoading ||
+                        (syncMethod === "dxnet_bot"
+                          ? !profile?.friendCode
+                          : !profile?.hasCabinetUserId || !qrText.trim())
                       }
                       loading={syncing}
-                    />
-                    {cabinetStatus?.progress && (
-                      <Text size="sm" c="dimmed">
-                        已读取 {cabinetStatus.progress.detailsFetched}{" "}
-                        条成绩详情
-                      </Text>
-                    )}
-                  </Stack>
-                )}
-
-                <Group justify="space-between" align="center" wrap="wrap">
-                  <Group gap="sm" align="center" wrap="nowrap">
-                    <Box
-                      style={{
-                        width: 42,
-                        height: 42,
-                        flex: "0 0 auto",
-                        borderRadius: 14,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: `var(--mantine-color-${syncStatusView.color}-7)`,
-                        background: `var(--mantine-color-${syncStatusView.color}-light)`,
-                      }}
+                      variant="light"
+                      leftSection={<IconRefresh size={16} />}
+                      w={{ base: "100%", xs: "auto" }}
+                      styles={{ root: { flexShrink: 0 } }}
                     >
-                      {pageLoading ||
-                      syncing ||
-                      effectiveSyncJobStatus === "queued" ||
-                      effectiveSyncJobStatus === "processing" ? (
-                        <Loader size="sm" color={syncStatusView.color} />
-                      ) : effectiveSyncJobStatus === "failed" ||
-                        effectiveSyncJobStatus === "canceled" ? (
-                        <IconX size={22} />
-                      ) : effectiveSyncJobStatus === "completed" ? (
-                        <IconCheck size={22} />
-                      ) : (
-                        <IconRefresh size={22} />
-                      )}
-                    </Box>
-                    <Stack gap={1}>
-                      <Group gap="xs">
-                        <Text fw={700} size="md">
-                          {syncStatusView.label}
-                        </Text>
-                        {(syncStatus || cabinetStatus) && (
-                          <Badge
-                            variant="light"
-                            color={syncStatusView.color}
-                            radius="xl"
-                            size="sm"
-                          >
-                            {syncStageText}
-                          </Badge>
-                        )}
-                      </Group>
-                      <Text size="sm" c="dimmed">
-                        {syncStatusView.text}
-                      </Text>
-                    </Stack>
-                  </Group>
-                  <Button
-                    onClick={startSync}
-                    disabled={
-                      syncing ||
-                      pageLoading ||
-                      (syncMethod === "dxnet_bot"
-                        ? !profile?.friendCode
-                        : !profile?.hasCabinetUserId || !qrText.trim())
-                    }
-                    loading={syncing}
-                    variant="light"
-                    leftSection={<IconRefresh size={16} />}
-                    w={{ base: "100%", xs: "auto" }}
-                    styles={{ root: { flexShrink: 0 } }}
-                  >
-                    {syncMethod === "cabinet_qr"
-                      ? "更新成绩"
-                      : lastSync
+                      {syncMethod === "cabinet_qr"
                         ? "更新成绩"
-                        : "开始同步"}
-                  </Button>
-                </Group>
+                        : lastSync
+                          ? "更新成绩"
+                          : "开始同步"}
+                    </Button>
+                  </Group>
+                )}
 
                 <Divider />
 
@@ -1436,15 +1230,16 @@ export default function SyncPage() {
         {/* Cabinet QR Section */}
         {token && profile && (
           <Stack gap="md">
-            <SectionHeader
-              icon={<IconRefresh size={18} />}
-              color="grape"
-              title="二维码绑定"
-            />
             <CabinetBindingCard
               token={token}
               hasCabinetUserId={profile.hasCabinetUserId ?? false}
               autoUpdate={profile.autoUpdate ?? false}
+              header={
+                <SectionHeader
+                  icon={<IconQrcode size={16} />}
+                  title="二维码绑定"
+                />
+              }
               onChanged={() => {
                 void loadProfile();
               }}
@@ -1453,324 +1248,17 @@ export default function SyncPage() {
         )}
         {/* Token Settings & Export Section */}
         <Stack gap="md">
-          <SectionHeader
-            icon={<IconCloudUpload size={18} />}
-            color="teal"
-            title="更新查分器"
+          <ProberUpdateCard
+            token={token}
+            profile={profile}
+            onProfileChanged={loadProfile}
+            header={
+              <SectionHeader
+                icon={<IconSend size={16} />}
+                title="更新查分器"
+              />
+            }
           />
-
-          {/* Diving-Fish Section */}
-          <AppCard>
-            <Stack gap="md">
-              <Anchor
-                href="https://www.diving-fish.com/maimaidx/prober/"
-                target="_blank"
-                fw={500}
-                size="sm"
-              >
-                水鱼查分器
-              </Anchor>
-
-              <Tabs
-                keepMounted={false}
-                value={divingFishMode}
-                onChange={(v) =>
-                  setDivingFishMode((v as "token" | "login") ?? "token")
-                }
-              >
-                <Tabs.List>
-                  <Tabs.Tab value="token">Token</Tabs.Tab>
-                  <Tabs.Tab value="login">账号密码</Tabs.Tab>
-                </Tabs.List>
-
-                <Tabs.Panel value="token" pt="md">
-                  <Stack gap="sm">
-                    <PasswordInput
-                      label="Import Token"
-                      placeholder="输入 import token"
-                      leftSection={<IconKey size={16} />}
-                      value={
-                        profile?.hasDivingFishImportToken &&
-                        !editingDivingFishToken
-                          ? "••••••••••••••••••••••••••••••••"
-                          : divingFishToken
-                      }
-                      disabled={
-                        !!profile?.hasDivingFishImportToken &&
-                        !editingDivingFishToken
-                      }
-                      onChange={(e) => setDivingFishToken(e.target.value)}
-                    />
-                    <Group justify="flex-start" gap="xs">
-                      {profile?.hasDivingFishImportToken &&
-                      !editingDivingFishToken ? (
-                        <Button
-                          onClick={() => {
-                            setEditingDivingFishToken(true);
-                            setDivingFishToken("");
-                          }}
-                          variant="subtle"
-                          size="sm"
-                        >
-                          修改
-                        </Button>
-                      ) : null}
-                      <Button
-                        onClick={exportToDivingFish}
-                        loading={exportLoading === "diving-fish"}
-                        disabled={
-                          (!divingFishToken &&
-                            !profile?.hasDivingFishImportToken) ||
-                          (editingDivingFishToken && !divingFishToken) ||
-                          exportLoading !== null
-                        }
-                        variant="light"
-                        size="sm"
-                      >
-                        {exportLoading === "diving-fish" ? (
-                          <Loader size="xs" />
-                        ) : (
-                          "更新"
-                        )}
-                      </Button>
-                    </Group>
-                  </Stack>
-                </Tabs.Panel>
-
-                <Tabs.Panel value="login" pt="md">
-                  <Stack gap="sm">
-                    <Text size="xs" c="red">
-                      账号密码仅用于获取成绩导入
-                      token，不会保存在服务器或浏览器中
-                    </Text>
-                    <TextInput
-                      label="用户名"
-                      placeholder="水鱼账号用户名"
-                      leftSection={<IconUser size={16} />}
-                      value={divingFishUsername}
-                      onChange={(e) => setDivingFishUsername(e.target.value)}
-                    />
-                    <PasswordInput
-                      label="密码"
-                      placeholder="水鱼账号密码"
-                      leftSection={<IconPassword size={16} />}
-                      value={divingFishPassword}
-                      onChange={(e) => setDivingFishPassword(e.target.value)}
-                    />
-                    <Group justify="flex-end">
-                      <Button
-                        onClick={async () => {
-                          if (!divingFishUsername || !divingFishPassword) {
-                            notifications.show({
-                              title: "错误",
-                              message: "请填写用户名和密码",
-                              color: "red",
-                            });
-                            return;
-                          }
-
-                          setFetchingDivingFishToken(true);
-                          try {
-                            // Step 1: Get token
-                            const res = await fetchSyncPageJson<{
-                              importToken?: string;
-                              nickname?: string;
-                              message?: string;
-                            }>("/api/v1/me/prober-tokens/diving-fish", {
-                              method: "POST",
-                              headers: {
-                                Authorization: `Bearer ${token}`,
-                                "Content-Type": "application/json",
-                              },
-                              body: JSON.stringify({
-                                username: divingFishUsername,
-                                password: divingFishPassword,
-                              }),
-                            });
-
-                            if (res.ok && res.data?.importToken) {
-                              const fetchedToken = res.data.importToken;
-                              setDivingFishToken(fetchedToken);
-                              // Clear credentials after successful fetch
-                              setDivingFishUsername("");
-                              setDivingFishPassword("");
-
-                              // Step 2: Save token and export
-                              const saveRes = await fetchSyncPageJson<unknown>(
-                                "/api/v1/me",
-                                {
-                                  method: "PATCH",
-                                  headers: {
-                                    Authorization: `Bearer ${token}`,
-                                    "Content-Type": "application/json",
-                                  },
-                                  body: JSON.stringify({
-                                    divingFishImportToken: fetchedToken,
-                                    lxnsImportToken: lxnsToken || null,
-                                  }),
-                                },
-                              );
-
-                              if (saveRes.ok) {
-                                // Step 3: Queue export to diving-fish
-                                const exportRes =
-                                  await fetchSyncPageJson<ProberExportCreateResponse>(
-                                    "/api/v1/me/sync/latest/exports/diving-fish",
-                                    {
-                                      method: "POST",
-                                      headers: {
-                                        Authorization: `Bearer ${token}`,
-                                        "Content-Type": "application/json",
-                                      },
-                                    },
-                                  );
-
-                                if (
-                                  exportRes.ok &&
-                                  exportRes.data?.exportJobId
-                                ) {
-                                  notifications.show({
-                                    title: "已加入导出队列",
-                                    message: "正在导出到 Diving-Fish",
-                                    color: "blue",
-                                  });
-                                  const job = await pollProberExportJob(
-                                    exportRes.data.exportJobId,
-                                    "diving-fish",
-                                  );
-                                  const result = job.result?.divingFish;
-                                  notifications.show({
-                                    title:
-                                      result?.status === "skipped"
-                                        ? "无需导出"
-                                        : "更新成功",
-                                    message:
-                                      result?.message ||
-                                      `成绩已导出到 Diving-Fish（导出 ${
-                                        result?.exported ?? "?"
-                                      } 条）`,
-                                    color:
-                                      result?.status === "skipped"
-                                        ? "yellow"
-                                        : "green",
-                                  });
-                                  setDivingFishMode("token");
-                                } else {
-                                  const data = exportRes.data as {
-                                    message?: string;
-                                  } | null;
-                                  notifications.show({
-                                    title: "导出失败",
-                                    message:
-                                      (data?.message ||
-                                        `HTTP ${exportRes.status}`) +
-                                      " 请检查 Token 是否正确！",
-                                    color: "red",
-                                  });
-                                }
-                              } else {
-                                notifications.show({
-                                  title: "获取成功，但保存失败",
-                                  message: res.data.nickname
-                                    ? `已获取 ${res.data.nickname} 的 Import Token，但保存失败`
-                                    : "已成功获取 Import Token，但保存失败",
-                                  color: "yellow",
-                                });
-                              }
-                            } else {
-                              const errorMsg =
-                                res.data?.message || `HTTP ${res.status}`;
-                              notifications.show({
-                                title: "获取失败",
-                                message: errorMsg,
-                                color: "red",
-                              });
-                            }
-                          } catch (error) {
-                            notifications.show({
-                              title: "操作失败",
-                              message:
-                                error instanceof Error
-                                  ? error.message
-                                  : "网络错误，请稍后重试",
-                              color: "red",
-                            });
-                          } finally {
-                            setFetchingDivingFishToken(false);
-                          }
-                        }}
-                        loading={fetchingDivingFishToken}
-                        disabled={
-                          !divingFishUsername ||
-                          !divingFishPassword ||
-                          fetchingDivingFishToken
-                        }
-                        variant="filled"
-                        size="sm"
-                      >
-                        获取 Token 并更新
-                      </Button>
-                    </Group>
-                  </Stack>
-                </Tabs.Panel>
-              </Tabs>
-            </Stack>
-          </AppCard>
-
-          {/* LXNS Section */}
-          <AppCard>
-            <Stack gap="md">
-              <Anchor
-                href="https://maimai.lxns.net/"
-                target="_blank"
-                fw={500}
-                size="sm"
-              >
-                落雪查分器
-              </Anchor>
-              <Stack gap="sm">
-                <PasswordInput
-                  label="Personal Token"
-                  placeholder="输入 personal token"
-                  leftSection={<IconKey size={16} />}
-                  value={
-                    profile?.hasLxnsImportToken && !editingLxnsToken
-                      ? "••••••••••••••••••••••••••••••••"
-                      : lxnsToken
-                  }
-                  disabled={!!profile?.hasLxnsImportToken && !editingLxnsToken}
-                  onChange={(e) => setLxnsToken(e.target.value)}
-                />
-                <Group justify="flex-start" gap="xs">
-                  {profile?.hasLxnsImportToken && !editingLxnsToken ? (
-                    <Button
-                      onClick={() => {
-                        setEditingLxnsToken(true);
-                        setLxnsToken("");
-                      }}
-                      variant="subtle"
-                      size="sm"
-                    >
-                      修改
-                    </Button>
-                  ) : null}
-                  <Button
-                    onClick={exportToLxns}
-                    loading={exportLoading === "lxns"}
-                    disabled={
-                      (!lxnsToken && !profile?.hasLxnsImportToken) ||
-                      (editingLxnsToken && !lxnsToken) ||
-                      exportLoading !== null
-                    }
-                    variant="light"
-                    size="sm"
-                  >
-                    {exportLoading === "lxns" ? <Loader size="xs" /> : "更新"}
-                  </Button>
-                </Group>
-              </Stack>
-            </Stack>
-          </AppCard>
         </Stack>
       </Stack>
     </Box>

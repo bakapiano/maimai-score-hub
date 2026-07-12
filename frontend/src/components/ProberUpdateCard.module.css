@@ -1,0 +1,49 @@
+.proberGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.proberPanel {
+  min-width: 0;
+}
+
+.proberPanel + .proberPanel {
+  margin-top: var(--mantine-spacing-lg);
+  padding-top: var(--mantine-spacing-lg);
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+@media (min-width: 48em) {
+  .proberGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .proberPanel:first-child {
+    padding-right: var(--mantine-spacing-lg);
+  }
+
+  .proberPanel + .proberPanel {
+    position: relative;
+    margin-top: 0;
+    padding-top: 0;
+    padding-left: var(--mantine-spacing-lg);
+    border-top: 0;
+  }
+
+  .proberPanel + .proberPanel::before {
+    position: absolute;
+    top: var(--mantine-spacing-xs);
+    bottom: var(--mantine-spacing-xs);
+    left: 0;
+    width: 1px;
+    content: "";
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4)) 0,
+      light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4)) 4px,
+      transparent 4px,
+      transparent 8px
+    );
+  }
+}
