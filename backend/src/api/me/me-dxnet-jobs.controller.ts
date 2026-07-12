@@ -18,6 +18,7 @@ import {
 import { AuthGuard } from '../../modules/auth/guards/auth.guard';
 import { JobFriendshipService } from '../../modules/job/services/job-friendship.service';
 import { JobService } from '../../modules/job/services/job.service';
+import { CabinetScoreSyncService } from '../../modules/cabinet-score-sync/cabinet-score-sync.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 type AuthedRequest = Request & {
@@ -30,6 +31,7 @@ export class MeDxnetJobsController {
   constructor(
     private readonly jobs: JobService,
     private readonly friendship: JobFriendshipService,
+    private readonly cabinetScores: CabinetScoreSyncService,
   ) {}
 
   @Post()
@@ -42,10 +44,17 @@ export class MeDxnetJobsController {
       throw new BadRequestException('Missing friendCode in token');
     }
 
-    return this.jobs.create({
-      friendCode,
-      jobType: body.jobType,
-      friendshipJobId: body.friendshipJobId,
+    const ownerUserId = req.user?.sub;
+    if (!ownerUserId) {
+      throw new BadRequestException('Missing sub in token');
+    }
+    return this.cabinetScores.withCreateLock(friendCode, async () => {
+      await this.cabinetScores.assertNoActiveCabinetJob(ownerUserId);
+      return this.jobs.create({
+        friendCode,
+        jobType: body.jobType,
+        friendshipJobId: body.friendshipJobId,
+      });
     });
   }
 

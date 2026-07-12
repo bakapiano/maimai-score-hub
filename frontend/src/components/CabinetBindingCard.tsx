@@ -1,21 +1,12 @@
-import {
-  Badge,
-  Box,
-  Button,
-  FileButton,
-  Group,
-  PasswordInput,
-  Stack,
-  Switch,
-  Text,
-} from "@mantine/core";
-import { IconLinkOff, IconUpload } from "@tabler/icons-react";
+import { Badge, Button, Group, Stack, Switch, Text } from "@mantine/core";
+import { IconLinkOff } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
 import { apiUrl } from "../api/baseUrl";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { AppCard } from "./AppCard";
+import { QrCredentialInput } from "./QrCredentialInput";
 
 /**
  * Cabinet (sdgb) binding + auto-update opt-in.
@@ -235,21 +226,6 @@ export function CabinetBindingCard({
   return (
     <AppCard>
       <Stack gap="md">
-        <Group justify="space-between" align="center">
-          <Badge color="orange" variant="light" size="sm">
-            测试中
-          </Badge>
-          {hasCabinetUserId ? (
-            <Badge color="green" variant="light">
-              已绑定
-            </Badge>
-          ) : (
-            <Badge color="gray" variant="light">
-              未绑定
-            </Badge>
-          )}
-        </Group>
-
         {hasCabinetUserId ? (
           <>
             <Switch
@@ -261,9 +237,14 @@ export function CabinetBindingCard({
             />
 
             <Group justify="space-between" align="center" wrap="nowrap" mt={4}>
-              <Text size="sm" fw={500}>
-                解绑二维码
-              </Text>
+              <Group gap="xs" wrap="nowrap">
+                <Text size="sm" fw={500}>
+                  解绑二维码
+                </Text>
+                <Badge color="green" variant="light" size="sm">
+                  已绑定
+                </Badge>
+              </Group>
               <Button
                 variant="light"
                 color="red"
@@ -280,59 +261,22 @@ export function CabinetBindingCard({
         ) : (
           <>
             <Stack gap="sm">
-              <FileButton
-                onChange={onPickFile}
-                accept="image/png,image/jpeg,image/webp"
+              <QrCredentialInput
+                value={qrText}
+                onChange={setQrText}
+                onFile={onPickFile}
+                onEnter={onSubmitText}
+                disabled={busy !== null}
+                loading={busy === "bind"}
+              />
+              <Button
+                fullWidth
+                onClick={onSubmitText}
+                loading={busy === "bind"}
+                disabled={!qrText.trim() || busy !== null}
               >
-                {(props) => (
-                  <Button
-                    {...props}
-                    variant="light"
-                    fullWidth
-                    size="md"
-                    leftSection={<IconUpload size={16} />}
-                    loading={busy === "bind"}
-                  >
-                    上传二维码图片
-                  </Button>
-                )}
-              </FileButton>
-
-              <Group gap={6} c="dimmed">
-                <Box
-                  style={{
-                    flex: 1,
-                    height: 1,
-                    background: "var(--mantine-color-default-border)",
-                  }}
-                />
-                <Text size="xs">或粘贴字符串</Text>
-                <Box
-                  style={{
-                    flex: 1,
-                    height: 1,
-                    background: "var(--mantine-color-default-border)",
-                  }}
-                />
-              </Group>
-
-              <Group gap="xs" wrap="nowrap">
-                <PasswordInput
-                  placeholder="SGWCMAID..."
-                  value={qrText}
-                  onChange={(e) => setQrText(e.currentTarget.value)}
-                  style={{ flex: 1 }}
-                  size="md"
-                />
-                <Button
-                  size="md"
-                  onClick={onSubmitText}
-                  loading={busy === "bind"}
-                  disabled={!qrText.trim()}
-                >
-                  提交
-                </Button>
-              </Group>
+                提交二维码
+              </Button>
             </Stack>
           </>
         )}

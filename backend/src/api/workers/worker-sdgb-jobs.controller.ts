@@ -15,6 +15,7 @@ import {
 import { SharedSecretGuard } from '../../common/guards/shared-secret.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { SdgbJobService } from '../../modules/sdgb-worker/services/sdgb-job.service';
+import { CabinetScoreSyncService } from '../../modules/cabinet-score-sync/cabinet-score-sync.service';
 
 /**
  * HTTP surface that the standalone sdgb-worker uses after BullMQ delivery. Guarded by
@@ -27,7 +28,10 @@ import { SdgbJobService } from '../../modules/sdgb-worker/services/sdgb-job.serv
 @Controller('workers/sdgb/jobs')
 @UseGuards(SharedSecretGuard)
 export class WorkerSdgbJobsController {
-  constructor(private readonly jobs: SdgbJobService) {}
+  constructor(
+    private readonly jobs: SdgbJobService,
+    private readonly cabinetScores: CabinetScoreSyncService,
+  ) {}
 
   @Post('heartbeat')
   async heartbeat(
@@ -56,6 +60,6 @@ export class WorkerSdgbJobsController {
     @Param('jobId') jobId: string,
     @Body(new ZodValidationPipe(SdgbJobPatchBodySchema)) body: SdgbJobPatchBody,
   ) {
-    return this.jobs.patch(jobId, body);
+    return this.cabinetScores.patchFromWorker(jobId, body);
   }
 }

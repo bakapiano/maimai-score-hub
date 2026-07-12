@@ -12,10 +12,12 @@ import { AuthController } from './auth/auth.controller';
 import { AuthModule } from '../modules/auth/auth.module';
 import { AutoUpdateModule } from '../modules/auto-update/auto-update.module';
 import { BotsModule } from '../modules/bots/bots.module';
+import { CabinetScoreSyncModule } from '../modules/cabinet-score-sync/cabinet-score-sync.module';
 import { CoverCatalogController } from './catalog/cover-catalog.controller';
 import { CoverModule } from '../modules/cover/cover.module';
 import { JobModule } from '../modules/job/job.module';
 import { MeController } from './me/me.controller';
+import { MeCabinetScoreJobsController } from './me/me-cabinet-score-jobs.controller';
 import { MeDxnetJobsController } from './me/me-dxnet-jobs.controller';
 import { MeScoreExportController } from './me/me-score-export.controller';
 import { MeSyncController } from './me/me-sync.controller';
@@ -43,6 +45,7 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
     AuthModule,
     AutoUpdateModule,
     BotsModule,
+    CabinetScoreSyncModule,
     CoverModule,
     JobModule,
     MusicModule,
@@ -56,6 +59,7 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
   controllers: [
     AuthController,
     MeController,
+    MeCabinetScoreJobsController,
     MeDxnetJobsController,
     MeScoreExportController,
     MeSyncController,

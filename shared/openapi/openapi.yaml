@@ -724,10 +724,314 @@ paths:
                   - ok
         "400":
           description: "400"
-  /me/sync/latest:
-    get:
+  /me/cabinet-score-jobs:
+    post:
       tags: &a4
         - sync
+      parameters: []
+      operationId: sync.createCabinetScoreJob
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                qrCode:
+                  type: string
+                  minLength: 1
+                  maxLength: 512
+              required:
+                - qrCode
+              additionalProperties: false
+      responses:
+        "202":
+          description: "202"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                  job:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      method:
+                        type: string
+                        enum:
+                          - cabinet_qr
+                      status:
+                        type: string
+                        enum:
+                          - queued
+                          - processing
+                          - completed
+                          - failed
+                      stage:
+                        type: string
+                        enum:
+                          - queued
+                          - qr_auth
+                          - preview
+                          - login
+                          - get_music
+                          - logout
+                          - cleanup
+                          - persist
+                      cleanupStatus:
+                        type: string
+                        enum:
+                          - not_required
+                          - pending
+                          - succeeded
+                          - unconfirmed
+                      progress:
+                        type: object
+                        properties:
+                          detailsFetched:
+                            type: integer
+                            minimum: 0
+                        required:
+                          - detailsFetched
+                        nullable: true
+                      syncId:
+                        type: string
+                        nullable: true
+                      scoreCount:
+                        type: integer
+                        minimum: 0
+                        nullable: true
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            type: string
+                          message:
+                            type: string
+                          retryAfter:
+                            type: string
+                        required:
+                          - code
+                          - message
+                        nullable: true
+                      createdAt:
+                        type: string
+                      updatedAt:
+                        type: string
+                    required:
+                      - id
+                      - method
+                      - status
+                      - stage
+                      - cleanupStatus
+                      - progress
+                      - syncId
+                      - scoreCount
+                      - error
+                      - createdAt
+                      - updatedAt
+                required:
+                  - jobId
+                  - job
+        "400":
+          description: "400"
+        "409":
+          description: "409"
+  /me/cabinet-score-jobs/active:
+    get:
+      tags: *a4
+      parameters: []
+      operationId: sync.getActiveCabinetScoreJob
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      method:
+                        type: string
+                        enum:
+                          - cabinet_qr
+                      status:
+                        type: string
+                        enum:
+                          - queued
+                          - processing
+                          - completed
+                          - failed
+                      stage:
+                        type: string
+                        enum:
+                          - queued
+                          - qr_auth
+                          - preview
+                          - login
+                          - get_music
+                          - logout
+                          - cleanup
+                          - persist
+                      cleanupStatus:
+                        type: string
+                        enum:
+                          - not_required
+                          - pending
+                          - succeeded
+                          - unconfirmed
+                      progress:
+                        type: object
+                        properties:
+                          detailsFetched:
+                            type: integer
+                            minimum: 0
+                        required:
+                          - detailsFetched
+                        nullable: true
+                      syncId:
+                        type: string
+                        nullable: true
+                      scoreCount:
+                        type: integer
+                        minimum: 0
+                        nullable: true
+                      error:
+                        type: object
+                        properties:
+                          code:
+                            type: string
+                          message:
+                            type: string
+                          retryAfter:
+                            type: string
+                        required:
+                          - code
+                          - message
+                        nullable: true
+                      createdAt:
+                        type: string
+                      updatedAt:
+                        type: string
+                    required:
+                      - id
+                      - method
+                      - status
+                      - stage
+                      - cleanupStatus
+                      - progress
+                      - syncId
+                      - scoreCount
+                      - error
+                      - createdAt
+                      - updatedAt
+                    nullable: true
+                required:
+                  - job
+  /me/cabinet-score-jobs/{jobId}:
+    get:
+      tags: *a4
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: sync.getCabinetScoreJob
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  method:
+                    type: string
+                    enum:
+                      - cabinet_qr
+                  status:
+                    type: string
+                    enum:
+                      - queued
+                      - processing
+                      - completed
+                      - failed
+                  stage:
+                    type: string
+                    enum:
+                      - queued
+                      - qr_auth
+                      - preview
+                      - login
+                      - get_music
+                      - logout
+                      - cleanup
+                      - persist
+                  cleanupStatus:
+                    type: string
+                    enum:
+                      - not_required
+                      - pending
+                      - succeeded
+                      - unconfirmed
+                  progress:
+                    type: object
+                    properties:
+                      detailsFetched:
+                        type: integer
+                        minimum: 0
+                    required:
+                      - detailsFetched
+                    nullable: true
+                  syncId:
+                    type: string
+                    nullable: true
+                  scoreCount:
+                    type: integer
+                    minimum: 0
+                    nullable: true
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                      message:
+                        type: string
+                      retryAfter:
+                        type: string
+                    required:
+                      - code
+                      - message
+                    nullable: true
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                required:
+                  - id
+                  - method
+                  - status
+                  - stage
+                  - cleanupStatus
+                  - progress
+                  - syncId
+                  - scoreCount
+                  - error
+                  - createdAt
+                  - updatedAt
+  /me/sync/latest:
+    get:
+      tags: *a4
       parameters: []
       operationId: sync.latest
       responses:
@@ -813,6 +1117,7 @@ paths:
                           - dxnet_update_score
                           - auto_update_rival
                           - auto_update_fcfs
+                          - cabinet_qr_update
                           - manual
                       friendCode:
                         type: string
@@ -961,6 +1266,7 @@ paths:
                           - dxnet_update_score
                           - auto_update_rival
                           - auto_update_fcfs
+                          - cabinet_qr_update
                           - manual
                       friendCode:
                         type: string
@@ -1100,6 +1406,7 @@ paths:
                       - dxnet_update_score
                       - auto_update_rival
                       - auto_update_fcfs
+                      - cabinet_qr_update
                       - manual
                   friendCode:
                     type: string
@@ -1235,6 +1542,7 @@ paths:
                             - dxnet_update_score
                             - auto_update_rival
                             - auto_update_fcfs
+                            - cabinet_qr_update
                             - manual
                         friendCode:
                           type: string
@@ -3131,6 +3439,7 @@ paths:
                       - get_rival_hash
                       - get_user_map
                       - add_rival
+                      - get_music_score
                   status:
                     type: string
                     enum:
@@ -3138,6 +3447,43 @@ paths:
                       - processing
                       - completed
                       - failed
+                  stage:
+                    type: string
+                    enum:
+                      - queued
+                      - qr_auth
+                      - preview
+                      - login
+                      - get_music
+                      - logout
+                      - cleanup
+                      - persist
+                    nullable: true
+                  cleanupStatus:
+                    type: string
+                    enum:
+                      - not_required
+                      - pending
+                      - succeeded
+                      - unconfirmed
+                  cleanupErrorCode:
+                    type: string
+                    nullable: true
+                  cleanupUpdatedAt:
+                    type: string
+                    nullable: true
+                  cleanupBlockedUntil:
+                    type: string
+                    nullable: true
+                  progress:
+                    type: object
+                    properties:
+                      detailsFetched:
+                        type: integer
+                        minimum: 0
+                    required:
+                      - detailsFetched
+                    nullable: true
                   payload:
                     type: object
                     additionalProperties: {}
@@ -3189,11 +3535,47 @@ paths:
                     - processing
                     - completed
                     - failed
+                stage:
+                  type: string
+                  enum:
+                    - queued
+                    - qr_auth
+                    - preview
+                    - login
+                    - get_music
+                    - logout
+                    - cleanup
+                    - persist
+                cleanupStatus:
+                  type: string
+                  enum:
+                    - not_required
+                    - pending
+                    - succeeded
+                    - unconfirmed
+                cleanupErrorCode:
+                  type: string
+                  nullable: true
+                cleanupBlockedUntil:
+                  type: string
+                  nullable: true
+                progress:
+                  type: object
+                  properties:
+                    detailsFetched:
+                      type: integer
+                      minimum: 0
+                  required:
+                    - detailsFetched
+                  nullable: true
                 result:
                   type: object
                   additionalProperties: {}
                   nullable: true
                 error:
+                  type: string
+                  nullable: true
+                errorCode:
                   type: string
                   nullable: true
       responses:
@@ -3213,6 +3595,7 @@ paths:
                       - get_rival_hash
                       - get_user_map
                       - add_rival
+                      - get_music_score
                   status:
                     type: string
                     enum:
@@ -3220,6 +3603,43 @@ paths:
                       - processing
                       - completed
                       - failed
+                  stage:
+                    type: string
+                    enum:
+                      - queued
+                      - qr_auth
+                      - preview
+                      - login
+                      - get_music
+                      - logout
+                      - cleanup
+                      - persist
+                    nullable: true
+                  cleanupStatus:
+                    type: string
+                    enum:
+                      - not_required
+                      - pending
+                      - succeeded
+                      - unconfirmed
+                  cleanupErrorCode:
+                    type: string
+                    nullable: true
+                  cleanupUpdatedAt:
+                    type: string
+                    nullable: true
+                  cleanupBlockedUntil:
+                    type: string
+                    nullable: true
+                  progress:
+                    type: object
+                    properties:
+                      detailsFetched:
+                        type: integer
+                        minimum: 0
+                    required:
+                      - detailsFetched
+                    nullable: true
                   payload:
                     type: object
                     additionalProperties: {}

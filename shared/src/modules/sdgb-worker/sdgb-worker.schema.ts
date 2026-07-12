@@ -28,6 +28,7 @@ export const SdgbJobTypeSchema = z.enum([
   "get_rival_hash",
   "get_user_map",
   "add_rival",
+  "get_music_score",
 ]);
 
 export const SdgbJobStatusSchema = z.enum([
@@ -36,6 +37,28 @@ export const SdgbJobStatusSchema = z.enum([
   "completed",
   "failed",
 ]);
+
+export const SdgbJobStageSchema = z.enum([
+  "queued",
+  "qr_auth",
+  "preview",
+  "login",
+  "get_music",
+  "logout",
+  "cleanup",
+  "persist",
+]);
+
+export const SdgbSessionCleanupStatusSchema = z.enum([
+  "not_required",
+  "pending",
+  "succeeded",
+  "unconfirmed",
+]);
+
+export const SdgbJobProgressSchema = z.object({
+  detailsFetched: z.number().int().nonnegative(),
+});
 
 // Per-job payloads (sent by backend, consumed by sdgb-worker).
 export const ScanQrPayloadSchema = z.object({
@@ -52,6 +75,23 @@ export const GetUserMapPayloadSchema = z.object({
 export const AddRivalPayloadSchema = z.object({
   botCabinetUserId: z.number().int().positive(),
   targetCabinetUserId: z.number().int().positive(),
+});
+export const GetMusicScorePayloadSchema = z.object({
+  qrCode: z.string().min(1).max(512),
+  expectedCabinetUserId: z.number().int().positive(),
+});
+
+export const UserMusicDetailSchema = z.object({
+  musicId: z.number().int().nonnegative(),
+  level: z.number().int(),
+  playCount: z.number().int().nonnegative(),
+  achievement: z.number().int().nonnegative(),
+  comboStatus: z.number().int().min(0).max(4),
+  syncStatus: z.number().int().min(0).max(5),
+  deluxscoreMax: z.number().int().nonnegative(),
+  scoreRank: z.number().int(),
+  extNum1: z.number().int().optional(),
+  extNum2: z.number().int().optional(),
 });
 
 // Per-job results (set by sdgb-worker via PATCH).
@@ -76,6 +116,10 @@ export const AddRivalResultSchema = z.object({
   returnCode1: z.number().int(),
   returnCode2: z.number().int(),
 });
+export const GetMusicScoreResultSchema = z.object({
+  cabinetUserId: z.number().int().positive(),
+  musicDetails: z.array(UserMusicDetailSchema).max(10_000),
+});
 
 // ───────────────────────── job document shape ─────────────────────────
 
@@ -83,6 +127,12 @@ export const SdgbJobResponseSchema = z.object({
   id: z.string(),
   jobType: SdgbJobTypeSchema,
   status: SdgbJobStatusSchema,
+  stage: SdgbJobStageSchema.nullable().optional(),
+  cleanupStatus: SdgbSessionCleanupStatusSchema.optional(),
+  cleanupErrorCode: z.string().nullable().optional(),
+  cleanupUpdatedAt: z.string().nullable().optional(),
+  cleanupBlockedUntil: z.string().nullable().optional(),
+  progress: SdgbJobProgressSchema.nullable().optional(),
   payload: z.record(z.unknown()),
   result: z.record(z.unknown()).nullable(),
   error: z.string().nullable(),
@@ -95,14 +145,25 @@ export const SdgbJobResponseSchema = z.object({
 
 export const SdgbJobPatchBodySchema = z.object({
   status: SdgbJobStatusSchema.optional(),
+  stage: SdgbJobStageSchema.optional(),
+  cleanupStatus: SdgbSessionCleanupStatusSchema.optional(),
+  cleanupErrorCode: z.string().nullable().optional(),
+  cleanupBlockedUntil: z.string().nullable().optional(),
+  progress: SdgbJobProgressSchema.nullable().optional(),
   result: z.record(z.unknown()).nullable().optional(),
   error: z.string().nullable().optional(),
+  errorCode: z.string().nullable().optional(),
 });
 
 // ───────────────────────── inferred types ─────────────────────────
 
 export type SdgbJobType = z.infer<typeof SdgbJobTypeSchema>;
 export type SdgbJobStatus = z.infer<typeof SdgbJobStatusSchema>;
+export type SdgbJobStage = z.infer<typeof SdgbJobStageSchema>;
+export type SdgbSessionCleanupStatus = z.infer<
+  typeof SdgbSessionCleanupStatusSchema
+>;
+export type SdgbJobProgress = z.infer<typeof SdgbJobProgressSchema>;
 export type SdgbJobResponse = z.infer<typeof SdgbJobResponseSchema>;
 export type SdgbJobPatchBody = z.infer<typeof SdgbJobPatchBodySchema>;
 export type SdgbWorkerMusicEntry = z.infer<typeof MusicEntrySchema>;
@@ -112,7 +173,10 @@ export type ScanQrPayload = z.infer<typeof ScanQrPayloadSchema>;
 export type GetRivalHashPayload = z.infer<typeof GetRivalHashPayloadSchema>;
 export type GetUserMapPayload = z.infer<typeof GetUserMapPayloadSchema>;
 export type AddRivalPayload = z.infer<typeof AddRivalPayloadSchema>;
+export type GetMusicScorePayload = z.infer<typeof GetMusicScorePayloadSchema>;
 export type ScanQrResult = z.infer<typeof ScanQrResultSchema>;
 export type GetRivalHashResult = z.infer<typeof GetRivalHashResultSchema>;
 export type GetUserMapResult = z.infer<typeof GetUserMapResultSchema>;
 export type AddRivalResult = z.infer<typeof AddRivalResultSchema>;
+export type GetMusicScoreResult = z.infer<typeof GetMusicScoreResultSchema>;
+export type SdgbWorkerUserMusicDetail = z.infer<typeof UserMusicDetailSchema>;

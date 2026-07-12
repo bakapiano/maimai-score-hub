@@ -1,6 +1,10 @@
 import { initContract } from "@ts-rest/core";
 
 import {
+  CabinetScoreActiveJobSchema,
+  CabinetScoreJobCreateBodySchema,
+  CabinetScoreJobCreateResponseSchema,
+  CabinetScoreJobSchema,
   LastSyncSchema,
   ProberExportCreateResponseSchema,
   ProberExportJobSchema,
@@ -10,6 +14,30 @@ import {
 const c = initContract();
 
 export const syncContract = c.router({
+  createCabinetScoreJob: {
+    method: "POST",
+    path: "/me/cabinet-score-jobs",
+    headers: c.type<{ authorization: string }>(),
+    body: CabinetScoreJobCreateBodySchema,
+    responses: {
+      202: CabinetScoreJobCreateResponseSchema,
+      400: c.type<{ code?: string; message?: string }>(),
+      409: c.type<{ code?: string; message?: string; retryAfter?: string }>(),
+    },
+  },
+  getActiveCabinetScoreJob: {
+    method: "GET",
+    path: "/me/cabinet-score-jobs/active",
+    headers: c.type<{ authorization: string }>(),
+    responses: { 200: CabinetScoreActiveJobSchema },
+  },
+  getCabinetScoreJob: {
+    method: "GET",
+    path: "/me/cabinet-score-jobs/:jobId",
+    headers: c.type<{ authorization: string }>(),
+    pathParams: c.type<{ jobId: string }>(),
+    responses: { 200: CabinetScoreJobSchema },
+  },
   latest: {
     method: "GET",
     path: "/me/sync/latest",

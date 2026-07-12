@@ -6,8 +6,23 @@ export type SdgbJobType =
   | 'scan_qr'
   | 'get_rival_hash'
   | 'get_user_map'
-  | 'add_rival';
+  | 'add_rival'
+  | 'get_music_score';
 export type SdgbJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
+export type SdgbJobStage =
+  | 'queued'
+  | 'qr_auth'
+  | 'preview'
+  | 'login'
+  | 'get_music'
+  | 'logout'
+  | 'cleanup'
+  | 'persist';
+export type SdgbSessionCleanupStatus =
+  | 'not_required'
+  | 'pending'
+  | 'succeeded'
+  | 'unconfirmed';
 
 /**
  * Cabinet (sdgb-protocol) jobs. Decoupled from the existing `jobs` collection
@@ -25,6 +40,24 @@ export class SdgbJobEntity {
 
   @Prop({ required: true, type: String, index: true })
   status!: SdgbJobStatus;
+
+  @Prop({ type: String, default: null })
+  stage!: SdgbJobStage | null;
+
+  @Prop({ type: String, default: 'not_required', index: true })
+  cleanupStatus!: SdgbSessionCleanupStatus;
+
+  @Prop({ type: String, default: null })
+  cleanupErrorCode!: string | null;
+
+  @Prop({ type: Date, default: null })
+  cleanupUpdatedAt!: Date | null;
+
+  @Prop({ type: Date, default: null })
+  cleanupBlockedUntil!: Date | null;
+
+  @Prop({ type: MongooseSchema.Types.Mixed, default: null })
+  progress!: { detailsFetched: number } | null;
 
   /**
    * Payload schema (per jobType):
@@ -49,6 +82,9 @@ export class SdgbJobEntity {
   @Prop({ type: String, default: null })
   error!: string | null;
 
+  @Prop({ type: String, default: null })
+  errorCode!: string | null;
+
   /** Set when the BullMQ consumer starts work, cleared on terminal state. */
   @Prop({ type: Boolean, default: false })
   executing!: boolean;
@@ -59,6 +95,12 @@ export class SdgbJobEntity {
   /** Optional tag the producer can set so it can find back its own job. */
   @Prop({ type: String, default: null, index: true })
   requesterTag!: string | null;
+
+  @Prop({ type: String, default: null, index: true })
+  ownerUserId!: string | null;
+
+  @Prop({ type: String, default: null, index: true })
+  ownerFriendCode!: string | null;
 
   createdAt!: Date;
   updatedAt!: Date;
@@ -87,3 +129,11 @@ SdgbJobSchema.index(
 SdgbJobSchema.index({ status: 1, createdAt: 1 }, { name: 'status_createdAt' });
 SdgbJobSchema.index({ status: 1, claimedAt: 1 }, { name: 'status_claimedAt' });
 SdgbJobSchema.index({ updatedAt: -1 }, { name: 'updatedAt_desc' });
+SdgbJobSchema.index(
+  { ownerUserId: 1, jobType: 1, status: 1, createdAt: -1 },
+  { name: 'owner_type_status' },
+);
+SdgbJobSchema.index(
+  { ownerUserId: 1, cleanupStatus: 1, cleanupBlockedUntil: 1 },
+  { name: 'owner_cleanup' },
+);

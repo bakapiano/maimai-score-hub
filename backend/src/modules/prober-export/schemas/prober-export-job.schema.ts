@@ -7,6 +7,7 @@ export type ProberExportTrigger =
   | 'dxnet_update_score'
   | 'auto_update_rival'
   | 'auto_update_fcfs'
+  | 'cabinet_qr_update'
   | 'manual';
 export type ProberExportStatus =
   | 'queued'

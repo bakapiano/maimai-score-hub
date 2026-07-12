@@ -1,14 +1,4 @@
-import {
-  Alert,
-  Box,
-  Button,
-  FileButton,
-  Group,
-  Loader,
-  PasswordInput,
-  Stack,
-  Text,
-} from "@mantine/core";
+import { Alert, Button, Loader, Stack, Text } from "@mantine/core";
 import {
   HttpClientError,
   PollDead,
@@ -16,11 +6,12 @@ import {
   fetchForPoll,
   pollWithBackoff,
 } from "../utils/poll";
-import { IconInfoCircle, IconQrcode, IconUpload } from "@tabler/icons-react";
+import { IconInfoCircle } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
 import { apiUrl } from "../api/baseUrl";
+import { QrCredentialInput } from "./QrCredentialInput";
 
 const QR_ATTEMPT_KEY = "pendingQrLoginAttemptId";
 const SLOW_JOB_NOTICE_MS = 30_000;
@@ -46,7 +37,9 @@ async function postQrLogin(payload: FormData | string) {
         ? { "Content-Type": "application/json" }
         : undefined,
     body:
-      typeof payload === "string" ? JSON.stringify({ qrCode: payload }) : payload,
+      typeof payload === "string"
+        ? JSON.stringify({ qrCode: payload })
+        : payload,
   });
   const text = await res.text();
   const json = (text ? JSON.parse(text) : null) as QrLoginJson | null;
@@ -63,7 +56,9 @@ function getQrLoginMessage(json: QrLoginJson | null, status: number) {
 }
 
 function isExpiredQr(json: QrLoginJson | null) {
-  return typeof json?.message === "object" && json.message?.code === "qr_expired";
+  return (
+    typeof json?.message === "object" && json.message?.code === "qr_expired"
+  );
 }
 
 function showQrLoginSuccess() {
@@ -211,7 +206,9 @@ export function QrLoginForm({
     } catch {
       // ignore
     }
-    if (!cached) {return;}
+    if (!cached) {
+      return;
+    }
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setBusy(true);
@@ -307,72 +304,26 @@ export function QrLoginForm({
   return (
     <Stack gap="md">
       <Stack gap="sm">
-        <FileButton
-          onChange={(file) => {
-            if (!file) {return;}
+        <QrCredentialInput
+          value={qrText}
+          onChange={setQrText}
+          onFile={(file) => {
             const fd = new FormData();
             fd.append("image", file);
             void submit(fd);
           }}
-          accept="image/png,image/jpeg,image/webp"
+          onEnter={() => void submit(qrText.trim())}
+          disabled={disabled}
+          loading={busy}
+        />
+        <Button
+          fullWidth
+          onClick={() => void submit(qrText.trim())}
+          disabled={!qrText.trim() || busy || disabled}
+          loading={busy}
         >
-          {(p) => (
-            <Button
-              {...p}
-              variant="light"
-              fullWidth
-              size="md"
-              leftSection={<IconUpload size={16} />}
-              loading={busy}
-              disabled={disabled}
-            >
-              上传二维码图片
-            </Button>
-          )}
-        </FileButton>
-
-        <Group gap={6} c="dimmed">
-          <Box
-            style={{
-              flex: 1,
-              height: 1,
-              background: "var(--mantine-color-default-border)",
-            }}
-          />
-          <Text size="xs">或粘贴字符串</Text>
-          <Box
-            style={{
-              flex: 1,
-              height: 1,
-              background: "var(--mantine-color-default-border)",
-            }}
-          />
-        </Group>
-
-        <Group gap="xs" wrap="nowrap">
-          <PasswordInput
-            placeholder="SGWCMAID..."
-            leftSection={<IconQrcode size={16} />}
-            value={qrText}
-            onChange={(e) => setQrText(e.currentTarget.value)}
-            style={{ flex: 1 }}
-            size="md"
-            disabled={disabled || busy}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && qrText.trim() && !busy) {
-                void submit(qrText.trim());
-              }
-            }}
-          />
-          <Button
-            size="md"
-            onClick={() => void submit(qrText.trim())}
-            disabled={!qrText.trim() || busy || disabled}
-            loading={busy}
-          >
-            提交
-          </Button>
-        </Group>
+          登录
+        </Button>
       </Stack>
 
       {progress && (

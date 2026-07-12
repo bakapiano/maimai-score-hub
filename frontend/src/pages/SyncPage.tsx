@@ -26,12 +26,22 @@ import {
   IconRefresh,
   IconSend,
   IconUser,
+  IconX,
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { JobResponse as JobStatus } from "@maimai-score-hub/shared";
+import type {
+  CabinetScoreJob,
+  JobResponse as JobStatus,
+} from "@maimai-score-hub/shared";
 
 import { fetchLatestSync } from "../api/syncLatest";
+import {
+  CabinetScoreJobApiError,
+  createCabinetScoreJob,
+  getActiveCabinetScoreJob,
+  getCabinetScoreJob,
+} from "../api/cabinetScoreJobClient";
 import { fetchSyncPageJson } from "./syncPageApi";
 import {
   cacheSyncLatest,
@@ -49,6 +59,8 @@ import {
 import { ProfileCard } from "../components/ProfileCard";
 import { CabinetBindingCard } from "../components/CabinetBindingCard";
 import { AppCard } from "../components/AppCard";
+import { RadioCardGroup } from "../components/RadioCardGroup";
+import { QrCredentialInput } from "../components/QrCredentialInput";
 import { SyncMetric } from "../components/SyncMetric";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { recordAnalyticsEvent } from "../utils/observability";
@@ -129,8 +141,16 @@ function formatDate(dateString: string) {
 function formatRelativeDate(dateString: string) {
   const date = new Date(dateString);
   const now = new Date();
-  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfDate = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  );
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
   const daysAgo = Math.round(
     (startOfToday.getTime() - startOfDate.getTime()) / (24 * 60 * 60 * 1000),
   );
@@ -139,37 +159,55 @@ function formatRelativeDate(dateString: string) {
     minute: "2-digit",
   });
 
-  if (daysAgo === 0) {return `今天 ${time}`;}
-  if (daysAgo === 1) {return `昨天 ${time}`;}
+  if (daysAgo === 0) {
+    return `今天 ${time}`;
+  }
+  if (daysAgo === 1) {
+    return `昨天 ${time}`;
+  }
   return formatDate(dateString);
 }
 
 function formatElapsedTime(dateString: string) {
   const elapsedMs = Math.max(0, Date.now() - new Date(dateString).getTime());
   const elapsedHours = Math.floor(elapsedMs / (60 * 60 * 1000));
-  if (elapsedHours < 24) {return `${Math.max(1, elapsedHours)} 小时前`;}
+  if (elapsedHours < 24) {
+    return `${Math.max(1, elapsedHours)} 小时前`;
+  }
 
   const elapsedDays = Math.floor(elapsedHours / 24);
-  if (elapsedDays < 30) {return `${elapsedDays} 天前`;}
+  if (elapsedDays < 30) {
+    return `${elapsedDays} 天前`;
+  }
 
   const elapsedMonths = Math.floor(elapsedDays / 30);
-  if (elapsedMonths < 12) {return `${elapsedMonths} 个月前`;}
+  if (elapsedMonths < 12) {
+    return `${elapsedMonths} 个月前`;
+  }
 
   return `${Math.floor(elapsedMonths / 12)} 年前`;
 }
 
 function exportStatusColor(status: string) {
-  return status === "success" ? "green" : status === "skipped" ? "yellow" : "red";
+  return status === "success"
+    ? "green"
+    : status === "skipped"
+      ? "yellow"
+      : "red";
 }
 
 function normalizeLastSync(
   data: LatestSyncPayload | null | undefined,
 ): LastSyncInfo | null {
-  if (!data) {return null;}
+  if (!data) {
+    return null;
+  }
 
   const createdAt = data.createdAt ?? data.updatedAt;
   const updatedAt = data.updatedAt ?? data.createdAt;
-  if (!createdAt || !updatedAt) {return null;}
+  if (!createdAt || !updatedAt) {
+    return null;
+  }
 
   return {
     id: data.id ?? "cached-latest-sync",
@@ -195,18 +233,22 @@ function readCachedLastSyncWhenIdle() {
 
 function rememberLastSync(data: LatestSyncPayload | null | undefined) {
   const normalized = normalizeLastSync(data);
-  if (!normalized) {return null;}
+  if (!normalized) {
+    return null;
+  }
 
   if (Array.isArray(data?.scores)) {
-    scheduleIdleTask(() =>
-      cacheSyncLatest({
-        id: normalized.id,
-        scores: data.scores ?? [],
-        createdAt: normalized.createdAt,
-        updatedAt: normalized.updatedAt,
-        autoExportResult: normalized.autoExportResult,
-      }),
-    1000);
+    scheduleIdleTask(
+      () =>
+        cacheSyncLatest({
+          id: normalized.id,
+          scores: data.scores ?? [],
+          createdAt: normalized.createdAt,
+          updatedAt: normalized.updatedAt,
+          autoExportResult: normalized.autoExportResult,
+        }),
+      1000,
+    );
   }
   return normalized;
 }
@@ -278,19 +320,87 @@ function getSyncStatusView({
   if (syncStatus.status === "queued") {
     return { color: "gray", label: "排队中", text: "任务正在等待执行" };
   }
-  return { color: "blue", label: "同步中", text: "正在从 maimai DX NET 更新成绩" };
+  return {
+    color: "blue",
+    label: "同步中",
+    text: "正在从 maimai DX NET 更新成绩",
+  };
 }
 
 function getSyncStageText(syncStatus: JobStatus | null) {
-  if (!syncStatus) {return "等待开始";}
-  if (syncStatus.stage === "send_request") {return "发送好友申请";}
-  if (syncStatus.stage === "wait_acceptance") {return "等待好友确认";}
-  if (syncStatus.stage === "update_score") {return "更新成绩";}
-  if (syncStatus.status === "queued") {return "排队中";}
-  if (syncStatus.status === "completed") {return "已完成";}
-  if (syncStatus.status === "failed") {return "失败";}
-  if (syncStatus.status === "canceled") {return "已取消";}
+  if (!syncStatus) {
+    return "等待开始";
+  }
+  if (syncStatus.stage === "send_request") {
+    return "发送好友申请";
+  }
+  if (syncStatus.stage === "wait_acceptance") {
+    return "等待好友确认";
+  }
+  if (syncStatus.stage === "update_score") {
+    return "更新成绩";
+  }
+  if (syncStatus.status === "queued") {
+    return "排队中";
+  }
+  if (syncStatus.status === "completed") {
+    return "已完成";
+  }
+  if (syncStatus.status === "failed") {
+    return "失败";
+  }
+  if (syncStatus.status === "canceled") {
+    return "已取消";
+  }
   return "同步中";
+}
+
+function getCabinetSyncStatusView(job: CabinetScoreJob | null) {
+  if (!job) {
+    return {
+      color: "gray",
+      label: "等待二维码",
+      text: "请上传或粘贴当前二维码",
+    };
+  }
+  if (job.cleanupStatus === "pending") {
+    return {
+      color: "orange",
+      label: "清理中",
+      text: "正在安全退出机台登录状态",
+    };
+  }
+  if (job.cleanupStatus === "unconfirmed") {
+    return {
+      color: "red",
+      label: "等待会话释放",
+      text: "暂时无法确认已安全退出",
+    };
+  }
+  if (job.status === "completed") {
+    return { color: "green", label: "已完成", text: "二维码成绩更新完成" };
+  }
+  if (job.status === "failed") {
+    return { color: "red", label: "失败", text: "二维码成绩任务未完成" };
+  }
+  if (job.status === "queued") {
+    return { color: "gray", label: "排队中", text: "正在等待 sdgb-worker" };
+  }
+  return { color: "blue", label: "同步中", text: "正在读取完整机台成绩" };
+}
+
+function getCabinetStageText(job: CabinetScoreJob | null) {
+  const labels: Record<CabinetScoreJob["stage"], string> = {
+    queued: "排队中",
+    qr_auth: "验证二维码",
+    preview: "检查登录状态",
+    login: "登录机台服务",
+    get_music: "读取完整成绩",
+    logout: "安全退出",
+    cleanup: "清理登录状态",
+    persist: "保存成绩",
+  };
+  return job ? labels[job.stage] : "等待开始";
 }
 
 function AutoExportBadges({
@@ -376,8 +486,20 @@ export default function SyncPage() {
   const [fetchingDivingFishToken, setFetchingDivingFishToken] = useState(false);
 
   // Sync job state
+  const [syncMethod, setSyncMethod] = useState<"dxnet_bot" | "cabinet_qr">(
+    () =>
+      typeof window !== "undefined" &&
+      window.localStorage.getItem("sync_update_method") === "cabinet_qr"
+        ? "cabinet_qr"
+        : "dxnet_bot",
+  );
   const [syncJobId, setSyncJobId] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<JobStatus | null>(null);
+  const [cabinetJobId, setCabinetJobId] = useState<string | null>(null);
+  const [cabinetStatus, setCabinetStatus] = useState<CabinetScoreJob | null>(
+    null,
+  );
+  const [qrText, setQrText] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [verifyLoading, setVerifyLoading] = useState(false);
@@ -402,24 +524,31 @@ export default function SyncPage() {
   const pageLoading = loading || profileLoading;
 
   // Fetch last sync info
-  const loadLastSync = useCallback(async (options: { force?: boolean } = {}) => {
-    if (!token) {return;}
+  const loadLastSync = useCallback(
+    async (options: { force?: boolean } = {}) => {
+      if (!token) {
+        return;
+      }
 
-    const res = await fetchLatestSync<LatestSyncPayload>(token, options);
+      const res = await fetchLatestSync<LatestSyncPayload>(token, options);
 
-    const nextLastSync = res.ok ? rememberLastSync(res.data) : null;
-    if (res.ok && nextLastSync) {
-      setLastSync(nextLastSync);
-    } else {
-      // Keep the last known sync visible across transient mobile resume
-      // failures. A real first-time no-sync user still has no cached value.
-      setLastSync((current) => current ?? readCachedLastSyncSummary());
-    }
-  }, [token]);
+      const nextLastSync = res.ok ? rememberLastSync(res.data) : null;
+      if (res.ok && nextLastSync) {
+        setLastSync(nextLastSync);
+      } else {
+        // Keep the last known sync visible across transient mobile resume
+        // failures. A real first-time no-sync user still has no cached value.
+        setLastSync((current) => current ?? readCachedLastSyncSummary());
+      }
+    },
+    [token],
+  );
 
   // Fetch profile
   const loadProfile = useCallback(async () => {
-    if (!token) {return null;}
+    if (!token) {
+      return null;
+    }
 
     setProfileError(null);
 
@@ -437,7 +566,9 @@ export default function SyncPage() {
 
   // Load profile and last sync on mount
   useEffect(() => {
-    if (!token) {return;}
+    if (!token) {
+      return;
+    }
 
     let cancelled = false;
 
@@ -458,18 +589,27 @@ export default function SyncPage() {
           setProfileError(err instanceof Error ? err.message : "加载失败");
         }
       }
-      if (cancelled) {return;}
+      if (cancelled) {
+        return;
+      }
 
       if (loadedProfile) {
         // Active-job lookup needs friendCode, so it chains off profile.
         if (loadedProfile.friendCode) {
-          const activeJobRes = await getActiveJobByFriendCode(
-            loadedProfile.friendCode,
-            token,
-          );
-          if (cancelled) {return;}
+          const [activeJobRes, cabinetActiveRes] = await Promise.all([
+            getActiveJobByFriendCode(loadedProfile.friendCode, token),
+            getActiveCabinetScoreJob(token),
+          ]);
+          if (cancelled) {
+            return;
+          }
 
-          if (activeJobRes.job) {
+          if (cabinetActiveRes.job) {
+            setSyncMethod("cabinet_qr");
+            setCabinetJobId(cabinetActiveRes.job.id);
+            setCabinetStatus(cabinetActiveRes.job);
+            setSyncing(true);
+          } else if (activeJobRes.job) {
             const activeJob = activeJobRes.job;
             setSyncJobId(activeJob.id);
             setSyncStatus(activeJob);
@@ -484,13 +624,17 @@ export default function SyncPage() {
       }
 
       const syncRes = await syncPromise;
-      if (cancelled) {return;}
+      if (cancelled) {
+        return;
+      }
       const nextLastSync = syncRes.ok ? rememberLastSync(syncRes.data) : null;
       if (syncRes.ok && nextLastSync) {
         setLastSync(nextLastSync);
       } else {
         const cachedLastSync = await readCachedLastSyncWhenIdle();
-        if (cancelled) {return;}
+        if (cancelled) {
+          return;
+        }
         setLastSync((current) => current ?? cachedLastSync);
       }
 
@@ -504,17 +648,32 @@ export default function SyncPage() {
     };
   }, [token, refreshProfile]);
 
+  useEffect(() => {
+    window.localStorage.setItem("sync_update_method", syncMethod);
+    if (syncMethod !== "cabinet_qr") {
+      setQrText("");
+    }
+  }, [syncMethod]);
+
   // Save tokens (silent, returns success)
   // Only sends token fields that the user has actually entered a value for
   const saveTokens = async (): Promise<boolean> => {
-    if (!token) {return false;}
+    if (!token) {
+      return false;
+    }
 
     const body: Record<string, string | null> = {};
-    if (divingFishToken) {body.divingFishImportToken = divingFishToken;}
-    if (lxnsToken) {body.lxnsImportToken = lxnsToken;}
+    if (divingFishToken) {
+      body.divingFishImportToken = divingFishToken;
+    }
+    if (lxnsToken) {
+      body.lxnsImportToken = lxnsToken;
+    }
 
     // Nothing to save
-    if (Object.keys(body).length === 0) {return true;}
+    if (Object.keys(body).length === 0) {
+      return true;
+    }
 
     const res = await fetchSyncPageJson<unknown>("/api/v1/me", {
       method: "PATCH",
@@ -534,7 +693,9 @@ export default function SyncPage() {
 
   const startUpdateScoreJob = useCallback(
     async (friendshipJobId?: string) => {
-      if (!token) {return;}
+      if (!token) {
+        return;
+      }
       const res = await createJob(
         {
           jobType: "update_score",
@@ -549,7 +710,9 @@ export default function SyncPage() {
   );
 
   const startFriendshipJob = useCallback(async () => {
-    if (!token) {return;}
+    if (!token) {
+      return;
+    }
     notifications.show({
       title: "需要先成为好友",
       message: "Bot 将先发送好友申请，接受后会自动开始更新成绩",
@@ -560,9 +723,47 @@ export default function SyncPage() {
     setSyncStatus(res.job);
   }, [token]);
 
+  const startCabinetSync = useCallback(
+    async (payload: string | FormData) => {
+      if (!token || !profile?.hasCabinetUserId) {
+        return;
+      }
+      setSyncing(true);
+      setSyncError(null);
+      setCabinetStatus(null);
+      setSyncStatus(null);
+      try {
+        const created = await createCabinetScoreJob(payload, token);
+        setCabinetJobId(created.jobId);
+        setCabinetStatus(created.job);
+        setQrText("");
+        recordAnalyticsEvent("sync_started", { method: "cabinet_qr" });
+      } catch (error) {
+        setSyncing(false);
+        const message =
+          error instanceof Error ? error.message : "二维码任务创建失败";
+        setSyncError(message);
+      }
+    },
+    [profile?.hasCabinetUserId, token],
+  );
+
   // Start sync
   const startSync = useCallback(async () => {
-    if (!profile?.friendCode || !token) {return;}
+    if (!token) {
+      return;
+    }
+    if (syncMethod === "cabinet_qr") {
+      const value = qrText.trim();
+      if (!value || !profile?.hasCabinetUserId) {
+        return;
+      }
+      await startCabinetSync(value);
+      return;
+    }
+    if (!profile?.friendCode) {
+      return;
+    }
 
     setSyncing(true);
     setSyncError(null);
@@ -594,11 +795,22 @@ export default function SyncPage() {
         finalError instanceof Error ? finalError.message : "未知错误";
       setSyncError(`创建同步任务失败: ${errorMessage}`);
     }
-  }, [profile?.friendCode, token, startFriendshipJob, startUpdateScoreJob]);
+  }, [
+    profile?.friendCode,
+    profile?.hasCabinetUserId,
+    qrText,
+    startCabinetSync,
+    startFriendshipJob,
+    startUpdateScoreJob,
+    syncMethod,
+    token,
+  ]);
 
   // Poll job status
   useEffect(() => {
-    if (!syncJobId || !syncing || !token) {return;}
+    if (!syncJobId || !syncing || !token) {
+      return;
+    }
 
     const interval = setInterval(async () => {
       try {
@@ -668,12 +880,44 @@ export default function SyncPage() {
     startUpdateScoreJob,
   ]);
 
+  useEffect(() => {
+    if (!cabinetJobId || !syncing || !token) {
+      return;
+    }
+    const interval = setInterval(async () => {
+      try {
+        const job = await getCabinetScoreJob(cabinetJobId, token);
+        setCabinetStatus(job);
+        const cleanupPending = job.cleanupStatus === "pending";
+        if (job.status === "completed") {
+          setSyncing(false);
+          recordAnalyticsEvent("sync_completed", {
+            jobId: job.id,
+            method: "cabinet_qr",
+          });
+          void loadProfile();
+          void loadLastSync({ force: true });
+        } else if (job.status === "failed" && !cleanupPending) {
+          setSyncing(false);
+          recordAnalyticsEvent("sync_failed", {
+            jobId: job.id,
+            method: "cabinet_qr",
+            errorCode: job.error?.code ?? "",
+          });
+        }
+      } catch (error) {
+        if (error instanceof CabinetScoreJobApiError && error.status === 404) {
+          setSyncing(false);
+          setSyncError("二维码任务不存在或已过期");
+        }
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cabinetJobId, syncing, token, loadProfile, loadLastSync]);
+
   // Handle timeout countdown for wait_acceptance stage
   useEffect(() => {
-    if (
-      syncStage !== "wait_acceptance" ||
-      !syncFriendRequestSentAt
-    ) {
+    if (syncStage !== "wait_acceptance" || !syncFriendRequestSentAt) {
       setTimeLeft((current) => (current === 0 ? current : 0));
       return;
     }
@@ -690,7 +934,9 @@ export default function SyncPage() {
   }, [syncStage, syncFriendRequestSentAt]);
 
   const verifySyncJob = async () => {
-    if (!syncJobId || !token) {return;}
+    if (!syncJobId || !token) {
+      return;
+    }
 
     setVerifyLoading(true);
     try {
@@ -724,7 +970,9 @@ export default function SyncPage() {
     exportJobId: string,
     target: ExportTarget,
   ): Promise<ProberExportJob> => {
-    if (!token) {throw new Error("需要登录");}
+    if (!token) {
+      throw new Error("需要登录");
+    }
     const terminal = new Set([
       "completed",
       "partial_failed",
@@ -754,7 +1002,9 @@ export default function SyncPage() {
   };
 
   const queueExport = async (target: ExportTarget) => {
-    if (!token) {return;}
+    if (!token) {
+      return;
+    }
     setExportLoading(target);
     recordAnalyticsEvent("export_started", { provider: target });
     try {
@@ -825,7 +1075,9 @@ export default function SyncPage() {
 
   // Compute sync progress
   const getSyncProgress = () => {
-    if (!syncStatus?.scoreProgress) {return null;}
+    if (!syncStatus?.scoreProgress) {
+      return null;
+    }
     const { completedDiffs, totalDiffs } = syncStatus.scoreProgress;
     const percent =
       totalDiffs > 0 ? (completedDiffs.length / totalDiffs) * 100 : 0;
@@ -833,11 +1085,20 @@ export default function SyncPage() {
   };
 
   const progress = getSyncProgress();
-  const syncStatusView = getSyncStatusView({
-    lastSync,
-    loading: pageLoading,
-    syncStatus,
-  });
+  const syncStatusView =
+    syncMethod === "cabinet_qr"
+      ? getCabinetSyncStatusView(cabinetStatus)
+      : getSyncStatusView({
+          lastSync,
+          loading: pageLoading,
+          syncStatus,
+        });
+  const syncStageText =
+    syncMethod === "cabinet_qr"
+      ? getCabinetStageText(cabinetStatus)
+      : getSyncStageText(syncStatus);
+  const effectiveSyncJobStatus =
+    syncMethod === "cabinet_qr" ? cabinetStatus?.status : syncStatus?.status;
   return (
     <Box style={{ position: "relative" }}>
       {offline && (
@@ -899,140 +1160,236 @@ export default function SyncPage() {
             title="同步成绩"
           />
 
-          <AppCard>
-            <Stack gap="lg">
-              <SimpleGrid cols={{ base: 1, xs: 3 }} spacing={{ base: "xs", xs: "lg" }}>
-                <SyncMetric icon={<IconClock size={18} />} label="最近同步">
-                  <Text size="sm" fw={600}>
-                    {lastSync ? formatRelativeDate(lastSync.createdAt) : "暂无记录"}
-                  </Text>
-                </SyncMetric>
-                <SyncMetric icon={<IconChartBar size={18} />} label="成绩记录">
-                  <Text size="sm" fw={600}>
-                    {lastSync ? lastSync.scoreCount.toLocaleString("zh-CN") : "-"}
-                    {lastSync && (
-                      <Text component="span" size="xs" fw={400} c="dimmed" ml={4}>
-                        条
+          <Stack gap="xs">
+            <AppCard compact>
+              <Stack gap="md">
+                <RadioCardGroup
+                  value={syncMethod}
+                  disabled={syncing}
+                  onChange={(value) =>
+                    setSyncMethod(value as "dxnet_bot" | "cabinet_qr")
+                  }
+                  data={[
+                    {
+                      value: "dxnet_bot",
+                      name: "DX Net",
+                      description: "通过 DX Net 好友成绩同步游戏数据",
+                    },
+                    {
+                      value: "cabinet_qr",
+                      name: "二维码",
+                      description: "使用机台二维码读取完整游戏成绩",
+                    },
+                  ]}
+                />
+
+                {syncMethod === "cabinet_qr" && (
+                  <Stack gap="sm">
+                    {!profile?.hasCabinetUserId && (
+                      <Alert color="orange" variant="light">
+                        请先在下方完成二维码绑定，再使用二维码更新成绩。
+                      </Alert>
+                    )}
+                    <QrCredentialInput
+                      value={qrText}
+                      onChange={setQrText}
+                      onFile={(file) => {
+                        const form = new FormData();
+                        form.append("image", file);
+                        void startCabinetSync(form);
+                      }}
+                      disabled={
+                        syncing || pageLoading || !profile?.hasCabinetUserId
+                      }
+                      loading={syncing}
+                    />
+                    {cabinetStatus?.progress && (
+                      <Text size="sm" c="dimmed">
+                        已读取 {cabinetStatus.progress.detailsFetched}{" "}
+                        条成绩详情
                       </Text>
                     )}
-                  </Text>
-                </SyncMetric>
-                <SyncMetric icon={<IconSend size={18} />} label="自动导出">
-                  <AutoExportBadges result={lastSync?.autoExportResult} />
-                </SyncMetric>
-              </SimpleGrid>
-
-              <Divider />
-
-              {progress && syncStatus?.stage === "update_score" && (
-                <Stack gap="xs">
-                  <Group justify="space-between" align="center">
-                    <Text size="sm" fw={600}>
-                      正在更新成绩
-                    </Text>
-                    <Text size="sm" fw={700} c="blue.7">
-                      {Math.round(progress.percent)}%
-                    </Text>
-                  </Group>
-                  <Progress
-                    value={progress.percent}
-                    animated={syncing}
-                    size="md"
-                    radius="xl"
-                    color={progress.percent === 100 ? "green" : "blue"}
-                  />
-                  {progress.completedDiffs.length > 0 && (
-                    <Group gap="xs">
-                      {progress.completedDiffs.map((diff) => (
-                        <Badge
-                          radius="md"
-                          key={diff}
-                          size="sm"
-                          variant="filled"
-                          color={
-                            diff === 0
-                              ? "green"
-                              : diff === 1
-                                ? "yellow"
-                                : diff === 2
-                                  ? "red"
-                                  : diff === 3
-                                    ? "grape"
-                                    : diff === 4
-                                      ? "violet"
-                                      : "pink"
-                          }
-                        >
-                          {DIFFICULTY_NAMES[diff] ?? `Diff ${diff}`}
-                        </Badge>
-                      ))}
-                    </Group>
-                  )}
-                </Stack>
-              )}
-
-              <Group justify="space-between" align="center" wrap="wrap">
-                <Group gap="sm" align="center" wrap="nowrap">
-                  <Box
-                    style={{
-                      width: 42,
-                      height: 42,
-                      flex: "0 0 auto",
-                      borderRadius: 14,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: `var(--mantine-color-${syncStatusView.color}-7)`,
-                      background: `var(--mantine-color-${syncStatusView.color}-light)`,
-                    }}
-                  >
-                    {pageLoading || syncing ? (
-                      <Loader size="sm" color={syncStatusView.color} />
-                    ) : (
-                      <IconCheck size={22} />
-                    )}
-                  </Box>
-                  <Stack gap={1}>
-                    <Group gap="xs">
-                      <Text fw={700} size="md">
-                        {syncStatusView.label}
-                      </Text>
-                      {syncStatus && (
-                        <Badge
-                          variant="light"
-                          color={syncStatusView.color}
-                          radius="xl"
-                          size="sm"
-                        >
-                          {getSyncStageText(syncStatus)}
-                        </Badge>
-                      )}
-                    </Group>
-                    <Text size="sm" c="dimmed">
-                      {syncStatusView.text}
-                    </Text>
                   </Stack>
+                )}
+
+                <Group justify="space-between" align="center" wrap="wrap">
+                  <Group gap="sm" align="center" wrap="nowrap">
+                    <Box
+                      style={{
+                        width: 42,
+                        height: 42,
+                        flex: "0 0 auto",
+                        borderRadius: 14,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: `var(--mantine-color-${syncStatusView.color}-7)`,
+                        background: `var(--mantine-color-${syncStatusView.color}-light)`,
+                      }}
+                    >
+                      {pageLoading ||
+                      syncing ||
+                      effectiveSyncJobStatus === "queued" ||
+                      effectiveSyncJobStatus === "processing" ? (
+                        <Loader size="sm" color={syncStatusView.color} />
+                      ) : effectiveSyncJobStatus === "failed" ||
+                        effectiveSyncJobStatus === "canceled" ? (
+                        <IconX size={22} />
+                      ) : effectiveSyncJobStatus === "completed" ? (
+                        <IconCheck size={22} />
+                      ) : (
+                        <IconRefresh size={22} />
+                      )}
+                    </Box>
+                    <Stack gap={1}>
+                      <Group gap="xs">
+                        <Text fw={700} size="md">
+                          {syncStatusView.label}
+                        </Text>
+                        {(syncStatus || cabinetStatus) && (
+                          <Badge
+                            variant="light"
+                            color={syncStatusView.color}
+                            radius="xl"
+                            size="sm"
+                          >
+                            {syncStageText}
+                          </Badge>
+                        )}
+                      </Group>
+                      <Text size="sm" c="dimmed">
+                        {syncStatusView.text}
+                      </Text>
+                    </Stack>
+                  </Group>
+                  <Button
+                    onClick={startSync}
+                    disabled={
+                      syncing ||
+                      pageLoading ||
+                      (syncMethod === "dxnet_bot"
+                        ? !profile?.friendCode
+                        : !profile?.hasCabinetUserId || !qrText.trim())
+                    }
+                    loading={syncing}
+                    variant="light"
+                    leftSection={<IconRefresh size={16} />}
+                    w={{ base: "100%", xs: "auto" }}
+                    styles={{ root: { flexShrink: 0 } }}
+                  >
+                    {syncMethod === "cabinet_qr"
+                      ? "更新成绩"
+                      : lastSync
+                        ? "更新成绩"
+                        : "开始同步"}
+                  </Button>
                 </Group>
-                <Button
-                  onClick={startSync}
-                  disabled={!profile?.friendCode || syncing || pageLoading}
-                  loading={syncing}
-                  variant="light"
-                  leftSection={<IconRefresh size={16} />}
-                  w={{ base: "100%", xs: "auto" }}
-                  styles={{ root: { flexShrink: 0 } }}
+
+                <Divider />
+
+                <SimpleGrid
+                  cols={{ base: 1, xs: 3 }}
+                  spacing={{ base: "xs", xs: "md" }}
                 >
-                  {lastSync ? "更新成绩" : "开始同步"}
-                </Button>
-              </Group>
-            </Stack>
-          </AppCard>
+                  <SyncMetric icon={<IconClock size={18} />} label="最近同步">
+                    <Text size="sm" fw={600}>
+                      {lastSync
+                        ? formatRelativeDate(lastSync.createdAt)
+                        : "暂无记录"}
+                    </Text>
+                  </SyncMetric>
+                  <SyncMetric
+                    icon={<IconChartBar size={18} />}
+                    label="成绩记录"
+                  >
+                    <Text size="sm" fw={600}>
+                      {lastSync
+                        ? lastSync.scoreCount.toLocaleString("zh-CN")
+                        : "-"}
+                      {lastSync && (
+                        <Text
+                          component="span"
+                          size="xs"
+                          fw={400}
+                          c="dimmed"
+                          ml={4}
+                        >
+                          条
+                        </Text>
+                      )}
+                    </Text>
+                  </SyncMetric>
+                  <SyncMetric icon={<IconSend size={18} />} label="自动导出">
+                    <AutoExportBadges result={lastSync?.autoExportResult} />
+                  </SyncMetric>
+                </SimpleGrid>
+
+                {syncMethod === "dxnet_bot" &&
+                  progress &&
+                  syncStatus?.stage === "update_score" && (
+                    <Stack gap="xs">
+                      <Group justify="space-between" align="center">
+                        <Text size="sm" fw={600}>
+                          正在更新成绩
+                        </Text>
+                        <Text size="sm" fw={700} c="blue.7">
+                          {Math.round(progress.percent)}%
+                        </Text>
+                      </Group>
+                      <Progress
+                        value={progress.percent}
+                        animated={syncing}
+                        size="md"
+                        radius="xl"
+                        color={progress.percent === 100 ? "green" : "blue"}
+                      />
+                      {progress.completedDiffs.length > 0 && (
+                        <Group gap="xs">
+                          {progress.completedDiffs.map((diff) => (
+                            <Badge
+                              radius="md"
+                              key={diff}
+                              size="sm"
+                              variant="filled"
+                              color={
+                                diff === 0
+                                  ? "green"
+                                  : diff === 1
+                                    ? "yellow"
+                                    : diff === 2
+                                      ? "red"
+                                      : diff === 3
+                                        ? "grape"
+                                        : diff === 4
+                                          ? "violet"
+                                          : "pink"
+                              }
+                            >
+                              {DIFFICULTY_NAMES[diff] ?? `Diff ${diff}`}
+                            </Badge>
+                          ))}
+                        </Group>
+                      )}
+                    </Stack>
+                  )}
+              </Stack>
+            </AppCard>
+          </Stack>
 
           {syncError && <Alert color="red">{syncError}</Alert>}
 
           {syncStatus?.error && (
             <Alert color="red" variant="light" title="错误" radius="md">
               {syncStatus.error}
+            </Alert>
+          )}
+
+          {cabinetStatus?.error && (
+            <Alert color="red" variant="light" title="错误" radius="md">
+              {cabinetStatus.error.message}
+              {cabinetStatus.error.retryAfter
+                ? `（${new Date(cabinetStatus.error.retryAfter).toLocaleString("zh-CN")} 后可重试）`
+                : ""}
             </Alert>
           )}
 
@@ -1074,7 +1431,6 @@ export default function SyncPage() {
               </Stack>
             </Alert>
           )}
-
         </Stack>
 
         {/* Cabinet QR Section */}
@@ -1145,7 +1501,7 @@ export default function SyncPage() {
                       }
                       onChange={(e) => setDivingFishToken(e.target.value)}
                     />
-                    <Group justify="flex-end" gap="xs">
+                    <Group justify="flex-start" gap="xs">
                       {profile?.hasDivingFishImportToken &&
                       !editingDivingFishToken ? (
                         <Button
@@ -1204,141 +1560,144 @@ export default function SyncPage() {
                     <Group justify="flex-end">
                       <Button
                         onClick={async () => {
-                        if (!divingFishUsername || !divingFishPassword) {
-                          notifications.show({
-                            title: "错误",
-                            message: "请填写用户名和密码",
-                            color: "red",
-                          });
-                          return;
-                        }
+                          if (!divingFishUsername || !divingFishPassword) {
+                            notifications.show({
+                              title: "错误",
+                              message: "请填写用户名和密码",
+                              color: "red",
+                            });
+                            return;
+                          }
 
-                        setFetchingDivingFishToken(true);
-                        try {
-                          // Step 1: Get token
-                          const res = await fetchSyncPageJson<{
-                            importToken?: string;
-                            nickname?: string;
-                            message?: string;
-                          }>("/api/v1/me/prober-tokens/diving-fish", {
-                            method: "POST",
-                            headers: {
-                              Authorization: `Bearer ${token}`,
-                              "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({
-                              username: divingFishUsername,
-                              password: divingFishPassword,
-                            }),
-                          });
-
-                          if (res.ok && res.data?.importToken) {
-                            const fetchedToken = res.data.importToken;
-                            setDivingFishToken(fetchedToken);
-                            // Clear credentials after successful fetch
-                            setDivingFishUsername("");
-                            setDivingFishPassword("");
-
-                            // Step 2: Save token and export
-                            const saveRes = await fetchSyncPageJson<unknown>(
-                              "/api/v1/me",
-                              {
-                                method: "PATCH",
-                                headers: {
-                                  Authorization: `Bearer ${token}`,
-                                  "Content-Type": "application/json",
-                                },
-                                body: JSON.stringify({
-                                  divingFishImportToken: fetchedToken,
-                                  lxnsImportToken: lxnsToken || null,
-                                }),
+                          setFetchingDivingFishToken(true);
+                          try {
+                            // Step 1: Get token
+                            const res = await fetchSyncPageJson<{
+                              importToken?: string;
+                              nickname?: string;
+                              message?: string;
+                            }>("/api/v1/me/prober-tokens/diving-fish", {
+                              method: "POST",
+                              headers: {
+                                Authorization: `Bearer ${token}`,
+                                "Content-Type": "application/json",
                               },
-                            );
+                              body: JSON.stringify({
+                                username: divingFishUsername,
+                                password: divingFishPassword,
+                              }),
+                            });
 
-                            if (saveRes.ok) {
-                              // Step 3: Queue export to diving-fish
-                              const exportRes =
-                                await fetchSyncPageJson<ProberExportCreateResponse>(
-                                  "/api/v1/me/sync/latest/exports/diving-fish",
-                                  {
-                                    method: "POST",
-                                    headers: {
-                                      Authorization: `Bearer ${token}`,
-                                      "Content-Type": "application/json",
-                                    },
+                            if (res.ok && res.data?.importToken) {
+                              const fetchedToken = res.data.importToken;
+                              setDivingFishToken(fetchedToken);
+                              // Clear credentials after successful fetch
+                              setDivingFishUsername("");
+                              setDivingFishPassword("");
+
+                              // Step 2: Save token and export
+                              const saveRes = await fetchSyncPageJson<unknown>(
+                                "/api/v1/me",
+                                {
+                                  method: "PATCH",
+                                  headers: {
+                                    Authorization: `Bearer ${token}`,
+                                    "Content-Type": "application/json",
                                   },
-                                );
+                                  body: JSON.stringify({
+                                    divingFishImportToken: fetchedToken,
+                                    lxnsImportToken: lxnsToken || null,
+                                  }),
+                                },
+                              );
 
-                              if (exportRes.ok && exportRes.data?.exportJobId) {
-                                notifications.show({
-                                  title: "已加入导出队列",
-                                  message: "正在导出到 Diving-Fish",
-                                  color: "blue",
-                                });
-                                const job = await pollProberExportJob(
-                                  exportRes.data.exportJobId,
-                                  "diving-fish",
-                                );
-                                const result = job.result?.divingFish;
-                                notifications.show({
-                                  title:
-                                    result?.status === "skipped"
-                                      ? "无需导出"
-                                      : "更新成功",
-                                  message:
-                                    result?.message ||
-                                    `成绩已导出到 Diving-Fish（导出 ${
-                                      result?.exported ?? "?"
-                                    } 条）`,
-                                  color:
-                                    result?.status === "skipped"
-                                      ? "yellow"
-                                      : "green",
-                                });
-                                setDivingFishMode("token");
+                              if (saveRes.ok) {
+                                // Step 3: Queue export to diving-fish
+                                const exportRes =
+                                  await fetchSyncPageJson<ProberExportCreateResponse>(
+                                    "/api/v1/me/sync/latest/exports/diving-fish",
+                                    {
+                                      method: "POST",
+                                      headers: {
+                                        Authorization: `Bearer ${token}`,
+                                        "Content-Type": "application/json",
+                                      },
+                                    },
+                                  );
+
+                                if (
+                                  exportRes.ok &&
+                                  exportRes.data?.exportJobId
+                                ) {
+                                  notifications.show({
+                                    title: "已加入导出队列",
+                                    message: "正在导出到 Diving-Fish",
+                                    color: "blue",
+                                  });
+                                  const job = await pollProberExportJob(
+                                    exportRes.data.exportJobId,
+                                    "diving-fish",
+                                  );
+                                  const result = job.result?.divingFish;
+                                  notifications.show({
+                                    title:
+                                      result?.status === "skipped"
+                                        ? "无需导出"
+                                        : "更新成功",
+                                    message:
+                                      result?.message ||
+                                      `成绩已导出到 Diving-Fish（导出 ${
+                                        result?.exported ?? "?"
+                                      } 条）`,
+                                    color:
+                                      result?.status === "skipped"
+                                        ? "yellow"
+                                        : "green",
+                                  });
+                                  setDivingFishMode("token");
+                                } else {
+                                  const data = exportRes.data as {
+                                    message?: string;
+                                  } | null;
+                                  notifications.show({
+                                    title: "导出失败",
+                                    message:
+                                      (data?.message ||
+                                        `HTTP ${exportRes.status}`) +
+                                      " 请检查 Token 是否正确！",
+                                    color: "red",
+                                  });
+                                }
                               } else {
-                                const data = exportRes.data as {
-                                  message?: string;
-                                } | null;
                                 notifications.show({
-                                  title: "导出失败",
-                                  message:
-                                    (data?.message ||
-                                      `HTTP ${exportRes.status}`) +
-                                    " 请检查 Token 是否正确！",
-                                  color: "red",
+                                  title: "获取成功，但保存失败",
+                                  message: res.data.nickname
+                                    ? `已获取 ${res.data.nickname} 的 Import Token，但保存失败`
+                                    : "已成功获取 Import Token，但保存失败",
+                                  color: "yellow",
                                 });
                               }
                             } else {
+                              const errorMsg =
+                                res.data?.message || `HTTP ${res.status}`;
                               notifications.show({
-                                title: "获取成功，但保存失败",
-                                message: res.data.nickname
-                                  ? `已获取 ${res.data.nickname} 的 Import Token，但保存失败`
-                                  : "已成功获取 Import Token，但保存失败",
-                                color: "yellow",
+                                title: "获取失败",
+                                message: errorMsg,
+                                color: "red",
                               });
                             }
-                          } else {
-                            const errorMsg =
-                              res.data?.message || `HTTP ${res.status}`;
+                          } catch (error) {
                             notifications.show({
-                              title: "获取失败",
-                              message: errorMsg,
+                              title: "操作失败",
+                              message:
+                                error instanceof Error
+                                  ? error.message
+                                  : "网络错误，请稍后重试",
                               color: "red",
                             });
+                          } finally {
+                            setFetchingDivingFishToken(false);
                           }
-                        } catch (error) {
-                          notifications.show({
-                            title: "操作失败",
-                            message:
-                              error instanceof Error
-                                ? error.message
-                                : "网络错误，请稍后重试",
-                            color: "red",
-                          });
-                        } finally {
-                          setFetchingDivingFishToken(false);
-                        }
                         }}
                         loading={fetchingDivingFishToken}
                         disabled={
@@ -1382,7 +1741,7 @@ export default function SyncPage() {
                   disabled={!!profile?.hasLxnsImportToken && !editingLxnsToken}
                   onChange={(e) => setLxnsToken(e.target.value)}
                 />
-                <Group justify="flex-end" gap="xs">
+                <Group justify="flex-start" gap="xs">
                   {profile?.hasLxnsImportToken && !editingLxnsToken ? (
                     <Button
                       onClick={() => {

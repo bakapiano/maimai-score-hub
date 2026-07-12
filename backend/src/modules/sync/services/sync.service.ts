@@ -21,7 +21,10 @@ import { uploadRecords as uploadDivingFishRecords } from '../../../common/prober
 import { convertSyncScoresToLxnsPayload } from '../../../common/prober/lxns/converter';
 import { uploadLxnsScores } from '../../../common/prober/lxns/client';
 import { ProberExportMapService } from './prober-export-map.service';
-import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
+import type {
+  SdgbWorkerMusicEntry,
+  SdgbWorkerUserMusicDetail,
+} from '@maimai-score-hub/shared';
 
 type JobLike = {
   id: string;
@@ -208,6 +211,38 @@ export class SyncService {
       scores: merged,
     });
 
+    return sync.toObject();
+  }
+
+  async createFromUserMusic(input: {
+    friendCode: string;
+    sourceId: string;
+    musicDetails: SdgbWorkerUserMusicDetail[];
+  }) {
+    const existing = await this.syncModel.findOne({ jobId: input.sourceId });
+    if (existing) {
+      return existing.toObject();
+    }
+
+    const newScores = await this.mapUserMusicToScores(input.musicDetails);
+    if (!newScores.length) {
+      this.logger.warn(
+        `No scores mapped for user-music source ${input.sourceId}; skipping sync write.`,
+      );
+      return null;
+    }
+
+    const previous = await this.syncModel
+      .findOne({ friendCode: input.friendCode })
+      .sort({ createdAt: -1 })
+      .lean();
+    const merged = this.mergeWithPrevious(previous?.scores, newScores);
+    const sync = await this.replaceLatestSync({
+      id: randomUUID(),
+      jobId: input.sourceId,
+      friendCode: input.friendCode,
+      scores: merged,
+    });
     return sync.toObject();
   }
 
@@ -515,7 +550,8 @@ export class SyncService {
   ): ChartPayload | undefined {
     return Array.isArray(music.charts)
       ? (music.charts[chartIndex === 10 ? 0 : chartIndex] as
-          ChartPayload | undefined)
+          | ChartPayload
+          | undefined)
       : undefined;
   }
 
@@ -566,7 +602,8 @@ export class SyncService {
         const chartIndex = detail.level;
         const chart = Array.isArray(music.charts)
           ? (music.charts[chartIndex === 10 ? 0 : chartIndex] as
-              ChartPayload | undefined)
+              | ChartPayload
+              | undefined)
           : undefined;
         if (!chart || chart.cid === undefined || chart.cid === null) {
           continue;
@@ -596,6 +633,60 @@ export class SyncService {
     }
 
     return scores;
+  }
+
+  private async mapUserMusicToScores(
+    details: SdgbWorkerUserMusicDetail[],
+  ): Promise<ScoreSnapshot[]> {
+    if (!Array.isArray(details) || !details.length) {
+      return [];
+    }
+
+    const { byId: musicMap } = await this.getMusicCache();
+    const scores: ScoreSnapshot[] = [];
+    for (const detail of details) {
+      if (detail.achievement === 0 && detail.deluxscoreMax === 0) {
+        continue;
+      }
+      const music = musicMap.get(String(detail.musicId));
+      if (!music) {
+        continue;
+      }
+      const chartIndex = detail.level;
+      const chart = this.resolveChartForIndex(music, chartIndex);
+      if (!chart || chart.cid === undefined || chart.cid === null) {
+        continue;
+      }
+      const score = (detail.achievement / 10000).toFixed(4) + '%';
+      const normalized = normalizeAchievement(score);
+      const rating =
+        chart.detailLevel !== null &&
+        chart.detailLevel !== undefined &&
+        normalized !== null
+          ? getRating(chart.detailLevel, normalized)
+          : null;
+      scores.push({
+        musicId: music.id,
+        cid: music.id + '_' + (chartIndex === 10 ? 0 : chartIndex),
+        chartIndex,
+        type: music.type ?? '',
+        dxScore: String(detail.deluxscoreMax),
+        score,
+        fc: this.mapComboStatus(detail.comboStatus),
+        fs: this.mapSyncStatus(detail.syncStatus),
+        rating,
+        isNew: music.isNew ?? null,
+      });
+    }
+    return this.mergeWithPrevious(undefined, scores);
+  }
+
+  private mapComboStatus(value: number): string | null {
+    return [null, 'fc', 'fcp', 'ap', 'app'][value] ?? null;
+  }
+
+  private mapSyncStatus(value: number): string | null {
+    return [null, 'fs', 'fsp', 'fdx', 'fdxp', null][value] ?? null;
   }
 
   async exportToDivingFish(friendCode: string, importToken: string) {

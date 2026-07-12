@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -15,8 +16,10 @@ import type { SdgbWorkerJobData } from '@maimai-score-hub/shared';
 import {
   SdgbJobEntity,
   type SdgbJobDocument,
+  type SdgbJobStage,
   type SdgbJobStatus,
   type SdgbJobType,
+  type SdgbSessionCleanupStatus,
 } from '../schemas/sdgb-job.schema';
 import { RedisService } from '../../../common/redis/redis.service';
 import {
@@ -35,6 +38,7 @@ const SDGB_JOB_TYPES: SdgbJobType[] = [
   'get_rival_hash',
   'get_user_map',
   'add_rival',
+  'get_music_score',
 ];
 const TERMINAL_STATUSES: SdgbJobStatus[] = ['completed', 'failed'];
 
@@ -59,9 +63,16 @@ export interface SdgbJobView {
   id: string;
   jobType: SdgbJobType;
   status: SdgbJobStatus;
+  stage: SdgbJobStage | null;
+  cleanupStatus: SdgbSessionCleanupStatus;
+  cleanupErrorCode: string | null;
+  cleanupUpdatedAt: string | null;
+  cleanupBlockedUntil: string | null;
+  progress: { detailsFetched: number } | null;
   payload: Record<string, unknown>;
   result: Record<string, unknown> | null;
   error: string | null;
+  errorCode: string | null;
   requesterTag: string | null;
   createdAt: string;
   updatedAt: string;
@@ -114,14 +125,30 @@ interface SdgbWorkerStatus {
   jobsClaimed: number;
 }
 
-function toView(doc: SdgbJobEntity): SdgbJobView {
+function toView(doc: SdgbJobEntity, redactSensitive = false): SdgbJobView {
+  const payload = { ...(doc.payload ?? {}) };
+  if (redactSensitive && doc.jobType === 'get_music_score') {
+    if ('qrCode' in payload) {
+      payload.qrCode = '[REDACTED]';
+    }
+    if ('expectedCabinetUserId' in payload) {
+      payload.expectedCabinetUserId = '[REDACTED]';
+    }
+  }
   return {
     id: doc.id,
     jobType: doc.jobType,
     status: doc.status,
-    payload: doc.payload,
+    stage: doc.stage ?? null,
+    cleanupStatus: doc.cleanupStatus ?? 'not_required',
+    cleanupErrorCode: doc.cleanupErrorCode ?? null,
+    cleanupUpdatedAt: doc.cleanupUpdatedAt?.toISOString() ?? null,
+    cleanupBlockedUntil: doc.cleanupBlockedUntil?.toISOString() ?? null,
+    progress: doc.progress ?? null,
+    payload,
     result: doc.result,
     error: doc.error,
+    errorCode: doc.errorCode ?? null,
     requesterTag: doc.requesterTag ?? null,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
@@ -147,7 +174,7 @@ function toAdminView(doc: SdgbJobEntity, nowMs: number): SdgbAdminJobView {
     durationMs = Math.max(0, doc.updatedAt.getTime() - doc.createdAt.getTime());
   }
   return {
-    ...toView(doc),
+    ...toView(doc, true),
     ageSeconds: secondsSince(doc.updatedAt, nowMs) ?? 0,
     durationMs,
   };
@@ -192,7 +219,10 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       ...queueOptions,
       defaultJobOptions: DEFAULT_WORKER_JOB_OPTIONS,
     });
-    this.sdgbQueueEvents = new QueueEvents(SDGB_WORKER_QUEUE_NAME, queueOptions);
+    this.sdgbQueueEvents = new QueueEvents(
+      SDGB_WORKER_QUEUE_NAME,
+      queueOptions,
+    );
     this.workerStatusTtlSeconds = Math.max(
       1,
       Math.floor(WORKER_STALE_MS / 1000) * 2,
@@ -219,12 +249,14 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  async onModuleInit(): Promise<void> {
+  onModuleInit(): void {
     this.ensureSdgbQueueEvents();
     this.queueRepairStartupTimer = setTimeout(() => {
       this.queueRepairStartupTimer = null;
       void this.repairMissingQueuedJobs().catch((err) => {
-        this.logger.warn(`initial sdgb queue repair failed: ${errorMessage(err)}`);
+        this.logger.warn(
+          `initial sdgb queue repair failed: ${errorMessage(err)}`,
+        );
       });
       this.queueRepairInterval = setInterval(() => {
         void this.repairMissingQueuedJobs().catch((err) => {
@@ -256,6 +288,8 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     jobType: SdgbJobType;
     payload: Record<string, unknown>;
     requesterTag?: string | null;
+    ownerUserId?: string | null;
+    ownerFriendCode?: string | null;
   }): Promise<SdgbJobView> {
     const id = randomUUID();
     const now = new Date();
@@ -263,17 +297,26 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       id,
       jobType: input.jobType,
       status: 'queued',
+      stage: input.jobType === 'get_music_score' ? 'queued' : null,
+      cleanupStatus: 'not_required',
+      cleanupErrorCode: null,
+      cleanupUpdatedAt: null,
+      cleanupBlockedUntil: null,
+      progress: null,
       payload: input.payload,
       result: null,
       error: null,
+      errorCode: null,
       executing: false,
       claimedAt: null,
       requesterTag: input.requesterTag ?? null,
+      ownerUserId: input.ownerUserId ?? null,
+      ownerFriendCode: input.ownerFriendCode ?? null,
       createdAt: now,
       updatedAt: now,
     });
     try {
-      await this.addBullmqJob(id);
+      await this.addBullmqJob(id, input.jobType);
     } catch (err) {
       const message = `failed to enqueue sdgb BullMQ job: ${errorMessage(err)}`;
       await this.model.updateOne(
@@ -282,8 +325,12 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
           $set: {
             status: 'failed',
             error: message,
+            errorCode: 'QUEUE_ENQUEUE_FAILED',
             updatedAt: new Date(),
           },
+          ...(input.jobType === 'get_music_score'
+            ? { $unset: { 'payload.qrCode': 1 } }
+            : {}),
         },
       );
       throw err;
@@ -300,6 +347,44 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       },
     });
     return toView(doc.toObject() as SdgbJobEntity);
+  }
+
+  async getEntity(jobId: string): Promise<SdgbJobEntity> {
+    const doc = await this.model.findOne({ id: jobId }).lean<SdgbJobEntity>();
+    if (!doc) {
+      throw new NotFoundException('Sdgb job not found');
+    }
+    return doc;
+  }
+
+  async getOwned(jobId: string, ownerUserId: string): Promise<SdgbJobView> {
+    const doc = await this.model
+      .findOne({ id: jobId, ownerUserId })
+      .lean<SdgbJobEntity>();
+    if (!doc) {
+      throw new NotFoundException('Sdgb job not found');
+    }
+    return toView(doc);
+  }
+
+  async getActiveOwned(ownerUserId: string): Promise<SdgbJobView | null> {
+    const now = new Date();
+    const doc = await this.model
+      .findOne({
+        ownerUserId,
+        jobType: 'get_music_score',
+        $or: [
+          { status: { $in: ['queued', 'processing'] } },
+          { cleanupStatus: 'pending' },
+          {
+            cleanupStatus: 'unconfirmed',
+            cleanupBlockedUntil: { $gt: now },
+          },
+        ],
+      })
+      .sort({ createdAt: -1 })
+      .lean<SdgbJobEntity>();
+    return doc ? toView(doc) : null;
   }
 
   async get(jobId: string): Promise<SdgbJobView> {
@@ -470,12 +555,20 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
    * or failed) clears the executing flag. Anything else just patches result/
    * error/heartbeat-style updatedAt.
    */
+  // The patch surface intentionally mirrors the worker's compact state machine.
+  // eslint-disable-next-line complexity
   async patch(
     jobId: string,
     body: {
       status?: SdgbJobStatus;
+      stage?: SdgbJobStage;
+      cleanupStatus?: SdgbSessionCleanupStatus;
+      cleanupErrorCode?: string | null;
+      cleanupBlockedUntil?: string | null;
+      progress?: { detailsFetched: number } | null;
       result?: Record<string, unknown> | null;
       error?: string | null;
+      errorCode?: string | null;
     },
   ): Promise<SdgbJobView> {
     const now = new Date();
@@ -489,11 +582,38 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     if (body.status !== undefined) {
       update.status = body.status;
     }
+    if (body.stage !== undefined) {
+      update.stage = body.stage;
+    }
+    if (body.cleanupStatus !== undefined) {
+      if (
+        existing.cleanupStatus === 'succeeded' &&
+        body.cleanupStatus !== 'succeeded'
+      ) {
+        throw new BadRequestException('cleanupStatus cannot leave succeeded');
+      }
+      update.cleanupStatus = body.cleanupStatus;
+      update.cleanupUpdatedAt = now;
+    }
+    if (body.cleanupErrorCode !== undefined) {
+      update.cleanupErrorCode = body.cleanupErrorCode;
+    }
+    if (body.cleanupBlockedUntil !== undefined) {
+      update.cleanupBlockedUntil = body.cleanupBlockedUntil
+        ? new Date(body.cleanupBlockedUntil)
+        : null;
+    }
+    if (body.progress !== undefined) {
+      update.progress = body.progress;
+    }
     if (body.result !== undefined) {
       update.result = body.result;
     }
     if (body.error !== undefined) {
       update.error = body.error;
+    }
+    if (body.errorCode !== undefined) {
+      update.errorCode = body.errorCode;
     }
     if (body.status === 'processing') {
       update.executing = true;
@@ -503,11 +623,15 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       update.executing = false;
     }
 
-    const doc = await this.model.findOneAndUpdate(
-      { id: jobId },
-      { $set: update },
-      { new: true },
-    );
+    const shouldScrubQr =
+      existing.jobType === 'get_music_score' && body.status === 'failed';
+    const mongoUpdate: Record<string, unknown> = { $set: update };
+    if (shouldScrubQr) {
+      mongoUpdate.$unset = { 'payload.qrCode': 1 };
+    }
+    const doc = await this.model.findOneAndUpdate({ id: jobId }, mongoUpdate, {
+      new: true,
+    });
     if (!doc) {
       throw new NotFoundException('Sdgb job not found');
     }
@@ -530,6 +654,44 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       });
     }
     return toView(updated);
+  }
+
+  async completeMusicScoreFinalization(
+    jobId: string,
+    result: { syncId: string; scoreCount: number },
+  ): Promise<SdgbJobView> {
+    const now = new Date();
+    const doc = await this.model.findOneAndUpdate(
+      {
+        id: jobId,
+        jobType: 'get_music_score',
+        cleanupStatus: 'succeeded',
+        status: { $nin: TERMINAL_STATUSES },
+      },
+      {
+        $set: {
+          status: 'completed',
+          stage: 'persist',
+          executing: false,
+          result,
+          error: null,
+          errorCode: null,
+          updatedAt: now,
+        },
+        $unset: { 'payload.qrCode': 1 },
+      },
+      { new: true },
+    );
+    if (!doc) {
+      const existing = await this.model.findOne({ id: jobId });
+      if (existing?.status === 'completed') {
+        return toView(existing.toObject() as SdgbJobEntity);
+      }
+      throw new BadRequestException(
+        'music score job cannot complete before cleanup succeeds',
+      );
+    }
+    return toView(doc.toObject() as SdgbJobEntity);
   }
 
   async reportWorkerStatus(
@@ -607,12 +769,16 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     return this.redis.key(`status:worker:sdgb:${workerId}`);
   }
 
-  private async addBullmqJob(jobId: string): Promise<void> {
+  private async addBullmqJob(
+    jobId: string,
+    jobType: SdgbJobType,
+  ): Promise<void> {
     await this.sdgbQueue.add(
       'sdgb-job',
       { jobId },
       {
         jobId,
+        priority: jobType === 'get_music_score' ? 1 : 10,
       },
     );
   }
@@ -649,8 +815,10 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
           status: 'failed',
           executing: false,
           error: failedReason || 'BullMQ job failed',
+          errorCode: 'BULLMQ_JOB_FAILED',
           updatedAt: new Date(),
         },
+        $unset: { 'payload.qrCode': 1 },
       },
     );
   }
@@ -675,7 +843,7 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       }
 
       try {
-        await this.addBullmqJob(job.id);
+        await this.addBullmqJob(job.id, job.jobType);
         repaired += 1;
       } catch (err) {
         this.logger.warn(

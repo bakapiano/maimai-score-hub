@@ -13,16 +13,18 @@ type ManagedCardProp =
   | "shadow"
   | "withBorder";
 
-export type AppCardProps = Omit<CardProps, ManagedCardProp>;
+export type AppCardProps = Omit<CardProps, ManagedCardProp> & {
+  compact?: boolean;
+};
 
 /** Standard page-level card. Outer spacing belongs here, not to its content. */
-export function AppCard(props: AppCardProps) {
+export function AppCard({ compact = false, ...props }: AppCardProps) {
   return (
     <Card
       {...props}
       withBorder
       shadow="none"
-      p={{ base: "md", sm: "lg" }}
+      p={compact ? "md" : { base: "md", sm: "lg" }}
     />
   );
 }

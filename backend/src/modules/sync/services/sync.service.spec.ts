@@ -164,3 +164,84 @@ describe('SyncService.mergeRecentEvents', () => {
     expect(syncModel.create).not.toHaveBeenCalled();
   });
 });
+
+describe('SyncService.createFromUserMusic', () => {
+  it('maps cabinet achievement, DX score, FC and FS fields', async () => {
+    const latestQuery = {
+      sort: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(null),
+    };
+    const syncModel = {
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockReturnValueOnce(latestQuery),
+      deleteMany: jest.fn().mockResolvedValue({ deletedCount: 0 }),
+      create: jest.fn(async (input) => ({ toObject: () => input })),
+    };
+    const musicModel = {
+      find: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            id: '17',
+            title: 'test',
+            type: 'standard',
+            isNew: false,
+            charts: [
+              {},
+              {},
+              {},
+              { cid: '17_3', detailLevel: 13.5 },
+              { cid: '17_4', detailLevel: 14 },
+            ],
+          },
+        ]),
+      }),
+    };
+    const service = new SyncService(
+      syncModel as any,
+      musicModel as any,
+      {} as any,
+    );
+
+    const result = await service.createFromUserMusic({
+      friendCode: '634142510810999',
+      sourceId: 'cabinet-job',
+      musicDetails: [
+        {
+          musicId: 17,
+          level: 3,
+          playCount: 4,
+          achievement: 1005000,
+          comboStatus: 4,
+          syncStatus: 4,
+          deluxscoreMax: 1234,
+          scoreRank: 13,
+        },
+        {
+          musicId: 17,
+          level: 4,
+          playCount: 2,
+          achievement: 990000,
+          comboStatus: 1,
+          syncStatus: 5,
+          deluxscoreMax: 1300,
+          scoreRank: 10,
+        },
+      ],
+    });
+
+    expect(result?.scores).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          chartIndex: 3,
+          score: '100.5000%',
+          dxScore: '1234',
+          fc: 'app',
+          fs: 'fdxp',
+        }),
+        expect.objectContaining({ chartIndex: 4, fc: 'fc', fs: null }),
+      ]),
+    );
+  });
+});

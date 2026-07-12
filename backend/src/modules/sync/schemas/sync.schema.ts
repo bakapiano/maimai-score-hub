@@ -45,3 +45,4 @@ export const SyncSchema = SchemaFactory.createForClass(SyncEntity);
 // Hot query: /api/me/sync/latest → findOne({friendCode}).sort({createdAt:-1}).
 // Without this index it was a COLLSCAN of all syncs every request.
 SyncSchema.index({ friendCode: 1, createdAt: -1 }, { name: 'by_fc_recent' });
+SyncSchema.index({ jobId: 1 }, { name: 'by_source_job' });

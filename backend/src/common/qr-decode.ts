@@ -9,7 +9,7 @@ import jsQR from 'jsqr';
 import sharp from 'sharp';
 
 export async function decodeQrImage(buf: Buffer): Promise<string | null> {
-  const { data, info } = await sharp(buf)
+  const { data, info } = await sharp(buf, { limitInputPixels: 40_000_000 })
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
