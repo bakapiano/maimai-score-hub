@@ -14,6 +14,13 @@
   .msh-authed-main {
     background-color: var(--msh-mobile-page-background);
   }
+
+  .msh-login-main {
+    background-color: light-dark(
+      var(--mantine-color-gray-0),
+      var(--mantine-color-dark-6)
+    );
+  }
 }
 
 /* Prevent Mantine AppShell.Main from creating its own scrollbar */

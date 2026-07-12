@@ -1,4 +1,13 @@
-import { Badge, Box, Button, Group, Stack, Switch, Text } from "@mantine/core";
+import {
+  Badge,
+  Box,
+  Button,
+  Divider,
+  Group,
+  Stack,
+  Switch,
+  Text,
+} from "@mantine/core";
 import { IconLink, IconLinkOff } from "@tabler/icons-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
@@ -231,15 +240,7 @@ export function CabinetBindingCard({
         {header}
         {hasCabinetUserId ? (
           <>
-            <Switch
-              label="自动更新分数"
-              description="开启后会在你推分的时候自动更新成绩。"
-              checked={autoUpdate}
-              disabled={busy !== null}
-              onChange={(e) => toggleAutoUpdate(e.currentTarget.checked)}
-            />
-
-            <Group justify="space-between" align="center" wrap="nowrap" mt={4}>
+            <Group justify="space-between" align="center" wrap="nowrap">
               <Group gap="xs" wrap="nowrap">
                 <Text size="sm" fw={500}>
                   解绑二维码
@@ -251,8 +252,8 @@ export function CabinetBindingCard({
               <Button
                 variant="light"
                 color="red"
-                size="xs"
-                leftSection={<IconLinkOff size={14} />}
+                size="sm"
+                leftSection={<IconLinkOff size={16} />}
                 loading={busy === "unbind"}
                 disabled={busy !== null}
                 onClick={unbind}
@@ -260,6 +261,16 @@ export function CabinetBindingCard({
                 解绑
               </Button>
             </Group>
+
+            <Divider />
+
+            <Switch
+              label="自动更新分数"
+              description="开启后会在你推分的时候自动更新成绩。谱面的 FC、FS 状态可能会有延迟。"
+              checked={autoUpdate}
+              disabled={busy !== null}
+              onChange={(e) => toggleAutoUpdate(e.currentTarget.checked)}
+            />
           </>
         ) : (
           <Group gap="xs" align="flex-start" wrap="wrap">

@@ -820,6 +820,7 @@ export default function LoginPage() {
       </AppShell.Header>
 
       <AppShell.Main
+        className="msh-login-main"
         style={{
           display: "flex",
           flexDirection: "column",
@@ -827,6 +828,7 @@ export default function LoginPage() {
         }}
       >
         <Box
+          visibleFrom="sm"
           py="lg"
           px="md"
           style={{
