@@ -34,6 +34,11 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function LoginRoute() {
+  const { token } = useAuth();
+  return token ? <Navigate to="/app" replace /> : <LoginPage />;
+}
+
 /** Redirect to /app if logged in, otherwise to /login */
 function DefaultRedirect() {
   const { token, offline } = useAuth();
@@ -54,7 +59,7 @@ function App() {
               <ObservabilityReporter />
               <Suspense fallback={<PageLoader />}>
                 <Routes>
-                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/login" element={<LoginRoute />} />
                   <Route
                     element={
                       <RequireAuth>

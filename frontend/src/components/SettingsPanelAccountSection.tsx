@@ -1,14 +1,18 @@
-import { Box, Button, PasswordInput, Stack, Text, TextInput } from "@mantine/core";
+import { Button, PasswordInput, Stack, Text, TextInput } from "@mantine/core";
 import {
+  IconAlertTriangle,
   IconCopy,
   IconLogin,
   IconLogout,
   IconTrash,
+  IconUserCog,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 
 import { notifications } from "@mantine/notifications";
+import { AppCard } from "./AppCard";
 import { apiUrl } from "../api/baseUrl";
+import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { useAuth } from "../providers/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { usersApi } from "../api/appClient";
@@ -230,26 +234,21 @@ function DeleteAccountBox({
   onDeleteAccount: () => void;
 }) {
   return (
-    <Box>
-      <Text fw={600} size="sm" c="red" mb="xs">
-        删除账号数据
+    <Stack gap="xs">
+      <Text size="xs" c="dimmed">
+        彻底删除你的账号在网站的所有相关数据，此操作不可撤销。
       </Text>
-      <Stack gap="xs">
-        <Text size="xs" c="dimmed">
-          彻底删除你的账号在网站的所有相关数据，此操作不可撤销。
-        </Text>
-        <Button
-          variant="filled"
-          color="red"
-          fullWidth
-          leftSection={<IconTrash size={16} />}
-          loading={deletingAccount}
-          onClick={onDeleteAccount}
-        >
-          删除我的账号
-        </Button>
-      </Stack>
-    </Box>
+      <Button
+        variant="filled"
+        color="red"
+        fullWidth
+        leftSection={<IconTrash size={16} />}
+        loading={deletingAccount}
+        onClick={onDeleteAccount}
+      >
+        删除我的账号
+      </Button>
+    </Stack>
   );
 }
 
@@ -441,11 +440,13 @@ export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps)
 
   return (
     <>
-      <div>
-        <Text size="sm" fw={500} mb="xs">
-          账号
-        </Text>
-        <Stack gap="xs">
+      <AppCard compact>
+        <Stack gap="md">
+          <SettingsSectionHeader
+            icon={<IconUserCog size={16} />}
+            title="账号"
+          />
+          <Stack gap="xs">
           {offline ? (
             <OfflineAccountActions onClose={onClose} onLogin={goToLogin} />
           ) : (
@@ -476,7 +477,7 @@ export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps)
               </Button>
               <Button
                 variant="light"
-                color="gray"
+                color="red"
                 fullWidth
                 leftSection={<IconLogout size={16} />}
                 onClick={handleLogout}
@@ -485,13 +486,22 @@ export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps)
               </Button>
             </>
           )}
+          </Stack>
         </Stack>
-      </div>
+      </AppCard>
       {token && !offline && (
-        <DeleteAccountBox
-          deletingAccount={deletingAccount}
-          onDeleteAccount={handleDeleteAccount}
-        />
+        <AppCard compact>
+          <Stack gap="md">
+            <SettingsSectionHeader
+              icon={<IconAlertTriangle size={16} />}
+              title="危险操作"
+            />
+            <DeleteAccountBox
+              deletingAccount={deletingAccount}
+              onDeleteAccount={handleDeleteAccount}
+            />
+          </Stack>
+        </AppCard>
       )}
     </>
   );

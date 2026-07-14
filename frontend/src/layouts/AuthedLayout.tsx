@@ -3,7 +3,6 @@ import {
   Anchor,
   AppShell,
   Box,
-  Drawer,
   Group,
   Menu,
   NavLink,
@@ -15,7 +14,6 @@ import {
 } from "@mantine/core";
 import {
   IconBug,
-  IconDownload,
   IconHome,
   IconInfoCircle,
   IconMusic,
@@ -23,16 +21,13 @@ import {
   IconSettings,
 } from "@tabler/icons-react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 
 import { type MiniProfile } from "../components/MiniProfileCard";
 import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
 import { AppFooter } from "../components/AppFooter";
-import { InstallAppButton } from "../components/InstallAppButton";
 import { useAuth } from "../providers/AuthContext";
-import { usePwaInstall } from "../hooks/usePwaInstall";
-import { useDisclosure } from "@mantine/hooks";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { getCachedProfile } from "../utils/offlineCache";
 
@@ -75,7 +70,7 @@ const pages: PageMeta[] = [
     label: "网站设置",
     to: "/app/settings",
     title: "网站设置",
-    description: "主题、账号和本地缓存",
+    description: "主题、应用安装、账号和本地缓存",
     icon: <IconSettings size={18} />,
     color: "gray",
   },
@@ -114,81 +109,6 @@ function readCachedMiniProfile(friendCode?: string | null): MiniProfile | null {
   }
 
   return { avatarUrl: cached.avatarUrl, username: cached.username };
-}
-
-function InstallAppGuideModal({
-  opened,
-  onClose,
-}: {
-  opened: boolean;
-  onClose: () => void;
-}) {
-  const { status } = usePwaInstall();
-  const touchStartX = useRef<number | null>(null);
-
-  return (
-    <Drawer
-      opened={opened}
-      onClose={onClose}
-      title="安装应用"
-      position="right"
-      size="sm"
-      lockScroll={false}
-      onTouchStart={(event) => {
-        touchStartX.current = event.touches[0]?.clientX ?? null;
-      }}
-      onTouchEnd={(event) => {
-        const startX = touchStartX.current;
-        touchStartX.current = null;
-        if (startX === null) {
-          return;
-        }
-        const endX = event.changedTouches[0]?.clientX ?? startX;
-        if (endX - startX > 50) {
-          onClose();
-        }
-      }}
-    >
-      <Box style={{ height: "100%" }}>
-        <Stack gap="lg">
-          <div>
-            <Text size="sm" fw={500} mb="xs">
-              应用
-            </Text>
-            {status === "prompt" && (
-              <Stack gap="xs">
-                <Text size="sm" c="dimmed">
-                  将 maimai Score Hub 安装为应用后，可以从桌面或主屏幕直接打开。
-                </Text>
-                <InstallAppButton fullWidth variant="filled" />
-              </Stack>
-            )}
-            {status === "ios" && (
-              <Stack gap="xs">
-                <Text size="sm">
-                  iOS 需要通过 Safari 的分享菜单添加到主屏幕。
-                </Text>
-                <Text size="sm" c="dimmed">
-                  点击底部分享按钮，然后选择“添加到主屏幕”。
-                </Text>
-              </Stack>
-            )}
-            {status === "installed" && (
-              <Text size="sm" c="dimmed">
-                应用已经安装，或当前正在以应用模式运行。
-              </Text>
-            )}
-            {status === "unavailable" && (
-              <Text size="sm" c="dimmed">
-                当前浏览器暂未提供安装入口。可以尝试使用 Chrome、Edge
-                或移动端浏览器的菜单添加到主屏幕。
-              </Text>
-            )}
-          </div>
-        </Stack>
-      </Box>
-    </Drawer>
-  );
 }
 
 function MobileBottomNav({
@@ -288,10 +208,6 @@ export default function AuthedLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { clearToken, offline, setOffline, profile: authProfile } = useAuth();
-  const [
-    installGuideOpened,
-    { open: openInstallGuide, close: closeInstallGuide },
-  ] = useDisclosure(false);
   // useMantineColorScheme returns the raw setting ("light" | "dark" |
   // "auto"). For visual conditionals like the header background we need
   // the RESOLVED scheme — useComputedColorScheme resolves "auto" against
@@ -333,26 +249,12 @@ export default function AuthedLayout() {
       : "var(--mantine-color-gray-0)";
 
   const mobileProfileMenuItems = (
-    <>
-      <Menu.Item
-        leftSection={<IconHome size={16} />}
-        onClick={() => navigate("/app")}
-      >
-        网站首页
-      </Menu.Item>
-      <Menu.Item
-        leftSection={<IconDownload size={16} />}
-        onClick={openInstallGuide}
-      >
-        安装应用
-      </Menu.Item>
-      <Menu.Item
-        leftSection={<IconInfoCircle size={16} />}
-        onClick={() => navigate("/about")}
-      >
-        关于网站
-      </Menu.Item>
-    </>
+    <Menu.Item
+      leftSection={<IconSettings size={16} />}
+      onClick={() => navigate("/app/settings")}
+    >
+      网站设置
+    </Menu.Item>
   );
 
   return (
@@ -400,18 +302,6 @@ export default function AuthedLayout() {
               })}
 
             <NavLink
-              label="安装应用"
-              leftSection={
-                <ThemeIcon size={28} radius="md" color="cyan">
-                  <IconDownload size={18} />
-                </ThemeIcon>
-              }
-              onClick={() => {
-                openInstallGuide();
-              }}
-            />
-
-            <NavLink
               component={Link}
               to="/about"
               label="关于网站"
@@ -424,11 +314,6 @@ export default function AuthedLayout() {
           </Group>
         </Stack>
       </AppShell.Navbar>
-
-      <InstallAppGuideModal
-        opened={installGuideOpened}
-        onClose={closeInstallGuide}
-      />
 
       <AppShell.Main
         className="msh-authed-main"

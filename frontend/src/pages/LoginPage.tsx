@@ -63,6 +63,7 @@ import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 const PASSWORD_LOGIN_IDENTIFIER_KEY = "passwordLoginIdentifier";
 const LOGIN_METHOD_KEY = "loginMethod";
+const LOGIN_TYPE_KEY = "loginType";
 
 type LoginJobStatus = {
   profile?: UserProfile;
@@ -95,6 +96,7 @@ type LoginRequestBody = {
 
 type PasswordLoginIdentifier = "friendCode" | "username";
 type LoginMethod = "bot_sends_request" | "user_sends_request";
+type LoginType = "friendCode" | "password" | "qr" | "passkey";
 
 function clearPendingLoginStorage() {
   try {
@@ -179,6 +181,27 @@ function readLoginMethod(): LoginMethod {
 function persistLoginMethod(method: LoginMethod) {
   try {
     localStorage.setItem(LOGIN_METHOD_KEY, method);
+  } catch {
+    // localStorage may be unavailable.
+  }
+}
+
+function isLoginType(value: string | null): value is LoginType {
+  return ["friendCode", "password", "qr", "passkey"].includes(value ?? "");
+}
+
+function readLoginType(): LoginType {
+  try {
+    const cached = localStorage.getItem(LOGIN_TYPE_KEY);
+    return isLoginType(cached) ? cached : "friendCode";
+  } catch {
+    return "friendCode";
+  }
+}
+
+function persistLoginType(loginType: LoginType) {
+  try {
+    localStorage.setItem(LOGIN_TYPE_KEY, loginType);
   } catch {
     // localStorage may be unavailable.
   }
@@ -398,6 +421,7 @@ export default function LoginPage() {
   const [passwordLoginPassword, setPasswordLoginPassword] = useState("");
   const [passwordLoginLoading, setPasswordLoginLoading] = useState(false);
   const [passkeyLoginLoading, setPasskeyLoginLoading] = useState(false);
+  const [loginType, setLoginType] = useState<LoginType>(() => readLoginType());
   const [loginMethod, setLoginMethod] =
     useState<LoginMethod>(() => readLoginMethod());
   const [, setHealth] = useState("");
@@ -959,35 +983,51 @@ export default function LoginPage() {
                 </Alert>
               ) : (
                 <>
-                  <Tabs defaultValue="friendCode" keepMounted={false}>
+                  <Tabs
+                    value={loginType}
+                    onChange={(value) => {
+                      if (!isLoginType(value)) {return;}
+                      setLoginType(value);
+                      persistLoginType(value);
+                    }}
+                    keepMounted={false}
+                    styles={{
+                      list: { flexWrap: "nowrap" },
+                      tab: {
+                        minWidth: 0,
+                        paddingInline: 4,
+                        fontSize: "clamp(0.75rem, 3.2vw, 0.875rem)",
+                      },
+                    }}
+                  >
                     <Tabs.List grow>
                       <Tabs.Tab
                         value="friendCode"
                       >
-                        <Group gap={4} wrap="nowrap" justify="center">
-                          <IconId size={16} />
+                        <Group gap={2} wrap="nowrap" justify="center">
+                          <IconId className="msh-login-tab-icon" size={14} />
                           <span>好友码</span>
                         </Group>
                       </Tabs.Tab>
                       <Tabs.Tab
                         value="password"
                       >
-                        <Group gap={4} wrap="nowrap" justify="center">
-                          <IconUser size={16} />
+                        <Group gap={2} wrap="nowrap" justify="center">
+                          <IconUser className="msh-login-tab-icon" size={14} />
                           <span>账号密码</span>
                         </Group>
                       </Tabs.Tab>
                       <Tabs.Tab
                         value="qr"
                       >
-                        <Group gap={4} wrap="nowrap" justify="center">
-                          <IconQrcode size={16} />
+                        <Group gap={2} wrap="nowrap" justify="center">
+                          <IconQrcode className="msh-login-tab-icon" size={14} />
                           <span>二维码</span>
                         </Group>
                       </Tabs.Tab>
                       <Tabs.Tab value="passkey">
-                        <Group gap={4} wrap="nowrap" justify="center">
-                          <IconKey size={16} />
+                        <Group gap={2} wrap="nowrap" justify="center">
+                          <IconKey className="msh-login-tab-icon" size={14} />
                           <span>网站密钥</span>
                         </Group>
                       </Tabs.Tab>

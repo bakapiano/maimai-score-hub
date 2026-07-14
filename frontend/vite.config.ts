@@ -42,6 +42,9 @@ export default defineConfig({
         target: apiProxyTarget,
         changeOrigin: true,
         secure: true,
+        headers: {
+          Origin: "https://maiscorehub.bakapiano.com",
+        },
       },
       "/maimai-mobile/img": {
         target: "https://maimai.wahlap.com",

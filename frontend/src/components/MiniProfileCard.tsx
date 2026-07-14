@@ -135,29 +135,31 @@ export function HeaderProfileCard({
       <Menu.Dropdown>
         {menuItems}
         {menuItems ? <Menu.Divider /> : null}
-        <Menu.Item
-          leftSection={<IconCopy size={16} />}
-          onClick={() => {
-            const friendCode = localStorage.getItem("lastFriendCode");
-            if (friendCode) {
-              const url = `${window.location.origin}/login?friendCode=${friendCode}`;
-              navigator.clipboard.writeText(url);
-              notifications.show({
-                title: "链接已复制",
-                message: "从此链接进入可自动填写好友代码",
-                color: "teal",
-              });
-            } else {
-              notifications.show({
-                title: "无法生成链接",
-                message: "未找到好友代码信息",
-                color: "red",
-              });
-            }
-          }}
-        >
-          快速登录链接
-        </Menu.Item>
+        {!menuItems && (
+          <Menu.Item
+            leftSection={<IconCopy size={16} />}
+            onClick={() => {
+              const friendCode = localStorage.getItem("lastFriendCode");
+              if (friendCode) {
+                const url = `${window.location.origin}/login?friendCode=${friendCode}`;
+                navigator.clipboard.writeText(url);
+                notifications.show({
+                  title: "链接已复制",
+                  message: "从此链接进入可自动填写好友代码",
+                  color: "teal",
+                });
+              } else {
+                notifications.show({
+                  title: "无法生成链接",
+                  message: "未找到好友代码信息",
+                  color: "red",
+                });
+              }
+            }}
+          >
+            快速登录链接
+          </Menu.Item>
+        )}
         <Menu.Item
           color="red"
           leftSection={<IconLogout size={16} />}

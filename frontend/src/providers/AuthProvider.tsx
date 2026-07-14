@@ -60,6 +60,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setToken = useCallback((next: string | null) => {
     setProfile(null);
     setProfileError(null);
+    if (next) {
+      setOfflineState(false);
+      persistOfflineMode(false);
+    }
     setTokenState(next);
     persistToken(next);
   }, []);

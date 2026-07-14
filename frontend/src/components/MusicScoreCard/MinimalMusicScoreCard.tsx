@@ -112,8 +112,8 @@ function MinimalScoreOverlay({
             alignItems: "center",
             justifyContent: "center",
             borderRadius: 6,
-            background: "rgba(16, 20, 28, 0.68)",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
+            background: "rgba(16, 20, 28, 0.46)",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.28)",
             backdropFilter: "blur(1px)",
             WebkitBackdropFilter: "blur(1px)",
           }}
@@ -128,8 +128,8 @@ function MinimalScoreOverlay({
           px={4}
           style={{
             borderRadius: 6,
-            background: "rgba(16, 20, 28, 0.68)",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
+            background: "rgba(16, 20, 28, 0.46)",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.28)",
             ...GOLD_SCORE_STROKE_STYLE,
           }}
         >

@@ -23,6 +23,12 @@
   }
 }
 
+@media (max-width: 300px) {
+  .msh-login-tab-icon {
+    display: none;
+  }
+}
+
 /* Prevent Mantine AppShell.Main from creating its own scrollbar */
 .mantine-AppShell-main {
   overflow: visible !important;

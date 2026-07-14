@@ -4,6 +4,7 @@ import {
   Badge,
   Box,
   Button,
+  Divider,
   Group,
   Loader,
   Modal,
@@ -49,13 +50,118 @@ function formatDate(value: string | null): string {
     return "尚未使用";
   }
   const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleString("zh-CN", { hour12: false });
+  if (Number.isNaN(date.getTime())) {return value;}
+
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - date.getTime()) / 1000),
+  );
+  let relativeTime = "刚刚";
+  if (elapsedSeconds >= 365 * 24 * 60 * 60) {
+    relativeTime = `${Math.floor(elapsedSeconds / (365 * 24 * 60 * 60))}年前`;
+  } else if (elapsedSeconds >= 30 * 24 * 60 * 60) {
+    relativeTime = `${Math.floor(elapsedSeconds / (30 * 24 * 60 * 60))}个月前`;
+  } else if (elapsedSeconds >= 24 * 60 * 60) {
+    relativeTime = `${Math.floor(elapsedSeconds / (24 * 60 * 60))}天前`;
+  } else if (elapsedSeconds >= 60 * 60) {
+    relativeTime = `${Math.floor(elapsedSeconds / (60 * 60))}小时前`;
+  } else if (elapsedSeconds >= 60) {
+    relativeTime = `${Math.floor(elapsedSeconds / 60)}分钟前`;
+  }
+
+  return `${date.toLocaleString("zh-CN", { hour12: false })} · ${relativeTime}`;
 }
 
 function isUserCancellation(error: unknown): boolean {
   return error instanceof DOMException && error.name === "NotAllowedError";
+}
+
+type UserAgentData = {
+  brands?: Array<{ brand: string; version: string }>;
+  mobile?: boolean;
+  platform?: string;
+  getHighEntropyValues?: (
+    hints: string[],
+  ) => Promise<{ model?: string; platform?: string }>;
+};
+
+function detectBrowserName(userAgentData: UserAgentData | undefined) {
+  const brands = userAgentData?.brands ?? [];
+  if (brands.some(({ brand }) => brand.includes("Microsoft Edge"))) {
+    return "Edge";
+  }
+  if (brands.some(({ brand }) => brand.includes("Google Chrome"))) {
+    return "Chrome";
+  }
+
+  const userAgent = navigator.userAgent;
+  if (/Edg\//.test(userAgent)) {return "Edge";}
+  if (/Firefox\/|FxiOS\//.test(userAgent)) {return "Firefox";}
+  if (/Chrome\/|CriOS\//.test(userAgent)) {return "Chrome";}
+  if (/Safari\//.test(userAgent)) {return "Safari";}
+  return "浏览器";
+}
+
+function detectDeviceName(
+  model: string,
+  platform: string,
+  userAgentData: UserAgentData | undefined,
+) {
+  if (model) {return model;}
+
+  const userAgent = navigator.userAgent;
+  if (/iPhone/.test(userAgent)) {return "iPhone";}
+  if (/iPad/.test(userAgent)) {return "iPad";}
+  if (/Android/.test(userAgent)) {
+    const modelMatch = userAgent.match(
+      /Android [^;]+;\s*([^;)]+?)(?:\s+Build\/|\))/,
+    );
+    if (modelMatch?.[1]) {return modelMatch[1].trim();}
+    return userAgentData?.mobile ? "Android 手机" : "Android 设备";
+  }
+  if (/Windows/i.test(platform) || /Windows/.test(userAgent)) {
+    return "Windows";
+  }
+  if (/macOS|Mac/i.test(platform) || /Macintosh/.test(userAgent)) {
+    return "Mac";
+  }
+  if (/Chrome OS/i.test(platform) || /CrOS/.test(userAgent)) {
+    return "Chromebook";
+  }
+  if (/Linux/i.test(platform) || /Linux/.test(userAgent)) {return "Linux";}
+  return userAgentData?.mobile ? "移动设备" : "当前设备";
+}
+
+async function getSuggestedPasskeyName(passkeys: PasskeySummary[]) {
+  const navigatorWithUserAgentData = navigator as Navigator & {
+    userAgentData?: UserAgentData;
+  };
+  const userAgentData = navigatorWithUserAgentData.userAgentData;
+  let model = "";
+  let platform = userAgentData?.platform ?? navigator.platform;
+
+  try {
+    const values = await userAgentData?.getHighEntropyValues?.([
+      "model",
+      "platform",
+    ]);
+    model = values?.model?.trim() ?? "";
+    platform = values?.platform?.trim() || platform;
+  } catch {
+    model = "";
+  }
+
+  const deviceName = detectDeviceName(model, platform, userAgentData);
+  const browserName = detectBrowserName(userAgentData);
+  const baseName = `${deviceName} · ${browserName}`.slice(0, 50);
+  const existingNames = new Set(passkeys.map((passkey) => passkey.name));
+  if (!existingNames.has(baseName)) {return baseName;}
+
+  let suffix = 2;
+  while (existingNames.has(`${baseName} ${suffix}`)) {
+    suffix += 1;
+  }
+  return `${baseName.slice(0, 47)} ${suffix}`;
 }
 
 function PasskeyList({
@@ -86,7 +192,7 @@ function PasskeyList({
                 </Badge>
               </Group>
               <Text size="xs" c="dimmed">
-                创建：{formatDate(passkey.createdAt)}
+                创建日期：{formatDate(passkey.createdAt)}
               </Text>
               <Text size="xs" c="dimmed">
                 最近使用：{formatDate(passkey.lastUsedAt)}
@@ -372,6 +478,7 @@ export function PasskeyManagementSection({
 
   return (
     <Box>
+      <Divider mb="md" />
       <Group justify="space-between" mb="xs">
         <Group gap="xs">
           <IconKey size={17} />
@@ -385,8 +492,10 @@ export function PasskeyManagementSection({
           leftSection={<IconPlus size={14} />}
           disabled={!hasPassword || !supported || passkeys.length >= 10}
           onClick={() => {
-            setCreateName(`网站密钥 ${passkeys.length + 1}`);
-            setCreateOpened(true);
+            void getSuggestedPasskeyName(passkeys).then((name) => {
+              setCreateName(name);
+              setCreateOpened(true);
+            });
           }}
         >
           创建
@@ -418,6 +527,7 @@ export function PasskeyManagementSection({
         <Stack>
           <TextInput
             label="名称"
+            description="已根据当前设备和浏览器自动填写，可自行修改"
             maxLength={50}
             value={createName}
             onChange={(event) => setCreateName(event.currentTarget.value)}
