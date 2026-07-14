@@ -35,7 +35,7 @@ export const GOLD_SCORE_STROKE_STYLE = {
 // Cover sizes
 export const COVER_SIZE = 200;
 export const COMPACT_COVER_SIZE = 140;
-export const MINIMAL_COVER_SIZE = 60;
+export const MINIMAL_COVER_SIZE = 75;
 export const DETAILED_COVER_SIZE = 280;
 
 // FC/FS display name mapping

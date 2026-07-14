@@ -1,4 +1,4 @@
-import { Badge, Box, Card, Image, Text } from "@mantine/core";
+import { Badge, Box, Card, Text } from "@mantine/core";
 import {
   COMPACT_COVER_SIZE,
   DIFFICULTY_NAMES,
@@ -6,7 +6,12 @@ import {
   GOLD_SCORE_STROKE_STYLE,
   LEVEL_COLORS,
 } from "./constants";
-import { getCoverUrl, getIconUrl, getRankFromScore, renderRank } from "./utils";
+import {
+  getCoverUrl,
+  getRankFromScore,
+  renderRank,
+  renderScoreStatusIcon,
+} from "./utils";
 
 import { DeferredImage } from "../DeferredImage";
 import type { MusicScoreCardProps } from "./types";
@@ -152,19 +157,15 @@ export function CompactMusicScoreCard({
               }}
             >
               {fc ? (
-                <Image
-                  src={getIconUrl(fc)}
-                  w={24}
-                  referrerPolicy="no-referrer"
-                />
+                renderScoreStatusIcon(fc, { size: 24, stroke: true })
               ) : (
                 <Box
                   w={20}
                   h={20}
                   style={{
                     borderRadius: "50%",
-                    backgroundColor: "white",
-                    border: "1px solid #ccc",
+                    backgroundColor: "rgba(255, 255, 255, 0.62)",
+                    border: "1px solid rgba(204, 204, 204, 0.62)",
                   }}
                 />
               )}
@@ -179,20 +180,15 @@ export function CompactMusicScoreCard({
               }}
             >
               {fs ? (
-                <Image
-                  src={getIconUrl(fs)}
-                  w={24}
-                  h={24}
-                  referrerPolicy="no-referrer"
-                />
+                renderScoreStatusIcon(fs, { size: 24, stroke: true })
               ) : (
                 <Box
                   w={20}
                   h={20}
                   style={{
                     borderRadius: "50%",
-                    backgroundColor: "white",
-                    border: "1px solid #ccc",
+                    backgroundColor: "rgba(255, 255, 255, 0.62)",
+                    border: "1px solid rgba(204, 204, 204, 0.62)",
                   }}
                 />
               )}
@@ -225,7 +221,7 @@ export function CompactMusicScoreCard({
               style={GOLD_SCORE_STROKE_STYLE}
               mb={-12}
             >
-              {renderRank(rank)}
+              {renderRank(rank, { stroke: true })}
             </Text>
           </Box>
         </Box>

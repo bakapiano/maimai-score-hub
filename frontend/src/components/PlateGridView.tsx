@@ -7,7 +7,10 @@ import {
   renderScoreStatusIcon,
 } from "./MusicScoreCard/utils";
 
-import { LEVEL_COLORS } from "./MusicScoreCard/constants";
+import {
+  LEVEL_COLORS,
+  MINIMAL_COVER_SIZE,
+} from "./MusicScoreCard/constants";
 import type { PlatePlan } from "../constants/platePlan";
 import type { SyncScore } from "../types/syncScore";
 import {
@@ -36,8 +39,8 @@ type LevelGroup = {
   items: ChartEntry[];
 };
 
-const CARD_SIZE = 64;
 const CARD_BORDER = 3;
+const CARD_SIZE = MINIMAL_COVER_SIZE + CARD_BORDER * 2;
 
 function CompletedCheckOverlay() {
   return (
