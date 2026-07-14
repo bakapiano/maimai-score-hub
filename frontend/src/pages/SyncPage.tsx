@@ -56,7 +56,7 @@ import { ProberUpdateCard } from "../components/ProberUpdateCard";
 import { RadioCardGroup } from "../components/RadioCardGroup";
 import { QrCredentialInput } from "../components/QrCredentialInput";
 import { SyncMetric } from "../components/SyncMetric";
-import { formatFriendRequestSentAt } from "../utils/formatDate";
+import { FriendRequestAcceptanceAlert } from "../components/FriendRequestVerification";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { type AuthProfile, useAuth } from "../providers/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -88,8 +88,6 @@ const DIFFICULTY_NAMES: Record<number, string> = {
   4: "Re:MASTER",
   10: "宴会场",
 };
-const SYNC_WAIT_SECONDS = 5 * 60;
-
 function formatDate(dateString: string) {
   const date = new Date(dateString);
   return date.toLocaleString("zh-CN", {
@@ -448,16 +446,7 @@ export default function SyncPage() {
   const [qrText, setQrText] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [verifyLoading, setVerifyLoading] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(0);
   const chainedFriendshipJobIdRef = useRef<string | null>(null);
-
-  const remainingPercent = Math.min(
-    100,
-    Math.max(0, (timeLeft / SYNC_WAIT_SECONDS) * 100),
-  );
-  const syncStage = syncStatus?.stage;
-  const syncFriendRequestSentAt = syncStatus?.friendRequestSentAt;
 
   // Loading state
   const [loading, setLoading] = useState(true);
@@ -591,9 +580,6 @@ export default function SyncPage() {
 
   useEffect(() => {
     window.localStorage.setItem("sync_update_method", syncMethod);
-    if (syncMethod !== "cabinet_qr") {
-      setQrText("");
-    }
   }, [syncMethod]);
 
   const startUpdateScoreJob = useCallback(
@@ -701,8 +687,7 @@ export default function SyncPage() {
       setSyncError(`创建同步任务失败: ${errorMessage}`);
     }
   }, [
-    profile?.friendCode,
-    profile?.hasCabinetUserId,
+    profile,
     qrText,
     startCabinetSync,
     startFriendshipJob,
@@ -820,49 +805,14 @@ export default function SyncPage() {
     return () => clearInterval(interval);
   }, [cabinetJobId, syncing, token, loadProfile, loadLastSync]);
 
-  // Handle timeout countdown for wait_acceptance stage
-  useEffect(() => {
-    if (syncStage !== "wait_acceptance" || !syncFriendRequestSentAt) {
-      setTimeLeft((current) => (current === 0 ? current : 0));
-      return;
-    }
-
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const sentAt = new Date(syncFriendRequestSentAt).getTime();
-      const end = sentAt + SYNC_WAIT_SECONDS * 1000;
-      const left = Math.max(0, Math.ceil((end - now) / 1000));
-      setTimeLeft(left);
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [syncStage, syncFriendRequestSentAt]);
-
   const verifySyncJob = async () => {
     if (!syncJobId || !token) {
-      return;
+      throw new Error("同步任务不存在或已过期");
     }
 
-    setVerifyLoading(true);
-    try {
-      const res = await verifyJob(syncJobId, token);
-      setSyncStatus(res.job);
-      setSyncing(true);
-      notifications.show({
-        title: "已提交验证",
-        message: "后台将立即重新检查好友状态",
-        color: "green",
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "未知错误";
-      notifications.show({
-        title: "提交失败",
-        message,
-        color: "red",
-      });
-    } finally {
-      setVerifyLoading(false);
-    }
+    const res = await verifyJob(syncJobId, token);
+    setSyncStatus(res.job);
+    setSyncing(true);
   };
 
   // Compute sync progress
@@ -958,9 +908,13 @@ export default function SyncPage() {
                 <RadioCardGroup
                   value={syncMethod}
                   disabled={syncing}
-                  onChange={(value) =>
-                    setSyncMethod(value as "dxnet_bot" | "cabinet_qr")
-                  }
+                  onChange={(value) => {
+                    const nextMethod = value as "dxnet_bot" | "cabinet_qr";
+                    setSyncMethod(nextMethod);
+                    if (nextMethod !== "cabinet_qr") {
+                      setQrText("");
+                    }
+                  }}
                   data={[
                     {
                       value: "dxnet_bot",
@@ -1079,45 +1033,6 @@ export default function SyncPage() {
                   </Group>
                 )}
 
-                <Divider />
-
-                <SimpleGrid
-                  cols={{ base: 1, xs: 3 }}
-                  spacing={{ base: "xs", xs: "md" }}
-                >
-                  <SyncMetric icon={<IconClock size={18} />} label="最近同步">
-                    <Text size="sm" fw={600}>
-                      {lastSync
-                        ? formatRelativeDate(lastSync.createdAt)
-                        : "暂无记录"}
-                    </Text>
-                  </SyncMetric>
-                  <SyncMetric
-                    icon={<IconChartBar size={18} />}
-                    label="成绩记录"
-                  >
-                    <Text size="sm" fw={600}>
-                      {lastSync
-                        ? lastSync.scoreCount.toLocaleString("zh-CN")
-                        : "-"}
-                      {lastSync && (
-                        <Text
-                          component="span"
-                          size="xs"
-                          fw={400}
-                          c="dimmed"
-                          ml={4}
-                        >
-                          条
-                        </Text>
-                      )}
-                    </Text>
-                  </SyncMetric>
-                  <SyncMetric icon={<IconSend size={18} />} label="自动导出">
-                    <AutoExportBadges result={lastSync?.autoExportResult} />
-                  </SyncMetric>
-                </SimpleGrid>
-
                 {syncMethod === "dxnet_bot" &&
                   progress &&
                   syncStatus?.stage === "update_score" && (
@@ -1166,6 +1081,45 @@ export default function SyncPage() {
                       )}
                     </Stack>
                   )}
+
+                <Divider />
+
+                <SimpleGrid
+                  cols={{ base: 1, xs: 3 }}
+                  spacing={{ base: "xs", xs: "md" }}
+                >
+                  <SyncMetric icon={<IconClock size={18} />} label="最近同步">
+                    <Text size="sm" fw={600}>
+                      {lastSync
+                        ? formatRelativeDate(lastSync.createdAt)
+                        : "暂无记录"}
+                    </Text>
+                  </SyncMetric>
+                  <SyncMetric
+                    icon={<IconChartBar size={18} />}
+                    label="成绩记录"
+                  >
+                    <Text size="sm" fw={600}>
+                      {lastSync
+                        ? lastSync.scoreCount.toLocaleString("zh-CN")
+                        : "-"}
+                      {lastSync && (
+                        <Text
+                          component="span"
+                          size="xs"
+                          fw={400}
+                          c="dimmed"
+                          ml={4}
+                        >
+                          条
+                        </Text>
+                      )}
+                    </Text>
+                  </SyncMetric>
+                  <SyncMetric icon={<IconSend size={18} />} label="自动导出">
+                    <AutoExportBadges result={lastSync?.autoExportResult} />
+                  </SyncMetric>
+                </SimpleGrid>
               </Stack>
             </AppCard>
           </Stack>
@@ -1188,42 +1142,12 @@ export default function SyncPage() {
           )}
 
           {syncing && syncStatus?.stage === "wait_acceptance" && (
-            <Alert
-              variant="outline"
-              radius="md"
-              color="blue"
-              title="好友请求已发送！"
-            >
-              <Stack gap="sm">
-                <Text size="sm">
-                  Bot 已发送好友申请，请登录 NET
-                  并在核对时间一致后同意好友申请。
-                </Text>
-                {syncStatus.friendRequestSentAt && (
-                  <Text size="sm" c="red" fw={700}>
-                    若申请时间不是{" "}
-                    {formatFriendRequestSentAt(syncStatus.friendRequestSentAt)}
-                    ，请勿接受，可能是他人尝试登录！
-                  </Text>
-                )}
-                <Progress.Root size="xl" mt={4}>
-                  <Progress.Section
-                    animated
-                    value={remainingPercent}
-                    title={`${timeLeft} 秒后过期`}
-                  >
-                    <Progress.Label>{timeLeft} 秒后过期</Progress.Label>
-                  </Progress.Section>
-                </Progress.Root>
-                <Button
-                  onClick={verifySyncJob}
-                  loading={verifyLoading}
-                  disabled={!syncJobId}
-                >
-                  我已接受请求
-                </Button>
-              </Stack>
-            </Alert>
+            <FriendRequestAcceptanceAlert
+              key={syncJobId}
+              friendRequestSentAt={syncStatus.friendRequestSentAt}
+              onVerify={verifySyncJob}
+              disabled={!syncJobId || !token}
+            />
           )}
         </Stack>
 

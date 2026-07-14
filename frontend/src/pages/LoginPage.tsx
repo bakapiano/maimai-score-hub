@@ -11,7 +11,6 @@ import {
   Loader,
   Paper,
   PasswordInput,
-  Progress,
   SimpleGrid,
   Stack,
   Tabs,
@@ -40,6 +39,10 @@ import { useEffect, useMemo, useState } from "react";
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
 import { AppCard } from "../components/AppCard";
 import { QrLoginForm } from "../components/QrLoginForm";
+import {
+  FriendRequestAcceptanceAlert,
+  FriendRequestVerificationButton,
+} from "../components/FriendRequestVerification";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
@@ -52,7 +55,6 @@ import { AppFooter } from "../components/AppFooter";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
-const LOGIN_WAIT_SECONDS = 5 * 60;
 const PASSWORD_LOGIN_IDENTIFIER_KEY = "passwordLoginIdentifier";
 const LOGIN_METHOD_KEY = "loginMethod";
 
@@ -431,13 +433,6 @@ export default function LoginPage() {
       return "";
     }
   });
-  const [timeLeft, setTimeLeft] = useState(0);
-
-  const remainingPercent = Math.min(
-    100,
-    Math.max(0, (timeLeft / LOGIN_WAIT_SECONDS) * 100),
-  );
-
   const canLogin = useMemo(
     () => /^\d{15}$/.test(friendCode.trim()) && !!loginMethod && !loading,
     [friendCode, loginMethod, loading],
@@ -612,23 +607,6 @@ export default function LoginPage() {
     };
   }, [jobId, polling, setToken, navigate]);
 
-  useEffect(() => {
-    if (jobStage !== "wait_acceptance" || !friendRequestSentAt) {
-      setTimeLeft((current) => (current === 0 ? current : 0));
-      return;
-    }
-
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const sentAt = new Date(friendRequestSentAt).getTime();
-      const end = sentAt + LOGIN_WAIT_SECONDS * 1000;
-      const left = Math.max(0, Math.ceil((end - now) / 1000));
-      setTimeLeft(left);
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [jobStage, friendRequestSentAt]);
-
   const startLogin = async () => {
     setLoading(true);
     setJobStatus("");
@@ -640,7 +618,6 @@ export default function LoginPage() {
     setFriendRequestSentAt(null);
     setAssignedBotFriendCode("");
     setLoginCreatedAt("");
-    setTimeLeft(0);
 
     const trimmedCode = friendCode.trim();
     try {
@@ -771,31 +748,23 @@ export default function LoginPage() {
   };
 
   const wakeLoginJob = async () => {
-    if (!jobId) {return;}
-    setLoading(true);
-    try {
-      const res = await authApi.verifyLoginRequest({
-        params: { jobId },
-        body: undefined,
-      });
-      if (res.status === 200) {
-        const job = (res.body as { job?: LoginJobStatus } | null)?.job;
-        const stage = job?.stage;
-        if (stage) {setJobStage(String(stage));}
-        if (job?.friendRequestSentAt) {
-          setFriendRequestSentAt(String(job.friendRequestSentAt));
-        }
-        setPolling(true);
-      } else {
-        notifications.show({
-          title: "验证请求失败",
-          message: `HTTP ${res.status}`,
-          color: "red",
-        });
-      }
-    } finally {
-      setLoading(false);
+    if (!jobId) {throw new Error("登录任务不存在或已过期");}
+
+    const res = await authApi.verifyLoginRequest({
+      params: { jobId },
+      body: undefined,
+    });
+    if (res.status !== 200) {
+      throw new Error(`HTTP ${res.status}`);
     }
+
+    const job = (res.body as { job?: LoginJobStatus } | null)?.job;
+    const stage = job?.stage;
+    if (stage) {setJobStage(String(stage));}
+    if (job?.friendRequestSentAt) {
+      setFriendRequestSentAt(String(job.friendRequestSentAt));
+    }
+    setPolling(true);
   };
 
   // Resolve "auto" against system preference so dark-mode-via-system
@@ -849,52 +818,12 @@ export default function LoginPage() {
               {profile && <ProfileCard profile={profile} />}
 
               {jobStage === "wait_acceptance" ? (
-                <>
-                  {friendRequestSentAt ? (
-                    <Alert
-                      variant="outline"
-                      radius="md"
-                      color="blue"
-                      title="好友请求已发送！"
-                      icon={<IconInfoCircle size={18} />}
-                    >
-                      <Stack gap="sm">
-                        <Text size="sm">
-                          Bot 已发送好友申请，请登录 NET
-                          并在核对时间一致后同意好友申请。
-                        </Text>
-                        <Text size="sm" c="red" fw={700}>
-                          若申请时间不是{" "}
-                          {formatFriendRequestSentAt(friendRequestSentAt!)}
-                          ，请勿接受，可能是他人尝试登录！
-                        </Text>
-                        <Progress.Root size="xl" mt={4}>
-                          <Progress.Section
-                            animated
-                            value={remainingPercent}
-                            title={`${timeLeft} 秒后过期`}
-                          >
-                            <Progress.Label>{timeLeft} 秒后过期</Progress.Label>
-                          </Progress.Section>
-                        </Progress.Root>
-                        <Button
-                          onClick={wakeLoginJob}
-                          loading={loading}
-                          disabled={!jobId}
-                        >
-                          我已接受请求
-                        </Button>
-                      </Stack>
-                    </Alert>
-                  ) : (
-                    <Group justify="center" gap="xs">
-                      <Loader size="sm" />
-                      <Text size="sm" c="dimmed">
-                        Bot 正在发送好友请求，请稍候...
-                      </Text>
-                    </Group>
-                  )}
-                </>
+                <FriendRequestAcceptanceAlert
+                  key={jobId}
+                  friendRequestSentAt={friendRequestSentAt}
+                  onVerify={wakeLoginJob}
+                  disabled={!jobId}
+                />
               ) : isUserSendsRequestStage ? (
                 <Alert
                   variant="outline"
@@ -934,13 +863,12 @@ export default function LoginPage() {
                       </Text>
                     )}
                     <Group gap="sm">
-                      <Button
-                        onClick={wakeLoginJob}
-                        loading={loading}
+                      <FriendRequestVerificationButton
+                        key={jobId}
                         disabled={!jobId || jobStage === "accept_request"}
-                      >
-                        我已发送请求
-                      </Button>
+                        onVerify={wakeLoginJob}
+                        idleLabel="我已发送请求"
+                      />
                       <Group gap="xs">
                         <Loader size="xs" />
                         <Text size="sm" c="dimmed">
