@@ -12,7 +12,12 @@ import {
   QrLoginAttemptEntity,
   QrLoginAttemptSchema,
 } from './schemas/qr-login-attempt.schema';
+import {
+  PasskeyCredentialEntity,
+  PasskeyCredentialSchema,
+} from './schemas/passkey-credential.schema';
 import { QrLoginService } from './services/qr-login.service';
+import { PasskeyService } from './services/passkey.service';
 import { CabinetIdentityMatcherService } from './services/cabinet-identity-matcher.service';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { UsersModule } from '../users/users.module';
@@ -34,6 +39,7 @@ import { randomBytes } from 'node:crypto';
     MongooseModule.forFeature([
       { name: MusicEntity.name, schema: MusicSchema },
       { name: QrLoginAttemptEntity.name, schema: QrLoginAttemptSchema },
+      { name: PasskeyCredentialEntity.name, schema: PasskeyCredentialSchema },
     ]),
     UsersModule,
     SdgbWorkerModule,
@@ -45,12 +51,14 @@ import { randomBytes } from 'node:crypto';
     AuthGuard,
     CabinetIdentityMatcherService,
     QrLoginService,
+    PasskeyService,
   ],
   exports: [
     AuthService,
     AuthGuard,
     CabinetIdentityMatcherService,
     QrLoginService,
+    PasskeyService,
   ],
 })
 export class AuthModule {}

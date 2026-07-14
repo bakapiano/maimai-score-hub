@@ -7,10 +7,19 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerServiceWorker } from "./registerServiceWorker";
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+const LEGACY_HOST = "maimai.bakapiano.com";
+const CANONICAL_ORIGIN = "https://maiscorehub.bakapiano.com";
 
-registerServiceWorker();
+if (window.location.hostname === LEGACY_HOST) {
+  window.location.replace(
+    `${CANONICAL_ORIGIN}${window.location.pathname}${window.location.search}${window.location.hash}`,
+  );
+} else {
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+
+  registerServiceWorker();
+}

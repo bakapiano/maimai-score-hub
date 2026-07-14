@@ -118,6 +118,11 @@ services:
       MUSIC_DATA_URL: ${MUSIC_DATA_URL:-https://www.diving-fish.com/api/maimaidxprober/music_data}
       MUSIC_SYNC_CRON: ${MUSIC_SYNC_CRON:-0 */6 * * *}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-change-me-in-production}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-maimai Score Hub}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-maiscorehub.bakapiano.com}
+      WEBAUTHN_ORIGINS: ${WEBAUTHN_ORIGINS:-https://maiscorehub.bakapiano.com}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://maiscorehub.bakapiano.com}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       API_SHARED_SECRET: ${API_SHARED_SECRET:-}
       OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-false}

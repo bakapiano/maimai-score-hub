@@ -152,6 +152,32 @@ export class UsersService {
     return doc.toObject();
   }
 
+  async verifyAccountPassword(
+    id: string,
+    password: string,
+  ): Promise<{
+    hasPassword: boolean;
+    valid: boolean;
+    passwordUpdatedAt: Date | null;
+  }> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('User not found');
+    }
+    const doc = await this.userModel.findById(id).select('+passwordHash');
+    if (!doc) {
+      throw new NotFoundException('User not found');
+    }
+    const hasPassword = !!doc.passwordHash;
+    const valid = hasPassword
+      ? await this.verifyPassword(password, doc.passwordHash!)
+      : false;
+    return {
+      hasPassword,
+      valid,
+      passwordUpdatedAt: doc.passwordUpdatedAt ?? null,
+    };
+  }
+
   async create(input: {
     friendCode: string;
     username?: string | null;

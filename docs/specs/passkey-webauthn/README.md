@@ -255,3 +255,13 @@ Passkey 验证成功后沿用当前 JWT payload 和 30 天有效期：
 - 原有好友码、账号密码和二维码登录保持可用。
 - 本地 `localhost` dev 环境完成后端 E2E，覆盖注册、登录、管理、重放和账号删除链路。
 - 旧域名请求被重定向到规范域名，并保留 path/query。
+
+## Dev E2E
+
+启动配置为 `RP_ID=localhost`、前端 Origin 为 `http://localhost:3001` 的后端与前端后运行：
+
+```powershell
+npm --prefix backend run test:e2e:passkey
+```
+
+脚本使用本机 Chrome/Edge 的 Chromium virtual authenticator，要求后端启用 `SKIP_AUTH=true` 并连接隔离的测试数据库。可通过 `PASSKEY_E2E_BASE_URL` 和 `PASSKEY_E2E_BROWSER` 覆盖默认前端地址与浏览器路径。脚本验证密码前置、注册、列表、重命名、前端登录、API 登录、最近使用时间、challenge 重放、错误/正确密码删除、未知 credential 和账号删除级联。

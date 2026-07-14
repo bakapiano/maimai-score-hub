@@ -49,6 +49,14 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return JSON.parse(raw) as T;
   }
 
+  async getDelJson<T>(key: string): Promise<T | null> {
+    const raw = await this.client.getDel(key);
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw) as T;
+  }
+
   async setJson(
     key: string,
     value: unknown,
@@ -74,6 +82,14 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       expiration: { type: 'PX', value: ttlMs },
     });
     return result === 'OK';
+  }
+
+  async incrementWithExpiry(key: string, ttlSeconds: number): Promise<number> {
+    const result = await this.client.eval(
+      "local n = redis.call('INCR', KEYS[1]); if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]); end; return n",
+      { keys: [key], arguments: [String(ttlSeconds)] },
+    );
+    return Number(result);
   }
 
   async compareAndDelete(key: string, expectedValue: string): Promise<boolean> {

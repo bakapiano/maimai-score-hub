@@ -50,7 +50,10 @@ export class AuthService {
 
     // Skip auth: directly return token without creating job, for testing purposes
     if (this.skipAuth) {
-      return { skipAuth: true, ...(await this.signForUser(user as never)) };
+      return {
+        skipAuth: true,
+        ...(await this.issueTokenForUser(user as never)),
+      };
     }
 
     if (method === 'user_sends_request') {
@@ -107,7 +110,7 @@ export class AuthService {
         await this.users.update(userId, { profile: job.profile });
       }
 
-      const signed = await this.signForUser(user as never);
+      const signed = await this.issueTokenForUser(user as never);
       return {
         status,
         token: signed.token,
@@ -127,7 +130,7 @@ export class AuthService {
       throw new UnauthorizedException('账号或密码不正确');
     }
     this.updateLastActiveAt(String(user._id));
-    return this.signForUser(user as never);
+    return this.issueTokenForUser(user as never);
   }
 
   async verifyLoginRequest(jobId: string) {
@@ -158,7 +161,7 @@ export class AuthService {
     this.users.updateLastActiveAt(userId).catch(() => {});
   }
 
-  private async signForUser(user: {
+  async issueTokenForUser(user: {
     _id: unknown;
     friendCode: string;
     [key: string]: unknown;

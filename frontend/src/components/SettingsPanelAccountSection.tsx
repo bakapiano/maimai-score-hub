@@ -12,6 +12,7 @@ import { apiUrl } from "../api/baseUrl";
 import { useAuth } from "../providers/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { usersApi } from "../api/appClient";
+import { PasskeyManagementSection } from "./PasskeyManagementSection";
 
 type AccountSettingsSectionProps = {
   onClose: () => void;
@@ -332,7 +333,7 @@ export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps)
       notifications.show({
         color: "green",
         title: "账号已删除",
-        message: `已清除 ${d.user ?? 0} 用户、${d.syncs ?? 0} 同步记录、${d.jobs ?? 0} 任务。`,
+        message: `已清除 ${d.user ?? 0} 用户、${d.syncs ?? 0} 同步记录、${d.jobs ?? 0} 任务、${d.passkeys ?? 0} 个网站密钥。`,
       });
       clearDeletedAccountStorage();
       clearToken();
@@ -459,6 +460,10 @@ export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps)
                 onCurrentPasswordChange={setCurrentPassword}
                 onNewPasswordChange={setNewPassword}
                 onSavePassword={handleSavePassword}
+              />
+              <PasskeyManagementSection
+                token={token!}
+                hasPassword={accountHasPassword}
               />
               <Button
                 variant="light"

@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
+import { Types } from 'mongoose';
 
 import { JobEntity } from '../../job/schemas/job.schema';
 import { SyncEntity } from '../../sync/schemas/sync.schema';
 import type { SyncDocument } from '../../sync/schemas/sync.schema';
 import { UsersService } from './users.service';
+import { PasskeyCredentialEntity } from '../../auth/schemas/passkey-credential.schema';
 
 @Injectable()
 export class AccountDeletionService {
@@ -15,6 +17,8 @@ export class AccountDeletionService {
     private readonly syncModel: Model<SyncDocument>,
     @InjectModel(JobEntity.name)
     private readonly jobModel: Model<JobEntity>,
+    @InjectModel(PasskeyCredentialEntity.name)
+    private readonly passkeyModel: Model<PasskeyCredentialEntity>,
   ) {}
 
   /**
@@ -32,9 +36,10 @@ export class AccountDeletionService {
    */
   async deleteAccount(userId: string) {
     const { friendCode } = await this.users.deleteAccount(userId);
-    const [syncRes, jobRes] = await Promise.all([
+    const [syncRes, jobRes, passkeyRes] = await Promise.all([
       this.syncModel.deleteMany({ friendCode }),
       this.jobModel.deleteMany({ friendCode }),
+      this.passkeyModel.deleteMany({ userId: new Types.ObjectId(userId) }),
     ]);
     return {
       ok: true as const,
@@ -43,6 +48,7 @@ export class AccountDeletionService {
         user: 1,
         syncs: syncRes.deletedCount ?? 0,
         jobs: jobRes.deletedCount ?? 0,
+        passkeys: passkeyRes.deletedCount ?? 0,
       },
     };
   }

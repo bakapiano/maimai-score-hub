@@ -454,6 +454,131 @@ paths:
           description: "400"
         "401":
           description: "401"
+  /auth/passkey/options:
+    post:
+      tags: *a2
+      parameters: []
+      operationId: auth.passkeyOptions
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ceremonyId:
+                    type: string
+                    format: uuid
+                  options:
+                    type: object
+                    additionalProperties: {}
+                required:
+                  - ceremonyId
+                  - options
+        "429":
+          description: "429"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+                required:
+                  - code
+                  - message
+  /auth/passkey/verify:
+    post:
+      tags: *a2
+      parameters: []
+      operationId: auth.passkeyVerify
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ceremonyId:
+                  type: string
+                  format: uuid
+                response:
+                  type: object
+                  additionalProperties: {}
+              required:
+                - ceremonyId
+                - response
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      friendCode:
+                        type: string
+                      username:
+                        type: string
+                        nullable: true
+                    required:
+                      - friendCode
+                    additionalProperties: true
+                required:
+                  - token
+                  - user
+        "400":
+          description: "400"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+                required:
+                  - code
+                  - message
+        "401":
+          description: "401"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+                required:
+                  - code
+                  - message
+        "429":
+          description: "429"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+                required:
+                  - code
+                  - message
   /me:
     get:
       tags: &a3
@@ -610,6 +735,251 @@ paths:
           description: "401"
         "409":
           description: "409"
+  /me/passkeys:
+    get:
+      tags: *a3
+      parameters: []
+      operationId: users.listPasskeys
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    transports:
+                      type: array
+                      items:
+                        type: string
+                    deviceType:
+                      type: string
+                      enum:
+                        - singleDevice
+                        - multiDevice
+                    backedUp:
+                      type: boolean
+                    createdAt:
+                      type: string
+                    lastUsedAt:
+                      type: string
+                      nullable: true
+                  required:
+                    - id
+                    - name
+                    - transports
+                    - deviceType
+                    - backedUp
+                    - createdAt
+                    - lastUsedAt
+        "401":
+          description: "401"
+  /me/passkeys/registration/options:
+    post:
+      tags: *a3
+      parameters: []
+      operationId: users.createPasskeyOptions
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+                  minLength: 1
+                  maxLength: 72
+              required:
+                - password
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ceremonyId:
+                    type: string
+                    format: uuid
+                  options:
+                    type: object
+                    additionalProperties: {}
+                required:
+                  - ceremonyId
+                  - options
+        "403":
+          description: "403"
+        "409":
+          description: "409"
+        "429":
+          description: "429"
+  /me/passkeys/registration/verify:
+    post:
+      tags: *a3
+      parameters: []
+      operationId: users.verifyPasskeyRegistration
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ceremonyId:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                response:
+                  type: object
+                  additionalProperties: {}
+              required:
+                - ceremonyId
+                - name
+                - response
+      responses:
+        "201":
+          description: "201"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  transports:
+                    type: array
+                    items:
+                      type: string
+                  deviceType:
+                    type: string
+                    enum:
+                      - singleDevice
+                      - multiDevice
+                  backedUp:
+                    type: boolean
+                  createdAt:
+                    type: string
+                  lastUsedAt:
+                    type: string
+                    nullable: true
+                required:
+                  - id
+                  - name
+                  - transports
+                  - deviceType
+                  - backedUp
+                  - createdAt
+                  - lastUsedAt
+        "400":
+          description: "400"
+        "409":
+          description: "409"
+  /me/passkeys/{id}:
+    patch:
+      tags: *a3
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: users.renamePasskey
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+              required:
+                - name
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  transports:
+                    type: array
+                    items:
+                      type: string
+                  deviceType:
+                    type: string
+                    enum:
+                      - singleDevice
+                      - multiDevice
+                  backedUp:
+                    type: boolean
+                  createdAt:
+                    type: string
+                  lastUsedAt:
+                    type: string
+                    nullable: true
+                required:
+                  - id
+                  - name
+                  - transports
+                  - deviceType
+                  - backedUp
+                  - createdAt
+                  - lastUsedAt
+        "404":
+          description: "404"
+  /me/passkeys/{id}/delete:
+    post:
+      tags: *a3
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: users.deletePasskey
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+                  minLength: 1
+                  maxLength: 72
+              required:
+                - password
+      responses:
+        "200":
+          description: "200"
+        "403":
+          description: "403"
+        "404":
+          description: "404"
+        "429":
+          description: "429"
   /me/prober-tokens/diving-fish:
     post:
       tags: *a3
