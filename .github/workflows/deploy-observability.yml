@@ -20,28 +20,16 @@ jobs:
           ls -lh /tmp/maimai-observability-${GITHUB_SHA}.tgz
 
       - name: Upload source archive
-        timeout-minutes: 3
+        timeout-minutes: 35
         env:
-          OBSERVABILITY_HOST: ${{ secrets.OBSERVABILITY_HOST || secrets.BACKEND_HOST }}
-          OBSERVABILITY_USER: ${{ secrets.OBSERVABILITY_USER || secrets.BACKEND_USER }}
-          OBSERVABILITY_PORT: ${{ secrets.OBSERVABILITY_PORT || secrets.BACKEND_PORT }}
+          DEPLOY_HOST: ${{ secrets.OBSERVABILITY_HOST || secrets.BACKEND_HOST }}
+          DEPLOY_USER: ${{ secrets.OBSERVABILITY_USER || secrets.BACKEND_USER }}
+          DEPLOY_PORT: ${{ secrets.OBSERVABILITY_PORT || secrets.BACKEND_PORT }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
-          set -euo pipefail
-          OBSERVABILITY_PORT="${OBSERVABILITY_PORT:-22}"
-          if [ -z "$OBSERVABILITY_HOST" ] || [ -z "$OBSERVABILITY_USER" ]; then
-            echo "❌ OBSERVABILITY_HOST/USER or BACKEND_HOST/USER secrets are required"
-            exit 1
-          fi
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/observability_deploy_key
-          chmod 600 ~/.ssh/observability_deploy_key
-          timeout 30s ssh-keyscan -p "$OBSERVABILITY_PORT" "$OBSERVABILITY_HOST" >> ~/.ssh/known_hosts
-          timeout 180s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
-            -p "$OBSERVABILITY_PORT" -i ~/.ssh/observability_deploy_key \
-            "$OBSERVABILITY_USER@$OBSERVABILITY_HOST" \
-            "cat > /tmp/maimai-observability-${GITHUB_SHA}.tgz" \
-            < /tmp/maimai-observability-${GITHUB_SHA}.tgz
+          bash .github/scripts/upload-deploy-archive.sh \
+            "/tmp/maimai-observability-${GITHUB_SHA}.tgz" \
+            "/tmp/maimai-observability-${GITHUB_SHA}.tgz"
 
       - name: Deploy via SSH
         timeout-minutes: 30

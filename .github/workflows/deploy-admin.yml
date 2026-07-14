@@ -30,34 +30,16 @@ jobs:
           ls -lh /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz
 
       - name: Upload static release
-        timeout-minutes: 8
+        timeout-minutes: 35
         env:
-          FRONTEND_HOST: ${{ secrets.FRONTEND_HOST }}
-          FRONTEND_USER: ${{ secrets.FRONTEND_USER }}
-          FRONTEND_PORT: ${{ secrets.FRONTEND_PORT }}
+          DEPLOY_HOST: ${{ secrets.FRONTEND_HOST }}
+          DEPLOY_USER: ${{ secrets.FRONTEND_USER }}
+          DEPLOY_PORT: ${{ secrets.FRONTEND_PORT }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
-          set -euo pipefail
-          FRONTEND_PORT="${FRONTEND_PORT:-22}"
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/admin_deploy_key
-          chmod 600 ~/.ssh/admin_deploy_key
-          timeout 30s ssh-keyscan -p "$FRONTEND_PORT" "$FRONTEND_HOST" >> ~/.ssh/known_hosts
-          uploaded=0
-          for attempt in 1 2 3; do
-            if timeout 120s ssh -C -o IdentitiesOnly=yes -o ConnectTimeout=20 \
-              -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
-              -p "$FRONTEND_PORT" -i ~/.ssh/admin_deploy_key \
-              "$FRONTEND_USER@$FRONTEND_HOST" \
-              "cat > /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz" \
-              < /tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz; then
-              uploaded=1
-              break
-            fi
-            echo "Upload attempt $attempt failed; retrying..."
-            sleep $((attempt * 10))
-          done
-          test "$uploaded" -eq 1
+          bash .github/scripts/upload-deploy-archive.sh \
+            "/tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz" \
+            "/tmp/maimai-score-hub-admin-${GITHUB_SHA}.tgz"
 
       - name: Activate static release
         timeout-minutes: 10

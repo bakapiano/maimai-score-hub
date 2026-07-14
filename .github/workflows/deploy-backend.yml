@@ -38,24 +38,16 @@ jobs:
           ls -lh /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz
 
       - name: Upload source archive
-        timeout-minutes: 3
+        timeout-minutes: 35
         env:
-          BACKEND_HOST: ${{ secrets.BACKEND_HOST }}
-          BACKEND_USER: ${{ secrets.BACKEND_USER }}
-          BACKEND_PORT: ${{ secrets.BACKEND_PORT }}
+          DEPLOY_HOST: ${{ secrets.BACKEND_HOST }}
+          DEPLOY_USER: ${{ secrets.BACKEND_USER }}
+          DEPLOY_PORT: ${{ secrets.BACKEND_PORT }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
-          set -euo pipefail
-          BACKEND_PORT="${BACKEND_PORT:-22}"
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/backend_deploy_key
-          chmod 600 ~/.ssh/backend_deploy_key
-          timeout 30s ssh-keyscan -p "$BACKEND_PORT" "$BACKEND_HOST" >> ~/.ssh/known_hosts
-          timeout 180s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
-            -p "$BACKEND_PORT" -i ~/.ssh/backend_deploy_key \
-            "$BACKEND_USER@$BACKEND_HOST" \
-            "cat > /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz" \
-            < /tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz
+          bash .github/scripts/upload-deploy-archive.sh \
+            "/tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz" \
+            "/tmp/maimai-score-hub-backend-${GITHUB_SHA}.tgz"
 
       - name: Deploy via SSH
         timeout-minutes: 30

@@ -28,24 +28,16 @@ jobs:
           ls -lh /tmp/maimai-score-hub-worker-${GITHUB_SHA}.tgz
 
       - name: Upload source archive to Worker Instance ${{ matrix.instance }}
-        timeout-minutes: 3
+        timeout-minutes: 35
         env:
-          WORKER_HOST: ${{ secrets[format('WORKER_{0}_HOST', matrix.instance)] }}
-          WORKER_USER: ${{ secrets[format('WORKER_{0}_USER', matrix.instance)] }}
-          WORKER_PORT: ${{ secrets[format('WORKER_{0}_PORT', matrix.instance)] }}
+          DEPLOY_HOST: ${{ secrets[format('WORKER_{0}_HOST', matrix.instance)] }}
+          DEPLOY_USER: ${{ secrets[format('WORKER_{0}_USER', matrix.instance)] }}
+          DEPLOY_PORT: ${{ secrets[format('WORKER_{0}_PORT', matrix.instance)] }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
-          set -euo pipefail
-          WORKER_PORT="${WORKER_PORT:-22}"
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/worker_deploy_key
-          chmod 600 ~/.ssh/worker_deploy_key
-          timeout 30s ssh-keyscan -p "$WORKER_PORT" "$WORKER_HOST" >> ~/.ssh/known_hosts
-          timeout 180s ssh -C -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
-            -p "$WORKER_PORT" -i ~/.ssh/worker_deploy_key \
-            "$WORKER_USER@$WORKER_HOST" \
-            "cat > /tmp/maimai-score-hub-worker-${GITHUB_SHA}.tgz" \
-            < /tmp/maimai-score-hub-worker-${GITHUB_SHA}.tgz
+          bash .github/scripts/upload-deploy-archive.sh \
+            "/tmp/maimai-score-hub-worker-${GITHUB_SHA}.tgz" \
+            "/tmp/maimai-score-hub-worker-${GITHUB_SHA}.tgz"
 
       - name: Deploy to Worker Instance ${{ matrix.instance }}
         timeout-minutes: 30
