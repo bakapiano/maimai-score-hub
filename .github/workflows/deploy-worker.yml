@@ -53,6 +53,7 @@ jobs:
         env:
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           API_SHARED_SECRET: ${{ secrets.API_SHARED_SECRET }}
+          HTTP_PROXY_PASSWORD: ${{ secrets.HTTP_PROXY_PASSWORD }}
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           REDIS_HOST: ${{ secrets.REDIS_HOST }}
           WORKER_JOB_SERVICE_BASE_URL: ${{ secrets.WORKER_JOB_SERVICE_BASE_URL }}
@@ -63,7 +64,7 @@ jobs:
           port: ${{ secrets[format('WORKER_{0}_PORT', matrix.instance)] }}
           key: ${{ secrets.SSH_KEY }}
           command_timeout: 30m
-          envs: ADMIN_PASSWORD,API_SHARED_SECRET,REDIS_PASSWORD,REDIS_HOST,WORKER_JOB_SERVICE_BASE_URL
+          envs: ADMIN_PASSWORD,API_SHARED_SECRET,HTTP_PROXY_PASSWORD,REDIS_PASSWORD,REDIS_HOST,WORKER_JOB_SERVICE_BASE_URL
           script: |
             DEPLOY_PATH="${{ secrets[format('WORKER_{0}_PATH', matrix.instance)] }}"
             SOURCE_ARCHIVE="/tmp/maimai-score-hub-worker-${{ github.sha }}.tgz"
@@ -77,6 +78,10 @@ jobs:
             fi
             if [ -z "${WORKER_JOB_SERVICE_BASE_URL:-}" ]; then
               echo "❌ WORKER_JOB_SERVICE_BASE_URL secret is required"
+              exit 1
+            fi
+            if [ -z "${HTTP_PROXY_PASSWORD:-}" ]; then
+              echo "❌ HTTP_PROXY_PASSWORD secret is required"
               exit 1
             fi
             if [ ! -f "$SOURCE_ARCHIVE" ]; then
@@ -139,6 +144,7 @@ jobs:
             }
             upsert_env ADMIN_PASSWORD "${ADMIN_PASSWORD:-}"
             upsert_env API_SHARED_SECRET "${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}"
+            upsert_env HTTP_PROXY_PASSWORD "${HTTP_PROXY_PASSWORD:-}"
             upsert_env REDIS_PASSWORD "${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}"
             upsert_env REDIS_HOST "${REDIS_HOST:-}"
             upsert_env REDIS_PORT "6379"
@@ -166,6 +172,7 @@ jobs:
               sudo env $EXTRA_ENV \
                 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}" \
                 API_SHARED_SECRET="${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}" \
+                HTTP_PROXY_PASSWORD="${HTTP_PROXY_PASSWORD:-}" \
                 REDIS_PASSWORD="${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}" \
                 REDIS_HOST="${REDIS_HOST:-}" \
                 REDIS_PORT="6379" \
@@ -181,6 +188,7 @@ jobs:
               sudo env $EXTRA_ENV \
                 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}" \
                 API_SHARED_SECRET="${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}" \
+                HTTP_PROXY_PASSWORD="${HTTP_PROXY_PASSWORD:-}" \
                 REDIS_PASSWORD="${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}" \
                 REDIS_HOST="${REDIS_HOST:-}" \
                 REDIS_PORT="6379" \
