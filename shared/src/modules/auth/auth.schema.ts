@@ -40,6 +40,23 @@ export const TokenLoginResponseSchema = z.object({
   user: AuthUserSchema,
 });
 
+export const WebAuthnJsonSchema = z.record(z.unknown());
+
+export const PasskeyOptionsResponseSchema = z.object({
+  ceremonyId: z.string().uuid(),
+  options: WebAuthnJsonSchema,
+});
+
+export const PasskeyAuthenticationVerifyBodySchema = z.object({
+  ceremonyId: z.string().uuid(),
+  response: WebAuthnJsonSchema,
+});
+
+export const PasskeyErrorSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+});
+
 export const LoginRequestBodySchema = z.object({
   friendCode: z.string().min(1),
   method: z.enum(["bot_sends_request", "user_sends_request"]),
@@ -94,3 +111,6 @@ export const LoginByQrResponseSchema = z.object({
 
 export type LoginByQrBody = z.infer<typeof LoginByQrBodySchema>;
 export type PasswordLoginBody = z.infer<typeof PasswordLoginBodySchema>;
+export type PasskeyAuthenticationVerifyBody = z.infer<
+  typeof PasskeyAuthenticationVerifyBodySchema
+>;

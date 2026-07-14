@@ -19,6 +19,7 @@
     "@mantine/core": "^8.3.10",
     "@mantine/hooks": "^8.3.10",
     "@mantine/notifications": "^8.3.10",
+    "@simplewebauthn/browser": "^13.3.0",
     "@tabler/icons-react": "^3.28.0",
     "@ts-rest/core": "^3.52.1",
     "react": "^19.2.0",

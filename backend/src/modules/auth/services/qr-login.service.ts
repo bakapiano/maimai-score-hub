@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
-import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
@@ -15,6 +14,7 @@ import {
   CabinetIdentityMatcherService,
   type PreparedCabinetIdentity,
 } from './cabinet-identity-matcher.service';
+import { AuthService } from './auth.service';
 
 export interface QrLoginFastResult {
   kind: 'fast';
@@ -71,7 +71,7 @@ export class QrLoginService {
     private readonly sdgb: SdgbJobDispatcher,
     private readonly users: UsersService,
     private readonly identityMatcher: CabinetIdentityMatcherService,
-    private readonly jwt: JwtService,
+    private readonly auth: AuthService,
     @InjectModel(QrLoginAttemptEntity.name)
     private readonly attemptModel: Model<QrLoginAttemptDocument>,
   ) {}
@@ -105,7 +105,10 @@ export class QrLoginService {
       this.logger.log(
         `QR-login fast path: cabinetUid=${scan.cabinetUserId} → friendCode=${existing.friendCode}`,
       );
-      return { kind: 'fast', ...(await this.signFor(existing as never)) };
+      return {
+        kind: 'fast',
+        ...(await this.auth.issueTokenForUser(existing as never)),
+      };
     }
 
     const identity = await this.identityMatcher.prepare(scan);
@@ -178,7 +181,7 @@ export class QrLoginService {
       identity.cabinetUserId,
       placeholderProfile,
     );
-    const signed = await this.signFor(user as never);
+    const signed = await this.auth.issueTokenForUser(user as never);
     await this.users
       .updateLastActiveAt(String(user._id))
       .catch(() => undefined);
@@ -288,30 +291,5 @@ export class QrLoginService {
           .filter((name): name is string => Boolean(name)),
       ),
     ];
-  }
-
-  private async signFor(user: {
-    _id: unknown;
-    friendCode: string;
-    [key: string]: unknown;
-  }): Promise<{
-    token: string;
-    user: { id: string; friendCode: string; [key: string]: unknown };
-  }> {
-    const safeUser = { ...user };
-    delete safeUser.passwordHash;
-    delete safeUser.divingFishImportToken;
-    delete safeUser.lxnsImportToken;
-    delete safeUser.cabinetUserId;
-    const userId = String(user._id);
-    const now = Math.floor(Date.now() / 1000);
-    const token = await this.jwt.signAsync(
-      { sub: userId, friendCode: user.friendCode, iat: now },
-      { expiresIn: '30d' },
-    );
-    return {
-      token,
-      user: { ...safeUser, id: userId, friendCode: user.friendCode },
-    };
   }
 }

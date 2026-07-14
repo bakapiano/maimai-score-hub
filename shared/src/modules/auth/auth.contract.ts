@@ -10,6 +10,9 @@ import {
   LoginStatusQuerySchema,
   LoginStatusResponseSchema,
   PasswordLoginBodySchema,
+  PasskeyAuthenticationVerifyBodySchema,
+  PasskeyErrorSchema,
+  PasskeyOptionsResponseSchema,
   TokenLoginResponseSchema,
 } from "./auth.schema";
 
@@ -63,6 +66,26 @@ export const authContract = c.router({
       200: TokenLoginResponseSchema,
       400: c.type<{ error: string }>(),
       401: c.type<{ error: string }>(),
+    },
+  },
+  passkeyOptions: {
+    method: "POST",
+    path: "/auth/passkey/options",
+    body: c.noBody(),
+    responses: {
+      200: PasskeyOptionsResponseSchema,
+      429: PasskeyErrorSchema,
+    },
+  },
+  passkeyVerify: {
+    method: "POST",
+    path: "/auth/passkey/verify",
+    body: PasskeyAuthenticationVerifyBodySchema,
+    responses: {
+      200: TokenLoginResponseSchema,
+      400: PasskeyErrorSchema,
+      401: PasskeyErrorSchema,
+      429: PasskeyErrorSchema,
     },
   },
 });

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { WebAuthnJsonSchema } from "../auth/auth.schema";
+
 export const UserProfileSchema = z
   .object({
     id: z.string(),
@@ -63,6 +65,51 @@ export type SetAccountPasswordBody = z.infer<
   typeof SetAccountPasswordBodySchema
 >;
 export type DivingFishTokenBody = z.infer<typeof DivingFishTokenBodySchema>;
+
+export const PasskeyNameSchema = z.string().trim().min(1).max(50);
+
+export const PasskeySummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  transports: z.array(z.string()),
+  deviceType: z.enum(["singleDevice", "multiDevice"]),
+  backedUp: z.boolean(),
+  createdAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+});
+
+export const PasskeyRegistrationOptionsBodySchema = z.object({
+  password: z.string().min(1).max(72),
+});
+
+export const PasskeyRegistrationOptionsResponseSchema = z.object({
+  ceremonyId: z.string().uuid(),
+  options: WebAuthnJsonSchema,
+});
+
+export const PasskeyRegistrationVerifyBodySchema = z.object({
+  ceremonyId: z.string().uuid(),
+  name: PasskeyNameSchema,
+  response: WebAuthnJsonSchema,
+});
+
+export const RenamePasskeyBodySchema = z.object({
+  name: PasskeyNameSchema,
+});
+
+export const DeletePasskeyBodySchema = z.object({
+  password: z.string().min(1).max(72),
+});
+
+export type PasskeySummary = z.infer<typeof PasskeySummarySchema>;
+export type PasskeyRegistrationOptionsBody = z.infer<
+  typeof PasskeyRegistrationOptionsBodySchema
+>;
+export type PasskeyRegistrationVerifyBody = z.infer<
+  typeof PasskeyRegistrationVerifyBodySchema
+>;
+export type RenamePasskeyBody = z.infer<typeof RenamePasskeyBodySchema>;
+export type DeletePasskeyBody = z.infer<typeof DeletePasskeyBodySchema>;
 
 /**
  * Cabinet QR binding — both shapes are accepted by the same endpoint.

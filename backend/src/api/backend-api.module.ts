@@ -9,6 +9,7 @@ import { SharedSecretGuard } from '../common/guards/shared-secret.guard';
 import { AdminModule } from '../modules/admin/admin.module';
 import { AdminUsersController } from './admin/admin-users.controller';
 import { AuthController } from './auth/auth.controller';
+import { PasskeyAuthController } from './auth/passkey-auth.controller';
 import { AuthModule } from '../modules/auth/auth.module';
 import { AutoUpdateModule } from '../modules/auto-update/auto-update.module';
 import { BotsModule } from '../modules/bots/bots.module';
@@ -17,6 +18,7 @@ import { CoverCatalogController } from './catalog/cover-catalog.controller';
 import { CoverModule } from '../modules/cover/cover.module';
 import { JobModule } from '../modules/job/job.module';
 import { MeController } from './me/me.controller';
+import { MePasskeysController } from './me/me-passkeys.controller';
 import { MeCabinetScoreJobsController } from './me/me-cabinet-score-jobs.controller';
 import { MeDxnetJobsController } from './me/me-dxnet-jobs.controller';
 import { MeScoreExportController } from './me/me-score-export.controller';
@@ -58,7 +60,9 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
   ],
   controllers: [
     AuthController,
+    PasskeyAuthController,
     MeController,
+    MePasskeysController,
     MeCabinetScoreJobsController,
     MeDxnetJobsController,
     MeScoreExportController,

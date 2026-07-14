@@ -4,6 +4,7 @@ import { json, urlencoded } from 'express';
 import type { AddressInfo } from 'net';
 import { AppModule } from './app.module';
 import { BackendLoggerService } from './modules/observability/services/backend-logger.service';
+import type { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
 import { NestFactory } from '@nestjs/core';
 import * as dns from 'node:dns';
 import { lookup as originalLookup } from 'node:dns';
@@ -60,10 +61,40 @@ function isRecoverableListenError(err: unknown): err is { code: string } {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(BackendLoggerService));
+  const production = process.env.NODE_ENV === 'production';
+  const trustProxyHops = Number(
+    process.env.TRUST_PROXY_HOPS ?? (production ? 1 : 0),
+  );
+  if (trustProxyHops > 0) {
+    const expressApp = app.getHttpAdapter().getInstance() as {
+      set: (name: string, value: number) => void;
+    };
+    expressApp.set('trust proxy', trustProxyHops);
+  }
   // Match the legacy job-service payload size expectations (job result can be large)
   app.use(json({ limit: '100mb' }));
   app.use(urlencoded({ extended: true, limit: '100mb' }));
-  app.enableCors({ origin: true });
+  const defaultWebOrigin = production
+    ? 'https://maiscorehub.bakapiano.com'
+    : 'http://localhost:3001';
+  const corsOrigins = (
+    process.env.CORS_ORIGINS ??
+    process.env.WEBAUTHN_ORIGINS ??
+    defaultWebOrigin
+  )
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+  const corsOptions: CorsOptions = {
+    origin(origin, callback) {
+      if (!origin || corsOrigins.includes(origin.replace(/\/$/, ''))) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error('Origin is not allowed by CORS'), false);
+    },
+  };
+  app.enableCors(corsOptions);
   app.setGlobalPrefix('api/v1');
   // Graceful shutdown on SIGTERM (docker stop sends this).
   // Without this, in-flight requests get killed at the 10s SIGKILL

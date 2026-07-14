@@ -26,6 +26,7 @@ import {
   IconChevronUp,
   IconId,
   IconLogin2,
+  IconKey,
   IconPassword,
   IconRobot,
   IconQrcode,
@@ -35,6 +36,11 @@ import {
 } from "@tabler/icons-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useMemo, useState } from "react";
+import {
+  browserSupportsWebAuthn,
+  startAuthentication,
+  type PublicKeyCredentialRequestOptionsJSON,
+} from "@simplewebauthn/browser";
 
 import { ProfileCard, type UserProfile } from "../components/ProfileCard";
 import { AppCard } from "../components/AppCard";
@@ -391,6 +397,7 @@ export default function LoginPage() {
     useState<PasswordLoginIdentifier>(() => readPasswordLoginIdentifier());
   const [passwordLoginPassword, setPasswordLoginPassword] = useState("");
   const [passwordLoginLoading, setPasswordLoginLoading] = useState(false);
+  const [passkeyLoginLoading, setPasskeyLoginLoading] = useState(false);
   const [loginMethod, setLoginMethod] =
     useState<LoginMethod>(() => readLoginMethod());
   const [, setHealth] = useState("");
@@ -434,8 +441,12 @@ export default function LoginPage() {
     }
   });
   const canLogin = useMemo(
-    () => /^\d{15}$/.test(friendCode.trim()) && !!loginMethod && !loading,
-    [friendCode, loginMethod, loading],
+    () =>
+      /^\d{15}$/.test(friendCode.trim()) &&
+      !!loginMethod &&
+      !loading &&
+      !passkeyLoginLoading,
+    [friendCode, loginMethod, loading, passkeyLoginLoading],
   );
 
   const canPasswordLogin = useMemo(
@@ -450,6 +461,7 @@ export default function LoginPage() {
           /^\d{15}$/.test(identifier)) &&
         passwordLoginPassword.length > 0 &&
         !passwordLoginLoading &&
+        !passkeyLoginLoading &&
         !polling &&
         !qrBusy
       );
@@ -460,6 +472,7 @@ export default function LoginPage() {
       passwordUsername,
       passwordLoginPassword,
       passwordLoginLoading,
+      passkeyLoginLoading,
       polling,
       qrBusy,
     ],
@@ -747,6 +760,72 @@ export default function LoginPage() {
     }
   };
 
+  const startPasskeyLogin = async () => {
+    if (!browserSupportsWebAuthn()) {
+      notifications.show({
+        title: "当前浏览器不支持网站密钥",
+        message: "请使用最新版 Chrome、Edge、Safari 或 Firefox。",
+        color: "yellow",
+      });
+      return;
+    }
+
+    setPasskeyLoginLoading(true);
+    try {
+      const optionsResult = await authApi.passkeyOptions({ body: undefined });
+      if (optionsResult.status !== 200) {
+        const body = optionsResult.body as {
+          message?: string;
+          error?: string;
+        };
+        throw new Error(
+          body?.message || body?.error || `HTTP ${optionsResult.status}`,
+        );
+      }
+
+      const response = await startAuthentication({
+        optionsJSON: optionsResult.body
+          .options as PublicKeyCredentialRequestOptionsJSON,
+      });
+      const verifyResult = await authApi.passkeyVerify({
+        body: {
+          ceremonyId: optionsResult.body.ceremonyId,
+          response,
+        },
+      });
+      if (verifyResult.status !== 200 || !verifyResult.body?.token) {
+        const body = verifyResult.body as {
+          message?: string;
+          error?: string;
+        };
+        throw new Error(
+          body?.message || body?.error || `HTTP ${verifyResult.status}`,
+        );
+      }
+
+      persistLastLoginAccount(verifyResult.body.user);
+      setToken(String(verifyResult.body.token));
+      recordAnalyticsEvent("login_success", { method: "passkey" });
+      notifications.show({
+        title: "登录成功",
+        message: "欢迎使用 maimai Score Hub！",
+        color: "green",
+      });
+      navigate("/app", { replace: true });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "NotAllowedError") {
+        return;
+      }
+      notifications.show({
+        title: "网站密钥登录失败",
+        message: err instanceof Error ? err.message : String(err),
+        color: "red",
+      });
+    } finally {
+      setPasskeyLoginLoading(false);
+    }
+  };
+
   const wakeLoginJob = async () => {
     if (!jobId) {throw new Error("登录任务不存在或已过期");}
 
@@ -807,7 +886,7 @@ export default function LoginPage() {
           <Container size="sm" style={{ maxWidth: 600, width: "100%" }}>
             <PageHeader
               title={"欢迎！"}
-              description={"使用 maimai NET 好友代码登录以继续，未注册将自动创建账号"}
+              description="选择好友码、账号密码、二维码或网站密钥登录"
             />
           </Container>
         </Box>
@@ -906,6 +985,12 @@ export default function LoginPage() {
                           <span>二维码</span>
                         </Group>
                       </Tabs.Tab>
+                      <Tabs.Tab value="passkey">
+                        <Group gap={4} wrap="nowrap" justify="center">
+                          <IconKey size={16} />
+                          <span>网站密钥</span>
+                        </Group>
+                      </Tabs.Tab>
                     </Tabs.List>
 
                     <Tabs.Panel value="friendCode" pt="md">
@@ -923,7 +1008,9 @@ export default function LoginPage() {
                                   setFriendCode(val);
                                 }
                               }}
-                              disabled={polling || qrBusy}
+                              disabled={
+                                polling || qrBusy || passkeyLoginLoading
+                              }
                               required
                               styles={{ label: { textAlign: "left" } }}
                               error={
@@ -963,7 +1050,9 @@ export default function LoginPage() {
                             <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
                               <LoginMethodCard
                                 active={loginMethod === "bot_sends_request"}
-                                disabled={polling || qrBusy}
+                                disabled={
+                                  polling || qrBusy || passkeyLoginLoading
+                                }
                                 icon={<IconRobot size={18} />}
                                 label="Bot 向我发送"
                                 description="按页面提示接受好友申请"
@@ -974,7 +1063,9 @@ export default function LoginPage() {
                               />
                               <LoginMethodCard
                                 active={loginMethod === "user_sends_request"}
-                                disabled={polling || qrBusy}
+                                disabled={
+                                  polling || qrBusy || passkeyLoginLoading
+                                }
                                 icon={<IconSend size={18} />}
                                 label="我向 Bot 发送"
                                 description="手动向分配的 Bot 好友码发送申请"
@@ -1044,7 +1135,10 @@ export default function LoginPage() {
                               <IdentifierCard
                                 active={passwordLoginIdentifier === "username"}
                                 disabled={
-                                  polling || qrBusy || passwordLoginLoading
+                                  polling ||
+                                  qrBusy ||
+                                  passwordLoginLoading ||
+                                  passkeyLoginLoading
                                 }
                                 icon={<IconUser size={18} />}
                                 label="用户名"
@@ -1056,7 +1150,10 @@ export default function LoginPage() {
                               <IdentifierCard
                                 active={passwordLoginIdentifier === "friendCode"}
                                 disabled={
-                                  polling || qrBusy || passwordLoginLoading
+                                  polling ||
+                                  qrBusy ||
+                                  passwordLoginLoading ||
+                                  passkeyLoginLoading
                                 }
                                 icon={<IconId size={18} />}
                                 label="好友代码"
@@ -1080,7 +1177,10 @@ export default function LoginPage() {
                                 }
                               }}
                               disabled={
-                                polling || qrBusy || passwordLoginLoading
+                                polling ||
+                                qrBusy ||
+                                passwordLoginLoading ||
+                                passkeyLoginLoading
                               }
                               error={
                                 passwordFriendCode &&
@@ -1099,7 +1199,10 @@ export default function LoginPage() {
                                 setPasswordUsername(event.currentTarget.value)
                               }
                               disabled={
-                                polling || qrBusy || passwordLoginLoading
+                                polling ||
+                                qrBusy ||
+                                passwordLoginLoading ||
+                                passkeyLoginLoading
                               }
                             />
                           )}
@@ -1111,7 +1214,12 @@ export default function LoginPage() {
                             onChange={(event) =>
                               setPasswordLoginPassword(event.currentTarget.value)
                             }
-                            disabled={polling || qrBusy || passwordLoginLoading}
+                            disabled={
+                              polling ||
+                              qrBusy ||
+                              passwordLoginLoading ||
+                              passkeyLoginLoading
+                            }
                             onKeyDown={(event) => {
                               if (event.key === "Enter" && canPasswordLogin) {
                                 void startPasswordLogin();
@@ -1141,8 +1249,40 @@ export default function LoginPage() {
                             navigate("/");
                           }}
                           onBusyChange={setQrBusy}
-                          disabled={polling}
+                          disabled={polling || passkeyLoginLoading}
                         />
+                      </AppCard>
+                    </Tabs.Panel>
+
+                    <Tabs.Panel value="passkey" pt="md">
+                      <AppCard>
+                        <Stack gap="md">
+                          <Text size="sm" c="dimmed">
+                            使用指纹、面容、设备 PIN
+                            或实体安全密钥登录，无需输入用户名和密码。
+                          </Text>
+                          {!browserSupportsWebAuthn() && (
+                            <Alert
+                              color="yellow"
+                              title="当前浏览器不支持网站密钥"
+                            >
+                              请升级浏览器，或使用其他登录方式。
+                            </Alert>
+                          )}
+                          <Button
+                            onClick={() => void startPasskeyLogin()}
+                            loading={passkeyLoginLoading}
+                            disabled={
+                              !browserSupportsWebAuthn() ||
+                              polling ||
+                              qrBusy ||
+                              passwordLoginLoading
+                            }
+                            leftSection={<IconKey size={16} />}
+                          >
+                            使用网站密钥登录
+                          </Button>
+                        </Stack>
                       </AppCard>
                     </Tabs.Panel>
                   </Tabs>
