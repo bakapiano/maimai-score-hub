@@ -58,17 +58,59 @@ export function renderRank(
   const asset = RANK_ASSET[r];
 
   if (asset) {
+    const width = opts?.width ?? (isCompact ? 42 : 72);
+    const imageStyle = {
+      display: "inline-block",
+      width,
+      maxHeight: isCompact ? 24 : 32,
+      height: "auto",
+      verticalAlign: "middle",
+    } as const;
+
+    if (opts?.stroke) {
+      return (
+        <svg
+          viewBox="0 0 256 120"
+          role="img"
+          aria-label={r}
+          style={imageStyle}
+        >
+          <defs>
+            <filter id="rank-outline" x="-10%" y="-20%" width="120%" height="140%">
+              <feMorphology
+                in="SourceAlpha"
+                operator="dilate"
+                radius="7"
+                result="expanded"
+              />
+              <feFlood floodColor="#111" result="outlineColor" />
+              <feComposite
+                in="outlineColor"
+                in2="expanded"
+                operator="in"
+                result="outline"
+              />
+              <feMerge>
+                <feMergeNode in="outline" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <image
+            href={`/mai/pic/${asset}`}
+            width="256"
+            height="120"
+            filter="url(#rank-outline)"
+          />
+        </svg>
+      );
+    }
+
     return (
       <img
         src={`/mai/pic/${asset}`}
         alt={r}
-        style={{
-          display: "inline-block",
-          width: opts?.width ?? (isCompact ? 42 : 72),
-          maxHeight: isCompact ? 24 : 32,
-          height: "auto",
-          verticalAlign: "middle",
-        }}
+        style={imageStyle}
       />
     );
   }
@@ -76,6 +118,10 @@ export function renderRank(
   return (
     <span
       style={{
+        display: r === "N/A" ? "inline-block" : undefined,
+        width:
+          r === "N/A" ? opts?.width ?? (isCompact ? 42 : 72) : undefined,
+        visibility: r === "N/A" ? "hidden" : undefined,
         letterSpacing: isCompact ? 0 : 1,
       }}
     >
@@ -109,6 +155,71 @@ export function renderMusicIcon(
   }
 
   return alt;
+}
+
+export function renderScoreStatusIcon(
+  icon: string,
+  opts?: { size?: number; stroke?: boolean },
+) {
+  const size = opts?.size ?? 24;
+  const src = getIconUrl(icon);
+
+  if (opts?.stroke) {
+    return (
+      <svg
+        viewBox="0 0 42 47"
+        role="img"
+        aria-label={icon.toUpperCase()}
+        width={size}
+        height={size}
+        style={{ display: "block" }}
+      >
+        <defs>
+          <filter
+            id="status-icon-outline"
+            x="-20%"
+            y="-20%"
+            width="140%"
+            height="140%"
+          >
+            <feMorphology
+              in="SourceAlpha"
+              operator="dilate"
+              radius="2"
+              result="expanded"
+            />
+            <feFlood floodColor="#111" result="outlineColor" />
+            <feComposite
+              in="outlineColor"
+              in2="expanded"
+              operator="in"
+              result="outline"
+            />
+            <feMerge>
+              <feMergeNode in="outline" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <image
+          href={src}
+          width="42"
+          height="47"
+          filter="url(#status-icon-outline)"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={icon.toUpperCase()}
+      width={size}
+      height={size}
+      style={{ display: "block" }}
+    />
+  );
 }
 
 /**

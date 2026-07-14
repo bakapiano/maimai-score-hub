@@ -1,4 +1,4 @@
-import { Box, Card, Group, Image, Text } from "@mantine/core";
+import { Box, Card, Group, Text } from "@mantine/core";
 import {
   GOLD_SCORE_STROKE_STYLE,
   LEVEL_COLORS,
@@ -6,10 +6,10 @@ import {
 } from "./constants";
 import {
   getCoverUrl,
-  getIconUrl,
   getRankFromScore,
   parseScore,
   renderRank,
+  renderScoreStatusIcon,
 } from "./utils";
 
 import type { MusicScoreCardProps } from "./types";
@@ -51,8 +51,8 @@ function EmptyStatusDot() {
       h={20}
       style={{
         borderRadius: "50%",
-        backgroundColor: "white",
-        border: "1px solid #ccc",
+        backgroundColor: "rgba(255, 255, 255, 0.62)",
+        border: "1px solid rgba(204, 204, 204, 0.62)",
       }}
     />
   );
@@ -70,7 +70,7 @@ function MinimalStatusIcon({ icon }: { icon: string | null }) {
       }}
     >
       {icon ? (
-        <Image src={getIconUrl(icon)} w={24} referrerPolicy="no-referrer" />
+        renderScoreStatusIcon(icon, { size: 24, stroke: true })
       ) : (
         <EmptyStatusDot />
       )}
@@ -111,14 +111,9 @@ function MinimalScoreOverlay({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            borderRadius: 6,
-            background: "rgba(16, 20, 28, 0.46)",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.28)",
-            backdropFilter: "blur(1px)",
-            WebkitBackdropFilter: "blur(1px)",
           }}
         >
-          {renderRank(rank, { compact: true, width: 48 })}
+          {renderRank(rank, { compact: true, stroke: true, width: 48 })}
         </Box>
       )}
       {showScore && scoreDisplayMode === "score" && (

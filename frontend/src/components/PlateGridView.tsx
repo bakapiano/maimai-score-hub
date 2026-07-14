@@ -1,10 +1,10 @@
-import { Box, Group, Image, Stack, Text } from "@mantine/core";
+import { Box, Group, Stack, Text } from "@mantine/core";
 import type { MusicChartPayload, MusicRow } from "../types/music";
 import {
   getCoverUrl,
-  getIconUrl,
   getRankFromScore,
   renderRank,
+  renderScoreStatusIcon,
 } from "./MusicScoreCard/utils";
 
 import { LEVEL_COLORS } from "./MusicScoreCard/constants";
@@ -106,14 +106,9 @@ function PlateRankBadge({ rank }: { rank: string }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        borderRadius: 6,
-        background: "rgba(16, 20, 28, 0.68)",
-        boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(1px)",
-        WebkitBackdropFilter: "blur(1px)",
       }}
     >
-      {renderRank(rank, { compact: true, width: 48 })}
+      {renderRank(rank, { compact: true, stroke: true, width: 48 })}
     </Box>
   );
 }
@@ -140,9 +135,9 @@ function PlateCard({
         return null; // 将牌: show rank text instead
       case "ji":
       case "shen":
-        return entry.score?.fc ? getIconUrl(entry.score.fc) : null;
+        return entry.score?.fc ?? null;
       case "wuwu":
-        return entry.score?.fs ? getIconUrl(entry.score.fs) : null;
+        return entry.score?.fs ?? null;
     }
   })();
 
@@ -179,7 +174,7 @@ function PlateCard({
       {completed && completionMode === "classic" && (
         <CompletedClassicOverlay>
           {planIcon ? (
-            <Image src={planIcon} w={36} h={36} referrerPolicy="no-referrer" />
+            renderScoreStatusIcon(planIcon, { size: 36, stroke: true })
           ) : displayRank ? (
             <PlateRankBadge rank={displayRank} />
           ) : null}
