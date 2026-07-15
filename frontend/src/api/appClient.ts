@@ -1,5 +1,6 @@
 import { initClient } from "@ts-rest/core";
 import * as sharedContract from "@maimai-score-hub/shared";
+import type { AppStatistics } from "@maimai-score-hub/shared";
 import { API_BASE_URL, apiUrl } from "./baseUrl";
 
 const {
@@ -30,10 +31,10 @@ export async function getHealthStatus() {
   };
 }
 
-export async function getStatistics() {
+export async function getStatistics(): Promise<AppStatistics> {
   const response = await appApi.getStatistics({});
   if (response.status !== 200) {
     throw new Error(`Unexpected status: ${response.status}`);
   }
-  return response.body;
+  return response.body as AppStatistics;
 }

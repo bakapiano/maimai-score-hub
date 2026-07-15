@@ -758,14 +758,15 @@ export class JobService {
     const avgDuration = durationStats[0]
       ? Math.round(durationStats[0].avgDuration)
       : null;
+    const terminalCount = completedCount + failedCount;
 
     return {
       totalCount,
       completedCount,
       failedCount,
       successRate:
-        totalCount > 0
-          ? Math.round((completedCount / totalCount) * 10000) / 100
+        terminalCount > 0
+          ? Math.round((completedCount / terminalCount) * 10000) / 100
           : 0,
       avgDuration,
     };

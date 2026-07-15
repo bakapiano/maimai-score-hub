@@ -16,6 +16,7 @@ import {
   IconCheck,
   IconCloudUpload,
   IconClock,
+  IconAlertTriangle,
   IconLogin,
   IconQrcode,
   IconRefresh,
@@ -26,9 +27,11 @@ import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   CabinetScoreJob,
+  JobRecentStats,
   JobResponse as JobStatus,
 } from "@maimai-score-hub/shared";
 
+import { getStatistics } from "../api/appClient";
 import { fetchLatestSync } from "../api/syncLatest";
 import {
   CabinetScoreJobApiError,
@@ -79,6 +82,9 @@ type LatestSyncPayload = Partial<Omit<LastSyncInfo, "scoreCount">> & {
   scores?: unknown[];
   scoreCount?: number;
 };
+
+const DXNET_LOW_SUCCESS_RATE_THRESHOLD = 60;
+const DXNET_STATS_MIN_TERMINAL_COUNT = 10;
 
 const DIFFICULTY_NAMES: Record<number, string> = {
   0: "BASIC",
@@ -446,6 +452,7 @@ export default function SyncPage() {
   const [qrText, setQrText] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [dxnetStats, setDxnetStats] = useState<JobRecentStats | null>(null);
   const chainedFriendshipJobIdRef = useRef<string | null>(null);
 
   // Loading state
@@ -580,6 +587,30 @@ export default function SyncPage() {
 
   useEffect(() => {
     window.localStorage.setItem("sync_update_method", syncMethod);
+  }, [syncMethod]);
+
+  useEffect(() => {
+    if (syncMethod !== "dxnet_bot") {
+      return;
+    }
+
+    let cancelled = false;
+
+    void getStatistics()
+      .then((statistics) => {
+        if (!cancelled) {
+          setDxnetStats(statistics.dxnetJobs);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDxnetStats(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [syncMethod]);
 
   const startUpdateScoreJob = useCallback(
@@ -843,6 +874,13 @@ export default function SyncPage() {
     syncMethod === "cabinet_qr" ? cabinetStatus?.status : syncStatus?.status;
   const cabinetBindingRequired =
     syncMethod === "cabinet_qr" && !profile?.hasCabinetUserId;
+  const dxnetTerminalCount = dxnetStats
+    ? dxnetStats.completedCount + dxnetStats.failedCount
+    : 0;
+  const showDxnetHealthWarning =
+    dxnetStats !== null &&
+    dxnetTerminalCount >= DXNET_STATS_MIN_TERMINAL_COUNT &&
+    dxnetStats.successRate < DXNET_LOW_SUCCESS_RATE_THRESHOLD;
   return (
     <Box style={{ position: "relative" }}>
       {offline && (
@@ -910,6 +948,9 @@ export default function SyncPage() {
                   disabled={syncing}
                   onChange={(value) => {
                     const nextMethod = value as "dxnet_bot" | "cabinet_qr";
+                    if (nextMethod === "dxnet_bot") {
+                      setDxnetStats(null);
+                    }
                     setSyncMethod(nextMethod);
                     if (nextMethod !== "cabinet_qr") {
                       setQrText("");
@@ -928,6 +969,19 @@ export default function SyncPage() {
                     },
                   ]}
                 />
+
+                {syncMethod === "dxnet_bot" && showDxnetHealthWarning && (
+                  <Alert
+                    color="orange"
+                    variant="light"
+                    icon={<IconAlertTriangle size={18} />}
+                    title="DX Net 当前不稳定"
+                    radius="md"
+                  >
+                    近 1 小时成功率仅 {dxnetStats.successRate.toFixed(1)}%（
+                    {dxnetTerminalCount} 个任务），建议改用二维码更新。
+                  </Alert>
+                )}
 
                 {syncMethod === "cabinet_qr" &&
                   (cabinetBindingRequired ? (
