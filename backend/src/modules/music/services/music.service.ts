@@ -85,7 +85,7 @@ export class MusicService implements OnModuleInit {
   onModuleInit() {
     const cronExpression =
       this.configService.get<string>('MUSIC_SYNC_CRON') ??
-      CronExpression.EVERY_6_HOURS;
+      CronExpression.EVERY_30_MINUTES;
     this.registerCron(cronExpression);
   }
 

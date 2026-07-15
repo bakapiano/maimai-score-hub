@@ -91,7 +91,7 @@
 
 - 持有曲库数据 `musics`。
 - 当前曲库同步使用 Diving Fish 数据源，并把外部 payload 转换为内部统一的 `MusicEntity`。
-- 启动时注册曲库同步 cron，表达式来自 `MUSIC_SYNC_CRON`，默认每 6 小时。
+- 启动时注册曲库同步 cron，表达式来自 `MUSIC_SYNC_CRON`，默认每 30 分钟。
 - `findAll()` 使用 Nest cache 缓存完整曲库列表，曲库同步后清除缓存。
 - 管理后台可手动触发曲库同步。
 

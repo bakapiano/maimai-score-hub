@@ -116,7 +116,7 @@ services:
       DXNET_BOT_FRIEND_LIMIT: ${DXNET_BOT_FRIEND_LIMIT:-80}
       PROBER_EXPORT_CONCURRENCY: ${PROBER_EXPORT_CONCURRENCY:-32}
       MUSIC_DATA_URL: ${MUSIC_DATA_URL:-https://www.diving-fish.com/api/maimaidxprober/music_data}
-      MUSIC_SYNC_CRON: ${MUSIC_SYNC_CRON:-0 */6 * * *}
+      MUSIC_SYNC_CRON: ${MUSIC_SYNC_CRON:-0 */30 * * * *}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-change-me-in-production}
       WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-maimai Score Hub}
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-maiscorehub.bakapiano.com}
