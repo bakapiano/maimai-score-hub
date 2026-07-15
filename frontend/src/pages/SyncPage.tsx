@@ -1133,6 +1133,23 @@ export default function SyncPage() {
                     </Stack>
                   )}
 
+                {syncError && <Alert color="red">{syncError}</Alert>}
+
+                {syncStatus?.error && (
+                  <Alert color="red" variant="light" title="错误" radius="md">
+                    {syncStatus.error}
+                  </Alert>
+                )}
+
+                {cabinetStatus?.error && (
+                  <Alert color="red" variant="light" title="错误" radius="md">
+                    {cabinetStatus.error.message}
+                    {cabinetStatus.error.retryAfter
+                      ? `（${new Date(cabinetStatus.error.retryAfter).toLocaleString("zh-CN")} 后可重试）`
+                      : ""}
+                  </Alert>
+                )}
+
                 <Divider />
 
                 <SimpleGrid
@@ -1174,23 +1191,6 @@ export default function SyncPage() {
               </Stack>
             </AppCard>
           </Stack>
-
-          {syncError && <Alert color="red">{syncError}</Alert>}
-
-          {syncStatus?.error && (
-            <Alert color="red" variant="light" title="错误" radius="md">
-              {syncStatus.error}
-            </Alert>
-          )}
-
-          {cabinetStatus?.error && (
-            <Alert color="red" variant="light" title="错误" radius="md">
-              {cabinetStatus.error.message}
-              {cabinetStatus.error.retryAfter
-                ? `（${new Date(cabinetStatus.error.retryAfter).toLocaleString("zh-CN")} 后可重试）`
-                : ""}
-            </Alert>
-          )}
 
           {syncing && syncStatus?.stage === "wait_acceptance" && (
             <FriendRequestAcceptanceAlert
