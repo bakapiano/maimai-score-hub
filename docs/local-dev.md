@@ -79,6 +79,8 @@ Edit `.env.local-dev`:
 
 - Set `ADMIN_PASSWORD` / `API_SHARED_SECRET`.
 - Set `CLICKHOUSE_PASSWORD` to the 101 ClickHouse writer password.
+- Set `FRONTEND_API_PROXY_TARGET` to the backend the Vite frontend should use;
+  use `https://api.maiscorehub.bakapiano.com` to test against production.
 
 Start everything:
 
@@ -115,7 +117,11 @@ Notes:
   only if the directory and its dependencies exist on this machine.
 - The scripts only stop PM2-managed processes. They do not kill unrelated
   `node.exe` processes by name.
-- Dev Tunnel URL is printed in `msh-devtunnel` logs.
+- Dev Tunnel URL is printed in `msh-devtunnel` logs. The first startup creates
+  a tunnel and stores its ID in the Git-ignored
+  `.local-dev/devtunnel.json`; later startups reuse that ID and URL. If the
+  remote tunnel has expired or been deleted, the script creates and stores a
+  replacement automatically.
 
 ## Manual backend `.env`
 

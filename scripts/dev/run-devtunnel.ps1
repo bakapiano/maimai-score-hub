@@ -1,3 +1,3 @@
-$description = "maimai-score-hub-local-frontend"
-& devtunnel host -p 3001 --protocol http --allow-anonymous --description $description
+$script = Join-Path $PSScriptRoot "run-devtunnel.cjs"
+& node $script
 exit $LASTEXITCODE

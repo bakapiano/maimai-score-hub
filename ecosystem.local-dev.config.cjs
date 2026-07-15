@@ -69,6 +69,10 @@ module.exports = {
       script: path.join(root, "frontend", "node_modules", "vite", "bin", "vite.js"),
       args: "--host 127.0.0.1 --port 3001",
       cwd: path.join(root, "frontend"),
+      env: {
+        FRONTEND_API_PROXY_TARGET:
+          env.FRONTEND_API_PROXY_TARGET || "http://127.0.0.1:9050",
+      },
       autorestart: true,
       max_restarts: 5,
     },
@@ -126,11 +130,9 @@ module.exports = {
     },
     {
       name: "msh-devtunnel",
-      script: "devtunnel.exe",
-      args:
-        'host -p 3001 --protocol http --allow-anonymous --description "maimai-score-hub-local-frontend"',
+      script: path.join(root, "scripts", "dev", "run-devtunnel.cjs"),
       cwd: root,
-      interpreter: "none",
+      interpreter: process.execPath,
       autorestart: true,
       max_restarts: 5,
     },
