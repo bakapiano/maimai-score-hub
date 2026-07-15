@@ -14,6 +14,8 @@ import {
   createBullmqQueueOptions,
   type DxnetWorkerJobData,
 } from '../../../common/bullmq/bullmq.config';
+import { runMaintenanceWithLease } from '../../../common/redis/redis-lease.defaults';
+import { RedisLeaseService } from '../../../common/redis/redis-lease.service';
 import { BotStatusService } from '../../bots/services/bot-status.service';
 import { getDxnetWorkerQueueName } from '@maimai-score-hub/shared';
 import { JobEntity } from '../schemas/job.schema';
@@ -53,6 +55,7 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
     @InjectModel(JobEntity.name)
     private readonly jobModel: Model<JobEntity>,
     private readonly botStatus: BotStatusService,
+    private readonly leases: RedisLeaseService,
     config: ConfigService,
   ) {
     this.queueOptions = createBullmqQueueOptions(config);
@@ -92,11 +95,13 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
 
     this.queueRepairStartupTimer = setTimeout(() => {
       this.queueRepairStartupTimer = null;
-      void this.repairMissingQueuedJobs().catch((err) => {
-        this.logger.warn(`initial dxnet queue repair failed: ${errorMessage(err)}`);
+      void this.runQueueRepair().catch((err) => {
+        this.logger.warn(
+          `initial dxnet queue repair failed: ${errorMessage(err)}`,
+        );
       });
       this.queueRepairInterval = setInterval(() => {
-        void this.repairMissingQueuedJobs().catch((err) => {
+        void this.runQueueRepair().catch((err) => {
           this.logger.warn(`dxnet queue repair failed: ${errorMessage(err)}`);
         });
       }, this.queueRepairIntervalMs);
@@ -192,9 +197,9 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
       }
       this.markBullmqJobFailed(jobId, failedReason).catch((err) => {
         this.logger.warn(
-          `failed to mirror BullMQ failure for ${queueName}/${jobId}: ${
-            errorMessage(err)
-          }`,
+          `failed to mirror BullMQ failure for ${queueName}/${jobId}: ${errorMessage(
+            err,
+          )}`,
         );
       });
     });
@@ -235,7 +240,16 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
     return Math.max(1, 100 - Math.floor(priority));
   }
 
-  private async repairMissingQueuedJobs(): Promise<void> {
+  private async runQueueRepair(): Promise<void> {
+    await runMaintenanceWithLease(
+      this.leases,
+      'dxnet-queue-repair',
+      ({ signal }) => this.repairMissingQueuedJobs(signal),
+    );
+  }
+
+  private async repairMissingQueuedJobs(signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     const cutoff = new Date(Date.now() - this.queueRepairMinAgeMs);
     const jobs = await this.jobModel
       .find({
@@ -249,6 +263,7 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
 
     let repaired = 0;
     for (const job of jobs) {
+      signal?.throwIfAborted();
       if (!job.botUserFriendCode) {
         continue;
       }

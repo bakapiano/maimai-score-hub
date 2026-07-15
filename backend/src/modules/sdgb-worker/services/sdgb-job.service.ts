@@ -42,19 +42,6 @@ const SDGB_JOB_TYPES: SdgbJobType[] = [
 ];
 const TERMINAL_STATUSES: SdgbJobStatus[] = ['completed', 'failed'];
 
-function getPositiveInt(
-  config: ConfigService,
-  key: string,
-  fallback: number,
-): number {
-  const raw = config.get<string | number>(key);
-  if (raw === null || raw === undefined || raw === '') {
-    return fallback;
-  }
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
-}
-
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -200,12 +187,6 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
   private readonly sdgbQueue: Queue<SdgbWorkerJobData>;
   private readonly sdgbQueueEvents: QueueEvents;
   private readonly workerStatusTtlSeconds: number;
-  private readonly queueRepairIntervalMs: number;
-  private readonly queueRepairStartupDelayMs: number;
-  private readonly queueRepairMinAgeMs: number;
-  private readonly queueRepairBatchSize: number;
-  private queueRepairInterval: NodeJS.Timeout | null = null;
-  private queueRepairStartupTimer: NodeJS.Timeout | null = null;
 
   constructor(
     @InjectModel(SdgbJobEntity.name)
@@ -227,54 +208,13 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       1,
       Math.floor(WORKER_STALE_MS / 1000) * 2,
     );
-    this.queueRepairIntervalMs = getPositiveInt(
-      config,
-      'SDGB_QUEUE_REPAIR_INTERVAL_MS',
-      60_000,
-    );
-    this.queueRepairStartupDelayMs = getPositiveInt(
-      config,
-      'SDGB_QUEUE_REPAIR_STARTUP_DELAY_MS',
-      15_000,
-    );
-    this.queueRepairMinAgeMs = getPositiveInt(
-      config,
-      'SDGB_QUEUE_REPAIR_MIN_AGE_MS',
-      30_000,
-    );
-    this.queueRepairBatchSize = getPositiveInt(
-      config,
-      'SDGB_QUEUE_REPAIR_BATCH_SIZE',
-      100,
-    );
   }
 
   onModuleInit(): void {
     this.ensureSdgbQueueEvents();
-    this.queueRepairStartupTimer = setTimeout(() => {
-      this.queueRepairStartupTimer = null;
-      void this.repairMissingQueuedJobs().catch((err) => {
-        this.logger.warn(
-          `initial sdgb queue repair failed: ${errorMessage(err)}`,
-        );
-      });
-      this.queueRepairInterval = setInterval(() => {
-        void this.repairMissingQueuedJobs().catch((err) => {
-          this.logger.warn(`sdgb queue repair failed: ${errorMessage(err)}`);
-        });
-      }, this.queueRepairIntervalMs);
-    }, this.queueRepairStartupDelayMs);
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.queueRepairStartupTimer) {
-      clearTimeout(this.queueRepairStartupTimer);
-      this.queueRepairStartupTimer = null;
-    }
-    if (this.queueRepairInterval) {
-      clearInterval(this.queueRepairInterval);
-      this.queueRepairInterval = null;
-    }
     await this.sdgbQueue.close();
     await this.sdgbQueueEvents.close();
   }
@@ -823,16 +763,22 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private async repairMissingQueuedJobs(): Promise<void> {
-    const cutoff = new Date(Date.now() - this.queueRepairMinAgeMs);
+  async repairMissingQueuedJobs(
+    minAgeMs: number,
+    batchSize: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    signal?.throwIfAborted();
+    const cutoff = new Date(Date.now() - minAgeMs);
     const jobs = await this.model
       .find({ status: 'queued', createdAt: { $lte: cutoff } })
       .sort({ createdAt: 1 })
-      .limit(this.queueRepairBatchSize)
+      .limit(batchSize)
       .lean<SdgbJobEntity[]>();
 
     let repaired = 0;
     for (const job of jobs) {
+      signal?.throwIfAborted();
       const existing = await this.sdgbQueue.getJob(job.id);
       if (existing) {
         const state = await existing.getState();

@@ -34,6 +34,8 @@ export function getDivingFishMusicSourceUrl(
   configService: ConfigService,
 ): string {
   return (
-    configService.get<string>('DIVING_FISH_MUSIC_URL') ?? DEFAULT_SOURCE_URL
+    configService.get<string>('MUSIC_DATA_URL') ??
+    configService.get<string>('DIVING_FISH_MUSIC_URL') ??
+    DEFAULT_SOURCE_URL
   );
 }

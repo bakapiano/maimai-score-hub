@@ -15,6 +15,8 @@ import type { Model } from 'mongoose';
 
 import { SyncService } from '../../sync/services/sync.service';
 import { UsersService } from '../../users/services/users.service';
+import { runMaintenanceWithLease } from '../../../common/redis/redis-lease.defaults';
+import { RedisLeaseService } from '../../../common/redis/redis-lease.service';
 import {
   DEFAULT_WORKER_JOB_OPTIONS,
   PROBER_EXPORT_QUEUE_NAME,
@@ -130,13 +132,13 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ProberExportService.name);
   private readonly queue: Queue<ProberExportJobData>;
   private readonly queueEvents: QueueEvents;
-  private sweepRunning = false;
 
   constructor(
     @InjectModel(ProberExportJobEntity.name)
     private readonly model: Model<ProberExportJobDocument>,
     private readonly users: UsersService,
     private readonly syncs: SyncService,
+    private readonly leases: RedisLeaseService,
     config: ConfigService,
   ) {
     const queueOptions = createBullmqQueueOptions(config);
@@ -325,38 +327,44 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
 
   @Interval(SWEEP_INTERVAL_MS)
   async sweepStaleAndQueued(): Promise<void> {
-    if (this.sweepRunning) {
-      return;
-    }
-    this.sweepRunning = true;
-    try {
-      const now = new Date();
-      const staleBefore = new Date(now.getTime() - STALE_MS);
-      const orphanBefore = new Date(now.getTime() - ORPHAN_PROCESSING_MS);
-      await this.model.updateMany(
-        {
-          status: 'processing',
-          claimedAt: { $lte: staleBefore },
-        },
-        {
-          $set: {
-            status: 'queued',
-            error: 'stale export worker lock released',
-            updatedAt: now,
-          },
-        },
-      );
-      await this.releaseProcessingOrphans(orphanBefore, now);
+    await runMaintenanceWithLease(
+      this.leases,
+      'prober-export-repair',
+      ({ signal }) => this.sweepStaleAndQueuedOnce(signal),
+    );
+  }
 
-      const queued = await this.model
-        .find({ status: 'queued' })
-        .sort({ createdAt: 1 })
-        .limit(200)
-        .select({ id: 1 })
-        .lean<Array<{ id: string }>>();
-      await Promise.all(queued.map((job) => this.ensureBullmqJob(job.id)));
-    } finally {
-      this.sweepRunning = false;
+  private async sweepStaleAndQueuedOnce(signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    const now = new Date();
+    const staleBefore = new Date(now.getTime() - STALE_MS);
+    const orphanBefore = new Date(now.getTime() - ORPHAN_PROCESSING_MS);
+    await this.model.updateMany(
+      {
+        status: 'processing',
+        claimedAt: { $lte: staleBefore },
+      },
+      {
+        $set: {
+          status: 'queued',
+          error: 'stale export worker lock released',
+          updatedAt: now,
+        },
+      },
+    );
+    signal.throwIfAborted();
+    await this.releaseProcessingOrphans(orphanBefore, now, signal);
+
+    signal.throwIfAborted();
+    const queued = await this.model
+      .find({ status: 'queued' })
+      .sort({ createdAt: 1 })
+      .limit(200)
+      .select({ id: 1 })
+      .lean<Array<{ id: string }>>();
+    for (const job of queued) {
+      signal.throwIfAborted();
+      await this.ensureBullmqJob(job.id);
     }
   }
 
@@ -495,6 +503,7 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
   private async releaseProcessingOrphans(
     orphanBefore: Date,
     now: Date,
+    signal?: AbortSignal,
   ): Promise<void> {
     const processing = await this.model
       .find({ status: 'processing', claimedAt: { $lte: orphanBefore } })
@@ -505,6 +514,7 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
 
     let released = 0;
     for (const job of processing) {
+      signal?.throwIfAborted();
       const existing = await this.queue.getJob(job.id);
       if (existing) {
         const state = await existing.getState();

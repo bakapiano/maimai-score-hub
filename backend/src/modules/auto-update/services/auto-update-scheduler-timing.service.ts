@@ -63,6 +63,10 @@ export class AutoUpdateSchedulerTimingService {
   readonly mapHotIntervalMs: number;
   readonly mapWarmIntervalMs: number;
   readonly mapColdIntervalMs: number;
+  readonly leaseTtlMs: number;
+  readonly leaseRenewEveryMs: number;
+  readonly sweepHardTimeoutMs: number;
+  readonly sweepAbortGraceMs: number;
 
   constructor(config: ConfigService) {
     this.cronExpr = config.get<string>('AUTO_UPDATE_CRON', '*/1 * * * *');
@@ -155,6 +159,26 @@ export class AutoUpdateSchedulerTimingService {
       config,
       'AUTO_UPDATE_MAP_COLD_INTERVAL_MS',
       HOUR,
+    );
+    this.leaseTtlMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_SWEEP_LEASE_TTL_MS',
+      90_000,
+    );
+    this.leaseRenewEveryMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_SWEEP_LEASE_RENEW_INTERVAL_MS',
+      30_000,
+    );
+    this.sweepHardTimeoutMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_SWEEP_HARD_TIMEOUT_MS',
+      10 * MINUTE,
+    );
+    this.sweepAbortGraceMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_SWEEP_ABORT_GRACE_MS',
+      3 * MINUTE,
     );
   }
 

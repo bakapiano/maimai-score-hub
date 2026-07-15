@@ -11,10 +11,10 @@ import {
   BotStatusEntity,
   BotStatusSchema,
 } from '../bots/schemas/bot-status.schema';
+import { CatalogModule } from '../catalog/catalog.module';
 import { CoverModule } from '../cover/cover.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { MusicModule } from '../music/music.module';
 import { JobModule } from '../job/job.module';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { UsersModule } from '../users/users.module';
@@ -28,8 +28,8 @@ import { UsersModule } from '../users/users.module';
       { name: JobEntity.name, schema: JobSchema },
       { name: BotStatusEntity.name, schema: BotStatusSchema },
     ]),
+    CatalogModule,
     CoverModule,
-    MusicModule,
     JobModule,
     SdgbWorkerModule,
     UsersModule,

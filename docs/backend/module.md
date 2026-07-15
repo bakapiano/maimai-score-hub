@@ -25,6 +25,7 @@
 | `AuthModule`          | `backend/src/modules/auth`          | `AuthService`、`AuthGuard`、`QrLoginService`                                   | 登录、JWT 校验、好友请求登录和机台二维码登录。                                                          |
 | `AutoUpdateModule`    | `backend/src/modules/auto-update`   | `AutoUpdateSchedulerService`                                                   | Rival-first 自动更新调度、Map auxiliary、FC/FS enrichment 触发和失败退避。                              |
 | `BotsModule`          | `backend/src/modules/bots`          | `BotStatusService`、`BotFriendSnapshotService`                                 | DXNet bot 状态、好友快照、可用性选择和不可用任务清理。                                                  |
+| `CatalogModule`       | `backend/src/modules/catalog`       | `CatalogSyncService`                                                           | 使用可续租 Redis lease 串行执行曲库与缺失封面同步。                                                     |
 | `CoverModule`         | `backend/src/modules/cover`         | `CoverService`                                                                 | 本地封面文件查找、同步、格式变体生成和封面数量统计。                                                    |
 | `JobModule`           | `backend/src/modules/job`           | `JobService`、`JobFriendshipService`、`JobQueueService` 等                     | DXNet worker 任务队列与任务生命周期。                                                                   |
 | `MusicModule`         | `backend/src/modules/music`         | `MusicService`                                                                 | 曲库数据、曲库来源配置、曲库定时同步和曲库缓存。                                                        |
@@ -73,7 +74,7 @@
 - 为公开封面接口提供本地路径查找，并按 `Accept: image/webp` 支持 png/webp 优先级。
 - 从 Diving Fish / LXNS 下载封面，并根据当前曲库来源构建跨来源 id 映射。
 - 使用 `sharp` 生成 png/webp 双格式变体。
-- 每天 03:00 Asia/Shanghai 自动增量同步封面，管理后台也可手动同步、强制同步或补齐本地变体。
+- 自动任务由 `CatalogSyncService` 每 30 分钟在曲库同步后执行；本地 png/webp 均存在时直接跳过，不拉取远程 id map 或封面。管理后台也可手动同步、强制同步或补齐本地变体。
 
 ### `JobModule`
 
@@ -91,7 +92,7 @@
 
 - 持有曲库数据 `musics`。
 - 当前曲库同步使用 Diving Fish 数据源，并把外部 payload 转换为内部统一的 `MusicEntity`。
-- 启动时注册曲库同步 cron，表达式来自 `MUSIC_SYNC_CRON`，默认每 30 分钟。
+- 曲库本身不再注册独立 cron；`CatalogSyncService` 使用可续租 Redis lease 每 30 分钟串行执行曲库 upsert 与缺失封面补齐。
 - `findAll()` 使用 Nest cache 缓存完整曲库列表，曲库同步后清除缓存。
 - 管理后台可手动触发曲库同步。
 

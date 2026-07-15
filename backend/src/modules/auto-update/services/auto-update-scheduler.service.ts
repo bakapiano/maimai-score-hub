@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { CronJob } from 'cron';
 import type { Model } from 'mongoose';
 
+import { RedisLeaseService } from '../../../common/redis/redis-lease.service';
 import { BotStatusService } from '../../bots/services/bot-status.service';
 import { JobService } from '../../job/services/job.service';
 import { ProberExportService } from '../../prober-export/services/prober-export.service';
@@ -84,13 +85,14 @@ export class AutoUpdateSchedulerService
     private readonly runsModel: Model<AutoUpdateRunEntity>,
     private readonly timing: AutoUpdateSchedulerTimingService,
     private readonly activity: AutoUpdateActivityService,
+    private readonly leases: RedisLeaseService,
   ) {}
 
   onModuleInit() {
     this.cron = new CronJob(
       this.timing.cronExpr,
       () => {
-        this.runSweepClaimed().catch((err) =>
+        this.runSweepLeased().catch((err) =>
           this.logger.error('Auto-update cron sweep failed', err),
         );
       },
@@ -113,9 +115,30 @@ export class AutoUpdateSchedulerService
     return ref.toISOString().slice(0, 16);
   }
 
-  private async runSweepClaimed(): Promise<Awaited<
+  private async runSweepLeased(): Promise<void> {
+    const result = await this.leases.run(
+      {
+        name: 'auto-update-sweep',
+        ttlMs: this.timing.leaseTtlMs,
+        renewEveryMs: this.timing.leaseRenewEveryMs,
+        hardTimeoutMs: this.timing.sweepHardTimeoutMs,
+        abortGraceMs: this.timing.sweepAbortGraceMs,
+      },
+      ({ signal }) => this.runSweepClaimed(signal),
+    );
+    if (!result.acquired) {
+      this.logger.debug(
+        'Skipping auto-update sweep: another replica owns the lease',
+      );
+    }
+  }
+
+  private async runSweepClaimed(
+    signal?: AbortSignal,
+  ): Promise<Awaited<
     ReturnType<AutoUpdateSchedulerService['runSweep']>
   > | null> {
+    signal?.throwIfAborted();
     const bucketKey = this.currentBucketKey();
     let won = false;
     try {
@@ -149,7 +172,8 @@ export class AutoUpdateSchedulerService
       return null;
     }
 
-    const summary = await this.runSweep();
+    signal?.throwIfAborted();
+    const summary = await this.runSweep(signal);
     await this.runsModel
       .updateOne(
         { bucketKey },
@@ -169,7 +193,7 @@ export class AutoUpdateSchedulerService
     return summary;
   }
 
-  async runSweep(): Promise<{
+  async runSweep(signal?: AbortSignal): Promise<{
     totalUsers: number;
     triggered: number;
     skippedNoChange: number;
@@ -194,8 +218,10 @@ export class AutoUpdateSchedulerService
 
     this.running = true;
     try {
+      signal?.throwIfAborted();
       const now = new Date();
-      await this.syncEnabledStates(now);
+      await this.syncEnabledStates(now, signal);
+      signal?.throwIfAborted();
       const due = await this.stateModel
         .find({
           enabled: true,
@@ -207,7 +233,8 @@ export class AutoUpdateSchedulerService
         .lean<AutoUpdateProbeStateEntity[]>()
         .exec();
 
-      const results = await this.runDueStates(due);
+      const results = await this.runDueStates(due, signal);
+      signal?.throwIfAborted();
       const mapDue = await this.stateModel
         .find({
           enabled: true,
@@ -218,7 +245,8 @@ export class AutoUpdateSchedulerService
         .limit(this.timing.mapBatchLimit)
         .lean<AutoUpdateProbeStateEntity[]>()
         .exec();
-      const mapResults = await this.runDueMapStates(mapDue);
+      const mapResults = await this.runDueMapStates(mapDue, signal);
+      signal?.throwIfAborted();
       const pendingFcfsDue = await this.stateModel
         .find({
           enabled: true,
@@ -242,7 +270,9 @@ export class AutoUpdateSchedulerService
       const pendingFcfs = await this.runDuePendingFcfsStates(
         pendingFcfsDue,
         now,
+        signal,
       );
+      signal?.throwIfAborted();
       const pendingFullUpdateDue = await this.stateModel
         .find({
           enabled: true,
@@ -256,6 +286,7 @@ export class AutoUpdateSchedulerService
       const pendingFullUpdate = await this.runDuePendingFullUpdateStates(
         pendingFullUpdateDue,
         now,
+        signal,
       );
 
       const triggered = results.filter((r) => r.action === 'triggered').length;
@@ -282,10 +313,15 @@ export class AutoUpdateSchedulerService
     }
   }
 
-  private async syncEnabledStates(now: Date): Promise<void> {
+  private async syncEnabledStates(
+    now: Date,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    signal?.throwIfAborted();
     const users = await this.users.getAutoUpdateUsers();
     const activeFriendCodes = users.map((u) => u.friendCode);
     if (users.length) {
+      signal?.throwIfAborted();
       await this.stateModel.bulkWrite(
         users.map((u) => {
           const initialDue = this.timing.initialRivalProbeAt(u.friendCode, now);
@@ -329,6 +365,7 @@ export class AutoUpdateSchedulerService
       );
     }
 
+    signal?.throwIfAborted();
     await this.stateModel.updateMany(
       activeFriendCodes.length
         ? { friendCode: { $nin: activeFriendCodes }, enabled: true }
@@ -339,6 +376,7 @@ export class AutoUpdateSchedulerService
 
   private async runDueStates(
     states: AutoUpdateProbeStateEntity[],
+    signal?: AbortSignal,
   ): Promise<AutoUpdateProbeResult[]> {
     const results: AutoUpdateProbeResult[] = [];
     let next = 0;
@@ -346,6 +384,7 @@ export class AutoUpdateSchedulerService
       { length: Math.min(this.timing.concurrency, states.length) },
       async () => {
         while (next < states.length) {
+          signal?.throwIfAborted();
           const index = next++;
           results[index] = await this.processRivalProbe(states[index]);
         }
@@ -357,6 +396,7 @@ export class AutoUpdateSchedulerService
 
   private async runDueMapStates(
     states: AutoUpdateProbeStateEntity[],
+    signal?: AbortSignal,
   ): Promise<AutoUpdateProbeResult[]> {
     const results: AutoUpdateProbeResult[] = [];
     let next = 0;
@@ -364,6 +404,7 @@ export class AutoUpdateSchedulerService
       { length: Math.min(this.timing.mapConcurrency, states.length) },
       async () => {
         while (next < states.length) {
+          signal?.throwIfAborted();
           const index = next++;
           results[index] = await this.processMapProbe(states[index]);
         }
@@ -376,6 +417,7 @@ export class AutoUpdateSchedulerService
   private async runDuePendingFcfsStates(
     states: AutoUpdateProbeStateEntity[],
     now: Date,
+    signal?: AbortSignal,
   ): Promise<PendingFcfsSummary> {
     const results: Array<'triggered' | 'failed' | 'skipped'> = [];
     let next = 0;
@@ -383,6 +425,7 @@ export class AutoUpdateSchedulerService
       { length: Math.min(this.timing.mapConcurrency, states.length) },
       async () => {
         while (next < states.length) {
+          signal?.throwIfAborted();
           const index = next++;
           results[index] = await this.processPendingFcfs(states[index], now);
         }
@@ -432,6 +475,7 @@ export class AutoUpdateSchedulerService
   private async runDuePendingFullUpdateStates(
     states: AutoUpdateProbeStateEntity[],
     now: Date,
+    signal?: AbortSignal,
   ): Promise<PendingFullUpdateSummary> {
     const results: Array<'created' | 'coveredByActive' | 'failed'> = [];
     let next = 0;
@@ -439,6 +483,7 @@ export class AutoUpdateSchedulerService
       { length: Math.min(this.timing.mapConcurrency, states.length) },
       async () => {
         while (next < states.length) {
+          signal?.throwIfAborted();
           const index = next++;
           results[index] = await this.processPendingFullUpdate(
             states[index],

@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
+import { runMaintenanceWithLease } from '../../../common/redis/redis-lease.defaults';
+import { RedisLeaseService } from '../../../common/redis/redis-lease.service';
 import { JobEntity } from '../../job/schemas/job.schema';
 import { BotStatusEntity } from '../schemas/bot-status.schema';
 
@@ -41,6 +43,7 @@ export class BotStatusService implements OnModuleDestroy {
     private readonly jobModel: Model<JobEntity>,
     @InjectModel(BotStatusEntity.name)
     private readonly botStatusModel: Model<BotStatusEntity>,
+    private readonly leases: RedisLeaseService,
   ) {
     this.startCleanup();
   }
@@ -266,7 +269,7 @@ export class BotStatusService implements OnModuleDestroy {
    */
   private startCleanup(): void {
     this.cleanupIntervalId = setInterval(() => {
-      this.cleanupStaleJobs().catch((err) => {
+      this.runStaleCleanup().catch((err) => {
         this.logger.error('Failed to cleanup stale bot jobs', err);
       });
     }, BotStatusService.CLEANUP_INTERVAL_MS);
@@ -275,11 +278,20 @@ export class BotStatusService implements OnModuleDestroy {
     );
   }
 
+  private async runStaleCleanup(): Promise<void> {
+    await runMaintenanceWithLease(
+      this.leases,
+      'bot-stale-job-cleanup',
+      ({ signal }) => this.cleanupStaleJobs(signal),
+    );
+  }
+
   /**
    * 清理分配给不可用 Bot 的任务
    * 将 queued/processing 且分配给 5 分钟内未上报可用的 Bot 的任务标记为 failed
    */
-  private async cleanupStaleJobs(): Promise<void> {
+  private async cleanupStaleJobs(signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     const now = Date.now();
     const threshold = new Date(now - BotStatusService.REPORT_TIMEOUT_MS);
 
@@ -297,6 +309,7 @@ export class BotStatusService implements OnModuleDestroy {
       return;
     }
 
+    signal?.throwIfAborted();
     const result = await this.jobModel.updateMany(
       {
         botUserFriendCode: { $in: unavailableBots },

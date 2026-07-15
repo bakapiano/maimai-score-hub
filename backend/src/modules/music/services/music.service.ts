@@ -3,20 +3,16 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
-  OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CronExpression, SchedulerRegistry } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
-import { CronJob } from 'cron';
 import { request as httpsRequest } from 'node:https';
 import { request as httpRequest } from 'node:http';
 import { URL } from 'node:url';
 import type { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
-import type { MusicDocument } from '../schemas/music.schema';
 import { MusicEntity } from '../schemas/music.schema';
 import {
   getDivingFishSourceUrl,
@@ -28,19 +24,22 @@ import { observeFetch } from '../../../common/observability/external-call-record
 const MUSIC_DATA_SOURCE = 'diving-fish';
 
 @Injectable()
-export class MusicService implements OnModuleInit {
+export class MusicService {
   private readonly logger = new Logger(MusicService.name);
 
   constructor(
     @InjectModel(MusicEntity.name)
-    private readonly musicModel: Model<MusicDocument>,
+    private readonly musicModel: Model<MusicEntity>,
     private readonly configService: ConfigService,
-    private readonly schedulerRegistry: SchedulerRegistry,
     @Inject(CACHE_MANAGER)
     private readonly cache: Cache,
   ) {}
 
-  private async fetchJson(url: string): Promise<ResponseLike> {
+  private async fetchJson(
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseLike> {
+    signal?.throwIfAborted();
     if (typeof fetch === 'function') {
       return observeFetch(
         {
@@ -51,7 +50,7 @@ export class MusicService implements OnModuleInit {
           statusCode: 0,
           durationMs: 0,
         },
-        () => fetch(url),
+        () => fetch(url, { signal }),
       );
     }
 
@@ -66,6 +65,7 @@ export class MusicService implements OnModuleInit {
           chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(String(d)));
         });
         res.on('end', () => {
+          signal?.removeEventListener('abort', abortRequest);
           const body = Buffer.concat(chunks).toString('utf8');
           resolve({
             ok:
@@ -77,33 +77,20 @@ export class MusicService implements OnModuleInit {
           });
         });
       });
-      req.on('error', reject);
+      const abortRequest = () => {
+        req.destroy(this.abortError(signal));
+      };
+      if (signal?.aborted) {
+        abortRequest();
+      } else {
+        signal?.addEventListener('abort', abortRequest, { once: true });
+      }
+      req.on('error', (error) => {
+        signal?.removeEventListener('abort', abortRequest);
+        reject(error);
+      });
       req.end();
     });
-  }
-
-  onModuleInit() {
-    const cronExpression =
-      this.configService.get<string>('MUSIC_SYNC_CRON') ??
-      CronExpression.EVERY_30_MINUTES;
-    this.registerCron(cronExpression);
-  }
-
-  private registerCron(expression: string) {
-    try {
-      const job = new CronJob(expression, () => {
-        void this.syncMusicData();
-      });
-
-      this.schedulerRegistry.addCronJob('music-data-sync', job);
-      job.start();
-      this.logger.log(`Music data sync scheduled with cron: ${expression}`);
-    } catch (error) {
-      this.logger.error(
-        `Failed to register cron job with expression "${expression}"`,
-        error instanceof Error ? error.stack : String(error),
-      );
-    }
   }
 
   async findAll() {
@@ -120,19 +107,20 @@ export class MusicService implements OnModuleInit {
     return result;
   }
 
-  async syncMusicData() {
+  async syncMusicData(signal?: AbortSignal) {
+    signal?.throwIfAborted();
     const sourceUrl = getDivingFishSourceUrl(this.configService);
     this.logger.log(
       `Syncing music data from ${MUSIC_DATA_SOURCE} (${sourceUrl}) ...`,
     );
-    return this.syncFromDivingFish(sourceUrl);
+    return this.syncFromDivingFish(sourceUrl, signal);
   }
 
-  private async syncFromDivingFish(sourceUrl: string) {
+  private async syncFromDivingFish(sourceUrl: string, signal?: AbortSignal) {
     let items: DivingFishItem[];
 
     try {
-      const response = await this.fetchJson(sourceUrl);
+      const response = await this.fetchJson(sourceUrl, signal);
       if (!response.ok) {
         throw new Error(`Remote responded with status ${response.status}`);
       }
@@ -164,24 +152,39 @@ export class MusicService implements OnModuleInit {
       convertDivingFishItemToDocument(item, now),
     );
 
-    return this.persistDocuments(documents, items.length);
+    signal?.throwIfAborted();
+    return this.persistDocuments(documents, items.length, signal);
   }
 
   private async persistDocuments(
     documents: Array<ReturnType<typeof convertDivingFishItemToDocument>>,
     total: number,
+    signal?: AbortSignal,
   ) {
     try {
-      await this.musicModel.deleteMany({});
-      const result = await this.musicModel.insertMany(documents, {
-        ordered: false,
+      const result = await this.musicModel.bulkWrite(
+        documents.map((document) => ({
+          updateOne: {
+            filter: { id: document.id },
+            update: { $set: document },
+            upsert: true,
+          },
+        })),
+        { ordered: false },
+      );
+      signal?.throwIfAborted();
+      const stale = await this.musicModel.deleteMany({
+        id: { $nin: documents.map((document) => document.id) },
       });
       const summary = {
-        upsertedCount: result.length,
+        matchedCount: result.matchedCount,
+        modifiedCount: result.modifiedCount,
+        upsertedCount: result.upsertedCount,
+        removedCount: stale.deletedCount,
         total,
       };
       this.logger.log(
-        `Music data sync finished: inserted ${summary.upsertedCount} items (full overwrite).`,
+        `Music data sync finished: total=${summary.total}, upserted=${summary.upsertedCount}, modified=${summary.modifiedCount}, removed=${summary.removedCount}.`,
       );
       await this.cache.del('music:all');
       return summary;
@@ -192,6 +195,12 @@ export class MusicService implements OnModuleInit {
       );
       throw new InternalServerErrorException('Persist music data failed');
     }
+  }
+
+  private abortError(signal?: AbortSignal): Error {
+    return signal?.reason instanceof Error
+      ? signal.reason
+      : new Error('Music sync aborted');
   }
 }
 

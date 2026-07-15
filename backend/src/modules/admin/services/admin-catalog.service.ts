@@ -1,28 +1,24 @@
 import { Injectable } from '@nestjs/common';
 
-import { CoverService } from '../../cover/services/cover.service';
-import { MusicService } from '../../music/services/music.service';
+import { CatalogSyncService } from '../../catalog/services/catalog-sync.service';
 
 @Injectable()
 export class AdminCatalogService {
-  constructor(
-    private readonly coverService: CoverService,
-    private readonly musicService: MusicService,
-  ) {}
+  constructor(private readonly catalogSync: CatalogSyncService) {}
 
   async syncCovers() {
-    return this.coverService.syncAll();
+    return this.catalogSync.syncCovers(false);
   }
 
   async forceSyncCovers() {
-    return this.coverService.forceSyncAll();
+    return this.catalogSync.syncCovers(true);
   }
 
   async backfillCoverVariants() {
-    return this.coverService.backfillLocalVariants();
+    return this.catalogSync.backfillCoverVariants();
   }
 
   async syncMusic() {
-    return this.musicService.syncMusicData();
+    return this.catalogSync.syncMusic();
   }
 }

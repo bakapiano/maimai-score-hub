@@ -29,10 +29,11 @@
 
 The B50 score image renderer (`src/modules/score-export/rendering/`) is based on the layout and assets from [Yuri-YuzuChaN/maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX) (HoshinoBot maimai DX plugin).
 
-## Music data sync job
+## Catalog sync job
 
-- Scheduled with `@nestjs/schedule`; cron expression comes from `MUSIC_SYNC_CRON` (default `0 */30 * * * *`).
-- Fetches `MUSIC_DATA_URL` (defaults to the official diving-fish music_data endpoint) and upserts into the `musics` collection.
+- Scheduled every 30 minutes; the cron expression comes from `MUSIC_SYNC_CRON` (default `0 */30 * * * *`).
+- A renewable Redis lease guarantees that only one backend replica runs the catalog pipeline. The task aborts at its configured hard timeout.
+- Fetches `MUSIC_DATA_URL` (defaults to the official diving-fish music_data endpoint), upserts into `musics`, then downloads or converts only missing cover variants.
 - Each chart merges `cid` + `ds` + `level` with the chart payload so `cid` is the chart key and `id` is the music key.
 
 ## Project setup

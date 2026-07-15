@@ -60,6 +60,7 @@ function createService(overrides?: {
       {} as any,
       timing as any,
       activity as any,
+      {} as any,
     ),
     timing,
     stateModel,

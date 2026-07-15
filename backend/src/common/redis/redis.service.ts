@@ -100,6 +100,18 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return Number(result) > 0;
   }
 
+  async compareAndPExpire(
+    key: string,
+    expectedValue: string,
+    ttlMs: number,
+  ): Promise<boolean> {
+    const result = await this.client.eval(
+      "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) else return 0 end",
+      { keys: [key], arguments: [expectedValue, String(ttlMs)] },
+    );
+    return Number(result) > 0;
+  }
+
   async keys(pattern: string): Promise<string[]> {
     return this.client.keys(pattern);
   }

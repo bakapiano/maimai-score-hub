@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { SdgbJobDispatcher } from './services/sdgb-job.dispatcher';
 import { SdgbJobEntity, SdgbJobSchema } from './schemas/sdgb-job.schema';
 import { SdgbJobService } from './services/sdgb-job.service';
+import { SdgbQueueRepairService } from './services/sdgb-queue-repair.service';
 
 @Module({
   imports: [
@@ -11,7 +12,7 @@ import { SdgbJobService } from './services/sdgb-job.service';
       { name: SdgbJobEntity.name, schema: SdgbJobSchema },
     ]),
   ],
-  providers: [SdgbJobService, SdgbJobDispatcher],
+  providers: [SdgbJobService, SdgbJobDispatcher, SdgbQueueRepairService],
   exports: [SdgbJobService, SdgbJobDispatcher],
 })
 export class SdgbWorkerModule {}

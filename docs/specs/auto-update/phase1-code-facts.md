@@ -23,6 +23,8 @@
 - `update_score` 支持 `diffsToScrape` 字段；稳定后全量更新传 `diffsToScrape=null`，走 worker 默认全难度。
 - music 表在 `SyncService` 内做 5 分钟缓存，避免每个用户 probe 都全表查询。
 - 初次迁移到新状态表时，会按 friendCode 做 deterministic offset，把首次 probe 分散到 cold interval 内，避免 cutover 后所有用户同时到期。
+- 每个 backend replica 都注册 scheduler；每轮先竞争可续租 Redis lease，获胜者再写入唯一 `auto_update_runs.bucketKey` 并执行 sweep。lease 覆盖整个 sweep，Mongo bucket 保留作每轮审计。
+- sweep 默认 hard timeout 为 10 分钟；锁每 30 秒原子续租，owner token 不匹配时立即中止继续派发任务。
 
 ## 当前未实现范围
 
@@ -66,6 +68,10 @@
 | `AUTO_UPDATE_RECENT_EVENT_DELAY_MS`        |        3 分钟 |
 | `AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS` |       45 分钟 |
 | `AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS` |       10 分钟 |
+| `AUTO_UPDATE_SWEEP_LEASE_TTL_MS`           |        90 秒 |
+| `AUTO_UPDATE_SWEEP_LEASE_RENEW_INTERVAL_MS`|        30 秒 |
+| `AUTO_UPDATE_SWEEP_HARD_TIMEOUT_MS`        |       10 分钟 |
+| `AUTO_UPDATE_SWEEP_ABORT_GRACE_MS`         |        3 分钟 |
 
 sdgb-worker:
 

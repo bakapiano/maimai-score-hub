@@ -14,6 +14,7 @@ import { AuthModule } from '../modules/auth/auth.module';
 import { AutoUpdateModule } from '../modules/auto-update/auto-update.module';
 import { BotsModule } from '../modules/bots/bots.module';
 import { CabinetScoreSyncModule } from '../modules/cabinet-score-sync/cabinet-score-sync.module';
+import { CatalogModule } from '../modules/catalog/catalog.module';
 import { CoverCatalogController } from './catalog/cover-catalog.controller';
 import { CoverModule } from '../modules/cover/cover.module';
 import { JobModule } from '../modules/job/job.module';
@@ -48,6 +49,7 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
     AutoUpdateModule,
     BotsModule,
     CabinetScoreSyncModule,
+    CatalogModule,
     CoverModule,
     JobModule,
     MusicModule,

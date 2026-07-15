@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Cron } from '@nestjs/schedule';
 import type { Model } from 'mongoose';
 import { mkdir, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -18,14 +17,14 @@ import type { LxnsApiResponse } from '../../../common/prober/lxns/transform';
 import type { DivingFishItem } from '../../../common/prober/diving-fish/transform';
 import { observeFetch } from '../../../common/observability/external-call-recorder';
 
-type SyncSummary = {
+export type SyncSummary = {
   total: number;
   saved: number;
   skipped: number;
   failed: number;
 };
 
-type LocalBackfillSummary = {
+export type LocalBackfillSummary = {
   total: number;
   saved: number;
   skipped: number;
@@ -43,7 +42,6 @@ export class CoverService {
   private readonly divingFishCoverBase = 'https://www.diving-fish.com/covers';
   private readonly lxnsCoverBase = 'https://assets.lxns.net/maimai/jacket';
   private readonly baseDir = join(process.cwd(), 'covers');
-  private scheduledSyncRunning = false;
 
   constructor(
     @InjectModel(MusicEntity.name)
@@ -115,10 +113,11 @@ export class CoverService {
     await mkdir(this.baseDir, { recursive: true });
   }
 
-  private async buildCrossIdMap(): Promise<{
+  private async buildCrossIdMap(signal?: AbortSignal): Promise<{
     toDivingFishId: (dbId: string) => string | null;
     toLxnsId: (dbId: string) => string | null;
   }> {
+    signal?.throwIfAborted();
     this.logger.log('Fetching both sources to build ID mapping...');
 
     const [dfRaw, lxnsRaw] = await Promise.all([
@@ -131,7 +130,7 @@ export class CoverService {
           statusCode: 0,
           durationMs: 0,
         },
-        () => fetch(DIVING_FISH_MUSIC_URL),
+        () => fetch(DIVING_FISH_MUSIC_URL, { signal }),
       ).then(async (r) => {
         if (!r.ok) {
           throw new Error(`diving-fish responded ${r.status}`);
@@ -151,7 +150,7 @@ export class CoverService {
           statusCode: 0,
           durationMs: 0,
         },
-        () => fetch(getLxnsSongListUrl()),
+        () => fetch(getLxnsSongListUrl(), { signal }),
       ).then(async (r) => {
         if (!r.ok) {
           throw new Error(`lxns responded ${r.status}`);
@@ -174,39 +173,18 @@ export class CoverService {
     };
   }
 
-  async syncAll(): Promise<SyncSummary> {
-    return this.doSync(false);
+  async syncAll(signal?: AbortSignal): Promise<SyncSummary> {
+    return this.doSync(false, signal);
   }
 
-  async forceSyncAll(): Promise<SyncSummary> {
-    return this.doSync(true);
+  async forceSyncAll(signal?: AbortSignal): Promise<SyncSummary> {
+    return this.doSync(true, signal);
   }
 
-  @Cron('0 3 * * *', { timeZone: 'Asia/Shanghai' })
-  async runScheduledDailySync() {
-    if (this.scheduledSyncRunning) {
-      this.logger.warn('Skip scheduled cover sync: previous run still active.');
-      return;
-    }
-
-    this.scheduledSyncRunning = true;
-    this.logger.log('Starting scheduled cover sync (daily 03:00 UTC+8).');
-    try {
-      const summary = await this.syncAll();
-      this.logger.log(
-        `Scheduled cover sync done: total=${summary.total}, saved=${summary.saved}, skipped=${summary.skipped}, failed=${summary.failed}`,
-      );
-    } catch (err) {
-      this.logger.error(
-        `Scheduled cover sync failed: ${(err as Error).message}`,
-        err instanceof Error ? err.stack : String(err),
-      );
-    } finally {
-      this.scheduledSyncRunning = false;
-    }
-  }
-
-  async backfillLocalVariants(): Promise<LocalBackfillSummary> {
+  async backfillLocalVariants(
+    signal?: AbortSignal,
+  ): Promise<LocalBackfillSummary> {
+    signal?.throwIfAborted();
     await this.ensureDir();
 
     const files = await readdir(this.baseDir);
@@ -229,6 +207,7 @@ export class CoverService {
 
     let processed = 0;
     const tasks = ids.map((id) => async () => {
+      signal?.throwIfAborted();
       const pngPath = this.buildLocalPath(id, 'png');
       const webpPath = this.buildLocalPath(id, 'webp');
       const [pngExists, webpExists] = await Promise.all([
@@ -264,11 +243,15 @@ export class CoverService {
       }
     });
 
-    await runWithConcurrency(tasks, 8);
+    await runWithConcurrency(tasks, 8, signal);
     return summary;
   }
 
-  private async doSync(force: boolean): Promise<SyncSummary> {
+  private async doSync(
+    force: boolean,
+    signal?: AbortSignal,
+  ): Promise<SyncSummary> {
+    signal?.throwIfAborted();
     this.logger.log(`Using diving-fish music data source, force=${force}`);
 
     const musics = await this.musicModel.find().select({ id: 1 }).lean();
@@ -279,18 +262,34 @@ export class CoverService {
       failed: 0,
     };
 
+    signal?.throwIfAborted();
     await this.ensureDir();
 
-    const { toDivingFishId, toLxnsId } = await this.buildCrossIdMap();
+    const targets = await this.selectSyncTargets(
+      musics,
+      force,
+      summary,
+      signal,
+    );
+    if (!targets.length) {
+      this.logger.log(
+        `Cover sync finished without remote fetch: all ${summary.total} covers already exist.`,
+      );
+      return summary;
+    }
+
+    const { toDivingFishId, toLxnsId } = await this.buildCrossIdMap(signal);
 
     let processed = 0;
-    const tasks = musics.map((m) => async () => {
+    const tasks = targets.map((m) => async () => {
+      signal?.throwIfAborted();
       const dbId = String(m.id);
       const result = await this.ensureCoverVariants(
         dbId,
         force,
         toDivingFishId,
         toLxnsId,
+        signal,
       );
 
       if (result === 'skipped') {
@@ -302,16 +301,44 @@ export class CoverService {
       }
 
       processed += 1;
-      if (processed % 50 === 0 || processed === summary.total) {
+      if (processed % 50 === 0 || processed === targets.length) {
         this.logger.log(
-          `Cover sync progress: ${processed}/${summary.total} (saved=${summary.saved}, skipped=${summary.skipped}, failed=${summary.failed})`,
+          `Cover sync progress: missing=${processed}/${targets.length}, catalog=${summary.total} (saved=${summary.saved}, skipped=${summary.skipped}, failed=${summary.failed})`,
         );
       }
     });
 
-    await runWithConcurrency(tasks, 16);
+    await runWithConcurrency(tasks, 16, signal);
 
     return summary;
+  }
+
+  private async selectSyncTargets<T extends { id?: unknown }>(
+    musics: T[],
+    force: boolean,
+    summary: SyncSummary,
+    signal?: AbortSignal,
+  ): Promise<T[]> {
+    if (force) {
+      return musics;
+    }
+
+    const targets: T[] = [];
+    const checks = musics.map((music) => async () => {
+      signal?.throwIfAborted();
+      const dbId = String(music.id);
+      const [pngExists, webpExists] = await Promise.all([
+        this.pathExists(this.buildLocalPath(dbId, 'png')),
+        this.pathExists(this.buildLocalPath(dbId, 'webp')),
+      ]);
+      if (pngExists && webpExists) {
+        summary.skipped += 1;
+      } else {
+        targets.push(music);
+      }
+    });
+    await runWithConcurrency(checks, 32, signal);
+    return targets;
   }
 
   private async ensureCoverVariants(
@@ -319,7 +346,9 @@ export class CoverService {
     force: boolean,
     toDivingFishId: (dbId: string) => string | null,
     toLxnsId: (dbId: string) => string | null,
+    signal?: AbortSignal,
   ): Promise<'saved' | 'skipped' | 'failed'> {
+    signal?.throwIfAborted();
     const pngPath = this.buildLocalPath(dbId, 'png');
     const webpPath = this.buildLocalPath(dbId, 'webp');
 
@@ -333,6 +362,7 @@ export class CoverService {
         dbId,
         toDivingFishId,
         toLxnsId,
+        signal,
       );
       return saved ? 'saved' : 'failed';
     }
@@ -367,6 +397,7 @@ export class CoverService {
       dbId,
       toDivingFishId,
       toLxnsId,
+      signal,
     );
     return saved ? 'saved' : 'failed';
   }
@@ -418,17 +449,21 @@ export class CoverService {
     dbId: string,
     toDivingFishId: (dbId: string) => string | null,
     toLxnsId: (dbId: string) => string | null,
+    signal?: AbortSignal,
   ): Promise<boolean> {
+    signal?.throwIfAborted();
     const source = await this.fetchCoverSourceBuffer(
       dbId,
       toDivingFishId,
       toLxnsId,
+      signal,
     );
 
     if (!source) {
       return false;
     }
 
+    signal?.throwIfAborted();
     return this.saveCoverVariantsFromBuffer(dbId, source);
   }
 
@@ -436,7 +471,9 @@ export class CoverService {
     dbId: string,
     toDivingFishId: (dbId: string) => string | null,
     toLxnsId: (dbId: string) => string | null,
+    signal?: AbortSignal,
   ): Promise<Buffer | null> {
+    signal?.throwIfAborted();
     const dfId = toDivingFishId(dbId);
     if (dfId) {
       const url = this.buildDivingFishUrl(dfId);
@@ -451,18 +488,20 @@ export class CoverService {
             durationMs: 0,
             attrs: { dbId },
           },
-          () => fetch(url),
+          () => fetch(url, { signal }),
         );
         if (res.ok) {
           return Buffer.from(await res.arrayBuffer());
         }
       } catch {
+        signal?.throwIfAborted();
         // fall through
       }
     }
 
     const lxId = toLxnsId(dbId);
     if (lxId) {
+      signal?.throwIfAborted();
       const url = this.buildLxnsUrl(lxId);
       try {
         const res = await observeFetch(
@@ -475,13 +514,14 @@ export class CoverService {
             durationMs: 0,
             attrs: { dbId },
           },
-          () => fetch(url),
+          () => fetch(url, { signal }),
         );
         const cacheControl = res.headers.get('cache-control');
         if (res.ok && cacheControl !== 'no-cache') {
           return Buffer.from(await res.arrayBuffer());
         }
       } catch {
+        signal?.throwIfAborted();
         // fall through
       }
     }
@@ -496,6 +536,7 @@ export class CoverService {
 async function runWithConcurrency<T>(
   tasks: Array<() => Promise<T>>,
   limit: number,
+  signal?: AbortSignal,
 ): Promise<T[]> {
   const results = new Array<T>(tasks.length);
   let next = 0;
@@ -504,6 +545,7 @@ async function runWithConcurrency<T>(
     .fill(null)
     .map(async () => {
       while (next < tasks.length) {
+        signal?.throwIfAborted();
         const idx = next++;
         results[idx] = await tasks[idx]();
       }
