@@ -84,7 +84,7 @@ export const TIMEOUTS = {
   /** 默认请求超时 (ms). */
   default: 60_000,
   /** Friend VS 页面请求超时 (ms) */
-  friendVS: 5 * 60 * 1000,
+  friendVS: 90_000,
   /** 好友请求接受等待超时 (ms) */
   friendAcceptWait: 5 * 60_000,
   /** 单个 job 的硬性超时 (ms). */
@@ -93,7 +93,8 @@ export const TIMEOUTS = {
 
 export const RETRY = {
   defaultCount: 3,
-  friendVSCount: 3,
+  /** Friend VS 总尝试次数（包含首次请求） */
+  friendVSCount: 2,
   baseDelayMs: 1000,
   maxDelayMs: 30_000,
   rateLimitMaxCount: 3,

@@ -6,7 +6,7 @@ import {
   getCachedFriendVsSongs,
   setCachedFriendVsSongs,
 } from "../backend/temp-cache.ts";
-import { MAIMAI_URLS, TIMEOUTS } from "./constants.ts";
+import { MAIMAI_URLS, RETRY, TIMEOUTS } from "./constants.ts";
 import type { FriendVsSong } from "../types.ts";
 import { NonRetryableError } from "./infra/errors.ts";
 import type { MaimaiHttpClient } from "./infra/http-client.ts";
@@ -59,6 +59,7 @@ export class MaimaiScoreApi {
       url,
       policy: {
         timeoutMs: TIMEOUTS.friendVS,
+        retryCount: RETRY.friendVSCount,
         assertBody: (body) => {
           if (!body.includes('<div class="friend_vs_block">')) {
             throw new NonRetryableError(

@@ -15,6 +15,7 @@ export interface MaimaiPageRequest {
   formBodyWithToken?: string;
   policy?: {
     timeoutMs?: number;
+    retryCount?: number;
     assertBody?: (body: string) => void;
   };
 }
@@ -62,7 +63,7 @@ export function buildMaimaiRequestPlan(
       ...(body !== undefined ? { body } : {}),
     },
     timeoutMs: request.policy?.timeoutMs ?? env.defaultTimeoutMs,
-    retryCount: RETRY.defaultCount,
+    retryCount: request.policy?.retryCount ?? RETRY.defaultCount,
     rateLimitRetryCount: RETRY.rateLimitMaxCount,
     assertBody: request.policy?.assertBody,
   };
