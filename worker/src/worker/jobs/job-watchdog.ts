@@ -1,7 +1,7 @@
 import { TIMEOUTS } from "../../common/maimai/constants.ts";
 import type { JobSession } from "./job-session.ts";
 
-const HARD_TIMEOUT_ERROR = "硬超时：处理时间超过 30 分钟";
+const HARD_TIMEOUT_ERROR = `硬超时：处理时间超过 ${TIMEOUTS.jobHardTimeout / 60_000} 分钟`;
 
 export class JobWatchdog {
   private readonly session: JobSession;
