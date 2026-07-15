@@ -8,6 +8,7 @@ import {
   Loader,
   Progress,
   SimpleGrid,
+  Skeleton,
   Stack,
   Text,
 } from "@mantine/core";
@@ -453,6 +454,9 @@ export default function SyncPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [dxnetStats, setDxnetStats] = useState<JobRecentStats | null>(null);
+  const [dxnetStatsLoading, setDxnetStatsLoading] = useState(
+    syncMethod === "dxnet_bot",
+  );
   const chainedFriendshipJobIdRef = useRef<string | null>(null);
 
   // Loading state
@@ -605,6 +609,11 @@ export default function SyncPage() {
       .catch(() => {
         if (!cancelled) {
           setDxnetStats(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDxnetStatsLoading(false);
         }
       });
 
@@ -951,6 +960,7 @@ export default function SyncPage() {
                     if (nextMethod === "dxnet_bot") {
                       setDxnetStats(null);
                     }
+                    setDxnetStatsLoading(nextMethod === "dxnet_bot");
                     setSyncMethod(nextMethod);
                     if (nextMethod !== "cabinet_qr") {
                       setQrText("");
@@ -970,18 +980,18 @@ export default function SyncPage() {
                   ]}
                 />
 
-                {syncMethod === "dxnet_bot" && showDxnetHealthWarning && (
-                  <Alert
-                    color="orange"
-                    variant="light"
-                    icon={<IconAlertTriangle size={18} />}
-                    title="DX Net 当前不稳定"
-                    radius="md"
-                  >
-                    近 1 小时成功率仅 {dxnetStats.successRate.toFixed(1)}%（
-                    {dxnetTerminalCount} 个任务），建议改用二维码更新。
-                  </Alert>
-                )}
+                {syncMethod === "dxnet_bot" &&
+                  (dxnetStatsLoading ? (
+                    <Skeleton height={58} radius="md" animate />
+                  ) : showDxnetHealthWarning ? (
+                    <Alert
+                      color="orange"
+                      variant="light"
+                      icon={<IconAlertTriangle size={18} />}
+                      title={`DX Net 近 1 小时成功率仅 ${dxnetStats.successRate.toFixed(1)}%，建议改用二维码更新`}
+                      radius="md"
+                    />
+                  ) : null)}
 
                 {syncMethod === "cabinet_qr" &&
                   (cabinetBindingRequired ? (
