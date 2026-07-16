@@ -19,10 +19,10 @@
 
 ## 1. 两类 Worker
 
-| workerClass   | 主要职责                     | Auto Recovery                            | 请求策略                                    | 可接受性                     |
-| ------------- | ---------------------------- | ---------------------------------------- | ------------------------------------------- | ---------------------------- |
-| `recoverable` | Probe 主力                   | 必须配置；故障后执行独立 MaintenanceHook | 不设置软件 QPS 上限；使用有限并发和 breaker | 可接受恢复期间部分 downtime  |
-| `stable`      | Interactive 主力、Probe 备用 | 不执行自动网络恢复                       | 严格 global + job-type 分层限流             | 优先保证用户任务稳定和低延迟 |
+| workerClass   | 主要职责                     | Auto Recovery                                                   | 请求策略                                    | 可接受性                     |
+| ------------- | ---------------------------- | --------------------------------------------------------------- | ------------------------------------------- | ---------------------------- |
+| `recoverable` | Probe 主力                   | 必须配置 `autoRecoveryHookKind`；故障后执行对应 MaintenanceHook | 不设置软件 QPS 上限；使用有限并发和 breaker | 可接受恢复期间部分 downtime  |
+| `stable`      | Interactive 主力、Probe 备用 | 不执行自动网络恢复                                              | 严格 global + job-type 分层限流             | 优先保证用户任务稳定和低延迟 |
 
 首版每个公网 IP 只运行一个 sdgb-worker 进程。Worker 升级采用 graceful drain-stop-start，不允许同 IP 双进程同时发起外部请求。
 
@@ -112,7 +112,7 @@ Failover 核心只提供：
 drain → standby active → hook gate → verify → handback
 ```
 
-现有 router reboot 项目只实现 `MaintenanceHook`：等待 `hookMayRun=true` 后执行重启，网络恢复后主动提交非敏感 observation。Hook 不直接操作 BullMQ、lane owner 或备用 worker。
+Recoverable 通过 `autoRecoveryHookKind` 选择 adapter。现有 router reboot 项目实现其中一种 `MaintenanceHook`：等待 `hookMayRun=true` 后执行重启，网络恢复后主动提交非敏感 observation。其他网络恢复 workflow 使用同一 contract。Hook 不直接操作 BullMQ、lane owner 或备用 worker。
 
 ## 7. Graceful Upgrade
 

@@ -18,6 +18,7 @@ Worker 上报：
 type WorkerHeartbeat = {
   workerId: string;
   workerClass: "recoverable" | "stable";
+  autoRecoveryHookKind?: string;
   version: string;
   processGeneration: string;
   sequence: number;
@@ -58,8 +59,8 @@ Worker 每次 heartbeat 都 reconcile desired state，不需要独立 command st
 - workerId、workerClass、capabilities 必须存在且合法。
 - workerClass 在 processGeneration 内不可变。
 - active lane 必须属于 capability。
-- Stable 缺少 strict rate policy 时拒绝 ready。
-- Recoverable 缺少 Auto Recovery hook 配置时拒绝 ready。
+- Stable 缺少 strict rate policy 或错误配置 Auto Recovery hook 时拒绝 ready。
+- Recoverable 缺少 autoRecoveryHookKind，或该 kind 没有已注册 adapter 时拒绝 ready。
 - 两个 live worker 报告相同 publicIp 时标记部署冲突，均不自动获取新 lane。
 - Sequence 对同一 processGeneration 单调递增。
 

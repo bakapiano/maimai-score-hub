@@ -12,6 +12,7 @@
 
 - Heartbeat TTL/stale。
 - Worker class/capability 校验。
+- Recoverable hook kind 存在且可解析；Stable 拒绝 hook kind。
 - Probe Recoverable → Stable。
 - Interactive Stable → Recoverable。
 - Public IP 冲突排除。
@@ -103,6 +104,7 @@
 ### Step 5：MaintenanceHook
 
 - 先使用 no-op hook。
+- 建立 hook adapter registry 和 idempotent resume。
 - 接入 router reboot adapter。
 - 人工执行一次完整 handoff/recovery/handback。
 - 最后启用定时任务。
@@ -148,6 +150,7 @@
 - [ ] Recoverable 不创建 QPS bucket，breaker/concurrency 生效。
 - [ ] Graceful upgrade 覆盖全部 job type。
 - [ ] Router hook 与 lease/queue 控制解耦。
+- [ ] 两个不同 hook kind 复用同一状态机，requestId 重试不重复创建外部操作。
 - [ ] Hook 只在 standby active 后运行。
 - [ ] DB migration/index 已验证。
 - [ ] Worker/Orchestrator API 幂等与鉴权已验证。
