@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -43,17 +44,21 @@ export class WorkerSdgbJobsController {
       role?: unknown;
     },
   ) {
-    const workerId =
-      typeof body.workerId === 'string' && body.workerId.trim()
-        ? body.workerId.trim()
-        : 'unknown';
+    if (typeof body.workerId !== 'string' || !body.workerId.trim()) {
+      throw new BadRequestException('sdgb worker heartbeat requires workerId');
+    }
+    const workerId = body.workerId.trim();
     const claimedDelta =
       typeof body.claimedDelta === 'number' &&
       Number.isFinite(body.claimedDelta)
         ? Math.max(0, Math.floor(body.claimedDelta))
         : 0;
-    const role = isSdgbWorkerRole(body.role) ? body.role : undefined;
-    await this.jobs.reportWorkerStatus(workerId, claimedDelta, role);
+    if (!isSdgbWorkerRole(body.role)) {
+      throw new BadRequestException(
+        'sdgb worker heartbeat requires role=probe|interactive|all',
+      );
+    }
+    await this.jobs.reportWorkerStatus(workerId, body.role, claimedDelta);
     return { ok: true };
   }
 

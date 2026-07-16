@@ -16,6 +16,7 @@ import {
   getSdgbWorkerJobTypesForRole,
   getSdgbWorkerLaneForJobType,
   getSdgbWorkerLanesForRole,
+  isSdgbWorkerRole,
   type SdgbWorkerJobData,
   type SdgbWorkerLane,
   type SdgbWorkerRole,
@@ -81,7 +82,7 @@ export interface SdgbAdminJobView extends SdgbJobView {
 export interface SdgbAdminStatusView {
   workers: Array<{
     workerId: string;
-    role: SdgbWorkerRole | 'legacy';
+    role: SdgbWorkerRole;
     lanes: readonly SdgbWorkerLane[];
     jobTypes: readonly SdgbJobType[];
     lastSeenAt: string;
@@ -119,7 +120,7 @@ export interface SdgbJobListView {
 
 interface SdgbWorkerStatus {
   workerId: string;
-  role: SdgbWorkerRole | 'legacy';
+  role: SdgbWorkerRole;
   lanes: readonly SdgbWorkerLane[];
   jobTypes: readonly SdgbJobType[];
   lastSeenAt: string;
@@ -667,8 +668,8 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
 
   async reportWorkerStatus(
     workerId: string,
+    role: SdgbWorkerRole,
     claimedDelta = 0,
-    role?: SdgbWorkerRole,
     seenAt: Date = new Date(),
   ): Promise<void> {
     await this.touchWorkerStatus(workerId, seenAt, claimedDelta, role);
@@ -705,19 +706,16 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     const rows: SdgbWorkerStatus[] = [];
     for (const key of keys) {
       const status = await this.redis.getJson<SdgbWorkerStatus>(key);
-      if (status?.workerId && status.lastSeenAt) {
-        const role = status.role ?? 'legacy';
+      if (
+        status?.workerId &&
+        status.lastSeenAt &&
+        isSdgbWorkerRole(status.role)
+      ) {
         rows.push({
           workerId: status.workerId,
-          role,
-          lanes:
-            status.lanes ??
-            (role === 'legacy' ? ['probe'] : getSdgbWorkerLanesForRole(role)),
-          jobTypes:
-            status.jobTypes ??
-            (role === 'legacy'
-              ? SDGB_JOB_TYPES
-              : getSdgbWorkerJobTypesForRole(role)),
+          role: status.role,
+          lanes: getSdgbWorkerLanesForRole(status.role),
+          jobTypes: getSdgbWorkerJobTypesForRole(status.role),
           lastSeenAt: status.lastSeenAt,
           jobsClaimed: status.jobsClaimed ?? 0,
         });
@@ -733,24 +731,17 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     workerId: string,
     seenAt: Date,
     claimedDelta: number,
-    role?: SdgbWorkerRole,
+    role: SdgbWorkerRole,
   ): Promise<void> {
     const key = this.workerStatusKey(workerId);
     const previous = await this.redis.getJson<SdgbWorkerStatus>(key);
-    const effectiveRole = role ?? previous?.role ?? 'legacy';
     await this.redis.setJson(
       key,
       {
         workerId,
-        role: effectiveRole,
-        lanes:
-          effectiveRole === 'legacy'
-            ? ['probe']
-            : getSdgbWorkerLanesForRole(effectiveRole),
-        jobTypes:
-          effectiveRole === 'legacy'
-            ? SDGB_JOB_TYPES
-            : getSdgbWorkerJobTypesForRole(effectiveRole),
+        role,
+        lanes: getSdgbWorkerLanesForRole(role),
+        jobTypes: getSdgbWorkerJobTypesForRole(role),
         lastSeenAt: seenAt.toISOString(),
         jobsClaimed: (previous?.jobsClaimed ?? 0) + claimedDelta,
       },
