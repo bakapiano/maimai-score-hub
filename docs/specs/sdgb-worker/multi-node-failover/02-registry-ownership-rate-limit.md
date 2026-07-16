@@ -239,11 +239,19 @@ root global hard limit
 - global burst 默认 1；
 - 每个 job type 有独立上限，但子限额相加不能突破 root global；
 - Interactive 有保留容量，并优先于 Probe waiter；
+- 保留容量采用 work-conserving priority，不是静态分区：Interactive 无 waiter 时 Probe 可借用空闲 token；
+- Interactive 到达后必须获得下一个 root token，不能排在已积压的 Probe waiter 后；
 - Probe 只能借用当前未被 Interactive/cleanup 使用的 token；
 - 出现 Interactive waiter 时，不再发放新的 Probe token，直到保留目标恢复；
 - 限制连续 Probe 发放数量，避免 Interactive 在 token 边界饥饿；
 - 等待 token 期间继续验证 cancel、lease 和 fence；
 - Stable 接管 Probe 时不得动态提高 global 上限。
+- Probe consumer/HTTP 并发必须留出 Interactive slot，避免 token 获批后仍被连接池或 semaphore 阻塞；
+- 限流只控制每次上游请求的启动，不串行占用整个 job 生命周期。
+
+因此，Stable global 为 `G` 且 burst=1 时，在系统未超过 Interactive 自身容量的前提下，Probe backlog 对新 Interactive 请求增加的 limiter 等待目标上界约为一个 token interval（`1/G`）加调度误差。已发出的请求不可抢占，但未发出的 Probe 请求不能继续排在 Interactive 前面。
+
+现有 promise-chain/FIFO token bucket 不能满足该保证；Stable 实现必须替换为独立 wait queue 的 priority-aware scheduler。仅调整各 job type 的 QPS 数字不足以解决 head-of-line blocking。
 
 初始配置结构：
 
@@ -251,10 +259,11 @@ root global hard limit
 type StableRatePolicy = {
   globalQps: number;
   burst: number;
-  cleanupReservedQps: number;
-  interactiveReservedQps: number;
   byJobType: Partial<Record<SdgbJobType, number>>;
+  priorityOrder: Array<"cleanup" | "interactive" | "probe">;
+  probeBorrowsIdleCapacity: boolean;
   maxConsecutiveProbe: number;
+  probeConcurrencyCap: number;
 };
 ```
 

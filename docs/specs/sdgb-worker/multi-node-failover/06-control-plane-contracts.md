@@ -21,10 +21,11 @@
 type StableRatePolicy = {
   globalQps: number;
   burst: number;
-  cleanupReservedQps: number;
-  interactiveReservedQps: number;
   byJobType: Partial<Record<SdgbJobType, number>>;
+  priorityOrder: Array<"cleanup" | "interactive" | "probe">;
+  probeBorrowsIdleCapacity: boolean;
   maxConsecutiveProbe: number;
+  probeConcurrencyCap: number;
 };
 
 type WorkerStaticConfig = {

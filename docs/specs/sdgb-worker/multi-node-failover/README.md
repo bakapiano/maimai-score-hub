@@ -46,6 +46,8 @@ cleanup
 
 Probe backlog 不得占用为 Interactive 保留的 token，也不得让 Interactive waiter 排在 Probe 后面。
 
+这里的“保留容量”不是静态切走一段闲置 QPS：Interactive 无 waiter 时 Probe 可以借用全部空闲 token；Interactive 一旦进入等待队列，下一个可用 root token 必须优先分配给 Interactive。调度器必须维护独立优先级 wait queue，禁止把所有 Probe waiter 预先放进单 FIFO token bucket。
+
 ## 2. 其他决策摘要
 
 - 保留逻辑 lane，不按机器创建队列。初始 lane 为 `probe` 和 `interactive`，未来可增加 `session` 或 Probe shard。

@@ -53,6 +53,9 @@ interface FakeUpstreamScenario {
 - Stable burst=1 间隔；
 - Stable Interactive/cleanup 保留容量；
 - Stable 有 Interactive waiter 时 Probe 不能继续占用保留 token；
+- 预先排队大量 Probe waiter 后到达 Interactive，请求仍获得下一个 root token；
+- Interactive 无 waiter 时 Probe 能借用空闲容量，不浪费静态 reservation；
+- Probe concurrency cap 为 Interactive 保留 semaphore/connection slot；
 - cancel/lease lost 可中止 Stable token wait。
 - 两个 live worker 报告相同 publicIp 时被判定为部署冲突。
 
@@ -226,18 +229,19 @@ Flag 必须有环境默认、owner 和删除日期。Roll back 时禁止同时�
 
 ## 9. SLO 与验收指标
 
-| 项目                                            |  初始目标 |
-| ----------------------------------------------- | --------: |
-| 计划内 handoff（不含 hook）                     | p95 < 30s |
-| 非计划 Probe failover                           | p95 < 45s |
-| 双 owner 时间                                   |         0 |
-| 计划内维护 job 丢失                             |         0 |
-| Breaker open 后新增普通调用                     |         0 |
-| Interactive 因 Probe handoff 增加的 p95 延迟    |      < 1s |
-| Stable 承接 Probe 时 Interactive 保留容量被突破 |         0 |
-| Read-only retry 最终完成率（有健康 standby）    |     > 99% |
-| Outcome unknown 被自动盲重试                    |         0 |
-| Session cancel 跳过 cleanup                     |         0 |
+| 项目                                            |                              初始目标 |
+| ----------------------------------------------- | ------------------------------------: |
+| 计划内 handoff（不含 hook）                     |                             p95 < 30s |
+| 非计划 Probe failover                           |                             p95 < 45s |
+| 双 owner 时间                                   |                                     0 |
+| 计划内维护 job 丢失                             |                                     0 |
+| Breaker open 后新增普通调用                     |                                     0 |
+| Interactive 因 Probe handoff 增加的 p95 延迟    |                                  < 1s |
+| Stable 承接 Probe 时 Interactive 保留容量被突破 |                                     0 |
+| Probe backlog 导致的 Interactive limiter wait   | ≤ `1/globalQps` + scheduler tolerance |
+| Read-only retry 最终完成率（有健康 standby）    |                                 > 99% |
+| Outcome unknown 被自动盲重试                    |                                     0 |
+| Session cancel 跳过 cleanup                     |                                     0 |
 
 ## 10. 运维 Runbook
 
