@@ -224,6 +224,18 @@ Recoverable 用于 Probe 主力：
 
 Recoverable 如果临时接管 Interactive，同样不获得 QPS limiter，但 Interactive job 仍按 BullMQ priority 和 type concurrency 执行。该模式只用于没有健康 Stable 的降级状态，必须报警。
 
+首版 concurrency：
+
+```text
+worker total = 16
+get_rival_hash = 8
+get_user_map = 4
+scan_qr = 1
+add_rival = 1
+get_music_score = 2
+cleanup = 1 independent slot
+```
+
 ### 7.2 Stable Worker
 
 Stable 使用严格分层请求调度器：
@@ -273,7 +285,24 @@ type StableRatePolicy = {
 };
 ```
 
-具体数值由生产观测配置，不写入架构不变量。
+具体数值保持可配置；以下为已确认首版默认值，后续通过显式变更调整。
+
+首版 Stable 配置已确认：
+
+```text
+global = 1.5 QPS, burst 1
+get_rival_hash = 0.95 QPS
+get_user_map = 0.5 QPS
+scan_qr = 1 QPS
+get_music_score = 1 QPS
+add_rival = 0.5 QPS
+maxConsecutiveProbe = 1
+probeConcurrencyCap = 4
+priorityOrder = cleanup, interactive, probe
+probeBorrowsIdleCapacity = true
+```
+
+Job-type 数值是 ceiling，不是静态容量切片；root global 始终 authoritative。
 
 ### 7.3 部署约束
 

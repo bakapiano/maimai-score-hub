@@ -310,14 +310,19 @@ Flag 必须有环境默认、owner 和删除日期。Roll back 时禁止同时�
 - [ ] 所有日志通过敏感信息扫描。
 - [ ] Router adapter 定时启用前完成至少一次 no-op 和一次人工维护演练。
 
-## 12. 待确认问题
+## 12. 已确认首版参数
 
-- Recoverable 各 job type 的安全 concurrency 上限是多少？
-- Stable global/job-type QPS 与 Interactive 保留容量如何按生产流量收敛？
-- Recoverable 恢复后，Probe 自动 handback 需要多长稳定观察期？
-- Interactive 何时从单 active 提升为多 active？
-- 是否需要独立 `session` lane，还是继续作为 Interactive capability？
-- Probe 单 owner 的最大安全 backlog/时延阈值是多少？
-- MaintenanceHook observation 由 orchestrator 主动提交还是控制面轮询？
-- UpstreamHealthCheck 的连续成功数和冷却参数如何通过生产数据收敛？
-- 公网 IP 变化是否仅用于观测，还是参与 handback policy？默认建议只作为观测，最终以健康验证为准。
+| 项目                    | 决策                                                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Recoverable concurrency | Worker total 16；Rival 8、Map 4、Scan 1、Add 1、Music 2；cleanup 独立 1。                                                 |
+| Stable rate policy      | Global 1.5 QPS / burst 1；Rival 0.95、Map 0.5、Scan 1、Music 1、Add 0.5；Probe concurrency cap 4；maxConsecutiveProbe 1。 |
+| Recoverable handback    | 网络恢复后观察 60 秒；期间完成 3 次健康检查、间隔 10 秒，全部成功才 handback。                                            |
+| Interactive active 模式 | 首版保持单 active；持续利用率超过 70% 或用户队列 p95 超过 2 秒后再评估多 active。                                         |
+| Session lane            | 首版不拆，`get_music_score` 保持 Interactive capability，通过独立 semaphore 和 cleanup coordinator 隔离。                 |
+| Probe backlog           | oldest age 15 分钟 warning、30 分钟 critical；critical 持续 15 分钟再进入容量调整。                                       |
+| Hook observation        | Orchestrator 按 requestId 主动、幂等提交；控制面不轮询设备，并独立执行健康验证。                                          |
+| Breaker/health          | 10 秒内连续 3 次 empty 打开；half-open 单并发；连续 3 次成功关闭；失败 cooldown 1/2/5/10/15 分钟。                        |
+| Public IP               | 只做观测和辅助判断；Failover 目标需不同 IP，handback 最终以健康验证为准。                                                 |
+| Auto Recovery budget    | 同一 Recoverable 最多每 30 分钟自动执行一次；再次失败保持备用 worker 接管并报警。                                         |
+
+以上为首版默认值，后续只能通过生产指标和显式变更调整，不保留未定义的自动自适应参数。

@@ -99,6 +99,88 @@ Breaker open 时原子执行或最终一致完成：
 
 Probe 从 Recoverable failover 到 Stable 后，重投 job 进入 Stable 的 Probe best-effort 调度，不得占用 Interactive 保留容量。Interactive 从 Stable failover 到 Recoverable 属于降级模式，必须在状态和告警中明确显示“无软件 QPS 上限”。
 
+### 5.2 Worker 发出的 Incident
+
+达到 breaker threshold 时，worker 同时执行本地 fail-closed，并向控制面发送 durable incident：
+
+```ts
+type WorkerIncident = {
+  incidentId: string;
+  workerId: string;
+  workerClass: "recoverable" | "stable";
+  publicIp?: string;
+  networkEpoch: number;
+  activeLanes: SdgbLane[];
+  failureClass: "empty_response";
+  consecutiveCount: number;
+  observationWindowMs: number;
+  activeJobsByType: Partial<Record<SdgbJobType, number>>;
+  occurredAt: string;
+};
+```
+
+Incident 使用 durable event/command transport，并以 incidentId 幂等；Pub/Sub 只能作为唤醒。它不包含请求 payload、原始响应或外部调用细节。
+
+Heartbeat 立即变为：
+
+```json
+{
+  "upstreamHealth": "blocked",
+  "breakerState": "open",
+  "drainingLanes": ["probe"],
+  "autoRecoveryState": "requested"
+}
+```
+
+Stable worker 不设置 `autoRecoveryState=requested`，只报告 blocked/open/draining。
+
+### 5.3 Recoverable Probe Failover 时序
+
+```text
+1st/2nd empty
+  -> classify UPSTREAM_EMPTY_RESPONSE
+  -> increment consecutive counter
+  -> current read-only job remains retryable; no terminal failed
+
+3rd empty within 10s
+  -> breaker open
+  -> emit WorkerIncident
+  -> close local request gate
+  -> pause Probe consumer
+  -> abort/requeue active Rival/Map with same jobId
+
+Control Plane
+  -> validate blocked worker owns Probe
+  -> select healthy Recoverable standby; if none, select Stable
+  -> command owner drain/release
+
+Stable takeover in current two-class fallback
+  -> acquire new Probe lease epoch
+  -> resume Probe consumer
+  -> heartbeat activeLanes=[interactive, probe]
+  -> release delayed Probe retries with jitter
+  -> Interactive receives next root token; Probe uses spare capacity
+
+After standby active
+  -> create maintenance request for failed Recoverable
+  -> hookMayRun=true
+  -> execute Auto Recovery hook
+  -> orchestrator submits recovery observation
+
+Recoverable returns
+  -> observe publicIp/networkEpoch
+  -> half-open single health check
+  -> require 3 successes, 10s apart, inside 60s clean window
+  -> mark healthy/closed
+
+Handback
+  -> Stable pauses only Probe and drains/requeues active Probe
+  -> Stable releases Probe lease, keeps Interactive active
+  -> Recoverable acquires new epoch and resumes Probe
+```
+
+如果 Auto Recovery 或健康验证再次失败，Stable 保持 Probe owner。30 分钟内不再次自动执行 hook，并发出需要人工处理的告警。
+
 ## 6. Retry 数据模型
 
 建议在 job 文档增加：

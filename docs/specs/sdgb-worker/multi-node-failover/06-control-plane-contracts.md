@@ -100,6 +100,10 @@ Backend 验证：
 - 两个 live worker 报告相同 publicIp 时，将它们标记为部署冲突并禁止自动 assignment；
 - 过大数组或未知 enum 拒绝。
 
+### 3.1 Worker Incident
+
+Breaker threshold、lease lost 和 fatal cleanup 等异步事件使用 durable WorkerIncident。Empty-response incident 的完整字段见 [空响应与重投](./04-empty-response-retry.md#52-worker-发出的-incident)。控制面按 incidentId 幂等处理；heartbeat 负责当前状态，incident 负责触发和审计，二者不能互相替代。
+
 ## 4. Lane Policy
 
 ```ts

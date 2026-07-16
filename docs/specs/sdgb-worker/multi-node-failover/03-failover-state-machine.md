@@ -64,6 +64,8 @@ Adapter 不直接访问 BullMQ/owner lease，也不硬编码备用 worker。Cron
 
 该 hook 配置在 Recoverable worker 上。Stable worker 不依赖自动网络恢复，不因普通 breaker open 自动执行路由重启类 hook。
 
+Orchestrator 按 requestId 主动、幂等提交 hook observation；控制面不轮询具体设备。单个 Recoverable 的自动 hook budget 为每 30 分钟最多一次，超出后保持备用 worker owner 并报警。
+
 ## 4. Maintenance Request
 
 ```ts
@@ -153,6 +155,17 @@ Hook 调用失败：
 - 新 primary 没有 active drain/cancel 冲突。
 
 验证失败时保持 standby owner，状态为 `degraded_standby_active`，报警并等待人工或下一次显式 verify。禁止自动循环执行 hook。
+
+Recoverable 首版 handback gate：
+
+```text
+observation window = 60s
+health successes = 3
+health interval = 10s
+half-open concurrency = 1
+```
+
+三次检查必须全部成功，且 60 秒观察窗内不能再出现 empty/network failure。公网 IP 是否变化只作为 observation；最终以 health gate 为准。
 
 ### 5.6 handback
 
