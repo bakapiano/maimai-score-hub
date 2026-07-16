@@ -6,6 +6,8 @@
 
 控制面由 Backend 多副本提供，负责 worker registry、lane policy、assignment、drain、maintenance、breaker 汇总、cancel 命令和 Admin 查询。
 
+Mongo collection、Redis key 与具体内部 API 清单见 [数据库与内部 API](./08-database-and-apis.md)。
+
 控制面不负责：
 
 - 执行设备重启或网络切换；

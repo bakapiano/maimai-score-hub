@@ -138,6 +138,7 @@ Hook 使用 fake 实现，验证解耦：
 ### Phase 0：Schema 与观测
 
 - 增加 lane/routingVersion、attempt/retry、cancel metadata。
+- 新增 worker config、maintenance run、incident collection，按 [数据库与内部 API](./08-database-and-apis.md) 建索引。
 - Heartbeat 增加 workerClass、capabilities、activeLanes、publicIp/networkEpoch、version、health、recovery/limiter 状态。
 - Admin/metrics 只观测，不改变消费。
 

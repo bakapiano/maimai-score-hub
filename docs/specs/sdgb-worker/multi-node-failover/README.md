@@ -17,6 +17,7 @@
 - [主动取消与各 Job 语义](./05-cancellation-job-semantics.md)
 - [控制面与数据契约](./06-control-plane-contracts.md)
 - [测试、发布与运维](./07-testing-rollout-operations.md)
+- [数据库与内部 API](./08-database-and-apis.md)
 
 ## 1. 核心决策：两类 Worker
 
