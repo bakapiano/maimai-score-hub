@@ -11,7 +11,7 @@
 ```
 
 - 同一进程可以同时具备 Probe/Interactive capability，并为多条 lane 创建 consumer。
-- 所有 lane 共用同一个进程内 global limiter。
+- Stable 的所有 lane 共用严格 request scheduler；Recoverable 不设置软件 QPS 上限。
 - Worker 升级使用 stop-start；不做同 IP 的 start-first 双进程滚动。
 - 新增机器应有独立公网出口；如果未来不能满足该约束，再引入分布式出口限流。
 
@@ -36,6 +36,7 @@ type WorkerHeartbeat = {
   workerId: string;
   version: string;
   startedAt: string;
+  workerClass: "recoverable" | "stable";
   capabilities: SdgbCapability[];
   activeLanes: SdgbLane[];
   drainingLanes: SdgbLane[];
@@ -43,6 +44,12 @@ type WorkerHeartbeat = {
   networkEpoch: number;
   upstreamHealth: "unknown" | "healthy" | "degraded" | "blocked";
   breakerState: "closed" | "open" | "half_open";
+  autoRecoveryState?: "idle" | "requested" | "running" | "verifying" | "failed";
+  limiterState?: {
+    globalQps: number;
+    interactiveWaiting: number;
+    probeWaiting: number;
+  };
   activeJobs: number;
   activeJobsByType: Partial<Record<SdgbJobType, number>>;
   lastSuccessAt?: string;
@@ -67,6 +74,7 @@ Worker 观察到公网 IP 变化时：
 sdgb:workers:<workerId>                 heartbeat JSON, TTL
 sdgb:workers:<workerId>:drain           desired drain state, TTL/explicit
 sdgb:workers:<workerId>:health          health/breaker summary, TTL
+sdgb:workers:<workerId>:recovery        Auto Recovery state, recoverable only
 sdgb:lanes:<lane>:owner                 owner lease token, TTL
 sdgb:lanes:<lane>:epoch                 monotonic fencing epoch
 sdgb:lanes:<lane>:desired-owner         optional planned handoff hint, TTL
@@ -110,6 +118,7 @@ renew     = 10s
 仅当 worker 同时满足以下条件才可 acquire：
 
 - capability 匹配；
+- workerClass 满足当前 lane 的 class priority；
 - heartbeat 未 stale；
 - 未 drain；
 - worker/Backend 版本满足 lane 最低版本；
@@ -155,7 +164,7 @@ type JobExecutionFence = {
 至少在以下位置检查 fence：
 
 - BullMQ job 被取出、读取 Mongo job 后；
-- 等待 type/global limiter 结束后；
+- 等待 class-specific request scheduler 结束后；
 - 每次上游调用前；
 - 写 terminal result 前；
 - 会话型 job 的关键 phase 转换前。
@@ -164,11 +173,21 @@ Fence 失效时，只读 job abort/requeue；有副作用或会话型 job 进入
 
 ## 6. Worker 选择
 
+Class priority：
+
+```text
+probe:       recoverable -> stable
+interactive: stable -> recoverable
+```
+
+只有高优先级 class 没有 active/healthy/eligible 候选时，才考虑下一 class。
+
 候选排序建议：
 
 ```text
 eligible
   -> explicit desired owner first
+  -> lane workerClass priority
   -> lane preference ascending
   -> current active lane count ascending
   -> active job count ascending
@@ -184,24 +203,69 @@ eligible
 
 选择算法必须确定性，避免 Backend 多副本同时给出不同目标。最终 ownership 仍以 Redis 原子 lease 为准。
 
-## 7. 进程内 Rate Limit
+## 7. Worker Class 与请求策略
 
-一个进程内的所有 lane consumer 共用同一个请求调度器：
+### 7.1 Recoverable Worker
+
+Recoverable 用于 Probe 主力：
+
+- 不设置软件 QPS 上限；
+- 保留有限 worker/type concurrency，避免本机资源耗尽；
+- 保留 empty-response circuit breaker；
+- Breaker open 后立即 pause/release lane，并触发已配置 Auto Recovery hook；
+- Auto Recovery 期间允许 Stable 接管 Probe；
+- 不进行无延迟无限重试。
+
+Recoverable 如果临时接管 Interactive，同样不获得 QPS limiter，但 Interactive job 仍按 BullMQ priority 和 type concurrency 执行。该模式只用于没有健康 Stable 的降级状态，必须报警。
+
+### 7.2 Stable Worker
+
+Stable 使用严格分层请求调度器：
 
 ```text
-cleanup     reserved
-interactive high weight
-probe       normal weight
+root global hard limit
+├─ cleanup reserved capacity
+├─ interactive reserved capacity
+│  ├─ scan_qr type limit
+│  ├─ get_music_score type limit
+│  └─ add_rival type limit
+└─ failover probe best-effort capacity
+   ├─ get_rival_hash type limit
+   └─ get_user_map type limit
 ```
 
 要求：
 
 - global burst 默认 1；
-- type bucket 不能相加突破 global 上限；
-- cleanup 可以使用保留预算，但仍计入进程总上限；
-- 等待 token 期间必须继续验证 cancel、lease 和 fence；
-- Probe waiter 不能提前塞满 FIFO，阻塞 Interactive；
+- 每个 job type 有独立上限，但子限额相加不能突破 root global；
+- Interactive 有保留容量，并优先于 Probe waiter；
+- Probe 只能借用当前未被 Interactive/cleanup 使用的 token；
+- 出现 Interactive waiter 时，不再发放新的 Probe token，直到保留目标恢复；
+- 限制连续 Probe 发放数量，避免 Interactive 在 token 边界饥饿；
+- 等待 token 期间继续验证 cancel、lease 和 fence；
+- Stable 接管 Probe 时不得动态提高 global 上限。
+
+初始配置结构：
+
+```ts
+type StableRatePolicy = {
+  globalQps: number;
+  burst: number;
+  cleanupReservedQps: number;
+  interactiveReservedQps: number;
+  byJobType: Partial<Record<SdgbJobType, number>>;
+  maxConsecutiveProbe: number;
+};
+```
+
+具体数值由生产观测配置，不写入架构不变量。
+
+### 7.3 部署约束
+
 - 同一公网出口不得启动第二个 worker 进程。
+- Recoverable/Stable 都使用 stop-start 发布。
+- Stable limiter 配置缺失或非法时启动失败。
+- Recoverable Auto Recovery hook 配置缺失时启动失败。
 
 滚动发布必须：
 
@@ -223,7 +287,7 @@ drain old process
 sdgb:rate:site-global
 ```
 
-它是所有 worker 本地 global limiter 之外的第二道约束，不用于解决同 IP 多进程；后者仍由部署约束禁止。
+它是 Stable 本地 strict limiter 和 Recoverable 并发/breaker 之外的可选第二道约束，不用于解决同 IP 多进程；后者仍由部署约束禁止。
 
 第一阶段不实现该全局 budget，也不保留未使用的配置抽象。
 
@@ -233,19 +297,22 @@ sdgb:rate:site-global
 - Owner renew 失败：exclusive lane 立即 fail closed。
 - 已建立的会话型 job：仅允许执行安全 cleanup 路径。
 - Redis 恢复后，worker 重新注册并竞争 assignment；不能沿用内存中的旧 lease。
-- 本地 limiter 继续保护当前正在完成的安全步骤，但控制面失效时不得领取新 exclusive job。
+- Stable limiter 或 Recoverable concurrency/breaker 继续约束当前安全步骤，但控制面失效时不得领取新 exclusive job。
 
 ## 10. 指标
 
 ```text
 sdgb_worker_registry_age_seconds{workerId}
+sdgb_worker_class{workerId,class}
 sdgb_worker_upstream_health{workerId,state}
 sdgb_worker_network_epoch{workerId}
+sdgb_worker_auto_recovery_state{workerId,state}
 sdgb_lane_owner{lane,workerId}
 sdgb_lane_lease_epoch{lane}
 sdgb_lane_handoff_total{lane,result,reason}
 sdgb_rate_wait_seconds{workerId,lane}
 sdgb_rate_denied_total{workerId,lane}
+sdgb_stable_reserved_capacity_utilization{workerId,trafficClass}
 sdgb_fence_rejected_total{lane,jobType}
 ```
 

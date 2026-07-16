@@ -23,12 +23,15 @@ interface FakeUpstreamScenario {
 ### 2.1 Registry/Eligibility
 
 - heartbeat 写入与 TTL；
+- workerClass 静态校验；
 - stale worker 排除；
 - capability/active lane 校验；
 - drain worker 排除；
 - blocked worker 排除；
 - version 不兼容排除；
 - preference/load 确定性排序；
+- Probe 优先 Recoverable、Interactive 优先 Stable；
+- 首选 class 全部不 eligible 时才跨 class failover；
 - 网络 failover 候选公网 IP 必须不同。
 
 ### 2.2 Lease/Fencing
@@ -43,11 +46,14 @@ interface FakeUpstreamScenario {
 
 ### 2.3 Rate Limit
 
-- 同一进程所有 lane 共享 global budget；
-- Interactive/Probe type bucket 相加不突破 global；
-- burst=1 间隔；
-- Interactive/cleanup fairness；
-- cancel/lease lost 可中止 token wait。
+- Recoverable 不产生软件 QPS token wait，但 concurrency 有界；
+- Recoverable breaker open 后不再发新请求并触发 Auto Recovery；
+- Stable 同一进程所有 lane 共享 strict global budget；
+- Stable Interactive/Probe type bucket 相加不突破 global；
+- Stable burst=1 间隔；
+- Stable Interactive/cleanup 保留容量；
+- Stable 有 Interactive waiter 时 Probe 不能继续占用保留 token；
+- cancel/lease lost 可中止 Stable token wait。
 - 两个 live worker 报告相同 publicIp 时被判定为部署冲突。
 
 ### 2.4 Circuit Breaker
@@ -77,6 +83,8 @@ interface FakeUpstreamScenario {
 
 - 两个 Probe-capable worker 竞争 exclusive lease，只允许一个消费；
 - Primary drain 后 standby 接管同一 waiting queue；
+- Probe 从 Recoverable 切到 Stable；Interactive 从 Stable 切到 Recoverable；
+- Stable 承接 Probe backlog 时 Interactive 延迟保持在目标内；
 - Active job abort 后由 standby 使用同 jobId 完成；
 - 旧 worker 暂停后恢复，fence 阻止继续；
 - Queue repair 尊重 lane、retryAt、cancel 和 active execution token；
@@ -115,6 +123,7 @@ Hook 使用 fake 实现，验证解耦：
 10. 新出口恢复但 health check 连续空响应。
 11. Interactive active job 与 Probe handoff 同进程并发。
 12. Session cleanup 与 worker shutdown 并发。
+13. Recoverable breaker open、Stable 接管、Auto Recovery hook、健康验证、Probe handback 完整链路。
 
 每个场景断言：无双 owner、无未限流调用、无 job 静默丢失、无敏感日志。
 
@@ -123,19 +132,21 @@ Hook 使用 fake 实现，验证解耦：
 ### Phase 0：Schema 与观测
 
 - 增加 lane/routingVersion、attempt/retry、cancel metadata。
-- Heartbeat 增加 capabilities、activeLanes、publicIp/networkEpoch、version、health。
+- Heartbeat 增加 workerClass、capabilities、activeLanes、publicIp/networkEpoch、version、health、recovery/limiter 状态。
 - Admin/metrics 只观测，不改变消费。
 
 验收：当前生产行为不变，Registry 数据稳定。
 
-### Phase 1：进程内 Global Limit 与部署约束
+### Phase 1：Worker Class 与请求策略
 
-- 确认所有 lane 使用同一个进程级 request scheduler。
-- 增加 Interactive/Probe/cleanup fairness。
+- 配置并展示 Recoverable/Stable class。
+- Recoverable 使用有限并发 + breaker，不启用 QPS limiter。
+- Stable 启用 strict global + job-type limiter。
+- Stable 增加 Interactive 保留容量与 Probe best-effort 调度。
 - 部署检查阻止同一 publicIp 两个 live worker。
 - Worker 发布使用 stop-start，不使用同 IP start-first。
 
-验收：`role=all` 压测总请求量不突破 global budget；重复 publicIp worker 不 eligible。
+验收：Recoverable 无 token 节流但 breaker 有效；Stable 不突破 global 且 Probe 不影响 Interactive；重复 publicIp worker 不 eligible。
 
 ### Phase 2：Lane Lease Observe-only
 
@@ -148,7 +159,7 @@ Hook 使用 fake 实现，验证解耦：
 ### Phase 3：Probe Exclusive Owner
 
 - Primary 使用 lease 控制本地 Probe consumer。
-- Standby 注册 Probe capability，但保持暂停。
+- Recoverable 作为 Probe 首选；Stable 注册 Probe capability 并保持 standby。
 - 手工执行无 hook 的 drain/handoff/handback。
 
 验收：同一 queue、同一 jobId 在 handoff 前后连续处理。
@@ -157,7 +168,7 @@ Hook 使用 fake 实现，验证解耦：
 
 - 接入 maintenance request 状态机。
 - 先使用 no-op/sleep hook 演练。
-- 再接入路由重启 adapter；adapter 只实现 hook contract。
+- 再为 Recoverable 接入路由重启 adapter；adapter 只实现 hook contract。
 - 先人工触发，再启用定时任务。
 
 验收：Hook 只在 standby active 后运行；验证失败保持 standby。
@@ -167,6 +178,7 @@ Hook 使用 fake 实现，验证解耦：
 - 先 shadow 统计 empty threshold。
 - 启用 breaker open 但只报警。
 - 启用 pause/release/standby takeover。
+- Recoverable 接管完成后触发 Auto Recovery；Stable 仅 failover/报警。
 - 最后启用 Rival/Map 同 jobId 重投。
 
 验收：模拟空响应不会形成请求风暴，standby 完成 read-only job。
@@ -191,6 +203,8 @@ Hook 使用 fake 实现，验证解耦：
 
 ```text
 SDGB_REGISTRY_V2_ENABLED
+SDGB_WORKER_CLASS_ROUTING_ENABLED
+SDGB_STABLE_RATE_POLICY_ENABLED
 SDGB_LANE_LEASE_ENABLED
 SDGB_MAINTENANCE_CONTROL_ENABLED
 SDGB_WORKER_BREAKER_ENABLED
@@ -204,6 +218,7 @@ Flag 必须有环境默认、owner 和删除日期。Roll back 时禁止同时�
 
 - Registry/metrics 可独立关闭，不影响 job。
 - Request scheduler rollback 前必须保持一个公网出口一个进程，并验证 type bucket 不会突破 global。
+- Worker class routing rollback 前必须固定唯一 owner，并停止自动跨 class failover。
 - Lane lease rollback 时先 drain standby，确认唯一当前 worker，再关闭 lease enforcement。
 - Maintenance hook 失败可停用定时入口，保留手工控制面。
 - Breaker/retry rollback 时 delayed job 必须显式 drain 或失败，不能遗留永久 queued。
@@ -211,17 +226,18 @@ Flag 必须有环境默认、owner 和删除日期。Roll back 时禁止同时�
 
 ## 9. SLO 与验收指标
 
-| 项目                                         |  初始目标 |
-| -------------------------------------------- | --------: |
-| 计划内 handoff（不含 hook）                  | p95 < 30s |
-| 非计划 Probe failover                        | p95 < 45s |
-| 双 owner 时间                                |         0 |
-| 计划内维护 job 丢失                          |         0 |
-| Breaker open 后新增普通调用                  |         0 |
-| Interactive 因 Probe handoff 增加的 p95 延迟 |      < 1s |
-| Read-only retry 最终完成率（有健康 standby） |     > 99% |
-| Outcome unknown 被自动盲重试                 |         0 |
-| Session cancel 跳过 cleanup                  |         0 |
+| 项目                                            |  初始目标 |
+| ----------------------------------------------- | --------: |
+| 计划内 handoff（不含 hook）                     | p95 < 30s |
+| 非计划 Probe failover                           | p95 < 45s |
+| 双 owner 时间                                   |         0 |
+| 计划内维护 job 丢失                             |         0 |
+| Breaker open 后新增普通调用                     |         0 |
+| Interactive 因 Probe handoff 增加的 p95 延迟    |      < 1s |
+| Stable 承接 Probe 时 Interactive 保留容量被突破 |         0 |
+| Read-only retry 最终完成率（有健康 standby）    |     > 99% |
+| Outcome unknown 被自动盲重试                    |         0 |
+| Session cancel 跳过 cleanup                     |         0 |
 
 ## 10. 运维 Runbook
 
@@ -252,11 +268,12 @@ Flag 必须有环境默认、owner 和删除日期。Roll back 时禁止同时�
 ### 10.4 添加机器
 
 1. 部署相同版本。
-2. 配置唯一 workerId/capabilities/preference，并确认使用独立公网出口。
-3. 确认 Registry healthy，activeLanes 为空。
-4. 执行一次 drain/handoff dry-run。
-5. 验证限流、fence、日志和 rollback。
-6. 加入正式候选。
+2. 配置唯一 workerId/workerClass/capabilities/preference，并确认使用独立公网出口。
+3. Recoverable 配置 Auto Recovery hook；Stable 配置 strict rate policy。
+4. 确认 Registry healthy，activeLanes 为空。
+5. 执行一次 drain/handoff dry-run。
+6. 验证 class priority、限流/并发、fence、日志和 rollback。
+7. 加入正式候选。
 
 ## 11. 发布前检查
 
@@ -264,6 +281,9 @@ Flag 必须有环境默认、owner 和删除日期。Roll back 时禁止同时�
 - [ ] Fake adapter 覆盖所有失败分类。
 - [ ] Redis lease/command 原子脚本有单元和并发测试。
 - [ ] Worker/Backend 多版本滚动顺序已演练。
+- [ ] Probe/Interactive 的 workerClass 优先级与跨 class failover 已覆盖。
+- [ ] Stable 的 Interactive 保留容量在 Probe backlog 压测中有效。
+- [ ] Recoverable 的 Auto Recovery 只在 standby active 后执行。
 - [ ] MaintenanceHook 与 Failover 核心无设备实现依赖。
 - [ ] Drain、breaker、cancel、lease lost 共用一致 active job coordinator。
 - [ ] Admin 能解释 worker 不 eligible 的具体原因。
@@ -272,6 +292,9 @@ Flag 必须有环境默认、owner 和删除日期。Roll back 时禁止同时�
 
 ## 12. 待确认问题
 
+- Recoverable 各 job type 的安全 concurrency 上限是多少？
+- Stable global/job-type QPS 与 Interactive 保留容量如何按生产流量收敛？
+- Recoverable 恢复后，Probe 自动 handback 需要多长稳定观察期？
 - Interactive 何时从单 active 提升为多 active？
 - 是否需要独立 `session` lane，还是继续作为 Interactive capability？
 - Probe 单 owner 的最大安全 backlog/时延阈值是多少？

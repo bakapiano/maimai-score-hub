@@ -62,7 +62,7 @@ BullMQ processor
 以下等待同样可取消：
 
 - type semaphore；
-- process-wide global rate limiter；
+- class-specific request scheduler；
 - retry backoff；
 - health/fence wait；
 - HTTP request；

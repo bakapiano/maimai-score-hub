@@ -18,18 +18,33 @@
 ## 2. Worker 配置
 
 ```ts
+type StableRatePolicy = {
+  globalQps: number;
+  burst: number;
+  cleanupReservedQps: number;
+  interactiveReservedQps: number;
+  byJobType: Partial<Record<SdgbJobType, number>>;
+  maxConsecutiveProbe: number;
+};
+
 type WorkerStaticConfig = {
   workerId: string;
   version: string;
+  workerClass: "recoverable" | "stable";
   capabilities: SdgbCapability[];
   lanePreferences: Partial<Record<SdgbLane, number>>;
+  autoRecoveryHookKind?: string;
+  stableRatePolicy?: StableRatePolicy;
 };
 ```
 
 启动时必须验证：
 
 - workerId 非空且在环境内唯一；
+- workerClass 合法；
 - capabilities 均为当前版本支持值；
+- Recoverable 必须配置 autoRecoveryHookKind，且不接受 Stable rate policy；
+- Stable 必须配置合法 strict rate policy，且不自动运行 recovery hook；
 - session capability 所需保护依赖可用；
 - Registry/Redis/Backend 可达；
 - 不在未获得 assignment 时自动 resume exclusive lane。
@@ -42,6 +57,7 @@ type WorkerHeartbeat = {
   version: string;
   sequence: number;
   sentAt: string;
+  workerClass: "recoverable" | "stable";
   capabilities: SdgbCapability[];
   activeLanes: SdgbLane[];
   drainingLanes: SdgbLane[];
@@ -49,6 +65,12 @@ type WorkerHeartbeat = {
   networkEpoch: number;
   upstreamHealth: UpstreamHealthState;
   breakerState: BreakerState;
+  autoRecoveryState?: "idle" | "requested" | "running" | "verifying" | "failed";
+  limiterState?: {
+    globalQps: number;
+    interactiveWaiting: number;
+    probeWaiting: number;
+  };
   ownedLeases: Array<{
     lane: SdgbLane;
     epoch: number;
@@ -63,6 +85,7 @@ type WorkerHeartbeat = {
 Backend 验证：
 
 - workerId 与认证主体匹配；
+- workerClass 与注册时静态配置匹配，运行中不可变；
 - sequence 对同一进程单调递增；
 - active lane 必须属于 capability；
 - owned lease 与 Redis token/epoch 一致；
@@ -78,6 +101,7 @@ type LanePolicy = {
   queueName: string;
   mode: "exclusive" | "shared";
   requiredCapabilities: SdgbCapability[];
+  preferredWorkerClasses: Array<"recoverable" | "stable">;
   maxActiveWorkers: number;
   failoverEnabled: boolean;
   requireDistinctPublicIpOnFailover: boolean;
@@ -86,6 +110,13 @@ type LanePolicy = {
   leaseTtlMs: number;
   leaseRenewMs: number;
 };
+```
+
+初始 class priority：
+
+```text
+probe:       [recoverable, stable]
+interactive: [stable, recoverable]
 ```
 
 Policy 属于代码/受控配置，不允许任意用户动态修改 queueName 或 capability。
@@ -239,10 +270,12 @@ Lease epoch 过期时，read-only requeue 可以更新；普通 completed 不允
 至少展示：
 
 - workerId/version；
+- workerClass/Auto Recovery 状态；
 - capabilities/active lanes/draining lanes；
 - current public IP/networkEpoch；
 - heartbeat age；
 - upstream/breaker state；
+- Stable limiter 配置与 Interactive/Probe waiter；Recoverable 显示 unthrottled + concurrency；
 - active jobs；
 - owned lease/epoch；
 - preference 和 eligibility rejection reason。

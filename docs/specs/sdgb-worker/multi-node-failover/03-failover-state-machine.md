@@ -62,6 +62,8 @@ Hook 只在控制面确认 standby 已 active 后执行。Hook 不得：
 
 Adapter 不直接访问 BullMQ/owner lease，也不硬编码备用 worker。Cron 与手工入口必须共用进程级互斥和同一 request state；只有整个 maintenance 完成后才记录 success。如果 hook 已触发但进程或网络中断，恢复后根据 requestId 进入 verification，不能直接再次执行重启。
 
+该 hook 配置在 Recoverable worker 上。Stable worker 不依赖自动网络恢复，不因普通 breaker open 自动执行路由重启类 hook。
+
 ## 4. Maintenance Request
 
 ```ts
@@ -103,7 +105,7 @@ Any post-hook failure -> degraded_standby_active
 ### 5.1 requested / selecting_standby
 
 - 验证目标 worker 当前是 affected lane owner。
-- 为每条 lane 选择健康且 capability 匹配的 standby。
+- 为每条 lane 按 workerClass priority 选择健康且 capability 匹配的 standby：Probe 先 Recoverable 后 Stable，Interactive 先 Stable 后 Recoverable。
 - Standby 必须是另一个 worker；网络维护时还必须确认两者公网 IP 不同。
 - 无 standby 时拒绝进入维护，保持 primary 不变。
 
@@ -164,6 +166,8 @@ Hook 调用失败：
 
 Handback 失败时保持当前 standby owner，不做双边 resume。
 
+Handback 目标遵循 lane class priority：Probe 恢复到健康 Recoverable，Interactive 恢复到健康 Stable。如果原 worker class 不是该 lane 的首选，只在它仍是当前最佳候选时 handback。
+
 ## 6. 计划内时序
 
 ```mermaid
@@ -208,7 +212,7 @@ sequenceDiagram
 
 1. 当前 lease 到期，不由 Backend 强删。
 2. 标记原 owner unavailable。
-3. 选择另一台公网 IP 不同的健康 standby。
+3. 按 lane class priority 选择另一台公网 IP 不同的健康 standby。
 4. Standby acquire 新 epoch。
 5. Queue 中 waiting/delayed job 自然继续。
 6. 原 active job 由 BullMQ stalled recovery、job fence 和 Mongo execution state共同处理。
@@ -229,7 +233,8 @@ Circuit breaker open 是 worker 当前网络出口故障，不一定是进程故
 3. 受影响 exclusive lane owner 进入 drain/release。
 4. 候选选择另一个已验证公网 IP 的 worker。
 5. Standby 接管。
-6. 原出口只有经过 half-open health verification 后才能重新 eligible。
+6. Recoverable 在 standby active 后触发其 Auto Recovery hook；Stable 不自动执行该 hook。
+7. 原出口只有经过 half-open health verification 后才能重新 eligible。
 
 如果 worker 同时承担不依赖该上游的其他职责，不要求整个进程退出。
 

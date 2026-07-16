@@ -15,7 +15,7 @@ flowchart LR
       LO[Lane Ownership]
       DR[Drain and assignment]
       CB[Worker upstream health and breaker]
-      RL[Process-wide rate limiter]
+      RL[Class-specific request policy]
     end
 
     MH[Maintenance orchestrator] --> CP[Generic maintenance control]
@@ -36,24 +36,28 @@ flowchart LR
     WI --> UA
 ```
 
-Backend 业务模块只选择 lane，不选择机器。Worker 是否消费某条 lane，由 capability、assignment、lease、drain 和 upstream health 共同决定。每个公网出口只运行一个 sdgb-worker 进程，其所有 lane 共用一个 global limiter。
+Backend 业务模块只选择 lane，不选择机器。Worker 是否消费某条 lane，由 workerClass、capability、assignment、lease、drain 和 upstream health 共同决定。每个公网出口只运行一个 sdgb-worker 进程。
 
 维护操作同样与设备实现解耦。控制面只处理 drain、handoff、verification gate 和 handback；外部 orchestrator 在获得 `standby active` 确认后执行 `MaintenanceHook`。Hook 可以是路由器重启、网络切换、主机维护或人工确认，核心状态机不包含任何设备协议。
 
-## 2. Capability 与 Assignment 分离
+## 2. Worker Class、Capability 与 Assignment 分离
 
 当前 `role=probe|interactive|all` 同时表达“能做什么”和“正在做什么”，不适合动态 failover。目标模型拆成：
 
 ```text
+workerClass = 恢复与限流策略（recoverable / stable）
 capabilities = worker 能安全处理的 lane/job 类型
 activeLanes  = 控制面当前允许 worker 消费的 lane
 ```
+
+`workerClass` 不代替 capability：Stable 可以具备 Probe capability，Recoverable 也可以具备 Interactive capability；class 只决定候选优先级、Auto Recovery 要求和请求策略。
 
 示例：
 
 ```json
 {
   "workerId": "worker-standby-a",
+  "workerClass": "stable",
   "capabilities": ["probe", "interactive"],
   "activeLanes": ["interactive"],
   "drainingLanes": [],
@@ -61,7 +65,7 @@ activeLanes  = 控制面当前允许 worker 消费的 lane
 }
 ```
 
-该 worker 常态只处理 Interactive，但不重启进程即可在获得 Probe lease 后恢复本地 Probe consumer。所有 lane 共用同一进程的连接池、active job registry 和 global limiter。
+该 Stable worker 常态只处理 Interactive，但不重启进程即可在没有健康 Recoverable Probe owner 时获得 Probe lease。Interactive 使用保留容量；Probe 只能使用剩余 token。
 
 ## 3. Lane 是部署策略，不是机器名
 
@@ -92,6 +96,7 @@ azure-jobs
 type LanePolicy = {
   mode: "exclusive" | "shared";
   requiredCapability: string;
+  preferredWorkerClasses: WorkerClass[];
   maxActiveWorkers: number;
   failoverEnabled: boolean;
   ratePolicy: string;
@@ -100,10 +105,10 @@ type LanePolicy = {
 
 初始配置：
 
-| Lane          | mode        | max active | 说明                                                 |
-| ------------- | ----------- | ---------: | ---------------------------------------------------- |
-| `probe`       | `exclusive` |          1 | 上游风控与配额未完全明确，优先保证单出口、单 owner。 |
-| `interactive` | `shared`    |          1 | 数据结构允许扩展，第一阶段仍保持一台 active。        |
+| Lane          | mode        | class priority           | max active | 说明                                          |
+| ------------- | ----------- | ------------------------ | ---------: | --------------------------------------------- |
+| `probe`       | `exclusive` | `recoverable` → `stable` |          1 | Recoverable 主跑；恢复期间由 Stable 接管。    |
+| `interactive` | `shared`    | `stable` → `recoverable` |          1 | Stable 主跑；Stable 不可用时才跨 class 接管。 |
 
 `shared` 不代表无限 active。控制面仍必须检查 worker health、单进程预算和 session capability。
 
@@ -128,13 +133,15 @@ type SdgbJobRouting = {
 
 ```text
 Process
-├─ shared global request gate
+├─ class-specific request scheduler
 ├─ public IP / upstream health observer
 ├─ active job registry
 ├─ Probe BullMQ Worker          paused/resumed by ownership
 ├─ Interactive BullMQ Worker    paused/resumed by assignment
 └─ session cleanup coordinator  enabled only with session capability
 ```
+
+Recoverable scheduler 不设置 QPS 上限，但保留有限并发与 breaker。Stable scheduler 使用严格 global 上限、job-type 子限额和 Interactive 保留容量。
 
 本地 `pause(true)` 只停止该进程领取，不允许使用 BullMQ global pause 作为 lane ownership，因为 global pause 会影响其他机器。
 
@@ -144,15 +151,17 @@ Process
 
 1. 部署相同版本镜像。
 2. 设置唯一 `workerId`。
-3. 配置 `capabilities` 和各 lane preference。
-4. 连接同一 Backend/Redis 控制面。
-5. 通过 startup self-check 后开始 heartbeat。
-6. 控制面将其纳入候选；除非获得 assignment/lease，否则不消费 exclusive lane。
+3. 配置 `workerClass`、`capabilities` 和各 lane preference。
+4. Recoverable 必须配置 Auto Recovery hook；Stable 必须配置严格限流策略。
+5. 连接同一 Backend/Redis 控制面。
+6. 通过 startup self-check 后开始 heartbeat。
+7. 控制面将其纳入候选；除非获得 assignment/lease，否则不消费 exclusive lane。
 
 配置示例只表达内部调度属性：
 
 ```env
 WORKER_ID=worker-new-a
+SDGB_WORKER_CLASS=stable
 SDGB_CAPABILITIES=probe,interactive
 SDGB_PROBE_PREFERENCE=50
 SDGB_INTERACTIVE_PREFERENCE=20
@@ -171,6 +180,7 @@ Preference 数值越小越优先。Preference 只用于候选排序，不能绕�
 当用户交互量需要扩容时，可将 `interactive.maxActiveWorkers` 提高。前提：
 
 - 每个 active worker 使用独立公网出口，且每个出口只运行一个进程；
+- Active worker 优先选择 Stable class；
 - 如果后续确认存在站点全局配额，已启用可选的全局预算；
 - 有副作用 job 已有幂等或 outcome-unknown 处理；
 - 会话 cleanup 可跨 worker fencing；
@@ -197,3 +207,4 @@ probe-shard-1
 - 仅依赖 heartbeat 判定 ownership，不使用带 token 的原子 lease。
 - Lease 丢失后继续完成非 cleanup 上游操作。
 - 自动 failover 到 `upstreamHealth=blocked` 或版本不兼容的 worker。
+- Probe 有健康 Recoverable 候选时仍分配给 Stable，或 Interactive 有健康 Stable 候选时仍分配给 Recoverable。

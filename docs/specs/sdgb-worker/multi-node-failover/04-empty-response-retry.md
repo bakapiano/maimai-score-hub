@@ -90,6 +90,15 @@ Breaker open 时原子执行或最终一致完成：
 
 不能在 open 后继续完成普通重试预算。Cleanup 可以使用保留预算，但仍需限流和审计。
 
+### 5.1 Worker Class 行为
+
+| workerClass   | Breaker open 后动作                                                                                   |
+| ------------- | ----------------------------------------------------------------------------------------------------- |
+| `recoverable` | 按 lane 规则 failover；确认 standby active 后触发该 worker 配置的 Auto Recovery MaintenanceHook。     |
+| `stable`      | 按 lane 规则 failover，但不自动执行网络恢复 hook；Stable 的严格限流配置保留，等待人工或普通健康恢复。 |
+
+Probe 从 Recoverable failover 到 Stable 后，重投 job 进入 Stable 的 Probe best-effort 调度，不得占用 Interactive 保留容量。Interactive 从 Stable failover 到 Recoverable 属于降级模式，必须在状态和告警中明确显示“无软件 QPS 上限”。
+
 ## 6. Retry 数据模型
 
 建议在 job 文档增加：
@@ -188,7 +197,7 @@ Health check：
 - 不从用户 job 复制敏感 payload；
 - 使用固定、只读、低成本的内部检查策略；
 - 不输出原始响应；
-- 受该 worker 的 global limiter；
+- 受该 workerClass 的请求策略约束：Stable 使用严格 limiter，Recoverable 使用有限并发与 breaker；
 - half-open 同一 worker 最多一个并发；
 - 结果进入 breaker event，不创建业务 job。
 
