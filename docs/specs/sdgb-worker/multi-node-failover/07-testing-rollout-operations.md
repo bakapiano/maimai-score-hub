@@ -127,6 +127,9 @@ Hook 使用 fake 实现，验证解耦：
 11. Interactive active job 与 Probe handoff 同进程并发。
 12. Session cleanup 与 worker shutdown 并发。
 13. Recoverable breaker open、Stable 接管、Auto Recovery hook、健康验证、Probe handback 完整链路。
+14. Stable 正在执行每一种用户 job 时发起升级，验证 drain、等待、cleanup 和 handoff。
+15. 无 standby 的 stop-start 升级，waiting job 短暂排队但 active job 不失败。
+16. Graceful deadline 到达但 side-effect/session job 不安全，部署保持 blocked 而不是强杀。
 
 每个场景断言：无双 owner、无未限流调用、无 job 静默丢失、无敏感日志。
 
@@ -148,6 +151,7 @@ Hook 使用 fake 实现，验证解耦：
 - Stable 增加 Interactive 保留容量与 Probe best-effort 调度。
 - 部署检查阻止同一 publicIp 两个 live worker。
 - Worker 发布使用 stop-start，不使用同 IP start-first。
+- Stop 前必须获得 drained 或 cleanup_handoff_ready；blocked 状态中止部署。
 
 验收：Recoverable 无 token 节流但 breaker 有效；Stable 不突破 global 且 Probe 不影响 Interactive；重复 publicIp worker 不 eligible。
 
@@ -235,6 +239,7 @@ Flag 必须有环境默认、owner 和删除日期。Roll back 时禁止同时�
 | 非计划 Probe failover                           |                             p95 < 45s |
 | 双 owner 时间                                   |                                     0 |
 | 计划内维护 job 丢失                             |                                     0 |
+| 计划内升级导致 active 用户 job 普通失败         |                                     0 |
 | Breaker open 后新增普通调用                     |                                     0 |
 | Interactive 因 Probe handoff 增加的 p95 延迟    |                                  < 1s |
 | Stable 承接 Probe 时 Interactive 保留容量被突破 |                                     0 |
@@ -279,12 +284,23 @@ Flag 必须有环境默认、owner 和删除日期。Roll back 时禁止同时�
 6. 验证 class priority、限流/并发、fence、日志和 rollback。
 7. 加入正式候选。
 
+### 10.5 Worker 升级
+
+1. 创建 deployment maintenance request，将 worker 标记 draining。
+2. 如有 standby，按 lane class priority 完成 handoff。
+3. 等待 active job 返回 `drained` 或 `cleanup_handoff_ready`。
+4. 若返回 `blocked`，停止发布并处理具体 job，不使用短 timeout 强杀。
+5. 完全停止旧进程后启动新进程。
+6. 验证 version、heartbeat、publicIp/networkEpoch 和 upstream health。
+7. 按 class priority reacquire/handback lane。
+
 ## 11. 发布前检查
 
 - [ ] 文档和代码不包含任何外部地址、凭据、密钥或加密细节。
 - [ ] Fake adapter 覆盖所有失败分类。
 - [ ] Redis lease/command 原子脚本有单元和并发测试。
 - [ ] Worker/Backend 多版本滚动顺序已演练。
+- [ ] Stable 每种用户 job 的 graceful upgrade 行为已验证。
 - [ ] Probe/Interactive 的 workerClass 优先级与跨 class failover 已覆盖。
 - [ ] Stable 的 Interactive 保留容量在 Probe backlog 压测中有效。
 - [ ] Recoverable 的 Auto Recovery 只在 standby active 后执行。

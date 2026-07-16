@@ -141,7 +141,7 @@ Drain 是 lane/worker 级取消协调：
 
 1. 标记 worker/lane draining。
 2. 本地 pause，停止领取。
-3. 等待 `drainGraceMs`。
+3. 按 job type/phase 等待对应 graceful deadline；lane `drainGraceMs` 只是 read-only 默认值。
 4. Read-only active job 可继续完成。
 5. 超时后 abort 并 requeue read-only job。
 6. 有副作用 job 等待明确结果或进入 outcome unknown。
@@ -149,6 +149,8 @@ Drain 是 lane/worker 级取消协调：
 8. Active registry 达到安全空闲后上报 drained。
 
 Planned maintenance 只有收到 drained ack 才进入 standby activation/hook。
+
+Stable worker 的用户 job 不能被统一短 timeout 强杀。若有副作用或 session job 尚未到安全点，deployment 保持 `draining`，或在 durable cleanup 已确认可接管后再停止。Recoverable 上的 Probe read-only job 可以使用更短 grace 并重排。
 
 ## 10. Worker Shutdown
 
@@ -164,7 +166,15 @@ pause all local consumers
 → exit
 ```
 
-强制退出 timeout 到达前若仍有不安全 session，依赖 durable lease 恢复；日志和状态必须明确指出未完成 cleanup。
+计划内升级不应走强制退出路径。只有进程失控或系统级 deadline 才允许 force exit；若仍有不安全 session，必须先确认 durable lease 已写入且恢复 worker 可接管。日志和状态明确指出未完成 cleanup，相关 job 不能显示普通 canceled/completed。
+
+Shutdown coordinator 应分别暴露：
+
+```text
+drained                 所有 active job 已安全结束/重排
+cleanup_handoff_ready   剩余 session 已有 durable recovery 保护
+blocked                 仍有不能安全停止的 job，部署应延后
+```
 
 ## 11. 控制面取消流程
 

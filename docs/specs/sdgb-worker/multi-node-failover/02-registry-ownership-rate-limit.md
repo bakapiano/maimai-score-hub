@@ -37,6 +37,7 @@ type WorkerHeartbeat = {
   version: string;
   startedAt: string;
   workerClass: "recoverable" | "stable";
+  lifecycleState: "running" | "draining" | "cleanup_handoff_ready" | "blocked";
   capabilities: SdgbCapability[];
   activeLanes: SdgbLane[];
   drainingLanes: SdgbLane[];
@@ -52,6 +53,11 @@ type WorkerHeartbeat = {
   };
   activeJobs: number;
   activeJobsByType: Partial<Record<SdgbJobType, number>>;
+  shutdownBlockers?: Array<{
+    jobId: string;
+    jobType: SdgbJobType;
+    phase: string;
+  }>;
   lastSuccessAt?: string;
   lastEmptyResponseAt?: string;
 };
@@ -280,13 +286,24 @@ type StableRatePolicy = {
 
 ```text
 drain old process
+→ active jobs reach a job-specific safe point
+→ optional lane handoff to another worker
 → stop old process
 → start new process
 → verify health
 → reacquire lane
 ```
 
-不允许 start-first overlap。
+不允许未受控的 start-first overlap，也不允许直接停止仍有 active 用户 job 的进程。
+
+Drain grace 按 job 语义处理，不使用一个很短的统一 kill timeout：
+
+- Rival/Map 可在短 grace 后 abort/requeue；
+- QR 类临时输入 job 优先让当前 attempt 在有效期内完成；
+- 可能有副作用的 job 请求发出后等待明确结果或 outcome-unknown disposition；
+- 会话型 job 必须完成或持久化 cleanup，再允许进程退出。
+
+有健康 standby 时，旧 worker drained/release 后先让 standby 接管 lane，再停止和升级旧进程；新进程健康后按 class priority handback。没有 standby 时，waiting job 保留在 BullMQ，接受短暂排队，但 active job 仍必须 graceful 处理。
 
 ## 8. 可选站点全局预算
 

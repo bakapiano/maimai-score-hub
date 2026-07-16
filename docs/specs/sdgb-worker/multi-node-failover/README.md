@@ -56,6 +56,7 @@ Probe backlog 不得占用为 Interactive 保留的 token，也不得让 Interac
 - `probe` 初始采用单 active、多 standby；只有持有 Redis owner lease 的 worker 可以消费 Probe queue。
 - `interactive` 初始仍为单 active，但数据结构和限流支持未来多 active。
 - 明确约束一个公网出口只运行一个 sdgb-worker 进程；滚动升级使用 stop-start，不允许同 IP 双进程重叠。
+- `stop-start` 必须是 graceful drain-stop-start：先停止领取并让 active job 达到安全终点，再停止进程；短暂停机不是跳过 graceful shutdown 的理由。
 - `stable` worker 的所有 lane 使用同一个严格的进程级请求调度器；`recoverable` 不设置 QPS 上限。`publicIp` 只作为动态观测和 failover 验证字段。
 - 计划内维护使用 drain → standby takeover → maintenance → health verification → handback 状态机。
 - 连续空响应触发该 worker 的 circuit breaker；Probe owner 暂停领取、释放 lease，并由健康 standby 接管。
@@ -126,6 +127,7 @@ Probe backlog 不得占用为 Interactive 保留的 token，也不得让 Interac
 
 11. Probe 分配优先 recoverable，Interactive 分配优先 stable；只有首选 class 无健康 active 候选时才跨 class failover。
 12. Stable 上的 Probe failover 流量不能消耗 Interactive 保留容量。
+13. 计划内升级不能依赖 BullMQ stalled recovery 处理 active 用户 job；必须执行 job-aware graceful drain 和 session cleanup。
 
 ## 8. 验收摘要
 

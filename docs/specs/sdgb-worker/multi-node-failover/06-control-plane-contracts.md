@@ -59,6 +59,7 @@ type WorkerHeartbeat = {
   sequence: number;
   sentAt: string;
   workerClass: "recoverable" | "stable";
+  lifecycleState: "running" | "draining" | "cleanup_handoff_ready" | "blocked";
   capabilities: SdgbCapability[];
   activeLanes: SdgbLane[];
   drainingLanes: SdgbLane[];
@@ -79,6 +80,11 @@ type WorkerHeartbeat = {
   }>;
   activeJobs: number;
   activeJobsByType: Partial<Record<SdgbJobType, number>>;
+  shutdownBlockers?: Array<{
+    jobId: string;
+    jobType: SdgbJobType;
+    phase: string;
+  }>;
   jobsClaimedDelta: number;
 };
 ```

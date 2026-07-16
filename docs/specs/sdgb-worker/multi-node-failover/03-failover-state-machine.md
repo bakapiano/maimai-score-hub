@@ -168,6 +168,25 @@ Handback 失败时保持当前 standby owner，不做双边 resume。
 
 Handback 目标遵循 lane class priority：Probe 恢复到健康 Recoverable，Interactive 恢复到健康 Stable。如果原 worker class 不是该 lane 的首选，只在它仍是当前最佳候选时 handback。
 
+### 5.7 Worker 升级
+
+Worker 升级复用 maintenance 状态机，hookKind 为内部 deployment hook，但仍遵守一个公网 IP 一个进程：
+
+```text
+drain old
+→ finish/requeue/cleanup active jobs
+→ release lanes
+→ optional standby takeover
+→ stop old process
+→ start new process
+→ startup/readiness/health verification
+→ acquire or handback lanes
+```
+
+如果有健康 standby，优先让 standby 在旧进程停止前接管已释放的 lane，用户侧无需等待新进程启动。没有 standby 时允许 waiting job 在 BullMQ 短暂排队，但不能为了缩短停机而强杀 active 用户 job。
+
+新进程必须在旧进程完全退出后启动。它使用新 process generation/sequence 注册，不能继承旧进程内存中的 lease、activeJobs 或 breaker 判断。
+
 ## 6. 计划内时序
 
 ```mermaid
