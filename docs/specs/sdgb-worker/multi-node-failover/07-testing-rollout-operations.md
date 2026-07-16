@@ -26,10 +26,10 @@ interface FakeUpstreamScenario {
 - stale worker 排除；
 - capability/active lane 校验；
 - drain worker 排除；
-- blocked egressGroup 排除；
+- blocked worker 排除；
 - version 不兼容排除；
 - preference/load 确定性排序；
-- 同 egressGroup failover 排除。
+- 网络 failover 候选公网 IP 必须不同。
 
 ### 2.2 Lease/Fencing
 
@@ -43,12 +43,12 @@ interface FakeUpstreamScenario {
 
 ### 2.3 Rate Limit
 
-- 同 egressGroup 多进程共享预算；
-- 不同 egressGroup 独立预算；
+- 同一进程所有 lane 共享 global budget；
+- Interactive/Probe type bucket 相加不突破 global；
 - burst=1 间隔；
 - Interactive/cleanup fairness；
-- Redis 不可用不退化为本地满速；
 - cancel/lease lost 可中止 token wait。
+- 两个 live worker 报告相同 publicIp 时被判定为部署冲突。
 
 ### 2.4 Circuit Breaker
 
@@ -82,7 +82,7 @@ interface FakeUpstreamScenario {
 - Queue repair 尊重 lane、retryAt、cancel 和 active execution token；
 - Backend 两副本并发发起相同 command，只有一次状态转换；
 - Worker heartbeat/command stream 在进程重启后恢复；
-- 多 worker 同 egressGroup 的请求总数不超过分布式预算。
+- `role=all` 的多个 consumer 共享同一进程预算。
 
 ## 4. MaintenanceHook 测试
 
@@ -123,18 +123,19 @@ Hook 使用 fake 实现，验证解耦：
 ### Phase 0：Schema 与观测
 
 - 增加 lane/routingVersion、attempt/retry、cancel metadata。
-- Heartbeat 增加 capabilities、activeLanes、egressGroup、version、health。
+- Heartbeat 增加 capabilities、activeLanes、publicIp/networkEpoch、version、health。
 - Admin/metrics 只观测，不改变消费。
 
 验收：当前生产行为不变，Registry 数据稳定。
 
-### Phase 1：分布式 Rate Limit
+### Phase 1：进程内 Global Limit 与部署约束
 
-- 影子计算 Redis rate decision，与现有本地 limiter 对比。
-- 确认延迟和 token 误差。
-- 切换为 Redis authoritative，本地 limiter 只作为额外保护。
+- 确认所有 lane 使用同一个进程级 request scheduler。
+- 增加 Interactive/Probe/cleanup fairness。
+- 部署检查阻止同一 publicIp 两个 live worker。
+- Worker 发布使用 stop-start，不使用同 IP start-first。
 
-验收：多进程压测总请求量不突破 egress budget。
+验收：`role=all` 压测总请求量不突破 global budget；重复 publicIp worker 不 eligible。
 
 ### Phase 2：Lane Lease Observe-only
 
@@ -190,10 +191,9 @@ Hook 使用 fake 实现，验证解耦：
 
 ```text
 SDGB_REGISTRY_V2_ENABLED
-SDGB_DISTRIBUTED_RATE_LIMIT_ENABLED
 SDGB_LANE_LEASE_ENABLED
 SDGB_MAINTENANCE_CONTROL_ENABLED
-SDGB_EGRESS_BREAKER_ENABLED
+SDGB_WORKER_BREAKER_ENABLED
 SDGB_PROBE_RETRY_ENABLED
 SDGB_ACTIVE_CANCEL_ENABLED
 ```
@@ -203,7 +203,7 @@ Flag 必须有环境默认、owner 和删除日期。Roll back 时禁止同时�
 ## 8. Rollback
 
 - Registry/metrics 可独立关闭，不影响 job。
-- Distributed limiter rollback 到本地 limiter 前，必须先确保每个 egressGroup 只有一个 active 进程。
+- Request scheduler rollback 前必须保持一个公网出口一个进程，并验证 type bucket 不会突破 global。
 - Lane lease rollback 时先 drain standby，确认唯一当前 worker，再关闭 lease enforcement。
 - Maintenance hook 失败可停用定时入口，保留手工控制面。
 - Breaker/retry rollback 时 delayed job 必须显式 drain 或失败，不能遗留永久 queued。
@@ -239,20 +239,20 @@ Flag 必须有环境默认、owner 和删除日期。Roll back 时禁止同时�
 1. 确认 heartbeat stale 和 lease epoch 已变化。
 2. 确认 standby active。
 3. 检查 stalled/retry/cancel job。
-4. 旧 worker 恢复后保持 standby，检查版本与 egress health。
+4. 旧 worker 恢复后保持 standby，检查版本与 upstream health。
 
 ### 10.3 出口空响应
 
-1. 查看 egress breaker 和连续计数。
-2. 确认该 egressGroup 新调用已停止。
-3. 查看 lane owner 是否切到不同 egressGroup。
+1. 查看 worker breaker 和连续计数。
+2. 确认该 worker 新调用已停止。
+3. 查看 lane owner 是否切到公网 IP 不同的 worker。
 4. 查看 Probe retry 成功率。
 5. 原出口只通过显式 half-open verify 恢复。
 
 ### 10.4 添加机器
 
 1. 部署相同版本。
-2. 配置唯一 workerId/capabilities/egressGroup/preference。
+2. 配置唯一 workerId/capabilities/preference，并确认使用独立公网出口。
 3. 确认 Registry healthy，activeLanes 为空。
 4. 执行一次 drain/handoff dry-run。
 5. 验证限流、fence、日志和 rollback。
@@ -262,7 +262,7 @@ Flag 必须有环境默认、owner 和删除日期。Roll back 时禁止同时�
 
 - [ ] 文档和代码不包含任何外部地址、凭据、密钥或加密细节。
 - [ ] Fake adapter 覆盖所有失败分类。
-- [ ] Redis 原子脚本有单元和并发测试。
+- [ ] Redis lease/command 原子脚本有单元和并发测试。
 - [ ] Worker/Backend 多版本滚动顺序已演练。
 - [ ] MaintenanceHook 与 Failover 核心无设备实现依赖。
 - [ ] Drain、breaker、cancel、lease lost 共用一致 active job coordinator。

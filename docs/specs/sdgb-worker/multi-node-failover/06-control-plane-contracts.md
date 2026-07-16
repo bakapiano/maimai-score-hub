@@ -22,7 +22,6 @@ type WorkerStaticConfig = {
   workerId: string;
   version: string;
   capabilities: SdgbCapability[];
-  egressGroup: string;
   lanePreferences: Partial<Record<SdgbLane, number>>;
 };
 ```
@@ -31,7 +30,6 @@ type WorkerStaticConfig = {
 
 - workerId 非空且在环境内唯一；
 - capabilities 均为当前版本支持值；
-- egressGroup 非空；
 - session capability 所需保护依赖可用；
 - Registry/Redis/Backend 可达；
 - 不在未获得 assignment 时自动 resume exclusive lane。
@@ -47,8 +45,8 @@ type WorkerHeartbeat = {
   capabilities: SdgbCapability[];
   activeLanes: SdgbLane[];
   drainingLanes: SdgbLane[];
-  egressGroup: string;
   publicIp?: string;
+  networkEpoch: number;
   upstreamHealth: UpstreamHealthState;
   breakerState: BreakerState;
   ownedLeases: Array<{
@@ -69,6 +67,7 @@ Backend 验证：
 - active lane 必须属于 capability；
 - owned lease 与 Redis token/epoch 一致；
 - publicIp 格式合法，但不能由该字段授予权限；
+- 两个 live worker 报告相同 publicIp 时，将它们标记为部署冲突并禁止自动 assignment；
 - 过大数组或未知 enum 拒绝。
 
 ## 4. Lane Policy
@@ -81,7 +80,7 @@ type LanePolicy = {
   requiredCapabilities: SdgbCapability[];
   maxActiveWorkers: number;
   failoverEnabled: boolean;
-  requireDistinctEgressOnFailover: boolean;
+  requireDistinctPublicIpOnFailover: boolean;
   minWorkerVersion: string;
   drainGraceMs: number;
   leaseTtlMs: number;
@@ -111,10 +110,10 @@ type WorkerCommand =
       expectedEpoch?: number;
     }
   | {
-      type: "verify_egress";
+      type: "verify_worker_network";
       requestId: string;
       workerId: string;
-      egressGroup: string;
+      expectedNetworkEpoch: number;
     }
   | {
       type: "cancel_job";
@@ -201,7 +200,6 @@ type SdgbJobExecutionMetadata = {
   retryAt: Date | null;
   retryReason: string | null;
   failureClass: UpstreamFailureClass | null;
-  lastEgressGroup: string | null;
   outcomeUnknown: boolean;
   cancelRequestedAt: Date | null;
   cancelRequestId: string | null;
@@ -242,7 +240,7 @@ Lease epoch 过期时，read-only requeue 可以更新；普通 completed 不允
 
 - workerId/version；
 - capabilities/active lanes/draining lanes；
-- egressGroup/current public IP；
+- current public IP/networkEpoch；
 - heartbeat age；
 - upstream/breaker state；
 - active jobs；
@@ -264,7 +262,7 @@ Lease epoch 过期时，read-only requeue 可以更新；普通 completed 不允
 
 - lane/routingVersion；
 - attempts/retryAt/failureClass；
-- execution worker/egress/epoch；
+- execution worker/publicIp/networkEpoch/leaseEpoch；
 - cancel state；
 - outcome unknown/cleanup state；
 - timeline events。
@@ -285,8 +283,8 @@ lane_handoff_started
 lane_handoff_completed
 maintenance_hook_started
 maintenance_hook_completed
-egress_verification_started
-egress_verification_failed
+worker_network_verification_started
+worker_network_verification_failed
 breaker_opened
 breaker_half_open
 breaker_closed

@@ -10,7 +10,7 @@ Failover 核心只管理 lane 和 worker，不管理具体设备：
 drain primary
 → activate standby
 → execute external maintenance hook
-→ verify recovered egress
+→ verify recovered worker network
 → hand back
 ```
 
@@ -25,7 +25,7 @@ drain primary
 | Standby Worker           | 获取 owner lease、恢复 lane consumer、上报 active。                                 |
 | Maintenance Orchestrator | 调用通用控制面，等待 handoff，再执行 hook。                                         |
 | MaintenanceHook          | 执行具体维护动作并报告基础恢复结果；不知道 lane 或 worker 选择逻辑。                |
-| Health Verifier          | 在维护后验证出口身份、连通性和抽象 upstream health。                                |
+| Health Verifier          | 在维护后验证 worker 公网 IP、连通性和抽象 upstream health。                         |
 
 ## 3. MaintenanceHook 契约
 
@@ -104,7 +104,7 @@ Any post-hook failure -> degraded_standby_active
 
 - 验证目标 worker 当前是 affected lane owner。
 - 为每条 lane 选择健康且 capability 匹配的 standby。
-- Standby 必须位于不同 egressGroup；除非是非网络维护且显式允许。
+- Standby 必须是另一个 worker；网络维护时还必须确认两者公网 IP 不同。
 - 无 standby 时拒绝进入维护，保持 primary 不变。
 
 ### 5.2 draining_primary
@@ -144,7 +144,7 @@ Hook 调用失败：
 验证至少包含：
 
 - worker heartbeat 恢复且版本正确；
-- egress identity 可观测；
+- publicIp/networkEpoch 可观测；
 - 当前出口不处于 breaker open；
 - 抽象 `UpstreamHealthCheck` 返回有效成功；
 - 连续成功次数达到配置值，避免一次偶然成功；
@@ -186,7 +186,7 @@ sequenceDiagram
     O->>H: execute(requestId)
     H-->>O: accepted/completed observations
     O->>C: begin verification
-    C->>V: verify target worker and egress
+    C->>V: verify target worker network
     V-->>C: healthy
     C->>S: drain standby lane
     S->>C: drained + release lease
@@ -208,7 +208,7 @@ sequenceDiagram
 
 1. 当前 lease 到期，不由 Backend 强删。
 2. 标记原 owner unavailable。
-3. 选择不同 egressGroup 的健康 standby。
+3. 选择另一台公网 IP 不同的健康 standby。
 4. Standby acquire 新 epoch。
 5. Queue 中 waiting/delayed job 自然继续。
 6. 原 active job 由 BullMQ stalled recovery、job fence 和 Mongo execution state共同处理。
@@ -222,12 +222,12 @@ heartbeat stale + lease expiry + activation <= 45s
 
 ## 8. 出口被阻断
 
-Circuit breaker open 是 egress failure，不一定是 worker failure：
+Circuit breaker open 是 worker 当前网络出口故障，不一定是进程故障：
 
-1. 将该 egressGroup 标记 blocked。
-2. 该组内所有上游调用 fail closed。
+1. 将该 worker 当前 networkEpoch 标记 blocked。
+2. 该 worker 的所有普通上游调用 fail closed。
 3. 受影响 exclusive lane owner 进入 drain/release。
-4. 候选选择排除同 egressGroup。
+4. 候选选择另一个已验证公网 IP 的 worker。
 5. Standby 接管。
 6. 原出口只有经过 half-open health verification 后才能重新 eligible。
 

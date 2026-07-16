@@ -26,7 +26,7 @@ type UpstreamFailureClass =
 
 ```text
 UPSTREAM_EMPTY_RESPONSE
-UPSTREAM_EGRESS_BLOCKED
+UPSTREAM_IP_BLOCKED
 UPSTREAM_NETWORK_ERROR
 UPSTREAM_TIMEOUT
 UPSTREAM_INVALID_RESPONSE
@@ -39,15 +39,15 @@ LANE_LEASE_LOST
 
 ## 3. Circuit Breaker 维度
 
-Breaker 主要按 `egressGroup` 维护，而不是单 worker：
+在“一公网出口一 worker”的约束下，Breaker 直接按 worker + networkEpoch 维护：
 
 ```text
-sdgb:egress:<egressGroup>:breaker
+sdgb:workers:<workerId>:breaker
 ```
 
-如果同一出口有多进程，其中一个观察到确定性空响应，其他进程必须共享状态，避免继续发流量。
+Breaker 记录触发时的 publicIp/networkEpoch。公网 IP 变化后状态回到 `unknown/half_open`，必须健康验证，不能仅因为 IP 字符串变化直接 close。
 
-可选增加 lane/API class 子维度用于诊断，但不能让子 breaker 绕过出口总 breaker。
+可选增加 lane/API class 子维度用于诊断，但不能让子 breaker 绕过 worker 总 breaker。
 
 ## 4. 状态机
 
@@ -80,8 +80,8 @@ max automatic cooldown      = 15min
 
 Breaker open 时原子执行或最终一致完成：
 
-1. 将 egress health 标记为 blocked。
-2. 拒绝该 egressGroup 的新上游 token。
+1. 将 worker upstream health 标记为 blocked。
+2. 拒绝该 worker 的新普通上游 token。
 3. 对当前 worker 的受影响 lane 执行本地 pause。
 4. 如果是 exclusive owner，进入 drain 并释放 lane lease。
 5. 触发 standby selection。
@@ -104,7 +104,6 @@ type RetryMetadata = {
   retryReason: string | null;
   failureClass: UpstreamFailureClass | null;
   lastWorkerId: string | null;
-  lastEgressGroup: string | null;
   lastLeaseEpoch: number | null;
   outcomeUnknown: boolean;
 };
@@ -158,7 +157,7 @@ Retry budget 同时受以下限制：
 - 输入有效期；
 - breaker state；
 - lane ownership；
-- egress health；
+- worker upstream health；
 - cancellation；
 - 会话 cleanup 状态。
 
@@ -189,8 +188,8 @@ Health check：
 - 不从用户 job 复制敏感 payload；
 - 使用固定、只读、低成本的内部检查策略；
 - 不输出原始响应；
-- 受分布式限流；
-- half-open 同一 egressGroup 最多一个并发；
+- 受该 worker 的 global limiter；
+- half-open 同一 worker 最多一个并发；
 - 结果进入 breaker event，不创建业务 job。
 
 具体上游调用实现属于 adapter，不写入本 spec。
@@ -198,7 +197,7 @@ Health check：
 ## 11. 防止重试风暴
 
 - Breaker open 后禁止每个 job 自己独立探测恢复。
-- 仅由 egress health coordinator 执行 half-open probe。
+- 仅由 worker health coordinator 执行 half-open probe。
 - Delayed jobs 等待 breaker closed/standby active 后再释放。
 - Worker 启动时不能一次性把所有 overdue retry 变为 waiting；按 jitter 和 global budget 渐进释放。
 - Queue repair 不得绕过 retryAt。
@@ -207,13 +206,13 @@ Health check：
 ## 12. 指标与事件
 
 ```text
-sdgb_upstream_failure_total{egressGroup,lane,jobType,failureClass}
-sdgb_empty_response_consecutive{egressGroup}
-sdgb_breaker_state{egressGroup,state}
-sdgb_breaker_transition_total{egressGroup,from,to,reason}
+sdgb_upstream_failure_total{workerId,lane,jobType,failureClass}
+sdgb_empty_response_consecutive{workerId}
+sdgb_breaker_state{workerId,state}
+sdgb_breaker_transition_total{workerId,from,to,reason}
 sdgb_job_retry_total{lane,jobType,reason}
 sdgb_job_retry_delay_seconds{lane,jobType}
 sdgb_outcome_unknown_total{jobType}
 ```
 
-结构化事件保存 request/job ID、worker、egressGroup、lane、attempt、状态分类和耗时；禁止保存上游地址、敏感请求头、payload 或原始响应。
+结构化事件保存 request/job ID、worker、publicIp/networkEpoch、lane、attempt、状态分类和耗时；禁止保存上游地址、敏感请求头、payload 或原始响应。
