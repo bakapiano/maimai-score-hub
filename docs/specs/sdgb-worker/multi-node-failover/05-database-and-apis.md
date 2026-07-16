@@ -135,7 +135,7 @@ Worker desired state 通过 heartbeat response 下发，不使用 command stream
 | GET    | `/workers/sdgb/jobs/:jobId`    | 返回 lane、attempt、retry 和 execution fence。                                                         |
 | PATCH  | `/workers/sdgb/jobs/:jobId`    | 增加 guarded requeue/retry patch，必须匹配 executionToken。                                            |
 
-Heartbeat request 包含：workerId/class/version/generation、capabilities、active/draining lanes、lifecycle、publicIp/networkEpoch、health/breaker/recovery、activeJobs。
+Heartbeat request 包含：workerId/class/autoRecoveryHookKind/version/generation、capabilities、active/draining lanes、lifecycle、publicIp/networkEpoch、health/breaker/recovery、activeJobs。Recoverable 的 hook kind 必须能在 adapter registry 中解析；Stable 不允许配置 hook kind。
 
 ## 6. Orchestrator API
 

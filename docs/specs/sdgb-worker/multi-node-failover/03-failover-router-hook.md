@@ -17,7 +17,33 @@ drain owner
 
 Router reboot 是 Recoverable 配置的 `MaintenanceHook`。Hook 不操作 BullMQ、Redis owner key，也不选择备用 worker。
 
-## 2. Maintenance 状态
+## 2. Hook Adapter Registry
+
+控制面/Orchestrator 维护简单 registry：
+
+```ts
+interface MaintenanceHookAdapter {
+  kind: string;
+  execute(input: {
+    requestId: string;
+    targetWorkerId: string;
+    abortSignal: AbortSignal;
+  }): Promise<{
+    accepted: boolean;
+    externalOperationId?: string;
+  }>;
+  resume(input: {
+    requestId: string;
+    externalOperationId?: string;
+  }): Promise<HookObservation>;
+}
+```
+
+Recoverable heartbeat 的 `autoRecoveryHookKind` 必须能在 registry 中解析。首版至少注册现有 router reboot adapter；Azure 上的 IP 轮换 workflow 可以注册为另一个 kind，例如 `azure_ip_rotate`。新增 adapter 不修改 lane、lease、retry、健康验证或 handback 逻辑。
+
+云 workflow 可以在 worker 外部执行并异步完成。`externalOperationId` 只用于 adapter 在 orchestrator 重启后恢复/查询同一次操作；不得因超时直接创建第二次操作。
+
+## 3. Maintenance 状态
 
 ```text
 requested
@@ -34,7 +60,7 @@ pre-hook failure  → aborted
 post-hook failure → degraded_standby_active
 ```
 
-## 3. Orchestrator/Hook 契约
+## 4. Orchestrator/Hook 契约
 
 Orchestrator：
 
@@ -60,7 +86,7 @@ type HookObservation = {
 
 控制面不轮询设备，也不根据 `connectivityRestored` 直接 handback。
 
-## 4. Recoverable Empty Failover
+## 5. Recoverable Empty Failover
 
 当前 Recoverable 是 Probe owner，Stable 是 Interactive owner/Probe standby：
 
@@ -81,7 +107,7 @@ Recoverable breaker open
 
 Stable 接管期间，Interactive 优先级和 global 1.5 QPS 不变；Probe 仅使用空闲 token。
 
-## 5. Breaker 与 Recovery 参数
+## 6. Breaker 与 Recovery 参数
 
 ```text
 empty threshold = 3 consecutive within 10s
@@ -100,7 +126,7 @@ Auto Recovery 或验证再次失败：
 - 30 分钟内不再次自动执行 hook。
 - 记录报警，等待人工处理或下一次允许的 recovery。
 
-## 6. Handback
+## 7. Handback
 
 ```text
 Recoverable healthy
@@ -114,7 +140,7 @@ Recoverable healthy
 
 Handback 失败时保持 Stable owner，不允许双方 resume。
 
-## 7. Stable 故障
+## 8. Stable 故障
 
 Stable 是 Interactive 首选。Stable stale/breaker open：
 
@@ -126,7 +152,7 @@ Stable drain/release Interactive
 
 Stable 不执行 Auto Recovery hook。恢复并通过健康验证后，Interactive 按 class priority handback。
 
-## 8. 计划内 Router Reboot
+## 9. 计划内 Router Reboot
 
 定时/手工 router reboot 与 empty recovery 使用相同状态机：
 
@@ -139,7 +165,7 @@ Stable 不执行 Auto Recovery hook。恢复并通过健康验证后，Interacti
 
 没有健康 Stable 时，取消计划内 reboot，保持 Recoverable owner。
 
-## 9. Worker 故障
+## 10. Worker 故障
 
 Worker 无 heartbeat 或 lease renew：
 
@@ -151,7 +177,7 @@ Worker 无 heartbeat 或 lease renew：
 
 目标：stale + lease expiry + activation p95 < 45s。
 
-## 10. Graceful Worker Upgrade
+## 11. Graceful Worker Upgrade
 
 ```text
 create deployment maintenance
@@ -175,7 +201,7 @@ blocked
 
 `blocked` 中止升级，禁止用短 timeout 强杀。
 
-## 11. 超时
+## 12. 超时
 
 | 阶段                          |  默认 |
 | ----------------------------- | ----: |

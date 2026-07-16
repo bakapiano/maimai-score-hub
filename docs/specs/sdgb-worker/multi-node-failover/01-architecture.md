@@ -38,13 +38,14 @@ type WorkerConfig = {
   workerId: string;
   workerClass: WorkerClass;
   capabilities: WorkerCapability[];
+  autoRecoveryHookKind?: string;
 };
 ```
 
 Worker class 在进程生命周期内不可变：
 
-- Recoverable 必须配置 Auto Recovery hook adapter。
-- Stable 必须配置严格 rate policy。
+- Recoverable 必须配置 `autoRecoveryHookKind`，并且控制面存在对应 hook adapter。
+- Stable 不配置 autoRecoveryHookKind，必须配置严格 rate policy。
 - 两类 worker 都可以同时具备 Probe/Interactive capability，以支持双向 failover。
 
 ## 3. Active Lane
