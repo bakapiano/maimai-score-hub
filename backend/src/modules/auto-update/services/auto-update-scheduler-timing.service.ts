@@ -73,7 +73,7 @@ export class AutoUpdateSchedulerTimingService {
     this.hotIntervalMs = getPositiveInt(
       config,
       'AUTO_UPDATE_HOT_INTERVAL_MS',
-      10 * MINUTE,
+      15 * MINUTE,
     );
     this.warmIntervalMs = getPositiveInt(
       config,

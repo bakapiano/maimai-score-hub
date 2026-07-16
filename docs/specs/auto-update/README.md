@@ -33,7 +33,7 @@
 
 | 链路                | 输入                                                 | 输出                                                                | 频率                   |
 | ------------------- | ---------------------------------------------------- | ------------------------------------------------------------------- | ---------------------- |
-| Rival Score Probe   | 开启自动更新且绑定 cabinet userId 的用户             | achievement / dxScore / rating / lastRivalHash / 活跃档位           | 主链路，10m / 30m / 1h |
+| Rival Score Probe   | 开启自动更新且绑定 cabinet userId 的用户             | achievement / dxScore / rating / lastRivalHash / 活跃档位           | 主链路，15m / 30m / 1h |
 | Map Auxiliary Probe | 需要识别 score-silent 活跃的用户                     | map distance fingerprint、是否延长 hot session、是否触发 FC/FS 补全 | 辅助链路，低频         |
 | FC/FS Enrichment    | rival score 变化或 map score-silent 活跃后的候选用户 | 最近 FC/AP/FS/FDX 合并结果                                          | 低频、按用户节流       |
 
@@ -42,7 +42,7 @@
 | 项                           | 当前代码默认                                                                                                    |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | 活跃分层                     | hot / warm / cold 三档                                                                                          |
-| hot rival score probe        | 10 分钟                                                                                                         |
+| hot rival score probe        | 15 分钟                                                                                                         |
 | warm rival score probe       | 30 分钟                                                                                                         |
 | cold rival score probe       | 1 小时                                                                                                          |
 | map auxiliary probe          | hot 30 分钟；warm/cold 1 小时                                                                                   |
@@ -52,23 +52,23 @@
 | rival score probe 执行控制   | 每轮最多 480 个 due state，scheduler 并发 4                                                                     |
 | map auxiliary 执行控制       | 每轮最多 120 个 due state，scheduler 并发 2                                                                     |
 | FC/FS enrichment 执行控制    | 单用户 cooldown；cooldown 内合并为 pending，到期生成 DXNet `get_user_recent_event` job；无全局 qps token bucket |
-| sdgb 执行模型                | backend enqueue BullMQ `sdgb-worker-jobs`；sdgb-worker 多并发消费并按 API token bucket 限流                     |
+| sdgb 执行模型                | Rival/Map enqueue Probe lane `sdgb-worker-jobs`；交互任务进入独立 lane；worker 多并发消费并按 API token bucket 限流 |
 
 ## 10k 用户主链路 QPS 估算
 
 Rival probe QPS 公式：
 
 ```text
-hot / 600 + warm / 1800 + cold / 3600
+hot / 900 + warm / 1800 + cold / 3600
 ```
 
 | 场景              | 假设分布                         | Rival probe QPS | 每日调用量（若全天保持该分布） |
 | ----------------- | -------------------------------- | --------------: | -----------------------------: |
 | 全员 cold 下限    | 10000 cold                       |         2.8 qps |                        24.0 万 |
-| 保守平时          | 1000 hot / 5000 warm / 4000 cold |         5.6 qps |                        48.0 万 |
-| 日间主峰          | 2500 hot / 6000 warm / 1500 cold |         7.9 qps |                        68.4 万 |
-| 极端主峰          | 3500 hot / 5500 warm / 1000 cold |         9.2 qps |                        79.2 万 |
-| 全员 hot 理论上限 | 10000 hot                        |        16.7 qps |                       144.0 万 |
+| 保守平时          | 1000 hot / 5000 warm / 4000 cold |         5.0 qps |                        43.2 万 |
+| 日间主峰          | 2500 hot / 6000 warm / 1500 cold |         6.5 qps |                        56.4 万 |
+| 极端主峰          | 3500 hot / 5500 warm / 1000 cold |         7.2 qps |                        62.4 万 |
+| 全员 hot 理论上限 | 10000 hot                        |        11.1 qps |                        96.0 万 |
 
 上表 QPS 是容量目标外推；sdgb-worker 已实现 global + per-API token bucket，backend 仍通过 batch/concurrency/backoff 控制生产节奏。
 

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   SdgbJobPatchBodySchema,
+  isSdgbWorkerRole,
   type SdgbJobPatchBody,
 } from '@maimai-score-hub/shared';
 
@@ -35,7 +36,12 @@ export class WorkerSdgbJobsController {
 
   @Post('heartbeat')
   async heartbeat(
-    @Body() body: { workerId?: unknown; claimedDelta?: unknown },
+    @Body()
+    body: {
+      workerId?: unknown;
+      claimedDelta?: unknown;
+      role?: unknown;
+    },
   ) {
     const workerId =
       typeof body.workerId === 'string' && body.workerId.trim()
@@ -46,7 +52,8 @@ export class WorkerSdgbJobsController {
       Number.isFinite(body.claimedDelta)
         ? Math.max(0, Math.floor(body.claimedDelta))
         : 0;
-    await this.jobs.reportWorkerStatus(workerId, claimedDelta);
+    const role = isSdgbWorkerRole(body.role) ? body.role : undefined;
+    await this.jobs.reportWorkerStatus(workerId, claimedDelta, role);
     return { ok: true };
   }
 

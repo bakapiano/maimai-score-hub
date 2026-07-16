@@ -6,7 +6,7 @@
 
 | 档位 | 判定                                                | Rival probe 间隔 | 设计目的                       |
 | ---- | --------------------------------------------------- | ---------------: | ------------------------------ |
-| hot  | 最近 60-90 分钟内 rival hash 或 map distance 有变化 |          10 分钟 | 覆盖正在游戏厅连续游玩的用户   |
+| hot  | 最近 60-90 分钟内 rival hash 或 map distance 有变化 |          15 分钟 | 覆盖正在游戏厅连续游玩的用户   |
 | warm | 最近 7 天内 rival/map 有变化，但当前不在 session    |          30 分钟 | 较快发现近期常玩的用户重新到店 |
 | cold | 7 天以上无变化，或新绑定但未观测到活跃              |           1 小时 | 保持可接受冷启动延迟           |
 
@@ -30,15 +30,15 @@ warm --7d no rival/map delta--> cold
 Rival probe QPS 公式：
 
 ```text
-hot / 600 + warm / 1800 + cold / 3600
+hot / 900 + warm / 1800 + cold / 3600
 ```
 
 | 场景           | 假设分布                         | Rival probe QPS |
 | -------------- | -------------------------------- | --------------: |
 | 全员 cold 下限 | 10000 cold                       |         2.8 qps |
-| 保守平时       | 1000 hot / 5000 warm / 4000 cold |         5.6 qps |
-| 日间主峰       | 2500 hot / 6000 warm / 1500 cold |         7.9 qps |
-| 极端主峰       | 3500 hot / 5500 warm / 1000 cold |         9.2 qps |
+| 保守平时       | 1000 hot / 5000 warm / 4000 cold |         5.0 qps |
+| 日间主峰       | 2500 hot / 6000 warm / 1500 cold |         6.5 qps |
+| 极端主峰       | 3500 hot / 5500 warm / 1000 cold |         7.2 qps |
 
 Phase 1 当前代码控制：
 
@@ -74,7 +74,7 @@ Phase 2 可以接入用户游玩习惯画像，只影响 `nextRivalProbeAt` / `n
 
 | tier |    min |   base |    max |
 | ---- | -----: | -----: | -----: |
-| hot  | 10 min | 10 min | 20 min |
+| hot  | 10 min | 15 min | 30 min |
 | warm | 15 min | 30 min | 60 min |
 | cold | 30 min | 60 min | 2 hour |
 

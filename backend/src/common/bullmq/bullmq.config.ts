@@ -1,7 +1,9 @@
 import type { ConfigService } from '@nestjs/config';
 import type { ConnectionOptions, JobsOptions, QueueOptions } from 'bullmq';
+import { SDGB_PROBE_QUEUE_NAME } from '@maimai-score-hub/shared';
 
-export const SDGB_WORKER_QUEUE_NAME = 'sdgb-worker-jobs';
+/** @deprecated Import the lane-specific queue constants from shared. */
+export const SDGB_WORKER_QUEUE_NAME = SDGB_PROBE_QUEUE_NAME;
 export const PROBER_EXPORT_QUEUE_NAME = 'prober-export-jobs';
 
 export interface DxnetWorkerJobData {

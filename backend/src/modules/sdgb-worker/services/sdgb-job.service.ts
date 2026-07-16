@@ -11,7 +11,15 @@ import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
 import type { Model } from 'mongoose';
 import { Queue, QueueEvents } from 'bullmq';
-import type { SdgbWorkerJobData } from '@maimai-score-hub/shared';
+import {
+  SDGB_QUEUE_NAME_BY_LANE,
+  getSdgbWorkerJobTypesForRole,
+  getSdgbWorkerLaneForJobType,
+  getSdgbWorkerLanesForRole,
+  type SdgbWorkerJobData,
+  type SdgbWorkerLane,
+  type SdgbWorkerRole,
+} from '@maimai-score-hub/shared';
 
 import {
   SdgbJobEntity,
@@ -24,7 +32,6 @@ import {
 import { RedisService } from '../../../common/redis/redis.service';
 import {
   DEFAULT_WORKER_JOB_OPTIONS,
-  SDGB_WORKER_QUEUE_NAME,
   createBullmqQueueOptions,
 } from '../../../common/bullmq/bullmq.config';
 import { ObservabilityIngestService } from '../../observability/services/observability-ingest.service';
@@ -40,6 +47,7 @@ const SDGB_JOB_TYPES: SdgbJobType[] = [
   'add_rival',
   'get_music_score',
 ];
+const SDGB_WORKER_LANES: readonly SdgbWorkerLane[] = ['probe', 'interactive'];
 const TERMINAL_STATUSES: SdgbJobStatus[] = ['completed', 'failed'];
 
 function errorMessage(err: unknown): string {
@@ -73,6 +81,9 @@ export interface SdgbAdminJobView extends SdgbJobView {
 export interface SdgbAdminStatusView {
   workers: Array<{
     workerId: string;
+    role: SdgbWorkerRole | 'legacy';
+    lanes: readonly SdgbWorkerLane[];
+    jobTypes: readonly SdgbJobType[];
     lastSeenAt: string;
     ageSeconds: number;
     jobsClaimed: number;
@@ -108,6 +119,9 @@ export interface SdgbJobListView {
 
 interface SdgbWorkerStatus {
   workerId: string;
+  role: SdgbWorkerRole | 'legacy';
+  lanes: readonly SdgbWorkerLane[];
+  jobTypes: readonly SdgbJobType[];
   lastSeenAt: string;
   jobsClaimed: number;
 }
@@ -184,8 +198,8 @@ function getSdgbTimelineEventName(status: SdgbJobStatus): string {
 @Injectable()
 export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SdgbJobService.name);
-  private readonly sdgbQueue: Queue<SdgbWorkerJobData>;
-  private readonly sdgbQueueEvents: QueueEvents;
+  private readonly sdgbQueues: Record<SdgbWorkerLane, Queue<SdgbWorkerJobData>>;
+  private readonly sdgbQueueEvents: Record<SdgbWorkerLane, QueueEvents>;
   private readonly workerStatusTtlSeconds: number;
 
   constructor(
@@ -196,14 +210,26 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     config: ConfigService,
   ) {
     const queueOptions = createBullmqQueueOptions(config);
-    this.sdgbQueue = new Queue<SdgbWorkerJobData>(SDGB_WORKER_QUEUE_NAME, {
-      ...queueOptions,
-      defaultJobOptions: DEFAULT_WORKER_JOB_OPTIONS,
-    });
-    this.sdgbQueueEvents = new QueueEvents(
-      SDGB_WORKER_QUEUE_NAME,
-      queueOptions,
-    );
+    this.sdgbQueues = {
+      probe: new Queue<SdgbWorkerJobData>(SDGB_QUEUE_NAME_BY_LANE.probe, {
+        ...queueOptions,
+        defaultJobOptions: DEFAULT_WORKER_JOB_OPTIONS,
+      }),
+      interactive: new Queue<SdgbWorkerJobData>(
+        SDGB_QUEUE_NAME_BY_LANE.interactive,
+        {
+          ...queueOptions,
+          defaultJobOptions: DEFAULT_WORKER_JOB_OPTIONS,
+        },
+      ),
+    };
+    this.sdgbQueueEvents = {
+      probe: new QueueEvents(SDGB_QUEUE_NAME_BY_LANE.probe, queueOptions),
+      interactive: new QueueEvents(
+        SDGB_QUEUE_NAME_BY_LANE.interactive,
+        queueOptions,
+      ),
+    };
     this.workerStatusTtlSeconds = Math.max(
       1,
       Math.floor(WORKER_STALE_MS / 1000) * 2,
@@ -215,8 +241,10 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.sdgbQueue.close();
-    await this.sdgbQueueEvents.close();
+    await Promise.all([
+      ...Object.values(this.sdgbQueues).map((queue) => queue.close()),
+      ...Object.values(this.sdgbQueueEvents).map((events) => events.close()),
+    ]);
   }
 
   /**
@@ -440,6 +468,9 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
         const ageSeconds = secondsSince(lastSeenAt, nowMs) ?? 0;
         return {
           workerId: worker.workerId,
+          role: worker.role,
+          lanes: worker.lanes,
+          jobTypes: worker.jobTypes,
           lastSeenAt: lastSeenAt.toISOString(),
           ageSeconds,
           jobsClaimed: worker.jobsClaimed,
@@ -637,9 +668,10 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
   async reportWorkerStatus(
     workerId: string,
     claimedDelta = 0,
+    role?: SdgbWorkerRole,
     seenAt: Date = new Date(),
   ): Promise<void> {
-    await this.touchWorkerStatus(workerId, seenAt, claimedDelta);
+    await this.touchWorkerStatus(workerId, seenAt, claimedDelta, role);
   }
 
   /**
@@ -674,8 +706,18 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     for (const key of keys) {
       const status = await this.redis.getJson<SdgbWorkerStatus>(key);
       if (status?.workerId && status.lastSeenAt) {
+        const role = status.role ?? 'legacy';
         rows.push({
           workerId: status.workerId,
+          role,
+          lanes:
+            status.lanes ??
+            (role === 'legacy' ? ['probe'] : getSdgbWorkerLanesForRole(role)),
+          jobTypes:
+            status.jobTypes ??
+            (role === 'legacy'
+              ? SDGB_JOB_TYPES
+              : getSdgbWorkerJobTypesForRole(role)),
           lastSeenAt: status.lastSeenAt,
           jobsClaimed: status.jobsClaimed ?? 0,
         });
@@ -691,13 +733,24 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     workerId: string,
     seenAt: Date,
     claimedDelta: number,
+    role?: SdgbWorkerRole,
   ): Promise<void> {
     const key = this.workerStatusKey(workerId);
     const previous = await this.redis.getJson<SdgbWorkerStatus>(key);
+    const effectiveRole = role ?? previous?.role ?? 'legacy';
     await this.redis.setJson(
       key,
       {
         workerId,
+        role: effectiveRole,
+        lanes:
+          effectiveRole === 'legacy'
+            ? ['probe']
+            : getSdgbWorkerLanesForRole(effectiveRole),
+        jobTypes:
+          effectiveRole === 'legacy'
+            ? SDGB_JOB_TYPES
+            : getSdgbWorkerJobTypesForRole(effectiveRole),
         lastSeenAt: seenAt.toISOString(),
         jobsClaimed: (previous?.jobsClaimed ?? 0) + claimedDelta,
       },
@@ -713,35 +766,51 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     jobId: string,
     jobType: SdgbJobType,
   ): Promise<void> {
-    await this.sdgbQueue.add(
-      'sdgb-job',
+    const lane = getSdgbWorkerLaneForJobType(jobType);
+    await this.sdgbQueues[lane].add(
+      `sdgb-${lane}-job`,
       { jobId },
       {
         jobId,
-        priority: jobType === 'get_music_score' ? 1 : 10,
+        priority: this.bullmqPriority(jobType),
       },
     );
   }
 
   private ensureSdgbQueueEvents(): void {
-    this.sdgbQueueEvents.on('failed', ({ jobId, failedReason }) => {
-      if (!jobId) {
-        return;
-      }
-      this.markBullmqJobFailed(jobId, failedReason).catch((err) => {
+    for (const lane of SDGB_WORKER_LANES) {
+      const events = this.sdgbQueueEvents[lane];
+      events.on('failed', ({ jobId, failedReason }) => {
+        if (!jobId) {
+          return;
+        }
+        this.markBullmqJobFailed(jobId, failedReason).catch((err) => {
+          this.logger.warn(
+            `failed to mirror sdgb ${lane} BullMQ failure for ${jobId}: ${errorMessage(
+              err,
+            )}`,
+          );
+        });
+      });
+      events.on('stalled', ({ jobId }) => {
+        this.logger.warn(`SDGB ${lane} BullMQ job stalled job=${jobId}`);
+      });
+      events.on('error', (err) => {
         this.logger.warn(
-          `failed to mirror sdgb BullMQ failure for ${jobId}: ${errorMessage(
-            err,
-          )}`,
+          `SDGB ${lane} BullMQ queue events error: ${err.message}`,
         );
       });
-    });
-    this.sdgbQueueEvents.on('stalled', ({ jobId }) => {
-      this.logger.warn(`SDGB BullMQ job stalled job=${jobId}`);
-    });
-    this.sdgbQueueEvents.on('error', (err) => {
-      this.logger.warn(`SDGB BullMQ queue events error: ${err.message}`);
-    });
+    }
+  }
+
+  private bullmqPriority(jobType: SdgbJobType): number {
+    if (jobType === 'scan_qr' || jobType === 'get_music_score') {
+      return 1;
+    }
+    if (jobType === 'add_rival') {
+      return 5;
+    }
+    return 10;
   }
 
   private async markBullmqJobFailed(
@@ -779,7 +848,37 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     let repaired = 0;
     for (const job of jobs) {
       signal?.throwIfAborted();
-      const existing = await this.sdgbQueue.getJob(job.id);
+      const targetLane = getSdgbWorkerLaneForJobType(job.jobType);
+      const targetQueue = this.sdgbQueues[targetLane];
+      let activeMisplaced = false;
+
+      for (const lane of SDGB_WORKER_LANES) {
+        if (lane === targetLane) {
+          continue;
+        }
+        const misplaced = await this.sdgbQueues[lane].getJob(job.id);
+        if (!misplaced) {
+          continue;
+        }
+        const state = await misplaced.getState();
+        if (state === 'active') {
+          activeMisplaced = true;
+          this.logger.warn(
+            `cannot move active sdgb job ${job.id} from ${lane} to ${targetLane}`,
+          );
+          continue;
+        }
+        await misplaced.remove();
+        this.logger.warn(
+          `removed misplaced sdgb job ${job.id} from ${lane} queue`,
+        );
+      }
+
+      if (activeMisplaced) {
+        continue;
+      }
+
+      const existing = await targetQueue.getJob(job.id);
       if (existing) {
         const state = await existing.getState();
         if (state !== 'failed' && state !== 'completed') {
@@ -801,7 +900,9 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (repaired > 0) {
-      this.logger.warn(`repaired ${repaired} missing sdgb BullMQ jobs`);
+      this.logger.warn(
+        `repaired ${repaired} missing or misrouted sdgb BullMQ jobs`,
+      );
     }
   }
 }

@@ -109,7 +109,7 @@ base tier interval
 
 | 项                         | 目标                      |
 | -------------------------- | ------------------------- |
-| hot 用户 rival probe 间隔  | p95 <= 10 min + queue lag |
+| hot 用户 rival probe 间隔  | p95 <= 15 min + queue lag |
 | warm 用户 rival probe 间隔 | p95 <= 30 min + queue lag |
 | cold 用户 rival probe 间隔 | p95 <= 60 min + queue lag |
 | rival score merge 延迟     | p95 < 15 min              |

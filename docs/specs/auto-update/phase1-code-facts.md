@@ -13,7 +13,7 @@
 - `SyncService.createFromRivalMusic()` 支持 cabinet/rival music 直接映射为本地成绩并合并写入。
 - Map auxiliary probe 已接入调度：调用 sdgb `get_user_map`，计算 `mapFingerprint` / `mapDistanceSum`，发现变化时延长 hot session，并按条件触发 FC/FS enrichment。
 - sdgb-worker 已支持 `get_user_map` jobType，对应 `GetUserMapApi`。
-- sdgb-worker 已改为 BullMQ consumer，消费 `sdgb-worker-jobs`，不再调用 `/workers/sdgb/jobs/next` 拉取。
+- sdgb-worker 已改为 role-aware BullMQ consumer；Rival/Map 消费 Probe lane `sdgb-worker-jobs`，交互任务消费 `sdgb-worker-interactive-jobs`，不再调用 `/workers/sdgb/jobs/next` 拉取。
 - sdgb-worker 已实现 global + per-API token bucket，并支持按 job type 并发上限。
 - FC/FS enrichment 已接入自动调度：由 rival hash 变化或 map delta 请求触发；如果 recent event cooldown 未到，会在 `auto_update_probe_states` 记录 pending 并到期补跑；实际执行时先 `addRival`，再创建 DXNet `get_user_recent_event` job。
 - Worker `get_user_recent_event` handler 已实现，会请求好友详情 recent event 页面并把解析出的 events PATCH 回后端。
@@ -47,31 +47,31 @@
 
 ## Phase 1 调度参数
 
-| 配置                                       |          默认 |
-| ------------------------------------------ | ------------: |
-| `AUTO_UPDATE_CRON`                         | `*/1 * * * *` |
-| `AUTO_UPDATE_HOT_INTERVAL_MS`              |       10 分钟 |
-| `AUTO_UPDATE_WARM_INTERVAL_MS`             |       30 分钟 |
-| `AUTO_UPDATE_COLD_INTERVAL_MS`             |        1 小时 |
-| `AUTO_UPDATE_HOT_SESSION_MS`               |       90 分钟 |
-| `AUTO_UPDATE_WARM_MAX_IDLE_MS`             |          7 天 |
-| `AUTO_UPDATE_RIVAL_BATCH_LIMIT`            |           480 |
-| `AUTO_UPDATE_RIVAL_CONCURRENCY`            |             4 |
-| `AUTO_UPDATE_RIVAL_TIMEOUT_MS`             |        120 秒 |
-| `AUTO_UPDATE_MAP_BATCH_LIMIT`              |           120 |
-| `AUTO_UPDATE_MAP_CONCURRENCY`              |             2 |
-| `AUTO_UPDATE_MAP_TIMEOUT_MS`               |         60 秒 |
-| `AUTO_UPDATE_MAP_HOT_INTERVAL_MS`          |       30 分钟 |
-| `AUTO_UPDATE_MAP_WARM_INTERVAL_MS`         |        1 小时 |
-| `AUTO_UPDATE_MAP_COLD_INTERVAL_MS`         |        1 小时 |
-| `AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS`     |       30 分钟 |
-| `AUTO_UPDATE_RECENT_EVENT_DELAY_MS`        |        3 分钟 |
-| `AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS` |       45 分钟 |
-| `AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS` |       10 分钟 |
-| `AUTO_UPDATE_SWEEP_LEASE_TTL_MS`           |        90 秒 |
-| `AUTO_UPDATE_SWEEP_LEASE_RENEW_INTERVAL_MS`|        30 秒 |
-| `AUTO_UPDATE_SWEEP_HARD_TIMEOUT_MS`        |       10 分钟 |
-| `AUTO_UPDATE_SWEEP_ABORT_GRACE_MS`         |        3 分钟 |
+| 配置                                        |          默认 |
+| ------------------------------------------- | ------------: |
+| `AUTO_UPDATE_CRON`                          | `*/1 * * * *` |
+| `AUTO_UPDATE_HOT_INTERVAL_MS`               |       15 分钟 |
+| `AUTO_UPDATE_WARM_INTERVAL_MS`              |       30 分钟 |
+| `AUTO_UPDATE_COLD_INTERVAL_MS`              |        1 小时 |
+| `AUTO_UPDATE_HOT_SESSION_MS`                |       90 分钟 |
+| `AUTO_UPDATE_WARM_MAX_IDLE_MS`              |          7 天 |
+| `AUTO_UPDATE_RIVAL_BATCH_LIMIT`             |           480 |
+| `AUTO_UPDATE_RIVAL_CONCURRENCY`             |             4 |
+| `AUTO_UPDATE_RIVAL_TIMEOUT_MS`              |        120 秒 |
+| `AUTO_UPDATE_MAP_BATCH_LIMIT`               |           120 |
+| `AUTO_UPDATE_MAP_CONCURRENCY`               |             2 |
+| `AUTO_UPDATE_MAP_TIMEOUT_MS`                |         60 秒 |
+| `AUTO_UPDATE_MAP_HOT_INTERVAL_MS`           |       30 分钟 |
+| `AUTO_UPDATE_MAP_WARM_INTERVAL_MS`          |        1 小时 |
+| `AUTO_UPDATE_MAP_COLD_INTERVAL_MS`          |        1 小时 |
+| `AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS`      |       30 分钟 |
+| `AUTO_UPDATE_RECENT_EVENT_DELAY_MS`         |        3 分钟 |
+| `AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS`  |       45 分钟 |
+| `AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS`  |       10 分钟 |
+| `AUTO_UPDATE_SWEEP_LEASE_TTL_MS`            |         90 秒 |
+| `AUTO_UPDATE_SWEEP_LEASE_RENEW_INTERVAL_MS` |         30 秒 |
+| `AUTO_UPDATE_SWEEP_HARD_TIMEOUT_MS`         |       10 分钟 |
+| `AUTO_UPDATE_SWEEP_ABORT_GRACE_MS`          |        3 分钟 |
 
 sdgb-worker:
 
