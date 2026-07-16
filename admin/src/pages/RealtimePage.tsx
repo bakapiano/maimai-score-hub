@@ -1,5 +1,24 @@
-import { Button, Card, Tabs, Tag, Typography } from "antd";
-import { ReloadOutlined } from "@ant-design/icons";
+import {
+  App as AntdApp,
+  Button,
+  Card,
+  Collapse,
+  Descriptions,
+  Input,
+  Modal,
+  Popconfirm,
+  Space,
+  Tabs,
+  Tag,
+  Typography,
+} from "antd";
+import {
+  DeleteOutlined,
+  EditOutlined,
+  IdcardOutlined,
+  QrcodeOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -8,12 +27,17 @@ import { LazyLineChart } from "../components/LazyLineChart";
 import { MetricCard } from "../components/MetricCard";
 import { PageHeader } from "../components/PageHeader";
 import { ResponsiveTable } from "../components/ResponsiveTable";
-import { adminFetch } from "../api/client";
+import {
+  adminFetch,
+  adminHeaders,
+  buildApiUrl,
+  createAdminApi,
+} from "../api/client";
 import {
   type RealtimeWindow,
+  formatDateTime,
   formatDuration,
   formatSeconds,
-  formatTime,
   useAdminContext,
 } from "../utils/admin";
 
@@ -117,6 +141,9 @@ type RecentWorkerError = {
 };
 
 const REFRESH_MS = 10_000;
+const WORKER_HEALTH_MIN_TERMINAL_COUNT = 10;
+const WORKER_HEALTH_MIN_SUCCESS_RATE = 80;
+const WORKER_QUEUE_BACKLOG_AGE_SECONDS = 10 * 60;
 const WINDOW_OPTIONS: Array<{
   value: RealtimeWindow;
   label: string;
@@ -270,6 +297,9 @@ export default function RealtimePage() {
                   group={workerGroups?.groups.find(
                     (candidate) => candidate.workerKind === kind,
                   )}
+                  password={password}
+                  environment={environment}
+                  onRefresh={load}
                 />
               ) : null,
             }),
@@ -297,10 +327,18 @@ function WorkerOverviewCard({ groups }: { groups: WorkerGroup[] }) {
       key: "status",
       width: 110,
       render: (value: string, row: ReturnType<typeof summarizeWorkerGroup>) => (
-        <Tag color={row.color}>{value}</Tag>
+        <Tag color={row.color} title={row.statusDetail}>
+          {value}
+        </Tag>
       ),
     },
-    { title: "实例", dataIndex: "workerCount", key: "workerCount", width: 80 },
+    {
+      title: "在线 / 实例",
+      key: "workers",
+      width: 110,
+      render: (_: unknown, row: ReturnType<typeof summarizeWorkerGroup>) =>
+        `${row.onlineWorkerCount} / ${row.workerCount}`,
+    },
     {
       title: "排队 / 处理",
       key: "queue",
@@ -337,24 +375,125 @@ function WorkerOverviewCard({ groups }: { groups: WorkerGroup[] }) {
         columns={columns}
         dataSource={rows}
         pagination={false}
+        expandable={{
+          rowExpandable: (row) => row.workers.length > 0,
+          expandedRowRender: (row) => (
+            <WorkerInstanceSubItems workers={row.workers} />
+          ),
+        }}
         renderMobileItem={(row) => (
-          <MobileFields
-            title={row.title}
-            fields={[
-              ["状态", <Tag color={row.color}>{row.status}</Tag>],
-              ["实例", row.workerCount],
-              ["排队 / 处理", `${row.queued} / ${row.processing}`],
-              ["最近成功 / 失败", `${row.recentSuccess} / ${row.recentFailed}`],
-              ["成功率", <Tag color={row.successRateColor}>{row.successRateLabel}</Tag>],
-              ["p95 耗时", row.p95Label],
-              ["最近错误", row.errorCount],
-              ["活跃任务", row.activeCount],
-            ]}
-          />
+          <div className="worker-overview-mobile-item">
+            <MobileFields
+              title={row.title}
+              fields={[
+                [
+                  "状态",
+                  <Tag color={row.color} title={row.statusDetail}>
+                    {row.status}
+                  </Tag>,
+                ],
+                ["在线 / 实例", `${row.onlineWorkerCount} / ${row.workerCount}`],
+                ["排队 / 处理", `${row.queued} / ${row.processing}`],
+                [
+                  "最近成功 / 失败",
+                  `${row.recentSuccess} / ${row.recentFailed}`,
+                ],
+                [
+                  "成功率",
+                  <Tag color={row.successRateColor}>{row.successRateLabel}</Tag>,
+                ],
+                ["p95 耗时", row.p95Label],
+                ["最近错误", row.errorCount],
+                ["活跃任务", row.activeCount],
+              ]}
+            />
+            {row.workers.length ? (
+              <Collapse
+                size="small"
+                items={[
+                  {
+                    key: "instances",
+                    label: `实例详情 (${row.workers.length})`,
+                    children: <WorkerInstanceSubItems workers={row.workers} />,
+                  },
+                ]}
+              />
+            ) : null}
+          </div>
         )}
       />
     </Card>
   );
+}
+
+function WorkerInstanceSubItems({
+  workers,
+}: {
+  workers: Array<Record<string, unknown>>;
+}) {
+  return (
+    <div className="worker-sub-grid">
+      {workers.map((worker, index) => {
+        const workerId = String(
+          worker.workerId ?? worker.botFriendCode ?? `worker-${index + 1}`,
+        );
+        const online = isWorkerAlive(worker);
+        return (
+          <Card
+            key={`${workerId}-${index}`}
+            size="small"
+            title={<Text className="cell-monospace">{workerId}</Text>}
+            extra={
+              <Space size={4} wrap>
+                <Tag color={online ? "green" : "red"}>
+                  {online ? "在线" : "离线"}
+                </Tag>
+                {"available" in worker ? (
+                  <Tag color={worker.available ? "green" : "red"}>
+                    Cookie {worker.available ? "可用" : "过期"}
+                  </Tag>
+                ) : null}
+              </Space>
+            }
+          >
+            <Descriptions
+              size="small"
+              column={1}
+              items={buildWorkerDescriptionItems(worker)}
+            />
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function buildWorkerDescriptionItems(worker: Record<string, unknown>) {
+  const fields: Array<[string, string]> = [
+    ["lastSeenAt", "最近上报"],
+    ["remark", "备注"],
+    ["friendCount", "好友数"],
+    ["cabinetUserId", "Cabinet User ID"],
+    ["jobsClaimed", "已领取任务"],
+    ["concurrency", "并发数"],
+  ];
+  return fields
+    .filter(([key]) => key in worker)
+    .map(([key, label]) => ({
+      key,
+      label,
+      children:
+        key === "lastSeenAt"
+          ? formatDateTime(String(worker[key] ?? ""))
+          : formatWorkerDetailValue(worker[key]),
+    }));
+}
+
+function formatWorkerDetailValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
 }
 
 function summarizeWorkerGroup(group: WorkerGroup | undefined, kind: WorkerKind) {
@@ -369,8 +508,11 @@ function summarizeWorkerGroup(group: WorkerGroup | undefined, kind: WorkerKind) 
       kind,
       title,
       status: "无数据",
+      statusDetail: "尚未返回 Worker 数据",
       color: "default",
       workerCount: 0,
+      onlineWorkerCount: 0,
+      workers: [] as Array<Record<string, unknown>>,
       queued: 0,
       processing: 0,
       successRateLabel: "-",
@@ -385,6 +527,8 @@ function summarizeWorkerGroup(group: WorkerGroup | undefined, kind: WorkerKind) 
 
   const queued = sumQueue(group.queueByJobType, "queued");
   const processing = sumQueue(group.queueByJobType, "processing");
+  const onlineWorkers = group.workers.filter(isWorkerAlive);
+  const onlineWorkerCount = onlineWorkers.length;
   const errorCount = group.recentErrors.reduce((sum, row) => sum + row.count, 0);
   const successTotals = group.successRateTrend.reduce(
     (acc, row) => ({
@@ -398,32 +542,68 @@ function summarizeWorkerGroup(group: WorkerGroup | undefined, kind: WorkerKind) 
     successTotals.total > 0
       ? Math.round((successTotals.completed / successTotals.total) * 100)
       : null;
+  const hasSignificantFailures =
+    successTotals.total >= WORKER_HEALTH_MIN_TERMINAL_COUNT &&
+    successRate !== null &&
+    successRate < WORKER_HEALTH_MIN_SUCCESS_RATE;
+  const oldestQueuedAgeSeconds = Math.max(
+    0,
+    ...group.queueByJobType.map((row) => row.oldestQueuedAgeSeconds ?? 0),
+  );
+  const hasQueueBacklog =
+    queued > 0 &&
+    oldestQueuedAgeSeconds > WORKER_QUEUE_BACKLOG_AGE_SECONDS;
+  const hasUsableDxnetBot =
+    kind !== "dxnet" ||
+    onlineWorkers.some((row) => row.available === true);
   const p95Values = group.durationTrend
     .map((row) => row.p95Ms)
     .filter((value): value is number => typeof value === "number");
   const maxP95 = p95Values.length ? Math.max(...p95Values) : null;
-  const status =
-    errorCount > 0
-      ? "异常"
-      : queued > 0
-        ? "积压"
-        : processing > 0
-          ? "处理中"
-          : "正常";
-  const color =
-    errorCount > 0 ? "red" : queued > 0 ? "gold" : processing > 0 ? "blue" : "green";
+  let status = "正常";
+  let statusDetail = "暂无积压或显著失败";
+  let color = "green";
+  if (group.workers.length === 0) {
+    status = "无实例";
+    statusDetail = "没有注册的 Worker 实例";
+    color = "red";
+  } else if (onlineWorkerCount === 0) {
+    status = "离线";
+    statusDetail = "所有实例均已超过 5 分钟未上报";
+    color = "red";
+  } else if (!hasUsableDxnetBot) {
+    status = "Cookie 异常";
+    statusDetail = "在线 DXNet Bot 均无可用 Cookie";
+    color = "red";
+  } else if (hasSignificantFailures) {
+    status = "异常";
+    statusDetail = `成功率 ${successRate}%（成功 ${successTotals.completed} / 失败 ${successTotals.failed}）`;
+    color = "red";
+  } else if (hasQueueBacklog) {
+    status = "积压";
+    statusDetail = `最久排队 ${formatSeconds(oldestQueuedAgeSeconds)}`;
+    color = "gold";
+  } else if (queued > 0 || processing > 0) {
+    status = "处理中";
+    statusDetail = `排队 ${queued} / 处理 ${processing}`;
+    color = "blue";
+  }
 
   return {
     kind,
     title,
     status,
+    statusDetail,
     color,
     workerCount: group.workers.length,
+    onlineWorkerCount,
+    workers: group.workers,
     queued,
     processing,
     successRateLabel: successRate === null ? "-" : `${successRate}%`,
     successRateColor:
-      successRate === null
+      successRate === null ||
+      successTotals.total < WORKER_HEALTH_MIN_TERMINAL_COUNT
         ? "default"
         : successRate >= 95
           ? "green"
@@ -438,7 +618,17 @@ function summarizeWorkerGroup(group: WorkerGroup | undefined, kind: WorkerKind) 
   };
 }
 
-function WorkerMonitorPanel({ group }: { group: WorkerGroup | undefined }) {
+function WorkerMonitorPanel({
+  group,
+  password,
+  environment,
+  onRefresh,
+}: {
+  group: WorkerGroup | undefined;
+  password: string;
+  environment: "prod" | "dev";
+  onRefresh: () => Promise<void>;
+}) {
   if (!group) {
     return <Text type="secondary">暂无 worker 数据</Text>;
   }
@@ -472,13 +662,19 @@ function WorkerMonitorPanel({ group }: { group: WorkerGroup | undefined }) {
           title="最近错误"
           value={group.recentErrors.reduce((sum, row) => sum + row.count, 0)}
           color={group.recentErrors.length > 0 ? "red" : "default"}
-          status="errors"
+          status="hits"
         />
       </div>
 
       <div className="panel-grid-2">
         <QueueByJobTypeTable rows={group.queueByJobType} />
-        <WorkerInstancesTable rows={group.workers} />
+        <WorkerInstancesTable
+          rows={group.workers}
+          workerKind={group.workerKind}
+          password={password}
+          environment={environment}
+          onRefresh={onRefresh}
+        />
       </div>
 
       <div className="panel-grid-2">
@@ -549,12 +745,219 @@ function QueueByJobTypeTable({ rows }: { rows: QueueByJobType[] }) {
   );
 }
 
-function WorkerInstancesTable({ rows }: { rows: Array<Record<string, unknown>> }) {
+function WorkerInstancesTable({
+  rows,
+  workerKind,
+  password,
+  environment,
+  onRefresh,
+}: {
+  rows: Array<Record<string, unknown>>;
+  workerKind: WorkerKind;
+  password: string;
+  environment: "prod" | "dev";
+  onRefresh: () => Promise<void>;
+}) {
+  const { message } = AntdApp.useApp();
+  const adminApi = useMemo(() => createAdminApi(environment), [environment]);
+  const [editDialog, setEditDialog] = useState<{
+    kind: "remark" | "cabinet" | "qr";
+    friendCode: string;
+    value: string;
+  } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [removingFriendCode, setRemovingFriendCode] = useState<string | null>(
+    null,
+  );
+  const hasDxnetBots = workerKind === "dxnet";
+
+  const saveEdit = async () => {
+    if (!editDialog || !password || saving) return;
+    const { friendCode, kind } = editDialog;
+    const trimmed = editDialog.value.trim();
+
+    let cabinetUserId: number | null = null;
+    if (kind === "cabinet" && trimmed) {
+      cabinetUserId = Number(trimmed);
+      if (
+        !/^\d+$/.test(trimmed) ||
+        !Number.isSafeInteger(cabinetUserId) ||
+        cabinetUserId <= 0
+      ) {
+        message.error("Cabinet User ID 必须是正整数，留空表示清除");
+        return;
+      }
+    }
+
+    setSaving(true);
+    try {
+      if (kind === "qr") {
+        if (!trimmed) {
+          message.error("请输入 QR 字符串");
+          return;
+        }
+        const response = await fetch(
+          buildApiUrl(
+            environment,
+            `/admin/bots/${encodeURIComponent(friendCode)}/cabinet/bind-qr`,
+          ),
+          {
+            method: "POST",
+            headers: {
+              ...adminHeaders(password),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ qrCode: trimmed }),
+          },
+        );
+        const responseBody = (await response.json().catch(() => null)) as {
+          cabinetUserId?: number;
+          message?: string;
+          error?: string;
+        } | null;
+        if (!response.ok) {
+          throw new Error(
+            responseBody?.message ?? responseBody?.error ?? `HTTP ${response.status}`,
+          );
+        }
+        message.success(
+          responseBody?.cabinetUserId
+            ? `扫码绑定成功：${responseBody.cabinetUserId}`
+            : "扫码绑定成功",
+        );
+      } else {
+        const res =
+          kind === "remark"
+            ? await adminApi.updateBotRemark({
+                headers: adminHeaders(password),
+                params: { friendCode },
+                body: { remark: trimmed || null },
+              })
+            : await adminApi.updateBotCabinetUserId({
+                headers: adminHeaders(password),
+                params: { friendCode },
+                body: { cabinetUserId },
+              });
+        if (res.status !== 200) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        message.success(
+          kind === "remark" ? "备注已保存" : "Cabinet User ID 已保存",
+        );
+      }
+      setEditDialog(null);
+      await onRefresh().catch(() => {});
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeBot = async (friendCode: string) => {
+    if (!password) return;
+    setRemovingFriendCode(friendCode);
+    try {
+      const res = await adminApi.removeBot({
+        headers: adminHeaders(password),
+        params: { friendCode },
+      });
+      if (res.status !== 200) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      message.success("Bot 已删除");
+      await onRefresh().catch(() => {});
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "删除失败");
+    } finally {
+      setRemovingFriendCode(null);
+    }
+  };
+
+  const renderBotActions = (
+    row: Record<string, unknown>,
+    showLabels = false,
+  ) => {
+    if (!("available" in row)) return null;
+    const friendCode = String(row.workerId ?? row.botFriendCode ?? "");
+    return (
+      <Space size={4} wrap>
+        <Button
+          size="small"
+          icon={<EditOutlined />}
+          title="编辑备注"
+          aria-label="编辑备注"
+          onClick={() =>
+            setEditDialog({
+              kind: "remark",
+              friendCode,
+              value: String(row.remark ?? ""),
+            })
+          }
+        >
+          {showLabels ? "备注" : null}
+        </Button>
+        <Button
+          size="small"
+          icon={<IdcardOutlined />}
+          title="绑定 Cabinet User ID"
+          aria-label="绑定 Cabinet User ID"
+          onClick={() =>
+            setEditDialog({
+              kind: "cabinet",
+              friendCode,
+              value:
+                row.cabinetUserId === null || row.cabinetUserId === undefined
+                  ? ""
+                  : String(row.cabinetUserId),
+            })
+          }
+        >
+          {showLabels ? "Cabinet ID" : null}
+        </Button>
+        <Button
+          size="small"
+          icon={<QrcodeOutlined />}
+          title="扫码绑定 Cabinet"
+          aria-label="扫码绑定 Cabinet"
+          onClick={() =>
+            setEditDialog({
+              kind: "qr",
+              friendCode,
+              value: "",
+            })
+          }
+        >
+          {showLabels ? "QR 绑定" : null}
+        </Button>
+        <Popconfirm
+          title={`删除 Bot ${friendCode}？`}
+          description="仍在运行的 Bot 会在下次心跳时重新出现。"
+          okText="删除"
+          cancelText="取消"
+          okButtonProps={{ danger: true }}
+          onConfirm={() => removeBot(friendCode)}
+        >
+          <Button
+            danger
+            size="small"
+            icon={<DeleteOutlined />}
+            title="删除 Bot"
+            aria-label="删除 Bot"
+            loading={removingFriendCode === friendCode}
+          >
+            {showLabels ? "删除" : null}
+          </Button>
+        </Popconfirm>
+      </Space>
+    );
+  };
+
   const columns = [
     {
       title: "workerId",
       key: "workerId",
-      width: 220,
+      width: 170,
       render: (row: Record<string, unknown>) => (
         <Text className="cell-monospace">
           {String(row.workerId ?? row.botFriendCode ?? "-")}
@@ -562,26 +965,41 @@ function WorkerInstancesTable({ rows }: { rows: Array<Record<string, unknown>> }
       ),
     },
     {
-      title: "状态",
-      key: "status",
-      width: 100,
-      render: (row: Record<string, unknown>) =>
-        "available" in row ? (
-          <Tag color={row.available ? "green" : "red"}>
-            {row.available ? "可用" : "不可用"}
-          </Tag>
-        ) : (
-          <Tag color={isWorkerAlive(row) ? "green" : "red"}>
-            {isWorkerAlive(row) ? "在线" : "离线"}
-          </Tag>
-        ),
+      title: "在线",
+      key: "online",
+      width: 80,
+      render: (row: Record<string, unknown>) => (
+        <Tag color={isWorkerAlive(row) ? "green" : "red"}>
+          {isWorkerAlive(row) ? "在线" : "离线"}
+        </Tag>
+      ),
     },
+    ...(hasDxnetBots
+      ? [
+          {
+            title: "Cookie",
+            key: "cookie",
+            width: 80,
+            render: (row: Record<string, unknown>) => (
+              <Tag color={row.available ? "green" : "red"}>
+                {row.available ? "可用" : "过期"}
+              </Tag>
+            ),
+          },
+          {
+            title: "操作",
+            key: "actions",
+            width: 150,
+            render: (row: Record<string, unknown>) => renderBotActions(row),
+          },
+        ]
+      : []),
     {
       title: "最近上报",
       key: "lastSeenAt",
-      width: 120,
+      width: 180,
       render: (row: Record<string, unknown>) =>
-        formatTime(String(row.lastSeenAt ?? "")),
+        formatDateTime(String(row.lastSeenAt ?? "")),
     },
     {
       title: "信息",
@@ -592,35 +1010,95 @@ function WorkerInstancesTable({ rows }: { rows: Array<Record<string, unknown>> }
   ];
 
   return (
-    <Card className="admin-card wide-table-card" title="Worker 实例">
+    <Card
+      className="admin-card wide-table-card"
+      title={hasDxnetBots ? "DXNet Bot 实例" : "Worker 实例"}
+    >
       <ResponsiveTable
         size="small"
         rowKey={(row, index) => `${String(row.workerId ?? index)}-${index}`}
         columns={columns}
         dataSource={rows}
         pagination={false}
-        renderMobileItem={(row) => (
-          <MobileFields
-            title={String(row.workerId ?? row.botFriendCode ?? "-")}
-            fields={[
+        renderMobileItem={(row) => {
+          const fields: Array<[string, ReactNode]> = [
+            [
+              "在线状态",
+              <Tag color={isWorkerAlive(row) ? "green" : "red"}>
+                {isWorkerAlive(row) ? "在线" : "离线"}
+              </Tag>,
+            ],
+          ];
+          if ("available" in row) {
+            fields.push(
               [
-                "状态",
-                "available" in row ? (
-                  <Tag color={row.available ? "green" : "red"}>
-                    {row.available ? "可用" : "不可用"}
-                  </Tag>
-                ) : (
-                  <Tag color={isWorkerAlive(row) ? "green" : "red"}>
-                    {isWorkerAlive(row) ? "在线" : "离线"}
-                  </Tag>
-                ),
+                "Cookie 状态",
+                <Tag color={row.available ? "green" : "red"}>
+                  {row.available ? "可用" : "过期"}
+                </Tag>,
               ],
-              ["最近上报", formatTime(String(row.lastSeenAt ?? ""))],
-              ["信息", formatWorkerInfo(row)],
-            ]}
+              ["操作", renderBotActions(row, true)],
+            );
+          }
+          fields.push(
+            ["最近上报", formatDateTime(String(row.lastSeenAt ?? ""))],
+            ["信息", formatWorkerInfo(row)],
+          );
+          return (
+            <MobileFields
+              title={String(row.workerId ?? row.botFriendCode ?? "-")}
+              fields={fields}
+            />
+          );
+        }}
+      />
+      <Modal
+        open={editDialog !== null}
+        title={
+          editDialog?.kind === "remark"
+            ? `编辑备注 · ${editDialog.friendCode}`
+            : editDialog?.kind === "qr"
+              ? `扫码绑定 Cabinet · ${editDialog.friendCode}`
+              : `编辑 Cabinet User ID · ${editDialog?.friendCode ?? ""}`
+        }
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={saving}
+        onOk={() => void saveEdit()}
+        onCancel={() => setEditDialog(null)}
+        destroyOnHidden
+      >
+        {editDialog?.kind === "qr" ? (
+          <Input.TextArea
+            autoFocus
+            autoSize={{ minRows: 3, maxRows: 6 }}
+            value={editDialog.value}
+            placeholder="粘贴 Bot 卡牌上的 QR 字符串（SGWCMAID...）"
+            onChange={(event) =>
+              setEditDialog((current) =>
+                current ? { ...current, value: event.target.value } : current,
+              )
+            }
+          />
+        ) : (
+          <Input
+            autoFocus
+            value={editDialog?.value ?? ""}
+            inputMode={editDialog?.kind === "cabinet" ? "numeric" : "text"}
+            placeholder={
+              editDialog?.kind === "cabinet"
+                ? "输入正整数；留空清除绑定"
+                : "输入备注；留空清除备注"
+            }
+            onChange={(event) =>
+              setEditDialog((current) =>
+                current ? { ...current, value: event.target.value } : current,
+              )
+            }
+            onPressEnter={() => void saveEdit()}
           />
         )}
-      />
+      </Modal>
     </Card>
   );
 }
@@ -695,7 +1173,20 @@ function ActiveWorkerJobsTable({ jobs }: { jobs: WorkerActiveJob[] }) {
 }
 
 function RecentErrorsTable({ rows }: { rows: RecentWorkerError[] }) {
+  const totalHits = rows.reduce((sum, row) => sum + row.count, 0);
+  const sortedRows = rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => b.row.count - a.row.count || a.index - b.index)
+    .map(({ row }) => row);
   const columns = [
+    {
+      title: "Hits",
+      dataIndex: "count",
+      key: "count",
+      width: 80,
+      align: "center" as const,
+      render: (value: number) => <Tag color="red">{value}</Tag>,
+    },
     { title: "Job type", dataIndex: "jobType", key: "jobType", width: 180 },
     {
       title: "错误类型",
@@ -705,24 +1196,26 @@ function RecentErrorsTable({ rows }: { rows: RecentWorkerError[] }) {
       render: (value: string) => <Tag color="red">{value}</Tag>,
     },
     { title: "消息", dataIndex: "message", key: "message", width: 320 },
-    { title: "次数", dataIndex: "count", key: "count", width: 80 },
   ];
 
   return (
-    <Card className="admin-card wide-table-card" title="最近错误">
+    <Card
+      className="admin-card wide-table-card"
+      title={`最近错误 · ${totalHits} hits`}
+    >
       <ResponsiveTable
         size="small"
         rowKey={(row, index) => `${row.jobType}-${row.errorClass}-${index}`}
         columns={columns}
-        dataSource={rows}
+        dataSource={sortedRows}
         pagination={false}
         renderMobileItem={(row) => (
           <MobileFields
             title={row.jobType}
             fields={[
+              ["Hits", <Tag color="red">{row.count}</Tag>],
               ["错误类型", <Tag color="red">{row.errorClass}</Tag>],
               ["消息", row.message],
-              ["次数", row.count],
             ]}
           />
         )}
@@ -860,7 +1353,9 @@ function formatWorkerInfo(row: Record<string, unknown>): string {
   if (row.friendCount !== undefined && row.friendCount !== null) {
     parts.push(`好友 ${String(row.friendCount)}`);
   }
-  if (row.cabinetUserId) parts.push("Cabinet 已绑定");
+  if (row.cabinetUserId) {
+    parts.push(`Cabinet ${String(row.cabinetUserId)}`);
+  }
   if (row.jobsClaimed !== undefined) {
     parts.push(`领取 ${String(row.jobsClaimed)}`);
   }

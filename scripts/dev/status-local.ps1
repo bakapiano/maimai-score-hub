@@ -11,5 +11,9 @@ foreach ($port in @(6379, 9050, 3001, 3002)) {
 }
 
 Write-Host ""
-Write-Host "== Dev tunnel logs =="
+Write-Host "== Frontend dev tunnel logs =="
 Invoke-Pm2 logs msh-devtunnel --lines 20 --nostream
+
+Write-Host ""
+Write-Host "== Admin dev tunnel logs =="
+Invoke-Pm2 logs msh-admin-devtunnel --lines 20 --nostream

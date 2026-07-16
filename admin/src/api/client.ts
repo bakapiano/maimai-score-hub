@@ -12,7 +12,9 @@ export const DEV_API_BASE_URL = (
 
 export const PROD_API_BASE_URL = (
   import.meta.env.VITE_PROD_API_BASE_URL ||
-  "https://api.maiscorehub.bakapiano.com/api/v1"
+  (import.meta.env.DEV
+    ? "/prod-api/v1"
+    : "https://api.maiscorehub.bakapiano.com/api/v1")
 ).replace(/\/+$/, "");
 
 export function getApiBaseUrl(environment: AdminEnvironment) {

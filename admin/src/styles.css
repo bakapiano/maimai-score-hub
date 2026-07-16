@@ -63,11 +63,20 @@ select {
 }
 
 .admin-sider {
-  position: sticky;
-  top: 0;
+  position: fixed !important;
+  inset: 0 auto 0 0;
+  z-index: 20;
   height: 100vh;
+  height: 100dvh;
+  background: #101828;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+.admin-main-layout {
+  width: calc(100% - 232px);
+  margin-left: 232px;
 }
 
 .admin-brand {
@@ -374,6 +383,18 @@ select {
   min-width: 0;
 }
 
+.worker-sub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.worker-overview-mobile-item {
+  display: grid;
+  gap: 12px;
+}
+
 @media (max-width: 1199px) {
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -385,6 +406,11 @@ select {
 }
 
 @media (max-width: 767px) {
+  .admin-main-layout {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .admin-header {
     padding: 10px 12px;
     align-items: flex-start;

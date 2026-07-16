@@ -341,7 +341,7 @@ export default function AdminLayout() {
         </Drawer>
       )}
 
-      <Layout>
+      <Layout className="admin-main-layout">
         <Header className="admin-header">
           <Space className="admin-header-left">
             {isMobile ? (

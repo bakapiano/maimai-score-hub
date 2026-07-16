@@ -2,11 +2,34 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
 
-const description = "maimai-score-hub-local-frontend";
-const port = 3001;
 const root = path.resolve(__dirname, "..", "..");
 const stateDirectory = path.join(root, ".local-dev");
-const statePath = path.join(stateDirectory, "devtunnel.json");
+const tunnelProfiles = {
+  frontend: {
+    description: "maimai-score-hub-local-frontend",
+    displayName: "frontend",
+    port: 3001,
+    statePath: path.join(stateDirectory, "devtunnel.json"),
+    urlPath: "/",
+  },
+  admin: {
+    description: "maimai-score-hub-local-admin",
+    displayName: "admin portal",
+    port: 3002,
+    tunnelId: "maiscorehub-admin-dev.jpe1",
+    urlPath: "/admin/",
+  },
+};
+
+const profileName = process.argv[2] || "frontend";
+const profile = tunnelProfiles[profileName];
+
+if (!profile) {
+  console.error(
+    `Unknown dev tunnel profile "${profileName}". Expected one of: ${Object.keys(tunnelProfiles).join(", ")}`,
+  );
+  process.exit(1);
+}
 
 function runDevTunnel(args) {
   return spawnSync("devtunnel", args, {
@@ -38,17 +61,17 @@ function parseJson(operation, result) {
 }
 
 function readStoredTunnelId() {
-  if (!fs.existsSync(statePath)) {
+  if (!profile.statePath || !fs.existsSync(profile.statePath)) {
     return null;
   }
   try {
-    const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    const state = JSON.parse(fs.readFileSync(profile.statePath, "utf8"));
     return typeof state.tunnelId === "string" && state.tunnelId.trim()
       ? state.tunnelId.trim()
       : null;
   } catch (error) {
     console.warn(
-      `Unable to read ${statePath}; a new tunnel will be created. ${error.message}`,
+      `Unable to read ${profile.statePath}; a new tunnel will be created. ${error.message}`,
     );
     return null;
   }
@@ -62,7 +85,7 @@ function storedTunnelExists(tunnelId) {
   const output = [result.stdout, result.stderr].filter(Boolean).join("\n");
   if (/Tunnel not found/i.test(output)) {
     console.warn(
-      `Stored dev tunnel ${tunnelId} no longer exists; creating a replacement.`,
+      `Dev tunnel ${tunnelId} does not exist; creating it.`,
     );
     return false;
   }
@@ -70,13 +93,16 @@ function storedTunnelExists(tunnelId) {
 }
 
 function saveTunnelState(tunnelId) {
+  if (!profile.statePath) {
+    return;
+  }
   fs.mkdirSync(stateDirectory, { recursive: true });
   fs.writeFileSync(
-    statePath,
+    profile.statePath,
     `${JSON.stringify(
       {
         tunnelId,
-        port,
+        port: profile.port,
         createdAt: new Date().toISOString(),
       },
       null,
@@ -87,11 +113,13 @@ function saveTunnelState(tunnelId) {
 }
 
 function createPersistentTunnel() {
+  const createTunnelId = profile.tunnelId?.split(".", 1)[0];
   const result = runDevTunnel([
     "create",
+    ...(createTunnelId ? [createTunnelId] : []),
     "--allow-anonymous",
     "--description",
-    description,
+    profile.description,
     "--json",
   ]);
   if (result.status !== 0) {
@@ -104,9 +132,17 @@ function createPersistentTunnel() {
     throw new Error("devtunnel create did not return a tunnelId");
   }
 
+  if (profile.tunnelId && tunnelId !== profile.tunnelId) {
+    throw new Error(
+      `devtunnel created ${tunnelId}, expected fixed tunnel ID ${profile.tunnelId}`,
+    );
+  }
+
   saveTunnelState(tunnelId);
   console.log(
-    `Created persistent dev tunnel ${tunnelId}; state saved to ${statePath}`,
+    profile.statePath
+      ? `Created persistent dev tunnel ${tunnelId}; state saved to ${profile.statePath}`
+      : `Created fixed dev tunnel ${tunnelId}`,
   );
   return tunnelId;
 }
@@ -119,7 +155,7 @@ function ensureTunnelPort(tunnelId) {
 
   const response = parseJson("port list", listResult);
   const matchingPort = (response.ports ?? []).find(
-    (candidate) => Number(candidate.portNumber) === port,
+    (candidate) => Number(candidate.portNumber) === profile.port,
   );
   if (matchingPort) {
     return;
@@ -130,37 +166,72 @@ function ensureTunnelPort(tunnelId) {
     "create",
     tunnelId,
     "--port-number",
-    String(port),
+    String(profile.port),
     "--protocol",
     "http",
     "--description",
-    description,
+    profile.description,
     "--json",
   ]);
   if (createResult.status !== 0) {
     throw commandError(
-      `create port ${port} for dev tunnel ${tunnelId}`,
+      `create port ${profile.port} for dev tunnel ${tunnelId}`,
       createResult,
     );
   }
-  console.log(`Added HTTP port ${port} to dev tunnel ${tunnelId}`);
+  console.log(`Added HTTP port ${profile.port} to dev tunnel ${tunnelId}`);
+}
+
+function printPublicUrl(tunnelId) {
+  const result = runDevTunnel(["show", tunnelId, "--json"]);
+  if (result.status !== 0) {
+    console.warn(commandError(`show dev tunnel ${tunnelId}`, result).message);
+    return false;
+  }
+
+  const response = parseJson("show", result);
+  const tunnelPort = (response.tunnel?.ports ?? []).find(
+    (candidate) => Number(candidate.portNumber) === profile.port,
+  );
+  if (typeof tunnelPort?.portUri !== "string") {
+    return false;
+  }
+
+  const publicUrl = new URL(profile.urlPath, tunnelPort.portUri).toString();
+  console.log(`${profile.displayName} URL: ${publicUrl}`);
+  return true;
+}
+
+function printPublicUrlWhenReady(tunnelId, attemptsRemaining = 5) {
+  setTimeout(() => {
+    if (!printPublicUrl(tunnelId) && attemptsRemaining > 1) {
+      printPublicUrlWhenReady(tunnelId, attemptsRemaining - 1);
+    }
+  }, 1000);
 }
 
 function main() {
-  let tunnelId = readStoredTunnelId();
+  let tunnelId = profile.tunnelId || readStoredTunnelId();
   if (tunnelId && storedTunnelExists(tunnelId)) {
-    console.log(`Reusing persistent dev tunnel ${tunnelId} from ${statePath}`);
+    console.log(
+      profile.tunnelId
+        ? `Reusing fixed dev tunnel ${tunnelId}`
+        : `Reusing persistent dev tunnel ${tunnelId} from ${profile.statePath}`,
+    );
   } else {
     tunnelId = createPersistentTunnel();
   }
 
   ensureTunnelPort(tunnelId);
-  console.log(`Hosting dev tunnel ${tunnelId} for frontend port ${port}`);
+  console.log(
+    `Hosting dev tunnel ${tunnelId} for ${profile.displayName} port ${profile.port}`,
+  );
 
   const host = spawn("devtunnel", ["host", tunnelId], {
     stdio: "inherit",
     windowsHide: true,
   });
+  printPublicUrlWhenReady(tunnelId);
   let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return;

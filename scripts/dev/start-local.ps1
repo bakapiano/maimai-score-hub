@@ -34,5 +34,6 @@ Write-Host "  npm run dev:local:status"
 Write-Host "  npm run dev:local:logs"
 Write-Host "  npm run dev:local:stop"
 Write-Host ""
-Write-Host "Dev tunnel URL appears in msh-devtunnel logs:"
+Write-Host "Dev tunnel URLs appear in these logs:"
 Invoke-Pm2 logs msh-devtunnel --lines 20 --nostream
+Invoke-Pm2 logs msh-admin-devtunnel --lines 20 --nostream

@@ -131,6 +131,16 @@ module.exports = {
     {
       name: "msh-devtunnel",
       script: path.join(root, "scripts", "dev", "run-devtunnel.cjs"),
+      args: "frontend",
+      cwd: root,
+      interpreter: process.execPath,
+      autorestart: true,
+      max_restarts: 5,
+    },
+    {
+      name: "msh-admin-devtunnel",
+      script: path.join(root, "scripts", "dev", "run-devtunnel.cjs"),
+      args: "admin",
       cwd: root,
       interpreter: process.execPath,
       autorestart: true,

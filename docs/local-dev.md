@@ -66,7 +66,7 @@ The repo includes a PM2-based local dev supervisor. It starts:
 - admin portal on `127.0.0.1:3002` (`/admin/`)
 - DXNet worker (`msh-worker`) connected to local backend/Redis
 - sdgb-worker (`msh-sdgb-worker`) connected to local backend/Redis
-- Microsoft Dev Tunnel for frontend public access
+- Microsoft Dev Tunnels for frontend and admin portal public access
 
 First-time setup:
 
@@ -100,6 +100,7 @@ Show logs:
 npm run dev:local:logs
 npm run dev:local:logs -- msh-backend
 npm run dev:local:logs -- msh-devtunnel
+npm run dev:local:logs -- msh-admin-devtunnel
 ```
 
 Stop everything managed by the supervisor:
@@ -117,11 +118,15 @@ Notes:
   only if the directory and its dependencies exist on this machine.
 - The scripts only stop PM2-managed processes. They do not kill unrelated
   `node.exe` processes by name.
-- Dev Tunnel URL is printed in `msh-devtunnel` logs. The first startup creates
-  a tunnel and stores its ID in the Git-ignored
+- The frontend Dev Tunnel URL is printed in `msh-devtunnel` logs. The first
+  startup creates a tunnel and stores its ID in the Git-ignored
   `.local-dev/devtunnel.json`; later startups reuse that ID and URL. If the
   remote tunnel has expired or been deleted, the script creates and stores a
   replacement automatically.
+- The admin portal Dev Tunnel URL is printed in `msh-admin-devtunnel` logs and
+  includes the `/admin/` path. Its tunnel ID is fixed as
+  `maiscorehub-admin-dev.jpe1`; local startup recreates that exact tunnel if it
+  does not exist.
 
 ## Manual backend `.env`
 
