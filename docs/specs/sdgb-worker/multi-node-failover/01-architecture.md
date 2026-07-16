@@ -1,8 +1,8 @@
-# 总体架构与扩展模型
+# 架构与 Worker/Lane 决策
 
 [← 返回总览](./README.md)
 
-## 1. 架构
+## 1. 组件
 
 ```mermaid
 flowchart LR
@@ -10,201 +10,155 @@ flowchart LR
     R --> QP[Probe BullMQ queue]
     R --> QI[Interactive BullMQ queue]
 
-    subgraph C[Control plane]
-      WR[Worker Registry]
-      LO[Lane Ownership]
-      DR[Drain and assignment]
-      CB[Worker upstream health and breaker]
-      RL[Class-specific request policy]
-    end
+    C[Backend control plane] --> WR[Redis worker registry]
+    C --> LO[Redis lane owner lease]
+    C --> M[Mongo maintenance state]
 
-    MH[Maintenance orchestrator] --> CP[Generic maintenance control]
-    CP --> DR
-    CP -. executes .-> HK[MaintenanceHook]
+    QP --> W[Workers]
+    QI --> W
+    WR --> C
+    LO --> W
 
-    QP --> WP[Probe-capable workers]
-    QI --> WI[Interactive-capable workers]
-    WR --> LO
-    DR --> LO
-    CB --> LO
-    LO --> WP
-    LO --> WI
-    RL --> WP
-    RL --> WI
+    W --> S[Class-specific request scheduler]
+    S --> U[UpstreamAdapter]
 
-    WP --> UA[UpstreamAdapter]
-    WI --> UA
+    O[Maintenance orchestrator] --> C
+    O -. executes .-> H[Router MaintenanceHook]
 ```
 
-Backend 业务模块只选择 lane，不选择机器。Worker 是否消费某条 lane，由 workerClass、capability、assignment、lease、drain 和 upstream health 共同决定。每个公网出口只运行一个 sdgb-worker 进程。
+Backend producer 只选择 lane，不选择机器。控制面根据 workerClass、capability、health、drain 和 lane lease 选择唯一 active worker。
 
-维护操作同样与设备实现解耦。控制面只处理 drain、handoff、verification gate 和 handback；外部 orchestrator 在获得 `standby active` 确认后执行 `MaintenanceHook`。Hook 可以是路由器重启、网络切换、主机维护或人工确认，核心状态机不包含任何设备协议。
+## 2. Worker 配置
 
-## 2. Worker Class、Capability 与 Assignment 分离
+```ts
+type WorkerClass = "recoverable" | "stable";
+type WorkerCapability = "probe" | "interactive";
 
-当前 `role=probe|interactive|all` 同时表达“能做什么”和“正在做什么”，不适合动态 failover。目标模型拆成：
-
-```text
-workerClass = 恢复与限流策略（recoverable / stable）
-capabilities = worker 能安全处理的 lane/job 类型
-activeLanes  = 控制面当前允许 worker 消费的 lane
+type WorkerConfig = {
+  workerId: string;
+  workerClass: WorkerClass;
+  capabilities: WorkerCapability[];
+};
 ```
 
-`workerClass` 不代替 capability：Stable 可以具备 Probe capability，Recoverable 也可以具备 Interactive capability；class 只决定候选优先级、Auto Recovery 要求和请求策略。
+Worker class 在进程生命周期内不可变：
 
-示例：
+- Recoverable 必须配置 Auto Recovery hook adapter。
+- Stable 必须配置严格 rate policy。
+- 两类 worker 都可以同时具备 Probe/Interactive capability，以支持双向 failover。
+
+## 3. Active Lane
+
+Heartbeat 区分“能做”和“正在做”：
 
 ```json
 {
-  "workerId": "worker-standby-a",
+  "workerId": "worker-stable-a",
   "workerClass": "stable",
   "capabilities": ["probe", "interactive"],
   "activeLanes": ["interactive"],
-  "drainingLanes": [],
-  "publicIp": "observed-dynamically"
+  "drainingLanes": []
 }
 ```
 
-该 Stable worker 常态只处理 Interactive，但不重启进程即可在没有健康 Recoverable Probe owner 时获得 Probe lease。Interactive 使用保留容量；Probe 只能使用剩余 token。
+当 Recoverable Probe owner 故障时，该 Stable worker 获得 Probe lease：
 
-## 3. Lane 是部署策略，不是机器名
-
-Lane 名称必须稳定且与机器无关：
-
-```text
-probe
-interactive
-session        # 未来可选
-probe-shard-N  # 未来可选
+```json
+{
+  "activeLanes": ["interactive", "probe"]
+}
 ```
 
-禁止使用：
-
-```text
-server3-jobs
-home-worker-jobs
-azure-jobs
-```
-
-机器替换、出口变化和扩容不应导致 producer 或 job schema 改名。
+Handback 时 Probe 进入 draining，Interactive 继续 active。
 
 ## 4. Lane Policy
 
-控制面为每条 lane 配置策略：
-
 ```ts
 type LanePolicy = {
-  mode: "exclusive" | "shared";
-  requiredCapability: string;
+  lane: "probe" | "interactive";
+  queueName: string;
+  requiredCapability: WorkerCapability;
   preferredWorkerClasses: WorkerClass[];
-  maxActiveWorkers: number;
-  failoverEnabled: boolean;
-  ratePolicy: string;
+  leaseTtlMs: number;
+  leaseRenewMs: number;
+  drainGraceMs: number;
 };
 ```
 
-初始配置：
+固定策略：
 
-| Lane          | mode        | class priority           | max active | 说明                                          |
-| ------------- | ----------- | ------------------------ | ---------: | --------------------------------------------- |
-| `probe`       | `exclusive` | `recoverable` → `stable` |          1 | Recoverable 主跑；恢复期间由 Stable 接管。    |
-| `interactive` | `shared`    | `stable` → `recoverable` |          1 | Stable 主跑；Stable 不可用时才跨 class 接管。 |
+| Lane          | mode      | Class priority       | Job types      |
+| ------------- | --------- | -------------------- | -------------- |
+| `probe`       | exclusive | Recoverable → Stable | Rival/Map      |
+| `interactive` | exclusive | Stable → Recoverable | Scan/Add/Music |
 
-`shared` 不代表无限 active。控制面仍必须检查 worker health、单进程预算和 session capability。
+只有高优先级 class 没有 healthy/eligible 候选时才跨 class。
 
-## 5. Job 路由与数据稳定性
-
-创建 job 时，Backend 根据代码版本中的静态映射选择 lane，并把结果持久化：
-
-```ts
-type SdgbJobRouting = {
-  lane: "probe" | "interactive" | "session";
-  routingVersion: number;
-};
-```
-
-后续 queue repair、retry 和 cancel 使用 job 自己的 `lane`，不能再次按最新映射推导。这样未来把某个 job type 移到新 lane 时，旧 job 仍在原 lane 完成，不会同时出现在两条队列。
-
-迁移前的旧文档若没有 `lane`，由一次性 migration 或显式 legacy routing version 补齐；运行时不长期保留隐式 fallback。
-
-## 6. Worker 进程结构
-
-一个进程可为每个 capability 创建一个本地 BullMQ Worker，但默认保持暂停：
+## 5. Worker 进程
 
 ```text
 Process
-├─ class-specific request scheduler
-├─ public IP / upstream health observer
+├─ heartbeat / desired-state loop
+├─ lane lease client
 ├─ active job registry
-├─ Probe BullMQ Worker          paused/resumed by ownership
-├─ Interactive BullMQ Worker    paused/resumed by assignment
-└─ session cleanup coordinator  enabled only with session capability
+├─ Probe BullMQ Worker          paused/resumed by lease
+├─ Interactive BullMQ Worker    paused/resumed by lease
+├─ class-specific scheduler
+│  ├─ Recoverable: concurrency + breaker, no QPS
+│  └─ Stable: strict priority-aware limiter
+└─ session cleanup coordinator
 ```
 
-Recoverable scheduler 不设置 QPS 上限，但保留有限并发与 breaker。Stable scheduler 使用严格 global 上限、job-type 子限额和 Interactive 保留容量。
+`pause(true)` 只暂停本地 consumer，不使用 BullMQ global pause。
 
-本地 `pause(true)` 只停止该进程领取，不允许使用 BullMQ global pause 作为 lane ownership，因为 global pause 会影响其他机器。
+## 6. Stable Scheduler
 
-## 7. 添加新机器
-
-新增 worker 只需要：
-
-1. 部署相同版本镜像。
-2. 设置唯一 `workerId`。
-3. 配置 `workerClass`、`capabilities` 和各 lane preference。
-4. Recoverable 必须配置 Auto Recovery hook；Stable 必须配置严格限流策略。
-5. 连接同一 Backend/Redis 控制面。
-6. 通过 startup self-check 后开始 heartbeat。
-7. 控制面将其纳入候选；除非获得 assignment/lease，否则不消费 exclusive lane。
-
-配置示例只表达内部调度属性：
-
-```env
-WORKER_ID=worker-new-a
-SDGB_WORKER_CLASS=stable
-SDGB_CAPABILITIES=probe,interactive
-SDGB_PROBE_PREFERENCE=50
-SDGB_INTERACTIVE_PREFERENCE=20
-```
-
-Preference 数值越小越优先。Preference 只用于候选排序，不能绕过 health、drain、版本和 lease 校验。
-
-## 8. 扩容路径
-
-### 8.1 容灾扩容
-
-首选方式：一台 active，多台 standby。新增机器不增加上游吞吐，只缩短故障恢复时间。
-
-### 8.2 Interactive 多 Active
-
-当用户交互量需要扩容时，可将 `interactive.maxActiveWorkers` 提高。前提：
-
-- 每个 active worker 使用独立公网出口，且每个出口只运行一个进程；
-- Active worker 优先选择 Stable class；
-- 如果后续确认存在站点全局配额，已启用可选的全局预算；
-- 有副作用 job 已有幂等或 outcome-unknown 处理；
-- 会话 cleanup 可跨 worker fencing；
-- Admin 能查看每个 worker 的 active job 和出口健康。
-
-### 8.3 Probe 分片
-
-只有单 owner 在安全限流下无法按目标时延清空队列时，才引入：
+Stable 维护三个独立 wait queue：
 
 ```text
-probe-shard-0
-probe-shard-1
-...
+cleanup
+interactive
+probe
 ```
 
-按稳定业务键做一致性哈希，每个 shard 独立配置 primary/standby lease。扩缩 shard 必须有显式迁移版本，不能在运行中直接改变 hash 环导致同一用户并发探测。
+Root token 到达时：
 
-## 9. 架构不允许的捷径
+1. cleanup 有 waiter：发给 cleanup。
+2. 否则 Interactive 有 waiter：发给 Interactive。
+3. 否则发给 Probe。
 
-- 在同一 BullMQ queue 中领取后再按 job type 退回。
-- 用机器 hostname 作为 queue 名。
-- 让 standby 通过轮询 Mongo 自行猜测是否应该接管。
-- 同一公网出口部署多个 worker 进程。
-- 仅依赖 heartbeat 判定 ownership，不使用带 token 的原子 lease。
-- Lease 丢失后继续完成非 cleanup 上游操作。
-- 自动 failover 到 `upstreamHealth=blocked` 或版本不兼容的 worker。
-- Probe 有健康 Recoverable 候选时仍分配给 Stable，或 Interactive 有健康 Stable 候选时仍分配给 Recoverable。
+Probe 无权把 waiter 预先塞进一个全局 FIFO。Interactive 无 waiter 时 Probe 可使用全部空闲 token；Interactive 到达后获得下一个 token。
+
+Probe concurrency cap=4，并为 Interactive 保留 HTTP connection/semaphore slot。Limiter 只控制每次请求启动，不串行占用整个 job 生命周期。
+
+现有 promise-chain FIFO token bucket 不能满足该要求，必须替换为 priority-aware scheduler。
+
+## 7. Recoverable Scheduler
+
+Recoverable：
+
+- 不创建 QPS token bucket；
+- 使用已确认的 type concurrency；
+- 保留空响应 breaker；
+- Breaker open 后关闭请求 gate；
+- Auto Recovery 前先完成 lane failover。
+
+Recoverable 临时承接 Interactive 时属于降级状态，Admin/alert 必须显示 `interactive_on_recoverable`。
+
+## 8. 公网 IP 与进程约束
+
+- 一个公网 IP 只运行一个 sdgb-worker 进程。
+- Worker 上报 `publicIp` 和 `networkEpoch`。
+- IP 变化后 networkEpoch 增加，health 变为 unknown，重新验证后才能获得 lane。
+- Failover 目标必须是另一个 worker，且已知 publicIp 时必须不同。
+- Worker 发布采用 graceful stop-start；旧进程完全停止后才启动新进程。
+
+## 9. 架构不变量
+
+- Queue 名与机器无关。
+- Job 创建时固化 lane 和 routingVersion。
+- Lane owner 以 Redis lease token/epoch 为事实源。
+- Worker 失去 lease 后立即 pause，不领取新 job。
+- 每次请求前与 terminal patch 前检查 fencing epoch。
+- Recoverable/Stable class priority 写在 lane policy，不散落在业务 producer。
+- Router hook 不操作 queue/lease，也不选择 standby。
