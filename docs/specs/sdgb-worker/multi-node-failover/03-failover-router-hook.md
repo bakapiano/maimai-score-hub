@@ -1,21 +1,21 @@
-# Failover 与 Router Hook 状态机
+# Failover 与 MaintenanceHook 状态机
 
 [← 返回总览](./README.md)
 
 ## 1. 原则
 
-控制面只管理 lane handoff，不实现设备操作：
+控制面只管理目标 worker 的 membership 与 lane coverage，不实现设备操作：
 
 ```text
-drain owner
-→ standby active
+drain target member
+→ verify non-target coverage
 → hookMayRun
 → MaintenanceHook
-→ health verification
-→ handback
+→ target health verification
+→ restore desired membership
 ```
 
-Router reboot 是 Recoverable 配置的 `MaintenanceHook`。Hook 不操作 BullMQ、Redis owner key，也不选择备用 worker。
+Router reboot 是 Recoverable 可配置的一种 `MaintenanceHook`。Hook 不操作 BullMQ、Redis membership key，也不选择其他 worker。
 
 ## 2. Hook Adapter Registry
 
@@ -39,28 +39,47 @@ interface MaintenanceHookAdapter {
 }
 ```
 
-Recoverable heartbeat 的 `autoRecoveryHookKind` 必须能在 registry 中解析。首版至少注册现有 router reboot adapter；Azure 上的 IP 轮换 workflow 可以注册为另一个 kind，例如 `azure_ip_rotate`。新增 adapter 不修改 lane、lease、retry、健康验证或 handback 逻辑。
+Recoverable heartbeat 的 `autoRecoveryHookKind` 必须能在 registry 中解析。Router reboot adapter 和云端换 IP workflow 都实现同一接口；新增 kind 不修改 lane、membership、retry、健康验证或 coverage 逻辑。
 
-云 workflow 可以在 worker 外部执行并异步完成。`externalOperationId` 只用于 adapter 在 orchestrator 重启后恢复/查询同一次操作；不得因超时直接创建第二次操作。
+Hook 可以在 worker 外部异步执行。`externalOperationId` 只用于 adapter 在 orchestrator 重启后恢复/查询同一次操作；不得因超时直接创建第二次操作。本规格不定义设备或云平台 API 的地址、调用格式、认证或加密实现。
 
 ## 3. Maintenance 状态
 
 ```text
 requested
-→ selecting_standby
-→ draining_owner
-→ standby_activating
-→ standby_active
+→ planning_coverage
+→ draining_target
+→ coverage_activating
+→ coverage_ready
 → hook_running
 → recovery_verifying
-→ handback
+→ restoring_membership
 → completed
 
 pre-hook failure  → aborted
-post-hook failure → degraded_standby_active
+post-hook failure → degraded_coverage_active
 ```
 
-## 4. Orchestrator/Hook 契约
+Maintenance 只作用于 `targetWorkerId`。其他 active member 不进入 drain。
+
+## 4. Coverage 定义与 Hook Gate
+
+对 maintenance 的每条 affected lane，`coverage_ready` 必须同时满足：
+
+1. 目标 worker 已停止该 lane 的新 claim。
+2. 至少一个非目标 worker 持有 active membership 并在 heartbeat 报告 active。
+3. 非目标 worker 的 class 符合 `LanePolicy`。
+4. 没有公网 IP 冲突、breaker open 或 pending drain。
+
+Class 选择规则不因 maintenance 改变：
+
+- 目标以外仍有 preferred active member：由它们继续消费，不激活 fallback。
+- 目标是最后一个 preferred active member：激活最多 `fallbackActiveCount` 个 fallback member。
+- preferred active count 大于 `0` 时，即使低于 `preferredActiveCount`，也不用 fallback 补数。
+
+只有全部 affected lane 达到 coverage_ready，API 才返回 `hookMayRun=true`。计划内 maintenance 在 deadline 前无法建立 coverage 时进入 aborted，Hook 不执行。
+
+## 5. Orchestrator/Hook 契约
 
 Orchestrator：
 
@@ -69,7 +88,7 @@ Orchestrator：
 3. 等待 `hookMayRun=true`。
 4. 执行 hook。
 5. 主动、幂等提交 observation。
-6. 等待控制面验证和 handback。
+6. 等待控制面健康验证和 membership 恢复。
 
 Hook 只返回非敏感摘要：
 
@@ -84,30 +103,47 @@ type HookObservation = {
 };
 ```
 
-控制面不轮询设备，也不根据 `connectivityRestored` 直接 handback。
+控制面不轮询设备，也不根据 `connectivityRestored` 直接恢复 membership。最终判断来自独立健康 gate。
 
-## 5. Recoverable Empty Failover
+## 6. Recoverable Empty Failover
 
-当前 Recoverable 是 Probe owner，Stable 是 Interactive owner/Probe standby：
+某个 Recoverable member 达到 empty threshold：
 
 ```text
-Recoverable breaker open
-→ pause Probe + requeue Rival/Map
+breaker open on target
+→ target closes local request gate
+→ target pauses its lane consumers
+→ target requeues safe Probe jobs
 → durable incident
-→ control plane selects Probe standby
-→ Recoverable drains/releases Probe lease
-→ Stable acquires Probe lease
-→ Stable activeLanes=[interactive, probe]
-→ hookMayRun=true
-→ Router Auto Recovery hook
-→ Recoverable network returns
-→ health gate
-→ Probe handback to Recoverable
+→ remove only target memberships
+→ reconcile each affected lane
 ```
 
-Stable 接管期间，Interactive 优先级和 global 1.5 QPS 不变；Probe 仅使用空闲 token。
+Probe 有两种分支：
 
-## 6. Breaker 与 Recovery 参数
+### 6.1 仍有 Recoverable Active Member
+
+```text
+other Recoverable members keep consuming Probe
+→ Stable remains Probe-inactive
+→ coverage_ready
+→ execute target's Auto Recovery hook
+```
+
+如果存在其他 eligible Recoverable，可从同 class 补足到 `preferredActiveCount`。补足过程不影响当前 active member。
+
+### 6.2 Recoverable Active Count 变为 0
+
+```text
+activate up to fallbackActiveCount Stable members
+→ confirm their Probe memberships active
+→ coverage_ready
+→ execute target's Auto Recovery hook
+```
+
+Stable 接管期间，每个 Stable 的 Interactive 优先级和 global 1.5 QPS 不变；Probe 只使用该 worker 的空闲 token。
+
+## 7. Breaker 与 Recovery 参数
 
 ```text
 empty threshold = 3 consecutive within 10s
@@ -121,75 +157,79 @@ Auto Recovery budget = once per 30min per Recoverable
 
 Auto Recovery 或验证再次失败：
 
-- Stable 保持 Probe owner。
-- 不进行 handback。
-- 30 分钟内不再次自动执行 hook。
-- 记录报警，等待人工处理或下一次允许的 recovery。
+- 保留当前非目标 coverage。
+- 不把目标 worker 加回 desired member set。
+- 30 分钟内不再次自动执行该 worker 的 hook。
+- Maintenance 进入 `degraded_coverage_active` 并报警。
 
-## 7. Handback
+## 8. 恢复 Preferred Coverage
 
-```text
-Recoverable healthy
-→ Stable pause Probe only
-→ Stable finish/requeue active Probe
-→ Stable release Probe lease
-→ Recoverable acquire new epoch
-→ Recoverable resume Probe
-→ Stable remains Interactive owner
-```
-
-Handback 失败时保持 Stable owner，不允许双方 resume。
-
-## 8. Stable 故障
-
-Stable 是 Interactive 首选。Stable stale/breaker open：
+目标 Recoverable 通过健康 gate 后重新成为 eligible：
 
 ```text
-Stable drain/release Interactive
-→ Recoverable acquire Interactive
-→ alert interactive_on_recoverable
+reconciler selects preferred members up to configured count
+→ selected Recoverable acquires Probe membership
+→ confirm at least one Recoverable active
+→ Stable Probe consumers pause new claims
+→ Stable finishes/requeues claimed Probe jobs
+→ Stable releases Probe memberships
 ```
 
-Stable 不执行 Auto Recovery hook。恢复并通过健康验证后，Interactive 按 class priority handback。
+目标 worker 只在 policy 选中且有名额时重新 active；如果同 class 已有足够健康成员，不为恢复目标而强制替换，避免额外抖动。
 
-## 9. 计划内 Router Reboot
+Preferred 确认 active 到 fallback pause 必须由同一个 reconcile transition 驱动。Fallback 可以短暂保留 draining membership 来完成既有 job，但不能领取新 job。
 
-定时/手工 router reboot 与 empty recovery 使用相同状态机：
+## 9. Stable 故障
 
-1. 创建 maintenance run。
-2. Stable 接管 Probe。
-3. 确认 lease + heartbeat active。
-4. 执行 hook。
-5. 验证 Recoverable。
-6. Handback。
+Interactive 使用完全对称的 member-set 规则：
 
-没有健康 Stable 时，取消计划内 reboot，保持 Recoverable owner。
+- 一个 Stable 故障但仍有其他 Stable active：只移除故障 member，Recoverable 不消费 Interactive。
+- 可用 Stable active count 为 `0`：激活最多 `fallbackActiveCount` 个 Recoverable 来消费 Interactive，并报警 `interactive_on_recoverable`。
+- Stable 恢复且至少一个 Stable membership active：Recoverable pause Interactive 新 claim，drain 后释放 membership。
 
-## 10. Worker 故障
+Stable 不执行 Auto Recovery hook。
 
-Worker 无 heartbeat 或 lease renew：
+## 10. 计划内 Router Maintenance
 
-1. 等待 lease TTL 到期，不强删 owner key。
-2. 按 lane class priority 选择候选。
-3. 新 worker acquire 新 epoch。
-4. Waiting job 继续；旧 active job 由 BullMQ stalled recovery 和 execution fence 处理。
-5. 旧 worker 恢复后只作为 standby，不能沿用旧 lease。
+定时或手工 router maintenance 与 empty recovery 使用同一个状态机：
 
-目标：stale + lease expiry + activation p95 < 45s。
+1. 创建 target worker 的 maintenance run。
+2. 只让 target 的 affected lane 进入 drain。
+3. 如果另有 preferred member，确认其继续 active。
+4. 如果 target 是最后一个 preferred member，先激活 fallback coverage。
+5. 确认 target 无新 claim 且 coverage_ready。
+6. 执行 hook。
+7. 验证 target，并由 policy 决定是否重新加入 member set。
 
-## 11. Graceful Worker Upgrade
+无法建立非目标 coverage 时取消计划内 hook。Maintenance 不对其他 worker 使用 BullMQ global pause。
+
+## 11. Worker 故障
+
+Worker heartbeat stale 或 membership renew 失败：
+
+1. 只等待该 worker 的 member key TTL 到期，不删除其他 member key。
+2. Remaining member 继续消费。
+3. 同 class 有 eligible 候选时补足 configured count。
+4. Preferred active count 为 `0` 时激活 fallback set。
+5. 旧 active job 由 BullMQ stalled recovery 和 execution fence 处理。
+6. 旧 worker 恢复后重新 heartbeat，以新 epoch 申请 policy 选中的 membership。
+
+目标：需要新增 member 时，stale + membership expiry + activation p95 < 45s。若同 lane 尚有 active member，服务不等待该流程。
+
+## 12. Graceful Worker Upgrade
 
 ```text
 create deployment maintenance
-→ pause new claims
-→ active jobs reach safe point
-→ optional lane handoff
+→ pause target's new claims
+→ confirm remaining or fallback coverage
+→ target jobs reach safe point
+→ release target memberships
 → stop old process
-→ start/verify new process
-→ reacquire/handback lanes
+→ start and verify new process
+→ reconcile desired member sets
 ```
 
-有 standby 时先完成 lane handoff，再停止旧进程。没有 standby 时 waiting job 在 BullMQ 短暂排队，但 active 用户 job 仍必须 graceful。
+其他 active member 全程继续消费。目标 worker 没有替代 coverage 时，计划内升级不进入 stop。
 
 Worker drain 结果：
 
@@ -199,17 +239,17 @@ cleanup_handoff_ready
 blocked
 ```
 
-`blocked` 中止升级，禁止用短 timeout 强杀。
+`blocked` 中止升级，禁止用短 timeout 强杀用户 job。
 
-## 12. 超时
+## 13. 超时
 
 | 阶段                          |  默认 |
 | ----------------------------- | ----: |
-| Standby selection             |   10s |
+| Coverage planning             |   10s |
 | Read-only drain grace         |   30s |
-| Standby activation            |   30s |
+| Membership activation         |   30s |
 | Network recovery verification |  5min |
-| Handback activation           |   30s |
+| Membership restoration        |   30s |
 | Whole maintenance             | 10min |
 
 Hook 自身必须有上限；hook 已执行但 orchestration 中断时，恢复后进入 verification，不能重复执行。
