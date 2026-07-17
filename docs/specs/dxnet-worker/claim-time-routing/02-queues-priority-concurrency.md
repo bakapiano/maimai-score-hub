@@ -19,10 +19,55 @@ priority 只在同一 lane 内排序。
 | --- | --- | --- | ---: |
 | `interactive` | 登录、好友关系、QR 等短交互 | 用户登录、QR login、好友申请 | 2 |
 | `user_sync` | 用户主动发起的长查分 | 手动 `update_score` | 2 |
-| `background` | 可排队、可退避的后台任务 | 自动 recent event、自动 full update、维护刷新 | 1 |
+| `background` | 可排队、可退避的后台任务 | 自动 recent event、自动 full update、维护刷新 | 3 |
 
-默认总 active 上限为每 Bot 5 个 job，而不是用一个全局 16/256 concurrency 让后台任务耗尽
+默认总 active 上限为每 Bot 7 个 job，而不是用一个全局 16/256 concurrency 让后台任务耗尽
 所有 slot。具体值必须通过线上 p95、Bot 上游错误率和 lock renewal 指标逐步调整。
+
+`background=3` 的目标不是允许 3 个同类任务无差别并发，而是为每个 worker 保留：
+
+- 最多 2 个 `get_user_recent_event`。
+- 最多 1 个 background `update_score`。
+- maintenance 与上述任务共享剩余 background slot，不能突破 lane 总上限。
+
+建议配置：
+
+```text
+DXNET_LANE_INTERACTIVE_CONCURRENCY=2
+DXNET_LANE_USER_SYNC_CONCURRENCY=2
+DXNET_LANE_BACKGROUND_CONCURRENCY=3
+DXNET_JOB_GET_USER_RECENT_EVENT_CONCURRENCY=2
+DXNET_JOB_BACKGROUND_UPDATE_SCORE_CONCURRENCY=1
+DXNET_JOB_MAINTENANCE_CONCURRENCY=1
+```
+
+### 2.1 线上容量基线（2026-07-17 回看）
+
+关闭自动 recent-event producer 后的当前队列很空，因此不能用当前瞬时 depth 判断恢复后的
+容量。本设计回看了关闭前 ClickHouse `job_timeline_events`：
+
+| 指标 | 观测值 |
+| --- | ---: |
+| 2026-07-04 recent-event created | 2,048 |
+| 2026-07-05 recent-event created | 2,596 |
+| 全局 5 分钟创建峰值 | 151（约 30/min） |
+| 单 Bot 5 分钟创建峰值 | 104-110（约 21-22/min） |
+| 单 Bot 5 分钟创建 p95 | 48-75 |
+| 2026-07-04 单 Bot runtime 平均 | 19-25s |
+| 2026-07-04 单 Bot runtime p95 | 75-125s |
+| 2026-07-04 全局 queue wait p95 | 747.5s |
+
+这说明 `background=1` 会在历史批量生产模式下形成分钟级积压。每 worker 给 recent-event 2 个
+slot，三台 worker 合计 6 个 slot；按历史 13-25s 的常见 runtime，理论吞吐约 14-28/min，
+能覆盖日均并显著缩短 drain 时间，但仍可能在 30/min 峰值时短暂排队。
+
+因此 concurrency 调整必须和 producer smoothing 一起上线：scheduler 不应在短时间把数百个
+due user 同时 enqueue；应按全局/per-Bot 速率均匀释放。不要单纯把 recent-event 恢复到历史
+十几个甚至几十个 active/Bot，否则上游变慢后会反向拉长 runtime、lock 持有时间和失败恢复。
+
+同一回看窗口的当前非自动任务数据：manual `update_score` queue wait p95 约 4.13s，
+send/accept/get-full-friend-list p95 低于 0.2s。因此没有数据支持把 `interactive` 或
+`user_sync` 初始值提高到 2 以上。
 
 ## 3. Queue 命名
 
@@ -121,7 +166,7 @@ const JOB_TYPE_LIMITS = {
   accept_friend_request: 2,
   update_score_user: 2,
   update_score_background: 1,
-  get_user_recent_event: 1,
+  get_user_recent_event: 2,
   get_full_friend_list_interactive: 1,
   get_full_friend_list_maintenance: 1,
 };
@@ -135,7 +180,7 @@ const JOB_TYPE_LIMITS = {
 | QR full friend list | 1 | 多页请求，避免同 Bot 并发扫描 |
 | 手动 update_score | 2 | 用户可见，但单 job 本身已有 Friend VS 内部并发 |
 | 后台 update_score | 1 | 不能挤占手动查分 |
-| get_user_recent_event | 1 | 自动任务允许排队 |
+| get_user_recent_event | 2 | 历史 producer 峰值高；每 worker 保留 2 个执行槽，仍允许排队 |
 | maintenance snapshot | 1 | 最低优先级 |
 
 semaphore 等待不应让 BullMQ job 长时间保持 active。worker 若拿到 job 后发现 type cap 已满，
@@ -166,4 +211,3 @@ addRival queue 仍必须共享同一个 per-API limiter，不能因为多 queue 
   自动更新。
 - shared queue claim 失败时短 delay，不能 busy loop。
 - 每个 lane 记录 oldest waiting age；不能只看总 depth。
-

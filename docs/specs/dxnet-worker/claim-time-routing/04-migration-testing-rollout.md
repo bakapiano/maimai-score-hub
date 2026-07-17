@@ -27,7 +27,10 @@ DXNET_WORKER_PREPARE_CABINET_ENABLED=false
 
 - 恢复少量 auto-update FC/FS producer，但只创建 background claim job。
 - worker claim 后才 addRival。
-- 限制 allowlist 用户、低 batch、background concurrency=1。
+- 限制 allowlist 用户、低 batch；canary 从 background concurrency=1 起步。
+- 验证稳定后升到 target：background lane=3、`get_user_recent_event` per worker=2、
+  background `update_score` per worker=1。
+- producer 必须限速平滑释放，不能恢复历史一次批量 enqueue 数百个 due user 的行为。
 - 验证好友关系创建到真正 DXNet 使用之间的时间显著缩短。
 
 ### Phase 3：手动 update_score
@@ -135,4 +138,3 @@ sdgb_add_rival_rate_wait_seconds{trafficClass}
 - 回滚代码前先让 shared jobs drain 或批量转回 queued，再由迁移工具按 routing version 重投。
 - 不允许简单删除 BullMQ keys而不处理 Mongo 非终态 job；否则 repair 会重新补投或留下永久
   processing。
-
