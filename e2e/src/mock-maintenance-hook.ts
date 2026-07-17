@@ -22,8 +22,9 @@ export class MockMaintenanceHook {
     input: MaintenanceHookInput,
   ): Promise<void> {
     const run = await harness.api<MaintenanceRun>(
-      `/internal/sdgb/maintenance-runs/${input.requestId}`,
+      `/internal/sdgb/maintenance-runs/active/${input.targetWorkerId}`,
     );
+    assert.equal(run.requestId, input.requestId);
     assert.equal(run.targetWorkerId, input.targetWorkerId);
     assert.equal(run.hookMayRun, true);
     assert.equal(run.state, "coverage_ready");

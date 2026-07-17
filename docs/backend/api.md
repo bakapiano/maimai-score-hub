@@ -129,9 +129,21 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 | 方法  | 路径                           | 入参                                 | 说明                                          |
 | ----- | ------------------------------ | ------------------------------------ | --------------------------------------------- |
-| POST  | `/workers/sdgb/jobs/heartbeat` | body: `workerId`, `role?`, `claimedDelta?`    | BullMQ 版 sdgb-worker 上报角色、心跳和领取计数。    |
-| GET   | `/workers/sdgb/jobs/:jobId`    | path: `jobId`                        | BullMQ sdgb-worker 按 id 查询 sdgb job 详情。 |
-| PATCH | `/workers/sdgb/jobs/:jobId`    | body: `status?`, `stage?`, `cleanupStatus?`, `cleanupErrorCode?`, `cleanupBlockedUntil?`, `progress?`, `result?`, `error?`, `errorCode?` | sdgb-worker 回写 job 状态。`get_music_score` 的 completed result 会先经过后端 finalizer，cleanup 未确认时拒绝落成绩。 |
+| POST  | `/workers/sdgb/jobs/heartbeat` | body: worker class/capabilities/generation/network epoch/health/memberships/active jobs | 上报 worker 状态并取得每条 capability lane 的 desired membership。 |
+| POST  | `/workers/sdgb/incidents` | body: empty-response incident、目标 worker 和 membership epochs | 幂等记录 breaker incident，并触发目标 drain/Auto Recovery maintenance。 |
+| GET   | `/workers/sdgb/jobs/:jobId`    | path: `jobId`                        | 按 id 查询包含 lane、attempt 和 execution fence 的 sdgb job。 |
+| PATCH | `/workers/sdgb/jobs/:jobId`    | body: execution token/worker/membership/network epoch，加状态、重投或结果字段 | 所有 claim/推进/终态均验证 active membership 与 Mongo execution fence。`get_music_score` 完成前必须确认 cleanup。 |
+
+### SDGB Maintenance Orchestrator
+
+以下接口使用 Shared Secret，仅供 host-local hook orchestrator 使用。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/internal/sdgb/maintenance-runs` | 幂等创建 maintenance，并开始 drain 目标 worker。 |
+| GET | `/internal/sdgb/maintenance-runs/active/:workerId` | 返回该 worker 当前非终态 maintenance（含 `hookKind`、`hookMayRun`），没有则返回 `null`。101 通过此接口出站轮询，不开放入站 hook 端口。 |
+| GET | `/internal/sdgb/maintenance-runs/:requestId` | 查询持久化状态、coverage plan 和 hook gate。 |
+| POST | `/internal/sdgb/maintenance-runs/:requestId/hook-observation` | 幂等提交 hook 是否接受、网络是否恢复和非敏感 IP 观测；不会直接绕过健康验证恢复 membership。 |
 
 ### Worker 日志与 Bot 心跳
 

@@ -184,6 +184,19 @@ export class SdgbMaintenanceService implements OnModuleInit, OnModuleDestroy {
     return this.toView(run);
   }
 
+  async getActiveForWorker(
+    workerId: string,
+  ): Promise<SdgbMaintenanceView | null> {
+    const run = await this.model
+      .findOne({
+        targetWorkerId: workerId,
+        state: { $nin: TERMINAL_STATES },
+      })
+      .sort({ createdAt: -1 })
+      .lean<SdgbMaintenanceRunEntity>();
+    return run ? this.toView(run) : null;
+  }
+
   async observe(
     requestId: string,
     observation: SdgbHookObservation,

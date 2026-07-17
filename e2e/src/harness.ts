@@ -72,6 +72,7 @@ interface StoredWorkerHeartbeat {
   activeJobsByType: Partial<Record<string, number>>;
   upstreamHealth: string;
   breakerState: string;
+  networkEpoch: number;
   jobsClaimed: number;
 }
 
