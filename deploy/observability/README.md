@@ -1,7 +1,7 @@
 # Observability deployment
 
 This directory is the single-node production deployment for
-`docs/log-monitor-refactor`.
+`docs/specs/log-monitor-refactor`.
 
 It runs on Server 5 under `/srv/maimai-observability`, next to the backend
 host. The backend container reaches it through `host.docker.internal`:
