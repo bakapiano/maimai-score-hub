@@ -39,6 +39,8 @@ DXNET_WORKER_PREPARE_CABINET_ENABLED=false
 - API 创建不再同步等待 sdgb。
 - 前端支持 queued/preparing 状态和 structured prerequisite failure。
 - 现成好友 snapshot/proof 仍走 pinned fast path。
+- canary 先使用 `user_sync=8`；确认 lock renewal 和上游错误率稳定后升到固定 target 16，
+  目标 queue wait p95 < 1s。
 
 ### Phase 4：QR login
 
@@ -79,7 +81,10 @@ DXNET_WORKER_PREPARE_CABINET_ENABLED=false
 
 ### Concurrency
 
-- background lane 满载时 interactive 仍有保留 slot。
+- 三条 lane 使用独立、固定 concurrency，不实现动态 borrow/burst。
+- background lane 满载时不能占用 interactive 或 user_sync 的 slot。
+- user_sync 16 个 slot 全部可由用户手动同步使用。
+- 每条 lane 和每个 job type 都不能突破对应固定上限。
 - job type semaphore 满时 delivery 被 delay，而不是长期 active 等待。
 - 多 lane consumer 共享 addRival/request limiter。
 

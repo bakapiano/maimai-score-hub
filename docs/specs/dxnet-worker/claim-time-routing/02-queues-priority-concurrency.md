@@ -15,14 +15,18 @@ priority 只在同一 lane 内排序。
 
 ## 2. 推荐 DXNet lane
 
-| lane | 目标 | 典型来源 | 初始每 worker concurrency |
+| lane | 目标 | 典型来源 | 固定每 worker concurrency |
 | --- | --- | --- | ---: |
-| `interactive` | 登录、好友关系、QR 等短交互 | 用户登录、QR login、好友申请 | 2 |
-| `user_sync` | 用户主动发起的长查分 | 手动 `update_score` | 2 |
+| `interactive` | 登录、好友关系、QR 等短交互 | 用户登录、QR login、好友申请 | 4 |
+| `user_sync` | 用户主动发起的长查分 | 手动 `update_score` | 16 |
 | `background` | 可排队、可退避的后台任务 | 自动 recent event、自动 full update、维护刷新 | 3 |
 
-默认总 active 上限为每 Bot 7 个 job，而不是用一个全局 16/256 concurrency 让后台任务耗尽
-所有 slot。具体值必须通过线上 p95、Bot 上游错误率和 lock renewal 指标逐步调整。
+三个独立 BullMQ Worker consumer 的固定 concurrency 合计为每 Bot 23。这里不做动态
+reservation、borrow 或 burst admission，避免引入额外调度状态。用户 lane 的容量直接常驻，
+background 最多只能占自己的 3 个 slot，因此无法挤占用户任务。
+
+23 仍远低于历史 256 配置，但比当前全局 16 更偏向低 queue wait。具体值要按线上 p95、
+Bot 上游错误率和 lock renewal 指标逐步调整。
 
 `background=3` 的目标不是允许 3 个同类任务无差别并发，而是为每个 worker 保留：
 
@@ -33,8 +37,8 @@ priority 只在同一 lane 内排序。
 建议配置：
 
 ```text
-DXNET_LANE_INTERACTIVE_CONCURRENCY=2
-DXNET_LANE_USER_SYNC_CONCURRENCY=2
+DXNET_LANE_INTERACTIVE_CONCURRENCY=4
+DXNET_LANE_USER_SYNC_CONCURRENCY=16
 DXNET_LANE_BACKGROUND_CONCURRENCY=3
 DXNET_JOB_GET_USER_RECENT_EVENT_CONCURRENCY=2
 DXNET_JOB_BACKGROUND_UPDATE_SCORE_CONCURRENCY=1
@@ -65,9 +69,35 @@ slot，三台 worker 合计 6 个 slot；按历史 13-25s 的常见 runtime，�
 due user 同时 enqueue；应按全局/per-Bot 速率均匀释放。不要单纯把 recent-event 恢复到历史
 十几个甚至几十个 active/Bot，否则上游变慢后会反向拉长 runtime、lock 持有时间和失败恢复。
 
-同一回看窗口的当前非自动任务数据：manual `update_score` queue wait p95 约 4.13s，
-send/accept/get-full-friend-list p95 低于 0.2s。因此没有数据支持把 `interactive` 或
-`user_sync` 初始值提高到 2 以上。
+### 2.2 用户流量基线与低等待目标
+
+最近 7 天 manual `update_score` 的线上分布：
+
+| 指标 | Bot 336 | Bot 413 | Bot 848 |
+| --- | ---: | ---: | ---: |
+| 5 分钟 created p95 | 6 | 7 | 7 |
+| 5 分钟 created max | 14 | 18 | 20 |
+| 同时 active p95 | 9 | 13 | 13 |
+| 同时 active p99 | 14 | 16 | 16 |
+| 最近 24h queue wait p95 | 4.14s | 4.13s | 4.11s |
+
+全局 5 分钟创建峰值为 37 个。固定 `user_sync=16` 对齐历史 active p99，目标是让大部分
+手动同步无需等待 background job 或同 lane slot。interactive 当前 queue wait p95 低于
+0.2s，但独立给 4 个 slot，防止恢复 background 后回归。
+
+目标 SLO：
+
+```text
+interactive BullMQ queue wait: p95 < 0.5s, p99 < 1s
+user_sync BullMQ queue wait:   p95 < 1s,   p99 < 5s
+background BullMQ queue wait:  无即时 SLO，按 oldest age 告警
+```
+
+这里的“低等待”首先指 BullMQ admission。当前每个 Bot 的 DXNet request throttle 仍是每
+2.5 秒启动一个请求；提高 job concurrency 不会增加这个硬吞吐，只会让更多用户 job 更早进入
+processing 并在 request scheduler 中排队。因此还必须保留请求级 priority：interactive 和
+user_sync 请求始终先于 background。若要降低完成时间而不只是 queue wait，需要增加 Bot
+数量或在验证上游承载后调整 request rate，不能只继续放大 active job 数。
 
 ## 3. Queue 命名
 
@@ -162,12 +192,12 @@ BullMQ OSS 的 `Worker.concurrency` 是 queue consumer 级别，不是 name/jobT
 
 ```ts
 const JOB_TYPE_LIMITS = {
-  send_friend_request: 2,
-  accept_friend_request: 2,
-  update_score_user: 2,
+  send_friend_request: 4,
+  accept_friend_request: 4,
+  update_score_user: 16,
   update_score_background: 1,
   get_user_recent_event: 2,
-  get_full_friend_list_interactive: 1,
+  get_full_friend_list_interactive: 2,
   get_full_friend_list_maintenance: 1,
 };
 ```
@@ -176,9 +206,9 @@ const JOB_TYPE_LIMITS = {
 
 | 执行类别 | per Bot cap | 说明 |
 | --- | ---: | --- |
-| send/accept friendship | 2 | 等待 stage 必须 moveToDelayed，不长期占 slot |
-| QR full friend list | 1 | 多页请求，避免同 Bot 并发扫描 |
-| 手动 update_score | 2 | 用户可见，但单 job 本身已有 Friend VS 内部并发 |
+| send/accept friendship | 4 | 用户交互优先；等待 stage 必须 moveToDelayed，不长期占 slot |
+| QR full friend list | 2 | 用户等待的流程保留并发，但限制多页请求压力 |
+| 手动 update_score | 16 | 对齐历史 active p99；实际仍受 user_sync lane concurrency 限制 |
 | 后台 update_score | 1 | 不能挤占手动查分 |
 | get_user_recent_event | 2 | 历史 producer 峰值高；每 worker 保留 2 个执行槽，仍允许排队 |
 | maintenance snapshot | 1 | 最低优先级 |

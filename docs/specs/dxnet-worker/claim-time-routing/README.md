@@ -38,7 +38,7 @@ enrichment 都会先在 backend 选择一个 Bot，再同步调用 sdgb `addRiva
 5. **保留 pinned route。** 必须提前知道 Bot 的流程，例如用户要向指定 Bot 主动发送好友
    请求，继续进入该 Bot 的 queue；不强行改成 shared claim。
 6. **lane 隔离优先于单队列 priority。** 用户交互、用户手动同步、后台自动更新使用独立
-   BullMQ queue 和独立 worker concurrency；job type 再用本地 semaphore 限流。
+   BullMQ queue 和固定 worker concurrency；job type 再用本地 semaphore 限流。
 
 ## 文档
 
