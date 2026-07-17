@@ -90,6 +90,7 @@ recentEventFingerprint = sha256(
 配置：
 
 ```text
+AUTO_UPDATE_SETTLED_FULL_UPDATE_BATCH_LIMIT = 4
 AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS = 45min
 AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS = 10min
 ```
@@ -122,6 +123,10 @@ enabled = true
 pendingFullUpdateAt <= now
 backoffUntil is null or <= now
 ```
+
+每轮按 `pendingFullUpdateAt` 从旧到新最多处理
+`AUTO_UPDATE_SETTLED_FULL_UPDATE_BATCH_LIMIT` 个 due state。这个上限与 Map
+auxiliary 的 batch 独立；剩余 state 保留到后续 sweep。
 
 命中后创建 DXNet job：
 
@@ -267,3 +272,4 @@ recordRecentEventFingerprint({
 3. Continuous play 不设置最大延迟上限，始终等待 quiet window。
 4. Due 时已有 active `update_score` 则直接清 pending，认为该 job 已覆盖本次收尾。
 5. 不新增导出 trigger，沿用 `dxnet_update_score`。
+6. Settled full update 每轮默认最多释放 4 个 due state，不再复用 Map batch。

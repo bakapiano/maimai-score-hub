@@ -47,31 +47,32 @@
 
 ## Phase 1 调度参数
 
-| 配置                                        |          默认 |
-| ------------------------------------------- | ------------: |
-| `AUTO_UPDATE_CRON`                          | `*/1 * * * *` |
-| `AUTO_UPDATE_HOT_INTERVAL_MS`               |       15 分钟 |
-| `AUTO_UPDATE_WARM_INTERVAL_MS`              |       30 分钟 |
-| `AUTO_UPDATE_COLD_INTERVAL_MS`              |        1 小时 |
-| `AUTO_UPDATE_HOT_SESSION_MS`                |       90 分钟 |
-| `AUTO_UPDATE_WARM_MAX_IDLE_MS`              |          7 天 |
-| `AUTO_UPDATE_RIVAL_BATCH_LIMIT`             |           480 |
-| `AUTO_UPDATE_RIVAL_CONCURRENCY`             |             4 |
-| `AUTO_UPDATE_RIVAL_TIMEOUT_MS`              |        120 秒 |
-| `AUTO_UPDATE_MAP_BATCH_LIMIT`               |           120 |
-| `AUTO_UPDATE_MAP_CONCURRENCY`               |             2 |
-| `AUTO_UPDATE_MAP_TIMEOUT_MS`                |         60 秒 |
-| `AUTO_UPDATE_MAP_HOT_INTERVAL_MS`           |       30 分钟 |
-| `AUTO_UPDATE_MAP_WARM_INTERVAL_MS`          |        1 小时 |
-| `AUTO_UPDATE_MAP_COLD_INTERVAL_MS`          |        1 小时 |
-| `AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS`      |       30 分钟 |
-| `AUTO_UPDATE_RECENT_EVENT_DELAY_MS`         |        3 分钟 |
-| `AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS`  |       45 分钟 |
-| `AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS`  |       10 分钟 |
-| `AUTO_UPDATE_SWEEP_LEASE_TTL_MS`            |         90 秒 |
-| `AUTO_UPDATE_SWEEP_LEASE_RENEW_INTERVAL_MS` |         30 秒 |
-| `AUTO_UPDATE_SWEEP_HARD_TIMEOUT_MS`         |       10 分钟 |
-| `AUTO_UPDATE_SWEEP_ABORT_GRACE_MS`          |        3 分钟 |
+| 配置                                          |          默认 |
+| --------------------------------------------- | ------------: |
+| `AUTO_UPDATE_CRON`                            | `*/1 * * * *` |
+| `AUTO_UPDATE_HOT_INTERVAL_MS`                 |       15 分钟 |
+| `AUTO_UPDATE_WARM_INTERVAL_MS`                |       30 分钟 |
+| `AUTO_UPDATE_COLD_INTERVAL_MS`                |        1 小时 |
+| `AUTO_UPDATE_HOT_SESSION_MS`                  |       90 分钟 |
+| `AUTO_UPDATE_WARM_MAX_IDLE_MS`                |          7 天 |
+| `AUTO_UPDATE_RIVAL_BATCH_LIMIT`               |           480 |
+| `AUTO_UPDATE_RIVAL_CONCURRENCY`               |             4 |
+| `AUTO_UPDATE_RIVAL_TIMEOUT_MS`                |        120 秒 |
+| `AUTO_UPDATE_MAP_BATCH_LIMIT`                 |           120 |
+| `AUTO_UPDATE_MAP_CONCURRENCY`                 |             2 |
+| `AUTO_UPDATE_MAP_TIMEOUT_MS`                  |         60 秒 |
+| `AUTO_UPDATE_MAP_HOT_INTERVAL_MS`             |       30 分钟 |
+| `AUTO_UPDATE_MAP_WARM_INTERVAL_MS`            |        1 小时 |
+| `AUTO_UPDATE_MAP_COLD_INTERVAL_MS`            |        1 小时 |
+| `AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS`        |       30 分钟 |
+| `AUTO_UPDATE_RECENT_EVENT_DELAY_MS`           |        3 分钟 |
+| `AUTO_UPDATE_SETTLED_FULL_UPDATE_BATCH_LIMIT` |             4 |
+| `AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS`    |       45 分钟 |
+| `AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS`    |       10 分钟 |
+| `AUTO_UPDATE_SWEEP_LEASE_TTL_MS`              |         90 秒 |
+| `AUTO_UPDATE_SWEEP_LEASE_RENEW_INTERVAL_MS`   |         30 秒 |
+| `AUTO_UPDATE_SWEEP_HARD_TIMEOUT_MS`           |       10 分钟 |
+| `AUTO_UPDATE_SWEEP_ABORT_GRACE_MS`            |        3 分钟 |
 
 sdgb-worker:
 

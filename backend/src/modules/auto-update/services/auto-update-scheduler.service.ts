@@ -229,7 +229,7 @@ export class AutoUpdateSchedulerService
           $or: [{ backoffUntil: null }, { backoffUntil: { $lte: now } }],
         })
         .sort({ nextRivalProbeAt: 1 })
-        .limit(this.timing.batchLimit)
+        .limit(this.timing.rivalBatchLimit)
         .lean<AutoUpdateProbeStateEntity[]>()
         .exec();
 
@@ -280,7 +280,7 @@ export class AutoUpdateSchedulerService
           $or: [{ backoffUntil: null }, { backoffUntil: { $lte: now } }],
         })
         .sort({ pendingFullUpdateAt: 1 })
-        .limit(this.timing.mapBatchLimit)
+        .limit(this.timing.settledFullUpdateBatchLimit)
         .lean<AutoUpdateProbeStateEntity[]>()
         .exec();
       const pendingFullUpdate = await this.runDuePendingFullUpdateStates(

@@ -4,15 +4,15 @@
 
 ## Phase 1 已实现的执行控制
 
-| 链路                | 当前代码控制                                                           | 说明                                                                                   |
-| ------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Rival score probe   | `AUTO_UPDATE_RIVAL_BATCH_LIMIT=480`，`AUTO_UPDATE_RIVAL_CONCURRENCY=4` | 每轮最多处理 480 个 due state，scheduler 同时等待 4 个 sdgb job                        |
-| Map auxiliary       | `AUTO_UPDATE_MAP_BATCH_LIMIT=120`，`AUTO_UPDATE_MAP_CONCURRENCY=2`     | 每轮最多处理 120 个 due state                                                          |
-| Recent event        | `AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS=30min`                           | 单用户 cooldown；cooldown 内合并为 pending，到期生成 DXNet `get_user_recent_event` job |
-| Recent event delay  | `AUTO_UPDATE_RECENT_EVENT_DELAY_MS=3min`                               | 创建 DXNet recent-event job 后延迟执行，等待 DXNet recent event 页面稳定               |
-| Settled full update | `AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS=45min`                       | 活动信号 debounce 后创建一次全量 DXNet `update_score`                                  |
-| Rival / map 失败    | 指数退避 / map 线性退避                                                | 避免失败用户持续消耗资源                                                               |
-| sdgb worker         | BullMQ consumer，`SDGB_WORKER_CONCURRENCY=16`                          | 已实现 global + per-API token bucket，并支持按 job type 并发上限                       |
+| 链路                | 当前代码控制                                                                                      | 说明                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Rival score probe   | `AUTO_UPDATE_RIVAL_BATCH_LIMIT=480`，`AUTO_UPDATE_RIVAL_CONCURRENCY=4`                            | 每轮最多处理 480 个 due state，scheduler 同时等待 4 个 sdgb job                        |
+| Map auxiliary       | `AUTO_UPDATE_MAP_BATCH_LIMIT=120`，`AUTO_UPDATE_MAP_CONCURRENCY=2`                                | 每轮最多处理 120 个 due state                                                          |
+| Recent event        | `AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS=30min`                                                      | 单用户 cooldown；cooldown 内合并为 pending，到期生成 DXNet `get_user_recent_event` job |
+| Recent event delay  | `AUTO_UPDATE_RECENT_EVENT_DELAY_MS=3min`                                                          | 创建 DXNet recent-event job 后延迟执行，等待 DXNet recent event 页面稳定               |
+| Settled full update | `AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS=45min`，`AUTO_UPDATE_SETTLED_FULL_UPDATE_BATCH_LIMIT=4` | 活动信号 debounce 后创建一次全量 DXNet `update_score`；每轮最多释放 4 个 due state     |
+| Rival / map 失败    | 指数退避 / map 线性退避                                                                           | 避免失败用户持续消耗资源                                                               |
+| sdgb worker         | BullMQ consumer，`SDGB_WORKER_CONCURRENCY=16`                                                     | 已实现 global + per-API token bucket，并支持按 job type 并发上限                       |
 
 ## 10k 目标 QPS
 

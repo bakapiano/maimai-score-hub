@@ -50,8 +50,9 @@ export class AutoUpdateSchedulerTimingService {
   readonly coldIntervalMs: number;
   readonly hotSessionMs: number;
   readonly warmMaxIdleMs: number;
-  readonly batchLimit: number;
+  readonly rivalBatchLimit: number;
   readonly mapBatchLimit: number;
+  readonly settledFullUpdateBatchLimit: number;
   readonly concurrency: number;
   readonly mapConcurrency: number;
   readonly rivalTimeoutMs: number;
@@ -95,7 +96,7 @@ export class AutoUpdateSchedulerTimingService {
       'AUTO_UPDATE_WARM_MAX_IDLE_MS',
       7 * DAY,
     );
-    this.batchLimit = getPositiveInt(
+    this.rivalBatchLimit = getPositiveInt(
       config,
       'AUTO_UPDATE_RIVAL_BATCH_LIMIT',
       480,
@@ -104,6 +105,11 @@ export class AutoUpdateSchedulerTimingService {
       config,
       'AUTO_UPDATE_MAP_BATCH_LIMIT',
       120,
+    );
+    this.settledFullUpdateBatchLimit = getPositiveInt(
+      config,
+      'AUTO_UPDATE_SETTLED_FULL_UPDATE_BATCH_LIMIT',
+      4,
     );
     this.concurrency = getPositiveInt(
       config,
