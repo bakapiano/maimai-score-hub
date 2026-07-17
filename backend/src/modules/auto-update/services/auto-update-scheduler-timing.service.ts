@@ -19,6 +19,21 @@ function getPositiveInt(config: ConfigService, key: string, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
+function getSettledFullUpdateLimits(config: ConfigService) {
+  return {
+    batchLimit: getPositiveInt(
+      config,
+      'AUTO_UPDATE_SETTLED_FULL_UPDATE_BATCH_LIMIT',
+      12,
+    ),
+    maxActive: getPositiveInt(
+      config,
+      'AUTO_UPDATE_SETTLED_FULL_UPDATE_MAX_ACTIVE',
+      12,
+    ),
+  };
+}
+
 function maxDate(...dates: Array<Date | null | undefined>): Date | null {
   const valid = dates.filter((d): d is Date => d instanceof Date);
   if (!valid.length) {
@@ -53,6 +68,7 @@ export class AutoUpdateSchedulerTimingService {
   readonly rivalBatchLimit: number;
   readonly mapBatchLimit: number;
   readonly settledFullUpdateBatchLimit: number;
+  readonly settledFullUpdateMaxActive: number;
   readonly concurrency: number;
   readonly mapConcurrency: number;
   readonly rivalTimeoutMs: number;
@@ -106,11 +122,9 @@ export class AutoUpdateSchedulerTimingService {
       'AUTO_UPDATE_MAP_BATCH_LIMIT',
       120,
     );
-    this.settledFullUpdateBatchLimit = getPositiveInt(
-      config,
-      'AUTO_UPDATE_SETTLED_FULL_UPDATE_BATCH_LIMIT',
-      4,
-    );
+    const settledFullUpdateLimits = getSettledFullUpdateLimits(config);
+    this.settledFullUpdateBatchLimit = settledFullUpdateLimits.batchLimit;
+    this.settledFullUpdateMaxActive = settledFullUpdateLimits.maxActive;
     this.concurrency = getPositiveInt(
       config,
       'AUTO_UPDATE_RIVAL_CONCURRENCY',
@@ -185,6 +199,16 @@ export class AutoUpdateSchedulerTimingService {
       config,
       'AUTO_UPDATE_SWEEP_ABORT_GRACE_MS',
       3 * MINUTE,
+    );
+  }
+
+  settledFullUpdateDispatchLimit(activeCount: number): number {
+    const active = Number.isFinite(activeCount)
+      ? Math.max(0, Math.floor(activeCount))
+      : this.settledFullUpdateMaxActive;
+    return Math.min(
+      this.settledFullUpdateBatchLimit,
+      Math.max(0, this.settledFullUpdateMaxActive - active),
     );
   }
 

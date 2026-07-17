@@ -30,6 +30,8 @@ import {
 import { AutoUpdateActivityService } from './auto-update-activity.service';
 
 const SCHEDULER_VERSION = 'rival-first-v1';
+const SETTLED_FULL_UPDATE_SOURCE = 'auto_update_settled_full_update';
+const SETTLED_FULL_UPDATE_PRIORITY = 1;
 const FCFS_REASONS: AutoUpdateFcfsReason[] = [
   'rival_hash_changed',
   'map_delta',
@@ -273,16 +275,23 @@ export class AutoUpdateSchedulerService
         signal,
       );
       signal?.throwIfAborted();
-      const pendingFullUpdateDue = await this.stateModel
-        .find({
-          enabled: true,
-          pendingFullUpdateAt: { $lte: now },
-          $or: [{ backoffUntil: null }, { backoffUntil: { $lte: now } }],
-        })
-        .sort({ pendingFullUpdateAt: 1 })
-        .limit(this.timing.settledFullUpdateBatchLimit)
-        .lean<AutoUpdateProbeStateEntity[]>()
-        .exec();
+      const pendingFullActive = await this.jobs.countActiveUpdateScoreBySource(
+        SETTLED_FULL_UPDATE_SOURCE,
+      );
+      const pendingFullDispatchLimit =
+        this.timing.settledFullUpdateDispatchLimit(pendingFullActive);
+      const pendingFullUpdateDue = pendingFullDispatchLimit
+        ? await this.stateModel
+            .find({
+              enabled: true,
+              pendingFullUpdateAt: { $lte: now },
+              $or: [{ backoffUntil: null }, { backoffUntil: { $lte: now } }],
+            })
+            .sort({ pendingFullUpdateAt: 1 })
+            .limit(pendingFullDispatchLimit)
+            .lean<AutoUpdateProbeStateEntity[]>()
+            .exec()
+        : [];
       const pendingFullUpdate = await this.runDuePendingFullUpdateStates(
         pendingFullUpdateDue,
         now,
@@ -298,7 +307,7 @@ export class AutoUpdateSchedulerService
         mapResults.filter((r) => r.action === 'failed').length;
 
       this.logger.log(
-        `rival-first auto-update sweep done: ${triggered} changed, ${skippedNoChange} unchanged, ${failed} failed (rivalDue=${due.length}, mapDue=${mapDue.length}, pendingFcfsDue=${pendingFcfs.due}, pendingFcfsTriggered=${pendingFcfs.triggered}, pendingFcfsFailed=${pendingFcfs.failed}, pendingFullDue=${pendingFullUpdate.due}, pendingFullCreated=${pendingFullUpdate.created}, pendingFullCovered=${pendingFullUpdate.coveredByActive}, pendingFullFailed=${pendingFullUpdate.failed})`,
+        `rival-first auto-update sweep done: ${triggered} changed, ${skippedNoChange} unchanged, ${failed} failed (rivalDue=${due.length}, mapDue=${mapDue.length}, pendingFcfsDue=${pendingFcfs.due}, pendingFcfsTriggered=${pendingFcfs.triggered}, pendingFcfsFailed=${pendingFcfs.failed}, pendingFullActive=${pendingFullActive}, pendingFullLimit=${pendingFullDispatchLimit}, pendingFullDue=${pendingFullUpdate.due}, pendingFullCreated=${pendingFullUpdate.created}, pendingFullCovered=${pendingFullUpdate.coveredByActive}, pendingFullFailed=${pendingFullUpdate.failed})`,
       );
 
       return {
@@ -517,11 +526,12 @@ export class AutoUpdateSchedulerService
       await this.jobs.create({
         friendCode: state.friendCode,
         jobType: 'update_score',
+        priority: SETTLED_FULL_UPDATE_PRIORITY,
         diffsToScrape: null,
         cancelActiveJobs: false,
         removeFriendAfterComplete: true,
         context: {
-          source: 'auto_update_settled_full_update',
+          source: SETTLED_FULL_UPDATE_SOURCE,
           lastActivityAt: state.lastAutoUpdateActivityAt?.toISOString() ?? null,
         },
       });

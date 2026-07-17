@@ -160,6 +160,7 @@ describe('AutoUpdateSchedulerService FC/FS cooldown', () => {
     expect(jobs.create).toHaveBeenCalledWith({
       friendCode: '634142510810999',
       jobType: 'update_score',
+      priority: 1,
       diffsToScrape: null,
       cancelActiveJobs: false,
       removeFriendAfterComplete: true,

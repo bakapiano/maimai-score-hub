@@ -95,6 +95,7 @@ export class JobService {
     context?: Record<string, unknown> | null;
     removeFriendAfterComplete?: boolean;
     cancelActiveJobs?: boolean;
+    priority?: number;
     runAt?: Date | string | null;
   }) {
     const id = randomUUID();
@@ -178,7 +179,10 @@ export class JobService {
       botUserFriendCode: input.botUserFriendCode ?? null,
     });
 
-    const priority = getJobTypePriority(resolvedJobType);
+    const priority = input.priority ?? getJobTypePriority(resolvedJobType);
+    if (!Number.isSafeInteger(priority) || priority < 0) {
+      throw new BadRequestException('priority must be a non-negative integer');
+    }
 
     if (input.cancelActiveJobs !== false) {
       await this.jobModel.updateMany(
@@ -720,6 +724,14 @@ export class JobService {
     }
 
     return toJobResponse(job.toObject() as JobEntity);
+  }
+
+  async countActiveUpdateScoreBySource(source: string): Promise<number> {
+    return this.jobModel.countDocuments({
+      jobType: 'update_score',
+      status: { $in: ['queued', 'processing'] },
+      'context.source': source,
+    });
   }
 
   async getRecentStats(): Promise<RecentJobStats> {

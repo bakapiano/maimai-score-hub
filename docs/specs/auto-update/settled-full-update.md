@@ -90,7 +90,8 @@ recentEventFingerprint = sha256(
 配置：
 
 ```text
-AUTO_UPDATE_SETTLED_FULL_UPDATE_BATCH_LIMIT = 4
+AUTO_UPDATE_SETTLED_FULL_UPDATE_BATCH_LIMIT = 12
+AUTO_UPDATE_SETTLED_FULL_UPDATE_MAX_ACTIVE = 12
 AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS = 45min
 AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS = 10min
 ```
@@ -124,9 +125,16 @@ pendingFullUpdateAt <= now
 backoffUntil is null or <= now
 ```
 
-每轮按 `pendingFullUpdateAt` 从旧到新最多处理
-`AUTO_UPDATE_SETTLED_FULL_UPDATE_BATCH_LIMIT` 个 due state。这个上限与 Map
-auxiliary 的 batch 独立；剩余 state 保留到后续 sweep。
+每轮先统计 `context.source=auto_update_settled_full_update` 且状态为
+`queued/processing` 的活跃任务，再按 `pendingFullUpdateAt` 从旧到新补足水位：
+
+```text
+dispatchLimit = min(batchLimit, maxActive - active)
+```
+
+默认 batch/max-active 都是 12。这个上限与 Map auxiliary 的 batch 独立；
+剩余 state 保留到后续 sweep。自动全量任务使用 priority 1，低于手动
+`update_score` 的 priority 2 和好友/登录任务的 priority 3。
 
 命中后创建 DXNet job：
 
@@ -272,4 +280,5 @@ recordRecentEventFingerprint({
 3. Continuous play 不设置最大延迟上限，始终等待 quiet window。
 4. Due 时已有 active `update_score` 则直接清 pending，认为该 job 已覆盖本次收尾。
 5. 不新增导出 trigger，沿用 `dxnet_update_score`。
-6. Settled full update 每轮默认最多释放 4 个 due state，不再复用 Map batch。
+6. Settled full update 使用独立的 12 个 batch/active 水位，不再复用 Map batch。
+7. 自动 full update 使用 priority 1；手动 update_score 保持 priority 2。
