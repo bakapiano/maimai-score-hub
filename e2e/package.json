@@ -1,0 +1,35 @@
+{
+  "name": "@maimai-score-hub/e2e",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:subjects": "node scripts/build-subjects.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint \"src/**/*.ts\" \"scripts/**/*.mjs\" --max-warnings=0",
+    "check": "npm run typecheck && npm run lint",
+    "test": "npm run test:local",
+    "test:local": "npm run build:subjects && npm run check && cross-env E2E_INFRA=local node --test --test-concurrency=1 --experimental-strip-types src/sdgb.e2e.test.ts",
+    "test:containers": "npm run build:subjects && npm run check && cross-env E2E_INFRA=containers node --test --test-concurrency=1 --experimental-strip-types src/sdgb.e2e.test.ts"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "dependencies": {
+    "@maimai-score-hub/shared": "file:../shared",
+    "bullmq": "^5.80.6",
+    "mongodb": "^7.5.0",
+    "redis": "^6.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^22.10.7",
+    "cross-env": "^7.0.3",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^10.0.1",
+    "globals": "^16.0.0",
+    "testcontainers": "^11.14.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.20.0"
+  }
+}

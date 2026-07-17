@@ -23,6 +23,8 @@ export const UserMapEntrySchema = z.object({
 
 // ───────────────────────── job-type union ─────────────────────────
 
+export const SdgbWorkerLaneSchema = z.enum(["probe", "interactive"]);
+
 export const SdgbJobTypeSchema = z.enum([
   "scan_qr",
   "get_rival_hash",
@@ -59,6 +61,15 @@ export const SdgbSessionCleanupStatusSchema = z.enum([
 export const SdgbJobProgressSchema = z.object({
   detailsFetched: z.number().int().nonnegative(),
 });
+
+export const SdgbFailureClassSchema = z.enum([
+  "empty_response",
+  "network_error",
+  "timeout",
+  "invalid_response",
+  "outcome_unknown",
+  "membership_lost",
+]);
 
 // Per-job payloads (sent by backend, consumed by sdgb-worker).
 export const ScanQrPayloadSchema = z.object({
@@ -126,6 +137,8 @@ export const GetMusicScoreResultSchema = z.object({
 export const SdgbJobResponseSchema = z.object({
   id: z.string(),
   jobType: SdgbJobTypeSchema,
+  lane: SdgbWorkerLaneSchema,
+  routingVersion: z.number().int().positive(),
   status: SdgbJobStatusSchema,
   stage: SdgbJobStageSchema.nullable().optional(),
   cleanupStatus: SdgbSessionCleanupStatusSchema.optional(),
@@ -136,6 +149,17 @@ export const SdgbJobResponseSchema = z.object({
   payload: z.record(z.unknown()),
   result: z.record(z.unknown()).nullable(),
   error: z.string().nullable(),
+  executionToken: z.string().nullable(),
+  executionWorkerId: z.string().nullable(),
+  executionMembershipEpoch: z.number().int().positive().nullable(),
+  executionNetworkEpoch: z.number().int().nonnegative().nullable(),
+  attempt: z.number().int().nonnegative(),
+  maxAttempts: z.number().int().positive(),
+  retryAt: z.string().nullable(),
+  retryReason: z.string().nullable(),
+  failureClass: SdgbFailureClassSchema.nullable(),
+  lastWorkerId: z.string().nullable(),
+  outcomeUnknown: z.boolean(),
   requesterTag: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -144,6 +168,10 @@ export const SdgbJobResponseSchema = z.object({
 // ───────────────────────── patch ─────────────────────────
 
 export const SdgbJobPatchBodySchema = z.object({
+  executionToken: z.string().min(1).optional(),
+  executionWorkerId: z.string().min(1).optional(),
+  executionMembershipEpoch: z.number().int().positive().optional(),
+  executionNetworkEpoch: z.number().int().nonnegative().optional(),
   status: SdgbJobStatusSchema.optional(),
   stage: SdgbJobStageSchema.optional(),
   cleanupStatus: SdgbSessionCleanupStatusSchema.optional(),
@@ -153,6 +181,14 @@ export const SdgbJobPatchBodySchema = z.object({
   result: z.record(z.unknown()).nullable().optional(),
   error: z.string().nullable().optional(),
   errorCode: z.string().nullable().optional(),
+  outcomeUnknown: z.boolean().optional(),
+  requeue: z
+    .object({
+      failureClass: SdgbFailureClassSchema,
+      retryReason: z.string().min(1).max(512),
+      retryAt: z.string().datetime(),
+    })
+    .optional(),
 });
 
 // ───────────────────────── inferred types ─────────────────────────
@@ -164,6 +200,7 @@ export type SdgbSessionCleanupStatus = z.infer<
   typeof SdgbSessionCleanupStatusSchema
 >;
 export type SdgbJobProgress = z.infer<typeof SdgbJobProgressSchema>;
+export type SdgbFailureClass = z.infer<typeof SdgbFailureClassSchema>;
 export type SdgbJobResponse = z.infer<typeof SdgbJobResponseSchema>;
 export type SdgbJobPatchBody = z.infer<typeof SdgbJobPatchBodySchema>;
 export type SdgbWorkerMusicEntry = z.infer<typeof MusicEntrySchema>;

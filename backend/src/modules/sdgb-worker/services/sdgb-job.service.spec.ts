@@ -25,9 +25,15 @@ describe('SdgbJobService lane enqueueing', () => {
     create: jest.fn(),
     updateOne: jest.fn().mockResolvedValue(undefined),
   };
-  const redis = {};
   const observability = {
     recordJobTimelineEvent: jest.fn(),
+  };
+  const registry = {
+    listWorkers: jest.fn().mockResolvedValue([]),
+  };
+  const adminQueries = {
+    getStatus: jest.fn(),
+    list: jest.fn(),
   };
   const config = {
     get: jest.fn((_key: string, fallback?: unknown) => fallback),
@@ -35,9 +41,11 @@ describe('SdgbJobService lane enqueueing', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    model.create.mockImplementation(async (input) => ({
-      toObject: () => input,
-    }));
+    model.create.mockImplementation((input: Record<string, unknown>) =>
+      Promise.resolve({
+        toObject: () => input,
+      }),
+    );
   });
 
   it.each([
@@ -51,24 +59,38 @@ describe('SdgbJobService lane enqueueing', () => {
     async (jobType, queueName, priority) => {
       const service = new SdgbJobService(
         model as never,
-        redis as never,
         observability as never,
+        registry as never,
+        adminQueries as never,
         config as never,
       );
       const queues = (Queue as unknown as jest.Mock).mock.results.map(
-        (result) => result.value as { name: string; add: jest.Mock },
+        (result) =>
+          (
+            result as unknown as {
+              value: { name: string; add: jest.Mock };
+            }
+          ).value,
       );
       const queue = queues.find((candidate) => candidate.name === queueName);
 
       await service.enqueue({ jobType, payload: {} });
 
-      expect(queue?.add).toHaveBeenCalledWith(
+      expect(queue?.add).toHaveBeenCalledTimes(1);
+      const call = queue?.add.mock.calls[0] as unknown as [
+        string,
+        { jobId: string; attempt: number },
+        { jobId: string; priority: number },
+      ];
+      expect(call[0]).toBe(
         queueName === SDGB_PROBE_QUEUE_NAME
           ? 'sdgb-probe-job'
           : 'sdgb-interactive-job',
-        { jobId: expect.any(String) },
-        { jobId: expect.any(String), priority },
       );
+      expect(call[1].attempt).toBe(0);
+      expect(typeof call[1].jobId).toBe('string');
+      expect(call[2].jobId).toMatch(/~0$/);
+      expect(call[2].priority).toBe(priority);
       for (const candidate of queues) {
         if (candidate !== queue) {
           expect(candidate.add).not.toHaveBeenCalled();

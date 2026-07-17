@@ -65,7 +65,8 @@ The repo includes a PM2-based local dev supervisor. It starts:
 - frontend on `127.0.0.1:3001`
 - admin portal on `127.0.0.1:3002` (`/admin/`)
 - DXNet worker (`msh-worker`) connected to local backend/Redis
-- sdgb-worker (`msh-sdgb-worker`) connected to local backend/Redis
+- four fake sdgb workers (`msh-sdgb-stable-*` / `msh-sdgb-recoverable-*`)
+  connected to local Backend/Redis for active-member and failover testing
 - Microsoft Dev Tunnels for frontend and admin portal public access
 
 First-time setup:
@@ -191,6 +192,8 @@ contains cabinet protocol configuration. For local startup, make sure
 ```env
 BACKEND_URL=http://127.0.0.1:9050
 WORKER_ID=sdgb-worker-local-dev
+SDGB_WORKER_CLASS=stable
+SDGB_WORKER_CAPABILITIES=probe,interactive
 
 REDIS_URL=
 REDIS_HOST=127.0.0.1
@@ -246,3 +249,32 @@ running.
 includes MongoDB, Redis, backend, and nginx. For local Windows npm-based
 development, prefer the native MongoDB service and Memurai process described
 above.
+
+## Backend / sdgb-worker E2E tests
+
+Cross-service sdgb tests live in the top-level `e2e\` package instead of
+`backend\test`. By default they reuse the native MongoDB and Memurai endpoints,
+but isolate every run with a unique Mongo database and Redis/BullMQ prefix.
+They start their own Backend and 2 Stable + 2 Recoverable fake workers, so the
+PM2 local-dev stack does not need to be running.
+
+First-time dependency install:
+
+```powershell
+npm --prefix e2e install
+```
+
+Run against local MongoDB and Redis:
+
+```powershell
+npm run test:e2e:sdgb
+```
+
+An opt-in Testcontainers path is also available when Docker is running:
+
+```powershell
+npm run test:e2e:sdgb:containers
+```
+
+See `e2e\README.md` for overrides and the covered failover scenarios. No test
+path calls a real cabinet upstream.

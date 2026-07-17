@@ -4,6 +4,46 @@ const fs = require("node:fs");
 const root = __dirname;
 const env = readEnvFile(path.join(root, ".env.local-dev"));
 
+function sdgbWorkerApp(name, workerId, workerClass) {
+  return {
+    name,
+    script: process.execPath,
+    args: "--enable-source-maps --experimental-strip-types src/index.ts",
+    cwd: path.join(root, "sdgb-worker"),
+    env: {
+      ...env,
+      NODE_ENV: "dev",
+      WORKER_ID: workerId,
+      SDGB_WORKER_CLASS: workerClass,
+      SDGB_WORKER_CAPABILITIES: "probe,interactive",
+      SDGB_WORKER_HEARTBEAT_INTERVAL_MS: "1000",
+      SDGB_MEMBERSHIP_TTL_MS: "5000",
+      SDGB_MEMBERSHIP_RENEW_MS: "1000",
+      SDGB_RECOVERY_HEALTH_INTERVAL_MS: "100",
+      SDGB_RECOVERY_CLEAN_WINDOW_MS: "500",
+      ...(workerClass === "recoverable"
+        ? { SDGB_AUTO_RECOVERY_HOOK_KIND: "noop" }
+        : {}),
+      SDGB_FAKE_UPSTREAM: "1",
+      BACKEND_URL: "http://127.0.0.1:9050",
+      REDIS_HOST: "127.0.0.1",
+      REDIS_PORT: "6379",
+      REDIS_DB: "0",
+      REDIS_KEY_PREFIX: "maimai:",
+      API_SHARED_SECRET:
+        env.API_SHARED_SECRET ||
+        env.ADMIN_PASSWORD ||
+        "change-me-local-admin",
+      ADMIN_PASSWORD:
+        env.ADMIN_PASSWORD ||
+        env.API_SHARED_SECRET ||
+        "change-me-local-admin",
+    },
+    autorestart: true,
+    max_restarts: 5,
+  };
+}
+
 function readEnvFile(file) {
   if (!fs.existsSync(file)) {
     return {};
@@ -59,6 +99,16 @@ module.exports = {
         OBSERVABILITY_INSTANCE: "local-admin-dashboard",
         CLICKHOUSE_DATABASE: "maimai_observability",
         CLICKHOUSE_FLUSH_INTERVAL_MS: "1000",
+        SDGB_PROBE_PREFERRED_ACTIVE_COUNT: "2",
+        SDGB_PROBE_FALLBACK_ACTIVE_COUNT: "2",
+        SDGB_INTERACTIVE_PREFERRED_ACTIVE_COUNT: "2",
+        SDGB_INTERACTIVE_FALLBACK_ACTIVE_COUNT: "2",
+        SDGB_WORKER_STALE_MS: "3000",
+        SDGB_WORKER_REGISTRY_TTL_SECONDS: "10",
+        SDGB_DESIRED_MEMBERS_TTL_SECONDS: "10",
+        SDGB_MEMBERSHIP_RECONCILE_INTERVAL_MS: "1000",
+        SDGB_RECOVERY_HEALTH_INTERVAL_MS: "100",
+        SDGB_RECOVERY_CLEAN_WINDOW_MS: "500",
         ...env,
       },
       autorestart: true,
@@ -66,7 +116,14 @@ module.exports = {
     },
     {
       name: "msh-frontend",
-      script: path.join(root, "frontend", "node_modules", "vite", "bin", "vite.js"),
+      script: path.join(
+        root,
+        "frontend",
+        "node_modules",
+        "vite",
+        "bin",
+        "vite.js",
+      ),
       args: "--host 127.0.0.1 --port 3001",
       cwd: path.join(root, "frontend"),
       env: {
@@ -78,7 +135,14 @@ module.exports = {
     },
     {
       name: "msh-admin",
-      script: path.join(root, "admin", "node_modules", "vite", "bin", "vite.js"),
+      script: path.join(
+        root,
+        "admin",
+        "node_modules",
+        "vite",
+        "bin",
+        "vite.js",
+      ),
       args: "--host 127.0.0.1 --port 3002",
       cwd: path.join(root, "admin"),
       autorestart: true,
@@ -98,36 +162,38 @@ module.exports = {
         REDIS_DB: "0",
         REDIS_KEY_PREFIX: "maimai:",
         API_SHARED_SECRET:
-          env.API_SHARED_SECRET || env.ADMIN_PASSWORD || "change-me-local-admin",
+          env.API_SHARED_SECRET ||
+          env.ADMIN_PASSWORD ||
+          "change-me-local-admin",
         ADMIN_PASSWORD:
-          env.ADMIN_PASSWORD || env.API_SHARED_SECRET || "change-me-local-admin",
+          env.ADMIN_PASSWORD ||
+          env.API_SHARED_SECRET ||
+          "change-me-local-admin",
         ...env,
       },
       autorestart: true,
       max_restarts: 5,
     },
-    {
-      name: "msh-sdgb-worker",
-      script: process.execPath,
-      args: "--enable-source-maps --experimental-strip-types src/index.ts",
-      cwd: path.join(root, "sdgb-worker"),
-      env: {
-        NODE_ENV: "dev",
-        WORKER_ID: "sdgb-worker-local-dev",
-        BACKEND_URL: "http://127.0.0.1:9050",
-        REDIS_HOST: "127.0.0.1",
-        REDIS_PORT: "6379",
-        REDIS_DB: "0",
-        REDIS_KEY_PREFIX: "maimai:",
-        API_SHARED_SECRET:
-          env.API_SHARED_SECRET || env.ADMIN_PASSWORD || "change-me-local-admin",
-        ADMIN_PASSWORD:
-          env.ADMIN_PASSWORD || env.API_SHARED_SECRET || "change-me-local-admin",
-        ...env,
-      },
-      autorestart: true,
-      max_restarts: 5,
-    },
+    sdgbWorkerApp(
+      "msh-sdgb-stable-a",
+      "sdgb-stable-local-a",
+      "stable",
+    ),
+    sdgbWorkerApp(
+      "msh-sdgb-stable-b",
+      "sdgb-stable-local-b",
+      "stable",
+    ),
+    sdgbWorkerApp(
+      "msh-sdgb-recoverable-a",
+      "sdgb-recoverable-local-a",
+      "recoverable",
+    ),
+    sdgbWorkerApp(
+      "msh-sdgb-recoverable-b",
+      "sdgb-recoverable-local-b",
+      "recoverable",
+    ),
     {
       name: "msh-devtunnel",
       script: path.join(root, "scripts", "dev", "run-devtunnel.cjs"),

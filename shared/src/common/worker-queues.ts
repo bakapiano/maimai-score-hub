@@ -12,4 +12,5 @@ export interface DxnetWorkerJobData {
 
 export interface SdgbWorkerJobData {
   jobId: string;
+  attempt: number;
 }

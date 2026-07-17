@@ -34,6 +34,9 @@
 | -------------------------------------- | ----------------------------------------- | --------------------------- |
 | `status:worker:sdgb:{workerId}`        | 约 `SDGB_WORKER_STALE_MS * 2`             | sdgb-worker 心跳和处理计数  |
 | `cache:job-temp:{jobId}:{diff}:{type}` | `JOB_TEMP_CACHE_TTL_SECONDS`，默认 1 小时 | `update_score` 中间结果缓存 |
+| `lock:manual-score-create:{friendCode}` | 10 秒 | DXNet/二维码手动同步创建互斥 |
+| `sdgb:session-lease:{jobId}` | 默认 30 分钟，活跃时续期 | `get_music_score` 登录状态 cleanup lease；用户/session 字段为 AES-256-GCM ciphertext |
+| `sdgb:session-lease:cleanup-lock:{jobId}` | 最多 60 秒 | 多 worker 崩溃恢复互斥与 fencing |
 
 ## Users
 
@@ -132,10 +135,10 @@ type AutoExportResult = {
 | 字段           | 类型             | 约束 / 默认值           | 说明                                                                            |
 | -------------- | ---------------- | ----------------------- | ------------------------------------------------------------------------------- |
 | `id`           | `string`         | required, unique, index | 导出任务 id                                                                     |
-| `trigger`      | `string`         | required, index         | `dxnet_update_score` / `auto_update_rival` / `auto_update_fcfs` / `manual`      |
+| `trigger`      | `string`         | required, index         | `dxnet_update_score` / `auto_update_rival` / `auto_update_fcfs` / `cabinet_qr_update` / `manual` |
 | `friendCode`   | `string`         | required, index         | 用户好友码                                                                      |
 | `syncId`       | `string`         | required, index         | 要导出的固定 sync 快照                                                          |
-| `sourceJobId`  | `string \| null` | default `null`          | 来源 DXNet job id                                                               |
+| `sourceJobId`  | `string \| null` | default `null`          | 来源 DXNet 或 `get_music_score` job id                                          |
 | `sourceTaskId` | `string \| null` | default `null`          | 来源 auto-update task id                                                        |
 | `targets`      | `string[]`       | default `[]`            | `divingFish` / `lxns`                                                           |
 | `status`       | `string`         | required, index         | `queued` / `processing` / `completed` / `partial_failed` / `failed` / `skipped` |
@@ -468,37 +471,52 @@ type BotFriendRow = {
 
 ### `SdgbJobEntity`
 
-| 字段           | 类型                              | 约束 / 默认值           | 说明                 |
-| -------------- | --------------------------------- | ----------------------- | -------------------- |
-| `id`           | `string`                          | required, unique, index | sdgb job id          |
-| `jobType`      | `SdgbJobType`                     | required, index         | 机台协议任务类型     |
-| `status`       | `SdgbJobStatus`                   | required, index         | job 状态             |
-| `payload`      | `Record<string, unknown>`         | `Mixed`, required       | job 输入             |
-| `result`       | `Record<string, unknown> \| null` | `Mixed`, default `null` | job 结果             |
-| `error`        | `string \| null`                  | default `null`          | 错误信息             |
-| `executing`    | `boolean`                         | default `false`         | worker 是否正在执行  |
-| `claimedAt`    | `Date \| null`                    | default `null`          | 开始执行时间         |
-| `requesterTag` | `string \| null`                  | default `null`, index   | 生产者自定义追踪 tag |
-| `createdAt`    | `Date`                            | timestamps              | 创建时间             |
-| `updatedAt`    | `Date`                            | timestamps              | 更新时间             |
+| 字段 | 类型 | 约束 / 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `string` | required, unique, index | sdgb job id |
+| `jobType` | `SdgbJobType` | required, index | 机台协议任务类型 |
+| `status` | `SdgbJobStatus` | required, index | `queued / processing / completed / failed` |
+| `stage` | `SdgbJobStage \| null` | default `null` | `get_music_score` 的协议阶段 |
+| `cleanupStatus` | `not_required / pending / succeeded / unconfirmed` | default `not_required`, index | 登录状态清理结果 |
+| `cleanupErrorCode` | `string \| null` | default `null` | cleanup 稳定错误码 |
+| `cleanupUpdatedAt` | `Date \| null` | default `null` | cleanup 状态更新时间 |
+| `cleanupBlockedUntil` | `Date \| null` | default `null` | unconfirmed 时禁止重试截止时间 |
+| `progress` | `{ detailsFetched } \| null` | `Mixed`, default `null` | 完整成绩详情读取计数 |
+| `payload` | `Record<string, unknown>` | `Mixed`, required | job 输入；二维码终态时 `$unset payload.qrCode` |
+| `result` | `Record<string, unknown> \| null` | `Mixed`, default `null` | 普通 job 结果；二维码 job 完成后只保留 `syncId/scoreCount` 摘要 |
+| `error` / `errorCode` | `string \| null` | default `null` | 内部错误文本和稳定错误码 |
+| `executing` | `boolean` | default `false` | worker 是否正在执行 |
+| `claimedAt` | `Date \| null` | default `null` | 开始执行时间 |
+| `requesterTag` | `string \| null` | default `null`, index | 生产者追踪 tag |
+| `ownerUserId` | `string \| null` | default `null`, index | 用户侧二维码 job owner；授权依据 |
+| `ownerFriendCode` | `string \| null` | default `null`, index | 写入 sync 的好友码 |
+| `createdAt` / `updatedAt` | `Date` | timestamps | 创建和更新时间 |
 
 枚举和 payload/result 约定：
 
 ```ts
-type SdgbJobType = "scan_qr" | "get_rival_hash" | "get_user_map" | "add_rival";
+type SdgbJobType =
+  | "scan_qr"
+  | "get_rival_hash"
+  | "get_user_map"
+  | "add_rival"
+  | "get_music_score";
 type SdgbJobStatus = "queued" | "processing" | "completed" | "failed";
 
 type SdgbJobPayload =
   | { qrCode: string; callerUid?: number }
   | { cabinetUserId: number; callerUid?: number }
   | { cabinetUserId: number }
-  | { botCabinetUserId: number; targetCabinetUserId: number };
+  | { botCabinetUserId: number; targetCabinetUserId: number }
+  | { qrCode: string; expectedCabinetUserId: number };
 
 type SdgbJobResult =
   | { cabinetUserId: number; music: unknown[]; hash: string }
   | { hash: string; music: unknown[] }
   | { maps: unknown[] }
-  | { returnCode1: number; returnCode2: number };
+  | { returnCode1: number; returnCode2: number }
+  | { cabinetUserId: number; musicDetails: UserMusicDetail[] } // worker → finalizer
+  | { syncId: string; scoreCount: number };                    // Mongo terminal summary
 ```
 
 索引：
@@ -513,6 +531,10 @@ type SdgbJobResult =
 - `{ status: 1, createdAt: 1 }`，名称 `status_createdAt`。
 - `{ status: 1, claimedAt: 1 }`，名称 `status_claimedAt`。
 - `{ updatedAt: -1 }`，名称 `updatedAt_desc`。
+- `{ ownerUserId: 1, jobType: 1, status: 1, createdAt: -1 }`，名称 `owner_type_status`。
+- `{ ownerUserId: 1, cleanupStatus: 1, cleanupBlockedUntil: 1 }`，名称 `owner_cleanup`。
+
+Redis cleanup lease 不属于 Mongo document。ciphertext 中保存 `userId`、原始 `loginDateTime`、cookie、短时效 Aime token、accessCode 和 cleanup 时间；key、日志、用户 API 与 admin view 均不得暴露这些字段。详细状态机见 [二维码成绩更新事实](./cabinet-qr-score-sync.md)。
 
 ## Document 类型清单
 

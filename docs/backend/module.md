@@ -25,6 +25,7 @@
 | `AuthModule`          | `backend/src/modules/auth`          | `AuthService`、`AuthGuard`、`QrLoginService`                                   | 登录、JWT 校验、好友请求登录和机台二维码登录。                                                          |
 | `AutoUpdateModule`    | `backend/src/modules/auto-update`   | `AutoUpdateSchedulerService`                                                   | Rival-first 自动更新调度、Map auxiliary、FC/FS enrichment 触发和失败退避。                              |
 | `BotsModule`          | `backend/src/modules/bots`          | `BotStatusService`、`BotFriendSnapshotService`                                 | DXNet bot 状态、好友快照、可用性选择和不可用任务清理。                                                  |
+| `CabinetScoreSyncModule` | `backend/src/modules/cabinet-score-sync` | `CabinetScoreSyncService`                                                   | 当前用户二维码成绩 job、DXNet/二维码创建互斥、SDGB 结果校验和 sync finalization。                       |
 | `CatalogModule`       | `backend/src/modules/catalog`       | `CatalogSyncService`                                                           | 使用可续租 Redis lease 串行执行曲库与缺失封面同步。                                                     |
 | `CoverModule`         | `backend/src/modules/cover`         | `CoverService`                                                                 | 本地封面文件查找、同步、格式变体生成和封面数量统计。                                                    |
 | `JobModule`           | `backend/src/modules/job`           | `JobService`、`JobFriendshipService`、`JobQueueService` 等                     | DXNet worker 任务队列与任务生命周期。                                                                   |
@@ -60,6 +61,15 @@
 - Rival/map/recent event 任一活动信号都会把稳定后全量 `update_score` 预约到 activity 后 45 分钟；如果 due 时已有 active `update_score`，直接视为覆盖并清 pending。
 - 持有 `auto_update_runs`、`auto_update_probe_states`、`auto_update_tasks`，记录每轮执行摘要、用户状态和短期任务日志。
 - 处理 rival/map/recent 失败退避；用户习惯画像尚未实现，仅预留 multiplier 字段。
+
+### `CabinetScoreSyncModule`
+
+- 为已登录且已绑定 `cabinetUserId` 的用户创建 `jobType=get_music_score` 的 SDGB job；用户只能提交二维码字符串或图片，`ownerUserId`、好友码和期望 cabinet userId 全由后端填写。
+- 用户 API 为 `/me/cabinet-score-jobs`、`/active` 和 `/:jobId`，返回脱敏 view，不暴露原始二维码、cabinet userId、cookie、token 或原始成绩结果。
+- 使用短 Redis mutex 串行化同一好友码的手动同步创建，并同时检查 DXNet `jobs` 与 SDGB `get_music_score`，避免两种手动同步并发覆盖。
+- Worker 完成后由 `WorkerSdgbJobsController` 把 `get_music_score` 的 completed PATCH 路由到 `CabinetScoreSyncService.finalize()`；只有 `cleanupStatus=succeeded`、绑定 ID 三方一致且成绩映射成功，才允许完成 job。
+- 成功后调用 `SyncService.createFromUserMusic()` 写入最新 sync，并用 `trigger=cabinet_qr_update` 创建可选的查分器自动导出任务。
+- 详细流程见 [二维码成绩更新事实](./cabinet-qr-score-sync.md)。
 
 ### `BotsModule`
 
@@ -106,21 +116,23 @@
 
 ### `SdgbWorkerModule`
 
-- 管理 sdgb-worker 使用的机台协议任务，任务类型包括 `scan_qr`、`get_rival_hash`、`get_user_map` 和 `add_rival`。
+- 管理 sdgb-worker 使用的机台协议任务，任务类型包括 `scan_qr`、`get_rival_hash`、`get_user_map`、`add_rival` 和 `get_music_score`。
 - `SdgbJobService` 负责写入 Mongo + BullMQ、worker PATCH 和等待完成。
-- sdgb-worker 直接消费 BullMQ，不再通过 HTTP claim/next 认领任务；worker 通过 heartbeat 接口上报状态。
+- sdgb-worker 按 Probe/Interactive 两条 BullMQ lane 消费，不再通过 HTTP claim/next 认领任务；worker 通过 heartbeat 接口上报 role、能力和状态。
 - Mongo TTL 清理历史 job。
 - `SdgbJobDispatcher` 把“入队 + 等待完成 + 返回 result”封装成同步调用，供登录、机台绑定、自动更新和 bot 绑定使用。
+- `get_music_score` 不是 dispatcher 同步调用：用户 façade 创建后由前端轮询；job 带 owner、stage、progress 和 cleanup 状态，终态会擦除 `payload.qrCode`。
 
 ### `SyncModule`
 
-- 将 DXNet worker 的 job result 或 sdgb RivalMusic list 转换为 `SyncScore`，写入最新同步快照。
+- 将 DXNet worker 的 job result、sdgb RivalMusic list 或已登录用户的 `UserMusicDetail[]` 转换为 `SyncScore`，写入最新同步快照。
 - 同一用户只保留最新 sync；新成绩会和上一份 sync 合并，避免单次抓取缺项时丢失旧成绩。
 - 合并策略保留更高的 achievement、dxScore、FC 和 FS，元数据来自最新曲库。
 - `mergeRecentEvents()` 把 recent event FC/FS list 与当前成绩按 rank 合并；只处理能唯一定位到当前 score 的 event。
 - 对外提供当前用户最新同步成绩查询。
 - `ProberExportMapService` 缓存 Diving Fish 与 LXNS 的曲目 id 映射，支持在不同曲库来源下导出。
 - 支持把最新 sync 上传到 Diving Fish 或 LXNS，并记录自动导出结果。
+- `createFromUserMusic()` 映射 achievement、DX Score、FC/AP 和 FS/FDX；`syncStatus=5 (SyncPlay)` 不映射为 Full Sync。
 
 ### `UsersModule`
 
@@ -147,11 +159,12 @@
 | ------------------------------------------------------------ | ----------------------------------------------------------------- |
 | 登录、JWT、好友请求登录、QR 登录                             | `AuthModule`、`JobModule`、`SdgbWorkerModule`                     |
 | 用户资料、导入 token、机台绑定                               | `UsersModule`、`SyncModule`                                       |
-| 手动更新成绩、worker 任务调度                                | `JobModule`、`BotsModule`                                         |
+| DXNet 手动更新成绩、worker 任务调度                          | `JobModule`、`BotsModule`                                         |
+| 用户二维码更新成绩、Login/Logout cleanup、sync finalization | `CabinetScoreSyncModule`、`SdgbWorkerModule`、`SyncModule`         |
 | 自动更新、Rival-first probe、Map auxiliary、FC/FS enrichment | `AutoUpdateModule`、`SdgbWorkerModule`、`SyncModule`、`JobModule` |
 | 曲库同步                                                     | `MusicModule`                                                     |
 | 封面同步和封面静态返回                                       | `CoverModule`                                                     |
 | 成绩图导出                                                   | `ScoreExportModule`、`SyncModule`、`CoverModule`                  |
-| sdgb-worker 机台协议任务                                     | `SdgbWorkerModule`                                                |
+| sdgb-worker 通用机台协议任务                                 | `SdgbWorkerModule`                                                |
 | 管理后台统计和运维动作                                       | `AdminModule` 以及被调用的具体业务模块                            |
 | worker 日志、外部 API metadata、Job Debug 时间线             | `ObservabilityModule`                                             |

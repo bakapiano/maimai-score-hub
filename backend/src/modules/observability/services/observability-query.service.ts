@@ -847,17 +847,31 @@ export class ObservabilityQueryService {
   private async getSdgbWorkerStatuses(): Promise<
     Array<Record<string, unknown>>
   > {
-    const keys = await this.redis.keys(this.redis.key('status:worker:sdgb:*'));
+    const prefix = this.redis.key('sdgb:workers:');
+    const keys = await this.redis.keys(prefix + '*');
     const rows: Array<Record<string, unknown>> = [];
     for (const key of keys) {
+      if (key.slice(prefix.length).includes(':')) {
+        continue;
+      }
       const status = await this.redis.getJson<{
         workerId?: string;
+        workerClass?: string;
+        capabilities?: string[];
+        laneMemberships?: unknown[];
+        upstreamHealth?: string;
+        breakerState?: string;
         lastSeenAt?: string;
         jobsClaimed?: number;
       }>(key);
       if (status?.workerId) {
         rows.push({
           workerId: status.workerId,
+          workerClass: status.workerClass ?? null,
+          capabilities: status.capabilities ?? [],
+          laneMemberships: status.laneMemberships ?? [],
+          upstreamHealth: status.upstreamHealth ?? null,
+          breakerState: status.breakerState ?? null,
           lastSeenAt: status.lastSeenAt ?? null,
           jobsClaimed: status.jobsClaimed ?? 0,
         });

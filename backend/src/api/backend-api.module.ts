@@ -41,6 +41,8 @@ import { WorkerDxnetTempCacheController } from './workers/worker-dxnet-temp-cach
 import { WorkerExternalApiCallsController } from './workers/worker-external-api-calls.controller';
 import { WorkerLogIngestController } from './workers/worker-logs.controller';
 import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller';
+import { WorkerSdgbControlController } from './workers/worker-sdgb-control.controller';
+import { WorkerSdgbMaintenanceController } from './workers/worker-sdgb-maintenance.controller';
 
 @Module({
   imports: [
@@ -86,6 +88,8 @@ import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller'
     WorkerExternalApiCallsController,
     WorkerLogIngestController,
     WorkerSdgbJobsController,
+    WorkerSdgbControlController,
+    WorkerSdgbMaintenanceController,
   ],
   providers: [SharedSecretGuard],
 })
