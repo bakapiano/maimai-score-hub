@@ -17,18 +17,19 @@ priority 只在同一 lane 内排序。
 
 | lane | 目标 | 典型来源 | 固定每 worker concurrency |
 | --- | --- | --- | ---: |
-| `interactive` | 登录、好友关系、QR 等短交互 | 用户登录、QR login、好友申请 | 4 |
+| `interactive` | 登录、好友关系、QR 等短交互 | 用户登录、QR login、好友申请 | 8 |
 | `user_sync` | 用户主动发起的长查分 | 手动 `update_score` | 16 |
-| `background` | 可排队、可退避的后台任务 | 自动 recent event、自动 full update、维护刷新 | 3 |
+| `background` | 可排队、可退避的后台任务 | 自动 recent event、自动 full update、维护刷新 | 16 |
 
-三个独立 BullMQ Worker consumer 的固定 concurrency 合计为每 Bot 23。这里不做动态
+三个独立 BullMQ Worker consumer 的固定 concurrency 合计为每 Bot 40。这里不做动态
 reservation、borrow 或 burst admission，避免引入额外调度状态。用户 lane 的容量直接常驻，
-background 最多只能占自己的 3 个 slot，因此无法挤占用户任务。
+background 最多只能占自己的 16 个 slot，因此无法挤占用户任务。
 
-23 仍远低于历史 256 配置，但比当前全局 16 更偏向低 queue wait。具体值要按线上 p95、
+40 仍远低于历史 256 配置，但比当前全局 16 更偏向低 queue wait。具体值要按线上 p95、
 Bot 上游错误率和 lock renewal 指标逐步调整。
 
-`background=3` 的目标不是允许 3 个同类任务无差别并发，而是为每个 worker 保留：
+`background=16` 是 lane 级接单上限，不代表任一 job type 可以跑 16 并发。per-type cap 继续
+限制实际执行，例如当前为每个 worker：
 
 - 最多 2 个 `get_user_recent_event`。
 - 最多 1 个 background `update_score`。
@@ -37,9 +38,9 @@ Bot 上游错误率和 lock renewal 指标逐步调整。
 建议配置：
 
 ```text
-DXNET_LANE_INTERACTIVE_CONCURRENCY=4
+DXNET_LANE_INTERACTIVE_CONCURRENCY=8
 DXNET_LANE_USER_SYNC_CONCURRENCY=16
-DXNET_LANE_BACKGROUND_CONCURRENCY=3
+DXNET_LANE_BACKGROUND_CONCURRENCY=16
 DXNET_JOB_GET_USER_RECENT_EVENT_CONCURRENCY=2
 DXNET_JOB_BACKGROUND_UPDATE_SCORE_CONCURRENCY=1
 DXNET_JOB_MAINTENANCE_CONCURRENCY=1

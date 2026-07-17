@@ -28,7 +28,7 @@ DXNET_WORKER_PREPARE_CABINET_ENABLED=false
 - 恢复少量 auto-update FC/FS producer，但只创建 background claim job。
 - worker claim 后才 addRival。
 - 限制 allowlist 用户、低 batch；canary 从 background concurrency=1 起步。
-- 验证稳定后升到 target：background lane=3、`get_user_recent_event` per worker=2、
+- 验证稳定后升到 target：background lane=16、`get_user_recent_event` per worker=2、
   background `update_score` per worker=1。
 - producer 必须限速平滑释放，不能恢复历史一次批量 enqueue 数百个 due user 的行为。
 - 验证好友关系创建到真正 DXNet 使用之间的时间显著缩短。
@@ -83,6 +83,7 @@ DXNET_WORKER_PREPARE_CABINET_ENABLED=false
 
 - 三条 lane 使用独立、固定 concurrency，不实现动态 borrow/burst。
 - background lane 满载时不能占用 interactive 或 user_sync 的 slot。
+- interactive lane 固定 8 个 slot，background lane 固定 16 个 slot。
 - user_sync 16 个 slot 全部可由用户手动同步使用。
 - 每条 lane 和每个 job type 都不能突破对应固定上限。
 - job type semaphore 满时 delivery 被 delay，而不是长期 active 等待。
