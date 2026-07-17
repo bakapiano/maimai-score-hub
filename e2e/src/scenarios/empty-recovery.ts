@@ -70,6 +70,7 @@ export async function verifyEmptyRecovery(
     const blocked = await harness.workerHeartbeat(targetWorkerId);
     assert.equal(blocked?.breakerState, "open");
     assert.equal(blocked?.upstreamHealth, "blocked");
+    const blockedNetworkEpoch = blocked?.networkEpoch ?? 0;
 
     const completed = await harness.waitForJobs(
       requesterTag,
@@ -136,6 +137,8 @@ export async function verifyEmptyRecovery(
       },
       { timeoutMs: 45_000, intervalMs: 100 },
     );
+    const recovered = await harness.workerHeartbeat(targetWorkerId);
+    assert.ok(recovered!.networkEpoch > blockedNetworkEpoch);
   } finally {
     await harness.cleanupRequester(requesterTag);
     if (requestId) {

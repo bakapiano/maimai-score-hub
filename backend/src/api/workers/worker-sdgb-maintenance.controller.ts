@@ -33,6 +33,11 @@ export class WorkerSdgbMaintenanceController {
     return this.maintenance.create(body);
   }
 
+  @Get('active/:workerId')
+  async active(@Param('workerId') workerId: string) {
+    return this.maintenance.getActiveForWorker(workerId);
+  }
+
   @Get(':requestId')
   async get(@Param('requestId') requestId: string) {
     return this.maintenance.get(requestId);
