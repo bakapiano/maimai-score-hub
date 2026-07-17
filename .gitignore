@@ -91,6 +91,8 @@ backend/score-exports/
 .github/copilot-instructions.md
 # CLAUDE.md mirrors copilot-instructions.md with the same secrets
 CLAUDE.md
+# AGENTS.md is a local copy of CLAUDE.md and contains the same credentials
+AGENTS.md
 
 .mcp.json
 
