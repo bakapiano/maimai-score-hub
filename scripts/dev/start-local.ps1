@@ -20,6 +20,8 @@ try {
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   npm --prefix backend run build
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  npm --prefix sdgb-worker run build
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
   Pop-Location
 }

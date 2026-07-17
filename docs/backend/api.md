@@ -17,7 +17,7 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | 前缀         | 调用方       | 说明                                                           |
 | ------------ | ------------ | -------------------------------------------------------------- |
 | `/auth/*`    | 未登录用户   | 登录请求、登录轮询、二维码登录。                               |
-| `/me/*`      | 当前登录用户 | 当前用户资料、同步数据、成绩图导出、个人 DXNet job、机台绑定。 |
+| `/me/*`      | 当前登录用户 | 当前用户资料、同步数据、成绩图导出、个人 DXNet/二维码成绩 job、机台绑定。 |
 | `/catalog/*` | 公开访问     | 曲库和封面等公开只读资源。                                     |
 | `/public/*`  | 公开访问     | 非当前用户语义的公开查询接口。                                 |
 | `/workers/*` | 后台 worker  | DXNet worker、SDGB worker、worker 日志、bot 心跳。             |
@@ -87,6 +87,20 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | GET  | `/me/dxnet-jobs/:jobId`        | path: `jobId`                                                                  | 按 id 查询当前用户自己的 job 详情。                                                                                                  |
 | POST | `/me/dxnet-jobs/:jobId/verify` | path: `jobId`                                                                  | 用户声明已完成外部动作，请后端立即验证当前用户自己的 job，返回 `{ job }`。                                                           |
 
+## 二维码成绩 Job
+
+以下接口均需要 User 认证。它们是 `sdgb_jobs` 中 `jobType=get_music_score` 的用户侧脱敏 façade，不是独立 Mongo collection。
+
+| 方法 | 路径 | 入参 | 说明 |
+| --- | --- | --- | --- |
+| POST | `/me/cabinet-score-jobs` | JSON `{ qrCode }`，或 multipart `image`；multipart 可选 `qrCode` 且优先于图片 | 为当前用户创建二维码成绩更新。要求已绑定 cabinet userId；body 不接受 user/userId/friendCode。返回 HTTP 202 `{ jobId, job }`。 |
+| GET | `/me/cabinet-score-jobs/active` | - | 查询当前用户 active `get_music_score`。除 queued/processing 外，也会返回 cleanup pending 或仍在 blockedUntil 内的 unconfirmed job。 |
+| GET | `/me/cabinet-score-jobs/:jobId` | path: `jobId` | 查询当前用户自己的脱敏任务详情；不返回 payload、cabinet userId、cookie/token、lease 或原始 `musicDetails`。 |
+
+创建时会和 `/me/dxnet-jobs` 共用手动同步创建锁；任一方式已有 active job 时返回 409。二维码任务主要阶段为 `queued → qr_auth → preview → login → get_music → logout/cleanup → persist`。
+
+二维码输入、用户接口响应、错误码与完整 Session 流程见 [二维码成绩更新事实](./cabinet-qr-score-sync.md)。
+
 ## 曲库与封面
 
 | 方法 | 路径                  | 认证   | 入参       | 说明                                                                                                               |
@@ -115,9 +129,9 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 | 方法  | 路径                           | 入参                                 | 说明                                          |
 | ----- | ------------------------------ | ------------------------------------ | --------------------------------------------- |
-| POST  | `/workers/sdgb/jobs/heartbeat` | body: `workerId`, `claimedDelta?`    | BullMQ 版 sdgb-worker 上报心跳和领取计数。    |
+| POST  | `/workers/sdgb/jobs/heartbeat` | body: `workerId`, `role?`, `claimedDelta?`    | BullMQ 版 sdgb-worker 上报角色、心跳和领取计数。    |
 | GET   | `/workers/sdgb/jobs/:jobId`    | path: `jobId`                        | BullMQ sdgb-worker 按 id 查询 sdgb job 详情。 |
-| PATCH | `/workers/sdgb/jobs/:jobId`    | body: `status?`, `result?`, `error?` | sdgb-worker 回写 job 状态、结果或错误。       |
+| PATCH | `/workers/sdgb/jobs/:jobId`    | body: `status?`, `stage?`, `cleanupStatus?`, `cleanupErrorCode?`, `cleanupBlockedUntil?`, `progress?`, `result?`, `error?`, `errorCode?` | sdgb-worker 回写 job 状态。`get_music_score` 的 completed result 会先经过后端 finalizer，cleanup 未确认时拒绝落成绩。 |
 
 ### Worker 日志与 Bot 心跳
 
@@ -190,3 +204,4 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 - `GET /workers/dxnet/jobs/:jobId`
 - `POST /workers/sdgb/jobs/heartbeat`
 - `POST /auth/qr-login` 的 multipart `image` 上传形态
+- `POST /me/cabinet-score-jobs` 的 multipart `image` 上传形态（JSON `qrCode` 由 shared contract 覆盖）

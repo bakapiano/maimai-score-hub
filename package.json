@@ -6,7 +6,9 @@
     "dev:local:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/start-local.ps1",
     "dev:local:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/stop-local.ps1",
     "dev:local:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/status-local.ps1",
-    "dev:local:logs": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/logs-local.ps1"
+    "dev:local:logs": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/logs-local.ps1",
+    "test:e2e:sdgb": "npm --prefix e2e run test:local",
+    "test:e2e:sdgb:containers": "npm --prefix e2e run test:containers"
   },
   "devDependencies": {
     "husky": "^9.1.0",

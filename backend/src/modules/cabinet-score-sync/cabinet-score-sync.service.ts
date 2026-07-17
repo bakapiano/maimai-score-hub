@@ -118,12 +118,17 @@ export class CabinetScoreSyncService {
   async patchFromWorker(jobId: string, body: SdgbJobPatchBody) {
     const job = await this.sdgbJobs.getEntity(jobId);
     if (job.jobType !== 'get_music_score' || body.status !== 'completed') {
-      return this.sdgbJobs.patch(jobId, body);
+      return this.sdgbJobs.patchFromWorker(jobId, body);
     }
-    return this.finalize(jobId, body.result);
+    return this.finalize(jobId, body.result, body);
   }
 
-  private async finalize(jobId: string, rawResult: unknown) {
+  private async finalize(
+    jobId: string,
+    rawResult: unknown,
+    body: SdgbJobPatchBody,
+  ) {
+    await this.sdgbJobs.assertWorkerExecution(jobId, body);
     const result = GetMusicScoreResultSchema.parse(rawResult);
     const job = await this.sdgbJobs.getEntity(jobId);
     if (!job.ownerUserId || !job.ownerFriendCode) {
@@ -131,6 +136,7 @@ export class CabinetScoreSyncService {
         jobId,
         'SYNC_PERSIST_FAILED',
         'job owner missing',
+        body,
       );
     }
     if (job.cleanupStatus !== 'succeeded') {
@@ -145,6 +151,7 @@ export class CabinetScoreSyncService {
         jobId,
         'CABINET_USER_MISMATCH',
         'cabinet user id mismatch',
+        body,
       );
     }
 
@@ -159,6 +166,7 @@ export class CabinetScoreSyncService {
           jobId,
           'NO_SCORE_DATA',
           'no usable scores',
+          body,
         );
       }
       const completed = await this.sdgbJobs.completeMusicScoreFinalization(
@@ -167,6 +175,7 @@ export class CabinetScoreSyncService {
           syncId: sync.id,
           scoreCount: Array.isArray(sync.scores) ? sync.scores.length : 0,
         },
+        body,
       );
       void this.proberExports
         .enqueueAutoExportForSync({
@@ -184,6 +193,7 @@ export class CabinetScoreSyncService {
         jobId,
         'SYNC_PERSIST_FAILED',
         err instanceof Error ? err.message : String(err),
+        body,
       );
     }
   }
@@ -192,8 +202,13 @@ export class CabinetScoreSyncService {
     jobId: string,
     errorCode: string,
     message: string,
+    execution: SdgbJobPatchBody,
   ) {
-    return this.sdgbJobs.patch(jobId, {
+    return this.sdgbJobs.patchFromWorker(jobId, {
+      executionToken: execution.executionToken,
+      executionWorkerId: execution.executionWorkerId,
+      executionMembershipEpoch: execution.executionMembershipEpoch,
+      executionNetworkEpoch: execution.executionNetworkEpoch,
       status: 'failed',
       errorCode,
       error: message,

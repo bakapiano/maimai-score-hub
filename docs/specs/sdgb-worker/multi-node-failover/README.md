@@ -1,6 +1,6 @@
 # sdgb-worker 双类型 Worker、多成员分流与 Auto Recovery
 
-状态：Proposed
+状态：Implemented with local E2E acceptance；真实网络恢复 Hook 暂由 mock adapter 验证 contract，不调用设备或云平台 API
 
 日期：2026-07-16
 
@@ -193,11 +193,23 @@ Redis 保存 heartbeat、worker health/breaker、desired member set、每 worker
 
 ## 10. 验收摘要
 
-- 同一 lane 配置两个 active member 时，BullMQ job 在二者间实际分流，单个 job 不会重复执行。
-- 一个 preferred member 故障时其余 preferred member 持续服务，fallback class 保持 inactive。
-- 全部 preferred member 故障时 fallback member set 接管；preferred 恢复后 fallback 安全 drain。
-- Router hook 只影响目标 Recoverable，其他 member 和 Interactive 保持可用。
-- Stable 接管 Probe 时，Interactive limiter wait 增量符合目标。
-- Graceful upgrade 不中断剩余 member，不产生 active 用户 job 的普通失败。
-- Membership TTL/fencing 拒绝未授权 member 和旧进程写回。
-- 所有自动化测试使用 fake UpstreamAdapter，不访问真实外部服务。
+以下每个目标都必须有对应的跨进程 E2E；测试 ID 可通过
+`E2E_SCENARIO=<id>` 单独运行。完整入口为 `npm run test:e2e:sdgb`。
+
+| 验收目标 | E2E ID / 文件 | 关键断言 |
+| --- | --- | --- |
+| 同一 lane 配置两个 active member 时，BullMQ job 在二者间实际分流，单个 job 不会重复执行。 | `active-active` / [`active-active.ts`](../../../../e2e/src/scenarios/active-active.ts) | Probe 与 Interactive 均覆盖两个 active member；四个 worker 的 `jobsClaimed` 增量总和严格等于 job 数。 |
+| 一个 preferred member 故障时其余 preferred member 持续服务，fallback class 保持 inactive。 | `failover` / [`failover.ts`](../../../../e2e/src/scenarios/failover.ts) | 使用 hard kill；等待 TTL 后只保留同 class member，并断言 fallback 没有 membership。 |
+| 全部 preferred member 故障时 fallback member set 接管；preferred 恢复后 fallback 安全 drain。 | `failover` / [`failover.ts`](../../../../e2e/src/scenarios/failover.ts) | 两条 lane 均验证整类 hard failure、fallback 2-member 分流；恢复时保留一个 slow active job，确认 preferred lease active 后 fallback 才 drain，旧 job 安全完成。 |
+| Router hook 只影响目标 Recoverable，其他 member 和 Interactive 保持可用。 | `empty-recovery` / [`empty-recovery.ts`](../../../../e2e/src/scenarios/empty-recovery.ts)、[`mock-maintenance-hook.ts`](../../../../e2e/src/mock-maintenance-hook.ts) | 只有目标 worker 返回 empty；同 class member 接管且 Stable Probe 不激活；mock hook 仅执行一次并验证 observation 幂等，hook 期间 Interactive job 持续完成。真实设备 API 不在测试中调用。 |
+| Stable 接管 Probe 时，Interactive limiter wait 增量符合目标。 | `stable-qos` / [`stable-qos.ts`](../../../../e2e/src/scenarios/stable-qos.ts) | 使用生产 `global=1.5 QPS / burst=1`；验证 root token 间隔，并断言 Probe backlog 下 Interactive 完成延迟不超过 1.5 秒。 |
+| Graceful upgrade 不中断剩余 member，不产生 active 用户 job 的普通失败。 | `graceful-upgrade` / [`graceful-upgrade.ts`](../../../../e2e/src/scenarios/graceful-upgrade.ts) | Windows E2E 通过 IPC 调用与 Linux SIGTERM 相同的 shutdown coordinator；active `scan_qr`、`add_rival`、`get_music_score` 均完成，music cleanup 成功，另一 Stable 全程 active。 |
+| Membership TTL/fencing 拒绝未授权 member 和旧进程写回。 | `fencing` / [`fencing.ts`](../../../../e2e/src/scenarios/fencing.ts) | 未持有 membership 的首次 claim 返回 409；hard kill 后等待 member key TTL，再用旧 token/epoch/networkEpoch 写终态仍返回 409，Mongo execution 不变。 |
+| 所有自动化测试使用 fake UpstreamAdapter，不访问真实外部服务。 | 全套 / [`harness.ts`](../../../../e2e/src/harness.ts) | 所有 worker 强制 `SDGB_FAKE_UPSTREAM=1`；session/music 使用 fake runner；MaintenanceHook 使用 mock adapter；不配置或调用真实 cabinet/router endpoint。 |
+
+单场景示例：
+
+```powershell
+$env:E2E_SCENARIO = 'stable-qos'
+npm --prefix e2e run test:local
+```

@@ -3781,10 +3781,291 @@ paths:
       responses:
         "200":
           description: "200"
-  /workers/sdgb/jobs/{jobId}:
-    get:
+  /workers/sdgb/jobs/heartbeat:
+    post:
       tags: &a9
         - sdgbWorker
+      parameters: []
+      operationId: sdgbWorker.heartbeat
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workerId:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                workerClass:
+                  type: string
+                  enum:
+                    - recoverable
+                    - stable
+                autoRecoveryHookKind:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                version:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                processGeneration:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                sequence:
+                  type: integer
+                  minimum: 0
+                lifecycleState:
+                  type: string
+                  enum:
+                    - running
+                    - draining
+                    - cleanup_handoff_ready
+                    - blocked
+                capabilities:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - probe
+                      - interactive
+                  minItems: 1
+                laneMemberships:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      lane:
+                        type: string
+                        enum:
+                          - probe
+                          - interactive
+                      state:
+                        type: string
+                        enum:
+                          - active
+                          - draining
+                      membershipEpoch:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: 0
+                    required:
+                      - lane
+                      - state
+                      - membershipEpoch
+                publicIp:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                networkEpoch:
+                  type: integer
+                  minimum: 0
+                upstreamHealth:
+                  type: string
+                  enum:
+                    - unknown
+                    - healthy
+                    - degraded
+                    - blocked
+                breakerState:
+                  type: string
+                  enum:
+                    - closed
+                    - open
+                    - half_open
+                autoRecoveryState:
+                  type: string
+                  enum:
+                    - idle
+                    - requested
+                    - running
+                    - verifying
+                    - failed
+                ratePolicyMode:
+                  type: string
+                  enum:
+                    - none
+                    - strict
+                activeJobsByType:
+                  type: object
+                  additionalProperties:
+                    type: integer
+                    minimum: 0
+                shutdownBlockers:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      jobId:
+                        type: string
+                        minLength: 1
+                      jobType:
+                        type: string
+                        enum:
+                          - scan_qr
+                          - get_rival_hash
+                          - get_user_map
+                          - add_rival
+                          - get_music_score
+                      phase:
+                        type: string
+                        minLength: 1
+                    required:
+                      - jobId
+                      - jobType
+                      - phase
+                jobsClaimedDelta:
+                  type: integer
+                  minimum: 0
+              required:
+                - workerId
+                - workerClass
+                - version
+                - processGeneration
+                - sequence
+                - lifecycleState
+                - capabilities
+                - laneMemberships
+                - networkEpoch
+                - upstreamHealth
+                - breakerState
+                - ratePolicyMode
+                - activeJobsByType
+                - jobsClaimedDelta
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  desiredLaneMemberships:
+                    type: object
+                    properties:
+                      probe:
+                        type: object
+                        properties:
+                          state:
+                            type: string
+                            enum:
+                              - active
+                              - draining
+                              - inactive
+                          expectedMembershipEpoch:
+                            type: integer
+                            minimum: 0
+                            exclusiveMinimum: 0
+                        required:
+                          - state
+                      interactive:
+                        type: object
+                        properties:
+                          state:
+                            type: string
+                            enum:
+                              - active
+                              - draining
+                              - inactive
+                          expectedMembershipEpoch:
+                            type: integer
+                            minimum: 0
+                            exclusiveMinimum: 0
+                        required:
+                          - state
+                  maintenanceRequestId:
+                    type: string
+                required:
+                  - desiredLaneMemberships
+  /workers/sdgb/incidents:
+    post:
+      tags: *a9
+      parameters: []
+      operationId: sdgbWorker.incident
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                incidentId:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                workerId:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                workerClass:
+                  type: string
+                  enum:
+                    - recoverable
+                    - stable
+                publicIp:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                networkEpoch:
+                  type: integer
+                  minimum: 0
+                laneMemberships:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      lane:
+                        type: string
+                        enum:
+                          - probe
+                          - interactive
+                      membershipEpoch:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: 0
+                    required:
+                      - lane
+                      - membershipEpoch
+                failureClass:
+                  type: string
+                  enum:
+                    - empty_response
+                consecutiveCount:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: 0
+                observationWindowMs:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: 0
+                activeJobsByType:
+                  type: object
+                  additionalProperties:
+                    type: integer
+                    minimum: 0
+                occurredAt:
+                  type: string
+                  format: date-time
+              required:
+                - incidentId
+                - workerId
+                - workerClass
+                - networkEpoch
+                - laneMemberships
+                - failureClass
+                - consecutiveCount
+                - observationWindowMs
+                - activeJobsByType
+                - occurredAt
+      responses:
+        "200":
+          description: "200"
+  /workers/sdgb/jobs/{jobId}:
+    get:
+      tags: *a9
       parameters:
         - name: jobId
           in: path
@@ -3810,6 +4091,15 @@ paths:
                       - get_user_map
                       - add_rival
                       - get_music_score
+                  lane:
+                    type: string
+                    enum:
+                      - probe
+                      - interactive
+                  routingVersion:
+                    type: integer
+                    minimum: 0
+                    exclusiveMinimum: 0
                   status:
                     type: string
                     enum:
@@ -3864,6 +4154,49 @@ paths:
                   error:
                     type: string
                     nullable: true
+                  executionToken:
+                    type: string
+                    nullable: true
+                  executionWorkerId:
+                    type: string
+                    nullable: true
+                  executionMembershipEpoch:
+                    type: integer
+                    minimum: 0
+                    exclusiveMinimum: 0
+                    nullable: true
+                  executionNetworkEpoch:
+                    type: integer
+                    minimum: 0
+                    nullable: true
+                  attempt:
+                    type: integer
+                    minimum: 0
+                  maxAttempts:
+                    type: integer
+                    minimum: 0
+                    exclusiveMinimum: 0
+                  retryAt:
+                    type: string
+                    nullable: true
+                  retryReason:
+                    type: string
+                    nullable: true
+                  failureClass:
+                    type: string
+                    enum:
+                      - empty_response
+                      - network_error
+                      - timeout
+                      - invalid_response
+                      - outcome_unknown
+                      - membership_lost
+                    nullable: true
+                  lastWorkerId:
+                    type: string
+                    nullable: true
+                  outcomeUnknown:
+                    type: boolean
                   requesterTag:
                     type: string
                     nullable: true
@@ -3874,10 +4207,23 @@ paths:
                 required:
                   - id
                   - jobType
+                  - lane
+                  - routingVersion
                   - status
                   - payload
                   - result
                   - error
+                  - executionToken
+                  - executionWorkerId
+                  - executionMembershipEpoch
+                  - executionNetworkEpoch
+                  - attempt
+                  - maxAttempts
+                  - retryAt
+                  - retryReason
+                  - failureClass
+                  - lastWorkerId
+                  - outcomeUnknown
                   - createdAt
                   - updatedAt
         "404":
@@ -3898,6 +4244,19 @@ paths:
             schema:
               type: object
               properties:
+                executionToken:
+                  type: string
+                  minLength: 1
+                executionWorkerId:
+                  type: string
+                  minLength: 1
+                executionMembershipEpoch:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: 0
+                executionNetworkEpoch:
+                  type: integer
+                  minimum: 0
                 status:
                   type: string
                   enum:
@@ -3948,6 +4307,31 @@ paths:
                 errorCode:
                   type: string
                   nullable: true
+                outcomeUnknown:
+                  type: boolean
+                requeue:
+                  type: object
+                  properties:
+                    failureClass:
+                      type: string
+                      enum:
+                        - empty_response
+                        - network_error
+                        - timeout
+                        - invalid_response
+                        - outcome_unknown
+                        - membership_lost
+                    retryReason:
+                      type: string
+                      minLength: 1
+                      maxLength: 512
+                    retryAt:
+                      type: string
+                      format: date-time
+                  required:
+                    - failureClass
+                    - retryReason
+                    - retryAt
       responses:
         "200":
           description: "200"
@@ -3966,6 +4350,15 @@ paths:
                       - get_user_map
                       - add_rival
                       - get_music_score
+                  lane:
+                    type: string
+                    enum:
+                      - probe
+                      - interactive
+                  routingVersion:
+                    type: integer
+                    minimum: 0
+                    exclusiveMinimum: 0
                   status:
                     type: string
                     enum:
@@ -4020,6 +4413,49 @@ paths:
                   error:
                     type: string
                     nullable: true
+                  executionToken:
+                    type: string
+                    nullable: true
+                  executionWorkerId:
+                    type: string
+                    nullable: true
+                  executionMembershipEpoch:
+                    type: integer
+                    minimum: 0
+                    exclusiveMinimum: 0
+                    nullable: true
+                  executionNetworkEpoch:
+                    type: integer
+                    minimum: 0
+                    nullable: true
+                  attempt:
+                    type: integer
+                    minimum: 0
+                  maxAttempts:
+                    type: integer
+                    minimum: 0
+                    exclusiveMinimum: 0
+                  retryAt:
+                    type: string
+                    nullable: true
+                  retryReason:
+                    type: string
+                    nullable: true
+                  failureClass:
+                    type: string
+                    enum:
+                      - empty_response
+                      - network_error
+                      - timeout
+                      - invalid_response
+                      - outcome_unknown
+                      - membership_lost
+                    nullable: true
+                  lastWorkerId:
+                    type: string
+                    nullable: true
+                  outcomeUnknown:
+                    type: boolean
                   requesterTag:
                     type: string
                     nullable: true
@@ -4030,10 +4466,23 @@ paths:
                 required:
                   - id
                   - jobType
+                  - lane
+                  - routingVersion
                   - status
                   - payload
                   - result
                   - error
+                  - executionToken
+                  - executionWorkerId
+                  - executionMembershipEpoch
+                  - executionNetworkEpoch
+                  - attempt
+                  - maxAttempts
+                  - retryAt
+                  - retryReason
+                  - failureClass
+                  - lastWorkerId
+                  - outcomeUnknown
                   - createdAt
                   - updatedAt
         "404":

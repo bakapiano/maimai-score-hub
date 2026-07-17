@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -13,41 +14,47 @@ import type { Model } from 'mongoose';
 import { Queue, QueueEvents } from 'bullmq';
 import {
   SDGB_QUEUE_NAME_BY_LANE,
-  getSdgbWorkerJobTypesForRole,
   getSdgbWorkerLaneForJobType,
-  getSdgbWorkerLanesForRole,
-  isSdgbWorkerRole,
+  type SdgbJobPatchBody,
   type SdgbWorkerJobData,
   type SdgbWorkerLane,
-  type SdgbWorkerRole,
 } from '@maimai-score-hub/shared';
 
 import {
   SdgbJobEntity,
   type SdgbJobDocument,
-  type SdgbJobStage,
   type SdgbJobStatus,
   type SdgbJobType,
-  type SdgbSessionCleanupStatus,
 } from '../schemas/sdgb-job.schema';
-import { RedisService } from '../../../common/redis/redis.service';
 import {
   DEFAULT_WORKER_JOB_OPTIONS,
   createBullmqQueueOptions,
 } from '../../../common/bullmq/bullmq.config';
 import { ObservabilityIngestService } from '../../observability/services/observability-ingest.service';
+import { SdgbWorkerRegistryService } from './sdgb-worker-registry.service';
+import {
+  sdgbTimelineEventName,
+  toSdgbJobView as toView,
+  type SdgbAdminStatusView,
+  type SdgbJobListOptions,
+  type SdgbJobListView,
+  type SdgbJobView,
+} from './sdgb-job.view';
+import { SdgbJobAdminQueryService } from './sdgb-job-admin-query.service';
+import {
+  buildSdgbMongoPatch,
+  requireExecution,
+  type WorkerExecutionGuard,
+} from './sdgb-job-patch';
 
-const WORKER_STALE_MS = Number(
-  process.env.SDGB_WORKER_STALE_MS ?? 2 * 60 * 1000,
-);
-const RECENT_JOB_LIMIT = 20;
-const SDGB_JOB_TYPES: SdgbJobType[] = [
-  'scan_qr',
-  'get_rival_hash',
-  'get_user_map',
-  'add_rival',
-  'get_music_score',
-];
+export type {
+  SdgbAdminJobView,
+  SdgbAdminStatusView,
+  SdgbJobListOptions,
+  SdgbJobListView,
+  SdgbJobView,
+} from './sdgb-job.view';
+
 const SDGB_WORKER_LANES: readonly SdgbWorkerLane[] = ['probe', 'interactive'];
 const TERMINAL_STATUSES: SdgbJobStatus[] = ['completed', 'failed'];
 
@@ -55,159 +62,18 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export interface SdgbJobView {
-  id: string;
-  jobType: SdgbJobType;
-  status: SdgbJobStatus;
-  stage: SdgbJobStage | null;
-  cleanupStatus: SdgbSessionCleanupStatus;
-  cleanupErrorCode: string | null;
-  cleanupUpdatedAt: string | null;
-  cleanupBlockedUntil: string | null;
-  progress: { detailsFetched: number } | null;
-  payload: Record<string, unknown>;
-  result: Record<string, unknown> | null;
-  error: string | null;
-  errorCode: string | null;
-  requesterTag: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface SdgbAdminJobView extends SdgbJobView {
-  ageSeconds: number;
-  durationMs: number | null;
-}
-
-export interface SdgbAdminStatusView {
-  workers: Array<{
-    workerId: string;
-    role: SdgbWorkerRole;
-    lanes: readonly SdgbWorkerLane[];
-    jobTypes: readonly SdgbJobType[];
-    lastSeenAt: string;
-    ageSeconds: number;
-    jobsClaimed: number;
-    alive: boolean;
-  }>;
-  queue: Record<SdgbJobStatus, number>;
-  byType: Array<{
-    jobType: SdgbJobType;
-    queued: number;
-    processing: number;
-    completedLastHour: number;
-    failedLastHour: number;
-  }>;
-  oldestQueuedAgeSeconds: number | null;
-  oldestProcessingAgeSeconds: number | null;
-  recentJobs: SdgbAdminJobView[];
-}
-
-export interface SdgbJobListOptions {
-  jobType?: SdgbJobType;
-  status?: SdgbJobStatus;
-  tag?: string;
-  page: number;
-  pageSize: number;
-}
-
-export interface SdgbJobListView {
-  items: SdgbAdminJobView[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
-interface SdgbWorkerStatus {
-  workerId: string;
-  role: SdgbWorkerRole;
-  lanes: readonly SdgbWorkerLane[];
-  jobTypes: readonly SdgbJobType[];
-  lastSeenAt: string;
-  jobsClaimed: number;
-}
-
-function toView(doc: SdgbJobEntity, redactSensitive = false): SdgbJobView {
-  const payload = { ...(doc.payload ?? {}) };
-  if (redactSensitive && doc.jobType === 'get_music_score') {
-    if ('qrCode' in payload) {
-      payload.qrCode = '[REDACTED]';
-    }
-    if ('expectedCabinetUserId' in payload) {
-      payload.expectedCabinetUserId = '[REDACTED]';
-    }
-  }
-  return {
-    id: doc.id,
-    jobType: doc.jobType,
-    status: doc.status,
-    stage: doc.stage ?? null,
-    cleanupStatus: doc.cleanupStatus ?? 'not_required',
-    cleanupErrorCode: doc.cleanupErrorCode ?? null,
-    cleanupUpdatedAt: doc.cleanupUpdatedAt?.toISOString() ?? null,
-    cleanupBlockedUntil: doc.cleanupBlockedUntil?.toISOString() ?? null,
-    progress: doc.progress ?? null,
-    payload,
-    result: doc.result,
-    error: doc.error,
-    errorCode: doc.errorCode ?? null,
-    requesterTag: doc.requesterTag ?? null,
-    createdAt: doc.createdAt.toISOString(),
-    updatedAt: doc.updatedAt.toISOString(),
-  };
-}
-
-function secondsSince(
-  date: Date | null | undefined,
-  nowMs: number,
-): number | null {
-  if (!date) {
-    return null;
-  }
-  return Math.max(0, Math.floor((nowMs - date.getTime()) / 1000));
-}
-
-function toAdminView(doc: SdgbJobEntity, nowMs: number): SdgbAdminJobView {
-  let durationMs: number | null = null;
-  if (doc.status === 'processing') {
-    const startedAt = doc.claimedAt ?? doc.updatedAt;
-    durationMs = Math.max(0, nowMs - startedAt.getTime());
-  } else if (doc.status === 'completed' || doc.status === 'failed') {
-    durationMs = Math.max(0, doc.updatedAt.getTime() - doc.createdAt.getTime());
-  }
-  return {
-    ...toView(doc, true),
-    ageSeconds: secondsSince(doc.updatedAt, nowMs) ?? 0,
-    durationMs,
-  };
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function getSdgbTimelineEventName(status: SdgbJobStatus): string {
-  if (status === 'processing') {
-    return 'picked';
-  }
-  if (status === 'completed' || status === 'failed') {
-    return status;
-  }
-  return 'status_changed';
-}
-
 @Injectable()
 export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SdgbJobService.name);
   private readonly sdgbQueues: Record<SdgbWorkerLane, Queue<SdgbWorkerJobData>>;
   private readonly sdgbQueueEvents: Record<SdgbWorkerLane, QueueEvents>;
-  private readonly workerStatusTtlSeconds: number;
 
   constructor(
     @InjectModel(SdgbJobEntity.name)
     private readonly model: Model<SdgbJobDocument>,
-    private readonly redis: RedisService,
     private readonly observability: ObservabilityIngestService,
+    private readonly registry: SdgbWorkerRegistryService,
+    private readonly adminQueries: SdgbJobAdminQueryService,
     config: ConfigService,
   ) {
     const queueOptions = createBullmqQueueOptions(config);
@@ -231,10 +97,6 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
         queueOptions,
       ),
     };
-    this.workerStatusTtlSeconds = Math.max(
-      1,
-      Math.floor(WORKER_STALE_MS / 1000) * 2,
-    );
   }
 
   onModuleInit(): void {
@@ -262,9 +124,12 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
   }): Promise<SdgbJobView> {
     const id = randomUUID();
     const now = new Date();
+    const lane = getSdgbWorkerLaneForJobType(input.jobType);
     const doc = await this.model.create({
       id,
       jobType: input.jobType,
+      lane,
+      routingVersion: 1,
       status: 'queued',
       stage: input.jobType === 'get_music_score' ? 'queued' : null,
       cleanupStatus: 'not_required',
@@ -278,6 +143,17 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       errorCode: null,
       executing: false,
       claimedAt: null,
+      executionToken: null,
+      executionWorkerId: null,
+      executionMembershipEpoch: null,
+      executionNetworkEpoch: null,
+      attempt: 0,
+      maxAttempts: 3,
+      retryAt: null,
+      retryReason: null,
+      failureClass: null,
+      lastWorkerId: null,
+      outcomeUnknown: false,
       requesterTag: input.requesterTag ?? null,
       ownerUserId: input.ownerUserId ?? null,
       ownerFriendCode: input.ownerFriendCode ?? null,
@@ -285,7 +161,7 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       updatedAt: now,
     });
     try {
-      await this.addBullmqJob(id, input.jobType);
+      await this.addBullmqJob(id, input.jobType, 0);
     } catch (err) {
       const message = `failed to enqueue sdgb BullMQ job: ${errorMessage(err)}`;
       await this.model.updateOne(
@@ -365,161 +241,11 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getAdminStatus(): Promise<SdgbAdminStatusView> {
-    const nowMs = Date.now();
-    const now = new Date(nowMs);
-    const oneHourAgo = new Date(nowMs - 60 * 60 * 1000);
-
-    const [
-      workers,
-      queueCounts,
-      byTypeCounts,
-      oldestQueued,
-      oldestProcessing,
-      recentJobs,
-    ] = await Promise.all([
-      this.getWorkerStatuses(),
-      Promise.all(
-        (
-          ['queued', 'processing', 'completed', 'failed'] as SdgbJobStatus[]
-        ).map(
-          async (status) =>
-            [status, await this.model.countDocuments({ status })] as const,
-        ),
-      ),
-      this.model
-        .aggregate<{
-          _id: { jobType: SdgbJobType; status: SdgbJobStatus };
-          count: number;
-        }>([
-          {
-            $match: {
-              jobType: { $in: SDGB_JOB_TYPES },
-              $or: [
-                { status: { $in: ['queued', 'processing'] } },
-                {
-                  status: { $in: ['completed', 'failed'] },
-                  updatedAt: { $gte: oneHourAgo },
-                },
-              ],
-            },
-          },
-          {
-            $group: {
-              _id: { jobType: '$jobType', status: '$status' },
-              count: { $sum: 1 },
-            },
-          },
-        ])
-        .exec(),
-      this.model
-        .findOne({ status: 'queued' })
-        .sort({ createdAt: 1 })
-        .lean<SdgbJobEntity>(),
-      this.model
-        .findOne({ status: 'processing' })
-        .sort({ claimedAt: 1, updatedAt: 1 })
-        .lean<SdgbJobEntity>(),
-      this.model
-        .find()
-        .sort({ updatedAt: -1 })
-        .limit(RECENT_JOB_LIMIT)
-        .lean<SdgbJobEntity[]>(),
-    ]);
-
-    const queue: Record<SdgbJobStatus, number> = {
-      queued: 0,
-      processing: 0,
-      completed: 0,
-      failed: 0,
-    };
-    for (const [status, count] of queueCounts) {
-      queue[status] = count;
-    }
-
-    const byType = SDGB_JOB_TYPES.map((jobType) => ({
-      jobType,
-      queued: 0,
-      processing: 0,
-      completedLastHour: 0,
-      failedLastHour: 0,
-    }));
-    const byTypeMap = new Map(byType.map((row) => [row.jobType, row]));
-    for (const row of byTypeCounts) {
-      const target = byTypeMap.get(row._id.jobType);
-      if (!target) {
-        continue;
-      }
-      if (row._id.status === 'queued') {
-        target.queued = row.count;
-      }
-      if (row._id.status === 'processing') {
-        target.processing = row.count;
-      }
-      if (row._id.status === 'completed') {
-        target.completedLastHour = row.count;
-      }
-      if (row._id.status === 'failed') {
-        target.failedLastHour = row.count;
-      }
-    }
-
-    return {
-      workers: workers.map((worker) => {
-        const lastSeenAt = new Date(worker.lastSeenAt);
-        const ageSeconds = secondsSince(lastSeenAt, nowMs) ?? 0;
-        return {
-          workerId: worker.workerId,
-          role: worker.role,
-          lanes: worker.lanes,
-          jobTypes: worker.jobTypes,
-          lastSeenAt: lastSeenAt.toISOString(),
-          ageSeconds,
-          jobsClaimed: worker.jobsClaimed,
-          alive: now.getTime() - lastSeenAt.getTime() <= WORKER_STALE_MS,
-        };
-      }),
-      queue,
-      byType,
-      oldestQueuedAgeSeconds: secondsSince(oldestQueued?.createdAt, nowMs),
-      oldestProcessingAgeSeconds: secondsSince(
-        oldestProcessing?.claimedAt ?? oldestProcessing?.updatedAt,
-        nowMs,
-      ),
-      recentJobs: recentJobs.map((job) => toAdminView(job, nowMs)),
-    };
+    return this.adminQueries.getStatus();
   }
 
   async listJobs(opts: SdgbJobListOptions): Promise<SdgbJobListView> {
-    const page = Math.max(1, opts.page);
-    const pageSize = Math.min(200, Math.max(1, opts.pageSize));
-    const filter: Record<string, unknown> = {};
-    if (opts.jobType) {
-      filter.jobType = opts.jobType;
-    }
-    if (opts.status) {
-      filter.status = opts.status;
-    }
-    if (opts.tag) {
-      filter.requesterTag = { $regex: escapeRegex(opts.tag), $options: 'i' };
-    }
-
-    const [total, docs] = await Promise.all([
-      this.model.countDocuments(filter),
-      this.model
-        .find(filter)
-        .sort({ updatedAt: -1 })
-        .skip((page - 1) * pageSize)
-        .limit(pageSize)
-        .lean<SdgbJobEntity[]>(),
-    ]);
-
-    const nowMs = Date.now();
-    return {
-      items: docs.map((job) => toAdminView(job, nowMs)),
-      total,
-      page,
-      pageSize,
-    };
+    return this.adminQueries.list(opts);
   }
 
   /**
@@ -527,21 +253,35 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
    * or failed) clears the executing flag. Anything else just patches result/
    * error/heartbeat-style updatedAt.
    */
-  // The patch surface intentionally mirrors the worker's compact state machine.
-  // eslint-disable-next-line complexity
+  async patchFromWorker(
+    jobId: string,
+    body: SdgbJobPatchBody,
+  ): Promise<SdgbJobView> {
+    const execution = requireExecution(body);
+    if (body.requeue) {
+      return this.requeueFromWorker(jobId, body, execution);
+    }
+    return this.patch(jobId, body, execution);
+  }
+
+  async assertWorkerExecution(
+    jobId: string,
+    body: SdgbJobPatchBody,
+  ): Promise<void> {
+    const execution = requireExecution(body);
+    const existing = await this.model
+      .findOne({ id: jobId })
+      .lean<SdgbJobEntity>();
+    if (!existing) {
+      throw new NotFoundException('Sdgb job not found');
+    }
+    await this.workerPatchFilter(jobId, existing, body, execution);
+  }
+
   async patch(
     jobId: string,
-    body: {
-      status?: SdgbJobStatus;
-      stage?: SdgbJobStage;
-      cleanupStatus?: SdgbSessionCleanupStatus;
-      cleanupErrorCode?: string | null;
-      cleanupBlockedUntil?: string | null;
-      progress?: { detailsFetched: number } | null;
-      result?: Record<string, unknown> | null;
-      error?: string | null;
-      errorCode?: string | null;
-    },
+    body: SdgbJobPatchBody,
+    execution?: WorkerExecutionGuard,
   ): Promise<SdgbJobView> {
     const now = new Date();
     const existing = await this.model
@@ -550,62 +290,18 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     if (!existing) {
       throw new NotFoundException('Sdgb job not found');
     }
-    const update: Record<string, unknown> = { updatedAt: now };
-    if (body.status !== undefined) {
-      update.status = body.status;
-    }
-    if (body.stage !== undefined) {
-      update.stage = body.stage;
-    }
-    if (body.cleanupStatus !== undefined) {
-      if (
-        existing.cleanupStatus === 'succeeded' &&
-        body.cleanupStatus !== 'succeeded'
-      ) {
-        throw new BadRequestException('cleanupStatus cannot leave succeeded');
-      }
-      update.cleanupStatus = body.cleanupStatus;
-      update.cleanupUpdatedAt = now;
-    }
-    if (body.cleanupErrorCode !== undefined) {
-      update.cleanupErrorCode = body.cleanupErrorCode;
-    }
-    if (body.cleanupBlockedUntil !== undefined) {
-      update.cleanupBlockedUntil = body.cleanupBlockedUntil
-        ? new Date(body.cleanupBlockedUntil)
-        : null;
-    }
-    if (body.progress !== undefined) {
-      update.progress = body.progress;
-    }
-    if (body.result !== undefined) {
-      update.result = body.result;
-    }
-    if (body.error !== undefined) {
-      update.error = body.error;
-    }
-    if (body.errorCode !== undefined) {
-      update.errorCode = body.errorCode;
-    }
-    if (body.status === 'processing') {
-      update.executing = true;
-      update.claimedAt = now;
-    }
-    if (body.status === 'completed' || body.status === 'failed') {
-      update.executing = false;
-    }
-
-    const shouldScrubQr =
-      existing.jobType === 'get_music_score' && body.status === 'failed';
-    const mongoUpdate: Record<string, unknown> = { $set: update };
-    if (shouldScrubQr) {
-      mongoUpdate.$unset = { 'payload.qrCode': 1 };
-    }
-    const doc = await this.model.findOneAndUpdate({ id: jobId }, mongoUpdate, {
+    const filter = await this.workerPatchFilter(
+      jobId,
+      existing,
+      body,
+      execution,
+    );
+    const mongoUpdate = buildSdgbMongoPatch(existing, body, execution, now);
+    const doc = await this.model.findOneAndUpdate(filter, mongoUpdate, {
       new: true,
     });
     if (!doc) {
-      throw new NotFoundException('Sdgb job not found');
+      throw new ConflictException('sdgb execution fence is no longer active');
     }
     const updated = doc.toObject() as SdgbJobEntity;
     if (body.status !== undefined && existing.status !== updated.status) {
@@ -614,7 +310,7 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
         jobId,
         jobKind: 'sdgb',
         jobType: updated.jobType,
-        eventName: getSdgbTimelineEventName(updated.status),
+        eventName: sdgbTimelineEventName(updated.status),
         fromStatus: existing.status,
         toStatus: updated.status,
         durationMs:
@@ -628,17 +324,181 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     return toView(updated);
   }
 
+  private async requeueFromWorker(
+    jobId: string,
+    body: SdgbJobPatchBody,
+    execution: WorkerExecutionGuard,
+  ): Promise<SdgbJobView> {
+    const existing = await this.model
+      .findOne({ id: jobId })
+      .lean<SdgbJobEntity>();
+    if (!existing) {
+      throw new NotFoundException('Sdgb job not found');
+    }
+    if (getSdgbWorkerLaneForJobType(existing.jobType) !== 'probe') {
+      throw new BadRequestException(
+        'only read-only Probe jobs may be automatically requeued',
+      );
+    }
+    const filter = await this.workerPatchFilter(
+      jobId,
+      existing,
+      body,
+      execution,
+    );
+    const retry = body.requeue;
+    if (!retry) {
+      throw new BadRequestException('requeue metadata is required');
+    }
+    const nextAttempt = (existing.attempt ?? 0) + 1;
+    const exhausted = nextAttempt >= (existing.maxAttempts ?? 3);
+    const now = new Date();
+    const retryAt = new Date(retry.retryAt);
+    const set: Record<string, unknown> = {
+      status: exhausted ? 'failed' : 'queued',
+      executing: false,
+      attempt: exhausted ? existing.attempt : nextAttempt,
+      retryAt: exhausted ? null : retryAt,
+      retryReason: retry.retryReason,
+      failureClass: retry.failureClass,
+      lastWorkerId: execution.executionWorkerId,
+      executionToken: null,
+      executionWorkerId: null,
+      executionMembershipEpoch: null,
+      executionNetworkEpoch: null,
+      error: retry.retryReason,
+      errorCode: exhausted ? 'RETRY_EXHAUSTED' : null,
+      updatedAt: now,
+    };
+    const doc = await this.model.findOneAndUpdate(
+      filter,
+      { $set: set },
+      { new: true },
+    );
+    if (!doc) {
+      throw new ConflictException('sdgb execution fence is no longer active');
+    }
+    const updated = doc.toObject() as SdgbJobEntity;
+    if (!exhausted) {
+      await this.addBullmqJob(
+        updated.id,
+        updated.jobType,
+        updated.attempt,
+        Math.max(0, retryAt.getTime() - Date.now()),
+      ).catch((error: unknown) => {
+        this.logger.warn(
+          'Failed to enqueue sdgb retry job=' +
+            updated.id +
+            ': ' +
+            errorMessage(error),
+        );
+      });
+    }
+    return toView(updated);
+  }
+
+  private async workerPatchFilter(
+    jobId: string,
+    existing: SdgbJobEntity,
+    body: SdgbJobPatchBody,
+    execution?: WorkerExecutionGuard,
+  ): Promise<Record<string, unknown>> {
+    if (!execution) {
+      return { id: jobId };
+    }
+    const lane = await this.assertExecutionMembership(existing, execution);
+    if (body.status === 'processing' && existing.status === 'queued') {
+      return {
+        id: jobId,
+        status: 'queued',
+        attempt: existing.attempt ?? 0,
+      };
+    }
+    const sameExecution =
+      existing.status === 'processing' &&
+      existing.executionToken === execution.executionToken &&
+      existing.executionWorkerId === execution.executionWorkerId &&
+      existing.executionMembershipEpoch ===
+        execution.executionMembershipEpoch &&
+      existing.executionNetworkEpoch === execution.executionNetworkEpoch;
+    if (
+      body.status === 'processing' &&
+      existing.status === 'processing' &&
+      !sameExecution
+    ) {
+      const oldMembershipActive =
+        existing.executionWorkerId !== null &&
+        existing.executionWorkerId !== undefined &&
+        existing.executionMembershipEpoch !== null &&
+        existing.executionMembershipEpoch !== undefined &&
+        (await this.registry.isMembershipActive(
+          lane,
+          existing.executionWorkerId,
+          existing.executionMembershipEpoch,
+          existing.executionNetworkEpoch ?? undefined,
+        ));
+      if (oldMembershipActive) {
+        throw new ConflictException(
+          'sdgb job is still fenced by an active membership',
+        );
+      }
+      return {
+        id: jobId,
+        status: 'processing',
+        executionToken: existing.executionToken,
+        executionWorkerId: existing.executionWorkerId,
+        executionMembershipEpoch: existing.executionMembershipEpoch,
+        executionNetworkEpoch: existing.executionNetworkEpoch,
+      };
+    }
+    if (existing.status !== 'processing' || !sameExecution) {
+      throw new ConflictException('sdgb execution fence is no longer active');
+    }
+    return {
+      id: jobId,
+      status: 'processing',
+      executionToken: execution.executionToken,
+      executionWorkerId: execution.executionWorkerId,
+      executionMembershipEpoch: execution.executionMembershipEpoch,
+      executionNetworkEpoch: execution.executionNetworkEpoch,
+    };
+  }
+
+  private async assertExecutionMembership(
+    existing: SdgbJobEntity,
+    execution: WorkerExecutionGuard,
+  ): Promise<SdgbWorkerLane> {
+    const lane = existing.lane ?? getSdgbWorkerLaneForJobType(existing.jobType);
+    if (
+      !(await this.registry.isMembershipActive(
+        lane,
+        execution.executionWorkerId,
+        execution.executionMembershipEpoch,
+        execution.executionNetworkEpoch,
+      ))
+    ) {
+      throw new ConflictException('sdgb worker membership is no longer active');
+    }
+    return lane;
+  }
+
   async completeMusicScoreFinalization(
     jobId: string,
     result: { syncId: string; scoreCount: number },
+    body: SdgbJobPatchBody,
   ): Promise<SdgbJobView> {
+    const execution = requireExecution(body);
     const now = new Date();
     const doc = await this.model.findOneAndUpdate(
       {
         id: jobId,
         jobType: 'get_music_score',
         cleanupStatus: 'succeeded',
-        status: { $nin: TERMINAL_STATUSES },
+        status: 'processing',
+        executionToken: execution.executionToken,
+        executionWorkerId: execution.executionWorkerId,
+        executionMembershipEpoch: execution.executionMembershipEpoch,
+        executionNetworkEpoch: execution.executionNetworkEpoch,
       },
       {
         $set: {
@@ -648,6 +508,11 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
           result,
           error: null,
           errorCode: null,
+          lastWorkerId: execution.executionWorkerId,
+          executionToken: null,
+          executionWorkerId: null,
+          executionMembershipEpoch: null,
+          executionNetworkEpoch: null,
           updatedAt: now,
         },
         $unset: { 'payload.qrCode': 1 },
@@ -664,15 +529,6 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       );
     }
     return toView(doc.toObject() as SdgbJobEntity);
-  }
-
-  async reportWorkerStatus(
-    workerId: string,
-    role: SdgbWorkerRole,
-    claimedDelta = 0,
-    seenAt: Date = new Date(),
-  ): Promise<void> {
-    await this.touchWorkerStatus(workerId, seenAt, claimedDelta, role);
   }
 
   /**
@@ -701,71 +557,31 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     throw new Error(`sdgb job ${jobId} timed out after ${timeoutMs}ms`);
   }
 
-  private async getWorkerStatuses(): Promise<SdgbWorkerStatus[]> {
-    const keys = await this.redis.keys(this.redis.key('status:worker:sdgb:*'));
-    const rows: SdgbWorkerStatus[] = [];
-    for (const key of keys) {
-      const status = await this.redis.getJson<SdgbWorkerStatus>(key);
-      if (
-        status?.workerId &&
-        status.lastSeenAt &&
-        isSdgbWorkerRole(status.role)
-      ) {
-        rows.push({
-          workerId: status.workerId,
-          role: status.role,
-          lanes: getSdgbWorkerLanesForRole(status.role),
-          jobTypes: getSdgbWorkerJobTypesForRole(status.role),
-          lastSeenAt: status.lastSeenAt,
-          jobsClaimed: status.jobsClaimed ?? 0,
-        });
-      }
-    }
-    return rows.sort(
-      (a, b) =>
-        new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime(),
-    );
-  }
-
-  private async touchWorkerStatus(
-    workerId: string,
-    seenAt: Date,
-    claimedDelta: number,
-    role: SdgbWorkerRole,
-  ): Promise<void> {
-    const key = this.workerStatusKey(workerId);
-    const previous = await this.redis.getJson<SdgbWorkerStatus>(key);
-    await this.redis.setJson(
-      key,
-      {
-        workerId,
-        role,
-        lanes: getSdgbWorkerLanesForRole(role),
-        jobTypes: getSdgbWorkerJobTypesForRole(role),
-        lastSeenAt: seenAt.toISOString(),
-        jobsClaimed: (previous?.jobsClaimed ?? 0) + claimedDelta,
-      },
-      { ttlSeconds: this.workerStatusTtlSeconds },
-    );
-  }
-
-  private workerStatusKey(workerId: string): string {
-    return this.redis.key(`status:worker:sdgb:${workerId}`);
-  }
-
   private async addBullmqJob(
     jobId: string,
     jobType: SdgbJobType,
+    attempt: number,
+    delay = 0,
   ): Promise<void> {
     const lane = getSdgbWorkerLaneForJobType(jobType);
     await this.sdgbQueues[lane].add(
       `sdgb-${lane}-job`,
-      { jobId },
+      { jobId, attempt },
       {
-        jobId,
+        jobId: this.deliveryJobId(jobId, attempt),
         priority: this.bullmqPriority(jobType),
+        ...(delay > 0 ? { delay } : {}),
       },
     );
+  }
+
+  private deliveryJobId(jobId: string, attempt: number): string {
+    return jobId + '~' + attempt;
+  }
+
+  private mongoJobIdFromDelivery(deliveryJobId: string): string {
+    const separator = deliveryJobId.lastIndexOf('~');
+    return separator > 0 ? deliveryJobId.slice(0, separator) : deliveryJobId;
   }
 
   private ensureSdgbQueueEvents(): void {
@@ -805,9 +621,10 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async markBullmqJobFailed(
-    jobId: string,
+    deliveryJobId: string,
     failedReason?: string,
   ): Promise<void> {
+    const jobId = this.mongoJobIdFromDelivery(deliveryJobId);
     await this.model.updateOne(
       { id: jobId, status: { $nin: TERMINAL_STATUSES } },
       {
@@ -841,13 +658,16 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       signal?.throwIfAborted();
       const targetLane = getSdgbWorkerLaneForJobType(job.jobType);
       const targetQueue = this.sdgbQueues[targetLane];
+      const deliveryJobId = this.deliveryJobId(job.id, job.attempt ?? 0);
       let activeMisplaced = false;
 
       for (const lane of SDGB_WORKER_LANES) {
         if (lane === targetLane) {
           continue;
         }
-        const misplaced = await this.sdgbQueues[lane].getJob(job.id);
+        const misplaced =
+          (await this.sdgbQueues[lane].getJob(deliveryJobId)) ??
+          (await this.sdgbQueues[lane].getJob(job.id));
         if (!misplaced) {
           continue;
         }
@@ -869,7 +689,9 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
 
-      const existing = await targetQueue.getJob(job.id);
+      const existing =
+        (await targetQueue.getJob(deliveryJobId)) ??
+        (await targetQueue.getJob(job.id));
       if (existing) {
         const state = await existing.getState();
         if (state !== 'failed' && state !== 'completed') {
@@ -879,7 +701,12 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       }
 
       try {
-        await this.addBullmqJob(job.id, job.jobType);
+        await this.addBullmqJob(
+          job.id,
+          job.jobType,
+          job.attempt ?? 0,
+          Math.max(0, (job.retryAt?.getTime() ?? Date.now()) - Date.now()),
+        );
         repaired += 1;
       } catch (err) {
         this.logger.warn(

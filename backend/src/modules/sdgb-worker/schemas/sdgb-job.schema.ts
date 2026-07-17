@@ -23,6 +23,14 @@ export type SdgbSessionCleanupStatus =
   | 'pending'
   | 'succeeded'
   | 'unconfirmed';
+export type SdgbWorkerLane = 'probe' | 'interactive';
+export type SdgbFailureClass =
+  | 'empty_response'
+  | 'network_error'
+  | 'timeout'
+  | 'invalid_response'
+  | 'outcome_unknown'
+  | 'membership_lost';
 
 /**
  * Cabinet (sdgb-protocol) jobs. Decoupled from the existing `jobs` collection
@@ -37,6 +45,12 @@ export class SdgbJobEntity {
 
   @Prop({ required: true, type: String, index: true })
   jobType!: SdgbJobType;
+
+  @Prop({ required: true, type: String, index: true })
+  lane!: SdgbWorkerLane;
+
+  @Prop({ required: true, type: Number, default: 1 })
+  routingVersion!: number;
 
   @Prop({ required: true, type: String, index: true })
   status!: SdgbJobStatus;
@@ -92,6 +106,39 @@ export class SdgbJobEntity {
   @Prop({ type: Date, default: null })
   claimedAt!: Date | null;
 
+  @Prop({ type: String, default: null })
+  executionToken!: string | null;
+
+  @Prop({ type: String, default: null, index: true })
+  executionWorkerId!: string | null;
+
+  @Prop({ type: Number, default: null })
+  executionMembershipEpoch!: number | null;
+
+  @Prop({ type: Number, default: null })
+  executionNetworkEpoch!: number | null;
+
+  @Prop({ type: Number, required: true, default: 0 })
+  attempt!: number;
+
+  @Prop({ type: Number, required: true, default: 3 })
+  maxAttempts!: number;
+
+  @Prop({ type: Date, default: null })
+  retryAt!: Date | null;
+
+  @Prop({ type: String, default: null })
+  retryReason!: string | null;
+
+  @Prop({ type: String, default: null })
+  failureClass!: SdgbFailureClass | null;
+
+  @Prop({ type: String, default: null })
+  lastWorkerId!: string | null;
+
+  @Prop({ type: Boolean, default: false })
+  outcomeUnknown!: boolean;
+
   /** Optional tag the producer can set so it can find back its own job. */
   @Prop({ type: String, default: null, index: true })
   requesterTag!: string | null;
@@ -117,6 +164,15 @@ SdgbJobSchema.index({ createdAt: 1 }, { expireAfterSeconds: 24 * 60 * 60 });
 // requesterTag_1 single-field indexes above can't serve the dispatcher
 // queries that combine them, leading to COLLSCAN on 49k+ rows.
 SdgbJobSchema.index({ status: 1, jobType: 1 }, { name: 'status_type' });
+SdgbJobSchema.index(
+  { status: 1, lane: 1, retryAt: 1, createdAt: 1 },
+  { name: 'status_lane_retry' },
+);
+SdgbJobSchema.index(
+  { executionWorkerId: 1, status: 1 },
+  { name: 'execution_worker_status' },
+);
+SdgbJobSchema.index({ lane: 1, createdAt: -1 }, { name: 'lane_created' });
 SdgbJobSchema.index(
   { jobType: 1, requesterTag: 1, createdAt: -1 },
   { name: 'by_requester' },

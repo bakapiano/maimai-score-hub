@@ -451,7 +451,8 @@ export default function SyncPage() {
   );
   const [qrText, setQrText] = useState("");
   const [syncing, setSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const [dxnetError, setDxnetError] = useState<string | null>(null);
+  const [cabinetError, setCabinetError] = useState<string | null>(null);
   const [dxnetStats, setDxnetStats] = useState<JobRecentStats | null>(null);
   const chainedFriendshipJobIdRef = useRef<string | null>(null);
 
@@ -613,11 +614,24 @@ export default function SyncPage() {
     };
   }, [syncMethod]);
 
+  const clearPreviousDxnetJob = useCallback(() => {
+    setDxnetError(null);
+    setSyncJobId(null);
+    setSyncStatus(null);
+  }, []);
+
+  const clearPreviousCabinetJob = useCallback(() => {
+    setCabinetError(null);
+    setCabinetJobId(null);
+    setCabinetStatus(null);
+  }, []);
+
   const startUpdateScoreJob = useCallback(
     async (friendshipJobId?: string) => {
       if (!token) {
         return;
       }
+      clearPreviousDxnetJob();
       const res = await createJob(
         {
           jobType: "update_score",
@@ -628,13 +642,14 @@ export default function SyncPage() {
       setSyncJobId(res.jobId);
       setSyncStatus(res.job);
     },
-    [token],
+    [clearPreviousDxnetJob, token],
   );
 
   const startFriendshipJob = useCallback(async () => {
     if (!token) {
       return;
     }
+    clearPreviousDxnetJob();
     notifications.show({
       title: "需要先成为好友",
       message: "Bot 将先发送好友申请，接受后会自动开始更新成绩",
@@ -643,17 +658,15 @@ export default function SyncPage() {
     const res = await createJob({ jobType: "send_friend_request" }, token);
     setSyncJobId(res.jobId);
     setSyncStatus(res.job);
-  }, [token]);
+  }, [clearPreviousDxnetJob, token]);
 
   const startCabinetSync = useCallback(
     async (payload: string | FormData) => {
       if (!token || !profile?.hasCabinetUserId) {
         return;
       }
+      clearPreviousCabinetJob();
       setSyncing(true);
-      setSyncError(null);
-      setCabinetStatus(null);
-      setSyncStatus(null);
       try {
         const created = await createCabinetScoreJob(payload, token);
         setCabinetJobId(created.jobId);
@@ -664,10 +677,10 @@ export default function SyncPage() {
         setSyncing(false);
         const message =
           error instanceof Error ? error.message : "二维码任务创建失败";
-        setSyncError(message);
+        setCabinetError(message);
       }
     },
-    [profile?.hasCabinetUserId, token],
+    [clearPreviousCabinetJob, profile?.hasCabinetUserId, token],
   );
 
   // Start sync
@@ -687,9 +700,8 @@ export default function SyncPage() {
       return;
     }
 
+    clearPreviousDxnetJob();
     setSyncing(true);
-    setSyncError(null);
-    setSyncStatus(null);
     chainedFriendshipJobIdRef.current = null;
     recordAnalyticsEvent("sync_started", {
       friendCode: profile.friendCode,
@@ -715,9 +727,10 @@ export default function SyncPage() {
       setSyncing(false);
       const errorMessage =
         finalError instanceof Error ? finalError.message : "未知错误";
-      setSyncError(`创建同步任务失败: ${errorMessage}`);
+      setDxnetError(`创建同步任务失败: ${errorMessage}`);
     }
   }, [
+    clearPreviousDxnetJob,
     profile,
     qrText,
     startCabinetSync,
@@ -729,13 +742,19 @@ export default function SyncPage() {
 
   // Poll job status
   useEffect(() => {
-    if (!syncJobId || !syncing || !token) {
+    if (
+      syncMethod !== "dxnet_bot" ||
+      !syncJobId ||
+      !syncing ||
+      !token
+    ) {
       return;
     }
 
     const interval = setInterval(async () => {
       try {
         const job = await getJobById(syncJobId, token);
+        setDxnetError(null);
         setSyncStatus(job);
 
         if (
@@ -756,7 +775,7 @@ export default function SyncPage() {
                 setSyncing(false);
                 const errorMessage =
                   error instanceof Error ? error.message : "未知错误";
-                setSyncError(`创建成绩更新任务失败: ${errorMessage}`);
+                setDxnetError(`创建成绩更新任务失败: ${errorMessage}`);
               }
               return;
             }
@@ -786,7 +805,7 @@ export default function SyncPage() {
           }
         }
       } catch {
-        setSyncError("轮询失败");
+        setDxnetError("轮询失败");
         return;
       }
     }, 1500);
@@ -794,6 +813,7 @@ export default function SyncPage() {
     return () => clearInterval(interval);
   }, [
     syncJobId,
+    syncMethod,
     syncing,
     token,
     loadProfile,
@@ -802,12 +822,18 @@ export default function SyncPage() {
   ]);
 
   useEffect(() => {
-    if (!cabinetJobId || !syncing || !token) {
+    if (
+      syncMethod !== "cabinet_qr" ||
+      !cabinetJobId ||
+      !syncing ||
+      !token
+    ) {
       return;
     }
     const interval = setInterval(async () => {
       try {
         const job = await getCabinetScoreJob(cabinetJobId, token);
+        setCabinetError(null);
         setCabinetStatus(job);
         const cleanupPending = job.cleanupStatus === "pending";
         if (job.status === "completed") {
@@ -829,12 +855,19 @@ export default function SyncPage() {
       } catch (error) {
         if (error instanceof CabinetScoreJobApiError && error.status === 404) {
           setSyncing(false);
-          setSyncError("二维码任务不存在或已过期");
+          setCabinetError("二维码任务不存在或已过期");
         }
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [cabinetJobId, syncing, token, loadProfile, loadLastSync]);
+  }, [
+    cabinetJobId,
+    syncing,
+    syncMethod,
+    token,
+    loadProfile,
+    loadLastSync,
+  ]);
 
   const verifySyncJob = async () => {
     if (!syncJobId || !token) {
@@ -1044,7 +1077,7 @@ export default function SyncPage() {
                           <Text fw={700} size="md">
                             {syncStatusView.label}
                           </Text>
-                          {(syncStatus || cabinetStatus) && (
+                          {effectiveSyncJobStatus && (
                             <Badge
                               variant="light"
                               color={syncStatusView.color}
@@ -1086,6 +1119,7 @@ export default function SyncPage() {
 
                 {syncMethod === "dxnet_bot" &&
                   progress &&
+                  syncStatus?.status === "processing" &&
                   syncStatus?.stage === "update_score" && (
                     <Stack gap="xs">
                       <Group justify="space-between" align="center">
@@ -1133,15 +1167,21 @@ export default function SyncPage() {
                     </Stack>
                   )}
 
-                {syncError && <Alert color="red">{syncError}</Alert>}
+                {syncMethod === "dxnet_bot" && dxnetError && (
+                  <Alert color="red">{dxnetError}</Alert>
+                )}
 
-                {syncStatus?.error && (
+                {syncMethod === "dxnet_bot" && syncStatus?.error && (
                   <Alert color="red" variant="light" title="错误" radius="md">
                     {syncStatus.error}
                   </Alert>
                 )}
 
-                {cabinetStatus?.error && (
+                {syncMethod === "cabinet_qr" && cabinetError && (
+                  <Alert color="red">{cabinetError}</Alert>
+                )}
+
+                {syncMethod === "cabinet_qr" && cabinetStatus?.error && (
                   <Alert color="red" variant="light" title="错误" radius="md">
                     {cabinetStatus.error.message}
                     {cabinetStatus.error.retryAfter

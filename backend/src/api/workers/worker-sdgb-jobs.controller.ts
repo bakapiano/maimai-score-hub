@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -10,14 +9,16 @@ import {
 } from '@nestjs/common';
 import {
   SdgbJobPatchBodySchema,
-  isSdgbWorkerRole,
+  SdgbWorkerHeartbeatSchema,
   type SdgbJobPatchBody,
+  type SdgbWorkerHeartbeat,
 } from '@maimai-score-hub/shared';
 
 import { SharedSecretGuard } from '../../common/guards/shared-secret.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { SdgbJobService } from '../../modules/sdgb-worker/services/sdgb-job.service';
 import { CabinetScoreSyncService } from '../../modules/cabinet-score-sync/cabinet-score-sync.service';
+import { SdgbWorkerRegistryService } from '../../modules/sdgb-worker/services/sdgb-worker-registry.service';
 
 /**
  * HTTP surface that the standalone sdgb-worker uses after BullMQ delivery. Guarded by
@@ -33,33 +34,15 @@ export class WorkerSdgbJobsController {
   constructor(
     private readonly jobs: SdgbJobService,
     private readonly cabinetScores: CabinetScoreSyncService,
+    private readonly registry: SdgbWorkerRegistryService,
   ) {}
 
   @Post('heartbeat')
   async heartbeat(
-    @Body()
-    body: {
-      workerId?: unknown;
-      claimedDelta?: unknown;
-      role?: unknown;
-    },
+    @Body(new ZodValidationPipe(SdgbWorkerHeartbeatSchema))
+    body: SdgbWorkerHeartbeat,
   ) {
-    if (typeof body.workerId !== 'string' || !body.workerId.trim()) {
-      throw new BadRequestException('sdgb worker heartbeat requires workerId');
-    }
-    const workerId = body.workerId.trim();
-    const claimedDelta =
-      typeof body.claimedDelta === 'number' &&
-      Number.isFinite(body.claimedDelta)
-        ? Math.max(0, Math.floor(body.claimedDelta))
-        : 0;
-    if (!isSdgbWorkerRole(body.role)) {
-      throw new BadRequestException(
-        'sdgb worker heartbeat requires role=probe|interactive|all',
-      );
-    }
-    await this.jobs.reportWorkerStatus(workerId, body.role, claimedDelta);
-    return { ok: true };
+    return this.registry.heartbeat(body);
   }
 
   @Get(':jobId')
