@@ -132,6 +132,8 @@ ClickHouse 保存：
 - analytics events，用于 DAU、功能使用、转化。
 - worker structured logs。
 - external API call metadata：DXNet、Diving Fish、LXNS、曲库/封面、远程素材；sdgb-worker 通过通用 worker endpoint 接入。
+- Prober Export 的业务游标/claim/result 仍以 Mongo `prober_export_states` 与
+  `prober_export_jobs` 为准；ClickHouse 只保存 attempt、version lag 和外部调用观测数据。
 - job timeline events。
 - 聚合后的 materialized views。
 

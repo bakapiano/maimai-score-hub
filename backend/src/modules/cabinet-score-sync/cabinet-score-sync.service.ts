@@ -12,7 +12,6 @@ import {
 } from '@maimai-score-hub/shared';
 
 import { RedisService } from '../../common/redis/redis.service';
-import { JobService } from '../job/services/job.service';
 import { ProberExportService } from '../prober-export/services/prober-export.service';
 import {
   SdgbJobService,
@@ -30,7 +29,6 @@ export class CabinetScoreSyncService {
   constructor(
     private readonly redis: RedisService,
     private readonly sdgbJobs: SdgbJobService,
-    private readonly dxnetJobs: JobService,
     private readonly users: UsersService,
     private readonly syncs: SyncService,
     private readonly proberExports: ProberExportService,
@@ -45,18 +43,13 @@ export class CabinetScoreSyncService {
       });
     }
 
-    return this.withCreateLock(user.friendCode, async () => {
-      const [cabinetActive, dxnetActive] = await Promise.all([
-        this.sdgbJobs.getActiveOwned(ownerUserId),
-        this.dxnetJobs.getActiveByFriendCode(user.friendCode),
-      ]);
-      if (cabinetActive || dxnetActive) {
+    return this.withCreateLock(user.friendCode, 'cabinet', async () => {
+      const cabinetActive = await this.sdgbJobs.getActiveOwned(ownerUserId);
+      if (cabinetActive) {
         const retryAfter = cabinetActive?.cleanupBlockedUntil ?? undefined;
         throw new ConflictException({
-          code: cabinetActive ? 'SESSION_CLEANUP_PENDING' : 'SYNC_IN_PROGRESS',
-          message: cabinetActive
-            ? '正在处理上一次二维码登录状态，请稍后再试'
-            : '已有成绩更新任务进行中',
+          code: 'SESSION_CLEANUP_PENDING',
+          message: '正在处理上一次二维码登录状态，请稍后再试',
           ...(retryAfter ? { retryAfter } : {}),
         });
       }
@@ -86,21 +79,14 @@ export class CabinetScoreSyncService {
     return { job: job ? this.toPublicJob(job) : null };
   }
 
-  async assertNoActiveCabinetJob(ownerUserId: string): Promise<void> {
-    const active = await this.sdgbJobs.getActiveOwned(ownerUserId);
-    if (active) {
-      throw new ConflictException({
-        code: 'SYNC_IN_PROGRESS',
-        message: '已有二维码成绩任务或登录状态清理进行中',
-      });
-    }
-  }
-
   async withCreateLock<T>(
     friendCode: string,
+    mode: 'dxnet' | 'cabinet',
     task: () => Promise<T>,
   ): Promise<T> {
-    const key = this.redis.key(`lock:manual-score-create:${friendCode}`);
+    const key = this.redis.key(
+      `lock:manual-score-create:${mode}:${friendCode}`,
+    );
     const token = randomUUID();
     if (!(await this.redis.setNx(key, token, CREATE_LOCK_TTL_MS))) {
       throw new ConflictException({
@@ -160,6 +146,7 @@ export class CabinetScoreSyncService {
         friendCode: job.ownerFriendCode,
         sourceId: jobId,
         musicDetails: result.musicDetails,
+        ownerUserId: job.ownerUserId,
       });
       if (!sync?.id) {
         return this.failFinalization(
@@ -177,16 +164,15 @@ export class CabinetScoreSyncService {
         },
         body,
       );
-      void this.proberExports
-        .enqueueAutoExportForSync({
-          trigger: 'cabinet_qr_update',
-          friendCode: job.ownerFriendCode,
-          syncId: sync.id,
-          sourceJobId: jobId,
-        })
-        .catch((err: Error) =>
-          this.logger.warn(`cabinet score auto-export failed: ${err.message}`),
-        );
+      if (sync.changedChartCount > 0) {
+        void this.proberExports
+          .ensureAutoExportWake(job.ownerFriendCode)
+          .catch((err: Error) =>
+            this.logger.warn(
+              `cabinet score auto-export wake failed: ${err.message}`,
+            ),
+          );
+      }
       return completed;
     } catch (err) {
       return this.failFinalization(

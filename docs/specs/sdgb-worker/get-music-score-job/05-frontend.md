@@ -35,7 +35,7 @@
 
 - 未登录用户不能创建任务。
 - 未绑定机台账号时禁用二维码方式，并引导用户先完成绑定。
-- 已有活动手动同步时禁用方式切换和重复提交。
+- 同模式 active 时禁用对应重复提交；另一个模式仍可选择和提交。
 - cleanup pending 或处于阻塞期的 unconfirmed 任务仍视为活动任务。
 - 二维码图片解析在 backend 完成，Frontend 不需要读取或展示二维码内容。
 
@@ -52,7 +52,8 @@
 7. cleanup pending 时继续轮询，即使业务 status 已为 failed。
 8. unconfirmed 时展示 retryAfter，并保持新建任务禁用。
 
-页面刷新时并行查询现有 DXNet 活动任务和 /me/cabinet-score-jobs/active。正常互斥下最多只有一个非空。
+页面刷新时并行查询现有 DXNet 活动任务和 `/me/cabinet-score-jobs/active`；两个结果都可能
+非空，必须分别恢复状态和轮询。
 
 ## 5. Stage 文案
 
@@ -76,7 +77,8 @@ progress.detailsFetched 存在时，可以显示“已读取 N 条成绩”。�
 - 展示写入的 scoreCount；
 - 刷新最新同步时间和成绩；
 - 清除活动任务状态；
-- 自动导出在后台独立进行。
+- 自动导出在后台独立进行；Frontend 读取 provider export state 的安全投影，不把二维码
+  job 是否完成等同于外部平台是否已经追上 current version。
 
 失败时：
 

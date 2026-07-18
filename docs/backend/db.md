@@ -1,6 +1,8 @@
 # DB 类型整理
 
-本文档整理 backend 当前由 Mongoose 管理的 MongoDB 类型。来源以 `backend/src/modules/**/*.schema.ts` 为准。
+本文档整理 backend 由 Mongoose 管理的 MongoDB 类型。Sync/Prober Export 小节已按
+[成绩更新目标规范](../specs/score-updates/README.md)更新；在对应代码 rollout 完成前，这两节
+描述目标 schema，其余小节仍以当前代码为准。
 
 ## 基础约定
 
@@ -15,10 +17,12 @@
 | Entity                       | Collection                                 | 模块          | 保留期    | 用途                                               |
 | ---------------------------- | ------------------------------------------ | ------------- | --------- | -------------------------------------------------- |
 | `UserEntity`                 | Mongoose 隐式集合名，通常为 `userentities` | users         | 永久      | 用户、密码登录、导入 token、机台绑定、自动更新开关 |
-| `SyncEntity`                 | `syncs`                                    | sync          | 永久      | 一次成绩同步结果                                   |
+| `SyncEntity`                 | `syncs`                                    | sync          | 永久      | 每用户唯一 current score 物化视图                  |
+| `ScoreChangeEntity`          | `score_changes`                            | sync          | 永久      | 功能上线后的单谱面 best-effort 成绩变化历史         |
 | `MusicEntity`                | `musics`                                   | music         | 永久      | 乐曲与谱面元数据                                   |
 | `JobEntity`                  | `jobs`                                     | job           | 7 天 TTL  | DXNet worker 任务                                  |
 | `ProberExportJobEntity`      | `prober_export_jobs`                       | prober-export | 永久      | Diving-Fish / LXNS 导出任务与结果                  |
+| `ProberExportStateEntity`    | `prober_export_states`                     | prober-export | 永久      | 每用户/provider 最后成功导出版本与执行 claim       |
 | `QrLoginAttemptEntity`       | `qr_login_attempts`                        | auth          | 1 天 TTL  | QR 登录异步尝试                                    |
 | `BotStatusEntity`            | `bot_statuses`                             | admin         | 永久      | DXNet bot 可用性和好友数                           |
 | `AutoUpdateRunEntity`        | `auto_update_runs`                         | auto-update   | 30 天 TTL | 自动更新 cron 每轮执行记录                         |
@@ -34,7 +38,9 @@
 | -------------------------------------- | ----------------------------------------- | --------------------------- |
 | `status:worker:sdgb:{workerId}`        | 约 `SDGB_WORKER_STALE_MS * 2`             | sdgb-worker 心跳和处理计数  |
 | `cache:job-temp:{jobId}:{diff}:{type}` | `JOB_TEMP_CACHE_TTL_SECONDS`，默认 1 小时 | `update_score` 中间结果缓存 |
-| `lock:manual-score-create:{friendCode}` | 10 秒 | DXNet/二维码手动同步创建互斥 |
+| `lock:manual-score-create:{mode}:{friendCode}` | 10 秒 | 同模式手动同步创建防重；DXNet/二维码不再交叉互斥 |
+| `lock:prober-export-user:{friendCodeHash}` | 90 秒，30 秒续期 | 同一用户自动/手动外部导出串行 lease |
+| `lock:prober-export-reconcile` | 约 90 秒，执行中续期 | 多 Backend 中只允许一个 reconciliation scanner 扫描版本差 |
 | `sdgb:session-lease:{jobId}` | 默认 30 分钟，活跃时续期 | `get_music_score` 登录状态 cleanup lease；用户/session 字段为 AES-256-GCM ciphertext |
 | `sdgb:session-lease:cleanup-lock:{jobId}` | 最多 60 秒 | 多 worker 崩溃恢复互斥与 fencing |
 
@@ -88,15 +94,19 @@ interface UserNetProfile {
 
 ### `SyncEntity`
 
-| 字段               | 类型                       | 约束 / 默认值           | 说明               |
-| ------------------ | -------------------------- | ----------------------- | ------------------ |
-| `id`               | `string`                   | required, unique, index | 同步记录 id        |
-| `jobId`            | `string`                   | required, index         | 来源 job id        |
-| `friendCode`       | `string`                   | required                | 用户好友码         |
-| `scores`           | `SyncScore[]`              | default `[]`            | 本次同步的成绩列表 |
-| `autoExportResult` | `AutoExportResult \| null` | default `null`          | 自动导出结果       |
-| `createdAt`        | `Date`                     | timestamps              | 创建时间           |
-| `updatedAt`        | `Date`                     | timestamps              | 更新时间           |
+| 字段               | 类型                       | 约束 / 默认值           | 说明                            |
+| ------------------ | -------------------------- | ----------------------- | ------------------------------- |
+| `id`               | `string`                   | required, unique, index | 稳定 canonical sync id          |
+| `friendCode`       | `string`                   | required, unique        | Phase 1 current sync 唯一键      |
+| `ownerUserId`      | `ObjectId \| null`        | optional, partial index | 后续用户 ID 迁移预留             |
+| `scores`           | `SyncScore[]`              | default `[]`            | current 完整成绩物化视图         |
+| `lastSourceType`   | `string \| null`          | default `null`          | 最近处理的成绩来源类型           |
+| `lastSourceId`     | `string \| null`          | default `null`          | 最近处理的来源 job/task id       |
+| `lastMergedAt`     | `Date \| null`            | default `null`          | 最近成功处理来源，包含 no-op      |
+| `scoreUpdatedAt`   | `Date \| null`            | default `null`          | scores 最近实际变化时间           |
+| `__v`              | `number`                   | Mongoose version key    | score CAS token                  |
+| `createdAt`        | `Date`                     | timestamps              | canonical 文档首次创建时间        |
+| `updatedAt`        | `Date`                     | timestamps              | 文档最近更新时间                  |
 
 嵌套类型：
 
@@ -114,51 +124,109 @@ type SyncScore = {
   isNew: boolean | null;
 };
 
-type AutoExportResult = {
-  divingFish?: { status: string; message?: string } | null;
-  lxns?: { status: string; message?: string } | null;
-};
 ```
 
 索引：
 
 - `id`：唯一索引。
-- `jobId`：单字段索引。
-- `{ friendCode: 1, createdAt: -1 }`，名称 `by_fc_recent`。
+- `friendCode`：唯一索引。
+- `{ friendCode: 1, __v: 1, id: 1 }`：export reconciliation 覆盖索引。
+- `ownerUserId`：ObjectId partial index；Phase 1 可非唯一。
 
-## Prober Export Jobs
+### `ScoreChangeEntity`
 
-来源：`backend/src/modules/prober-export/schemas/prober-export-job.schema.ts`
+来源：`backend/src/modules/sync/schemas/score-change.schema.ts`
 
-### `ProberExportJobEntity`
+每个文档只表示一次 winning CAS 中一个谱面的实际变化。写入是 best-effort；它不参与
+current sync 的正确性，也不承诺回填功能上线前的历史。
 
-| 字段           | 类型             | 约束 / 默认值           | 说明                                                                            |
-| -------------- | ---------------- | ----------------------- | ------------------------------------------------------------------------------- |
-| `id`           | `string`         | required, unique, index | 导出任务 id                                                                     |
-| `trigger`      | `string`         | required, index         | `dxnet_update_score` / `auto_update_rival` / `auto_update_fcfs` / `cabinet_qr_update` / `manual` |
-| `friendCode`   | `string`         | required, index         | 用户好友码                                                                      |
-| `syncId`       | `string`         | required, index         | 要导出的固定 sync 快照                                                          |
-| `sourceJobId`  | `string \| null` | default `null`          | 来源 DXNet 或 `get_music_score` job id                                          |
-| `sourceTaskId` | `string \| null` | default `null`          | 来源 auto-update task id                                                        |
-| `targets`      | `string[]`       | default `[]`            | `divingFish` / `lxns`                                                           |
-| `status`       | `string`         | required, index         | `queued` / `processing` / `completed` / `partial_failed` / `failed` / `skipped` |
-| `attempts`     | `number`         | default `0`             | worker claim 次数                                                               |
-| `result`       | `Object \| null` | default `null`          | 每个 provider 的完整导出结果                                                    |
-| `error`        | `string \| null` | default `null`          | job 级错误                                                                      |
-| `claimedAt`    | `Date \| null`   | default `null`          | worker claim 时间                                                               |
-| `completedAt`  | `Date \| null`   | default `null`          | 完成时间                                                                        |
-| `createdAt`    | `Date`           | timestamps              | 创建时间                                                                        |
-| `updatedAt`    | `Date`           | timestamps              | 更新时间                                                                        |
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id/changeSetId` | `string` | 单条稳定 id / 同一次 CAS 的变化集合 id |
+| `friendCode` | `string` | Phase 1 用户归属键；用户查询从 JWT 获取，不接受客户端传入 |
+| `ownerUserId` | `ObjectId \| null` | 可选用户引用 |
+| `observedAt` | `Date` | 后端观察并提交变化的时间 |
+| `sourceType/sourceId` | `string` | DXNet、Rival、Recent Event 或二维码来源及其幂等 id |
+| `syncId` | `string` | 稳定 current sync id |
+| `beforeScoreVersion/afterScoreVersion` | `number \| null` / `number` | winning CAS 前后版本 |
+| `musicId/chartIndex/type` | `string` / `number` / `string` | 谱面身份 |
+| `before/after` | `ScoreChangeValue` | achievement、DX Score、FC、FS、rating 的前后值 |
+| `changedFields` | `string[]` | 实际变化字段，首次出现包含 `newChart` |
+| `achievementDelta/dxScoreDelta/ratingDelta` | `number \| null` | 数值变化 |
+| `fcRankDelta/fsRankDelta` | `number \| null` | FC / FS 等级变化 |
+| `createdAt` | `Date` | 写入时间；没有 `updatedAt` |
 
 索引：
 
-- `id`：唯一索引。
-- `{ trigger: 1, sourceJobId: 1 }`：partial unique，防止同一来源 DXNet job 重复 enqueue。
-- `{ trigger: 1, sourceTaskId: 1 }`：partial unique，防止同一 auto-update task 重复 enqueue。
-- `{ syncId: 1, trigger: 1 }`。
-- `{ friendCode: 1, createdAt: -1 }`。
-- `{ status: 1, createdAt: 1 }`。
-- `{ status: 1, claimedAt: 1 }`。
+- `id` unique、`changeSetId`、`{ friendCode: 1, observedAt: -1 }`；
+- `{ friendCode: 1, musicId: 1, chartIndex: 1, type: 1, observedAt: -1, _id: -1 }`
+  支持当前用户单谱面游标时间线；
+- `{ ownerUserId: 1, observedAt: -1 }`；
+- `{ sourceType: 1, sourceId: 1, musicId: 1, chartIndex: 1 }` unique，保证重复投递幂等。
+
+## Prober Export States 与 Jobs
+
+目标来源：`backend/src/modules/prober-export/schemas/prober-export-state.schema.ts`、
+`prober-export-job.schema.ts`
+
+目标详细模型见
+[Diving-Fish / LXNS 成绩导出规范](../specs/prober-export/README.md)。
+
+### `ProberExportStateEntity`
+
+| 字段 | 类型 | 约束 / 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `friendCode` | `string` | required, unique | Phase 1 用户唯一键 |
+| `ownerUserId` | `ObjectId \| null` | optional | 后续迁移预留 |
+| `providers.divingFish` | `ProviderExportState` | required | 水鱼 enable、版本游标、退避、结果 |
+| `providers.lxns` | `ProviderExportState` | required | 落雪 enable、版本游标、退避、结果 |
+| `claimToken` | `string \| null` | default `null` | Mongo 执行 fencing token |
+| `claimUntil` | `Date \| null` | default `null`, index | claim 到期时间 |
+| `claimedBy` | `string \| null` | default `null` | Backend replica 标识 |
+| `heartbeatAt` | `Date \| null` | default `null` | claim 最近续期时间 |
+| `nextReconcileAt` | `Date \| null` | index | scanner 下次检查时间 |
+| `createdAt/updatedAt` | `Date` | timestamps | 时间戳 |
+
+`ProviderExportState` 包含：
+
+```ts
+{
+  enabled: boolean;
+  lastSuccessVersion: number | null;
+  lastAttemptVersion: number | null;
+  status: 'idle' | 'processing' | 'failed';
+  failureCount: number;
+  nextAttemptAt: Date | null;
+  error: string | null;
+  result: ProberExportProviderResult | null;
+  updatedAt: Date | null;
+}
+```
+
+### `ProberExportJobEntity`
+
+| 字段 | 类型 | 约束 / 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `string` | required, unique | 实际导出 attempt id |
+| `kind` | `auto \| manual` | required, index | 自动 attempt 或手动请求 |
+| `friendCode` | `string` | required, index | 用户好友码 |
+| `ownerUserId` | `ObjectId \| null` | optional | 后续迁移预留 |
+| `syncId` | `string` | required | 稳定 canonical sync id |
+| `requestedScoreVersion` | `number \| null` | default `null` | 创建/wake 观察版本 |
+| `exportedScoreVersion` | `number \| null` | default `null` | 实际上传版本 |
+| `targets` | `string[]` | default `[]` | `divingFish` / `lxns` |
+| `status` | `string` | required, index | queued/processing/completed/partial_failed/failed/skipped |
+| `attempts` | `number` | default `0` | 执行次数 |
+| `result` | `Object \| null` | default `null` | 每 provider 完整结果 |
+| `error` | `string \| null` | default `null` | 安全错误 |
+| `claimToken/claimedAt/completedAt` | mixed | nullable | attempt 执行审计 |
+| `createdAt/updatedAt` | `Date` | timestamps | 时间戳 |
+
+索引：
+
+- state：`friendCode` unique、`nextReconcileAt`、`claimUntil`。
+- jobs：`id` unique、`{ friendCode: 1, createdAt: -1 }`、
+  `{ kind: 1, status: 1, createdAt: 1 }`、`{ status: 1, claimedAt: 1 }`。
 
 ## Music
 

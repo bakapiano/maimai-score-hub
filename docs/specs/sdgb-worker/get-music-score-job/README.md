@@ -28,8 +28,11 @@ sdgb-worker 在本文中被视为受信任的内部黑盒。本文刻意不记�
 - 内部任务类型为 get_music_score，与现有 DXNet job 分开管理。
 - sdgb-worker 验证二维码归属并生成一次成绩快照；机台侧交互属于私有实现。
 - 临时登录状态必须安全结束。结束状态未确认时，不写入成绩，也不允许同一用户创建新的二维码成绩任务。
-- backend 将成绩快照映射到现有 sync 数据，成功后可沿用现有自动导出能力。
+- backend 将成绩快照作为 delta CAS 合并进 current sync；version 增加后由统一
+  Prober Export 对账/queue 执行链路处理自动导出。
 - 用户、Frontend、Admin 和普通日志只能看到脱敏后的任务状态与结果摘要。
+
+查分器状态机统一见 [Prober Export 规范](../../prober-export/README.md)。
 
 ## 2. 用户流程
 
@@ -39,7 +42,8 @@ sdgb-worker 在本文中被视为受信任的内部黑盒。本文刻意不记�
 4. Frontend 轮询脱敏后的任务状态。
 5. sdgb-worker 在内部安全边界内处理二维码并生成成绩快照。
 6. backend 校验任务归属和结果，写入最新 sync。
-7. Frontend 刷新最新成绩；如用户已配置查分器导出，则异步触发导出。
+7. Frontend 刷新最新成绩；如用户已配置查分器，per-user wake 与定期版本对账异步导出
+   execution-time latest。
 
 ## 3. 数据边界
 
@@ -60,9 +64,9 @@ sdgb-worker 在本文中被视为受信任的内部黑盒。本文刻意不记�
 
 - 字符串和图片两种二维码输入；
 - 登录用户的创建、活动任务查询和单任务查询；
-- 跨 DXNet/二维码方式的手动同步互斥；
+- DXNet/二维码独立任务状态与并行执行；二维码自身仍受 session cleanup fence 保护；
 - 任务状态、进度、清理状态和安全错误提示；
-- 成绩映射、sync 写入和可选自动导出；
+- 成绩映射、sync CAS 写入和统一 Prober Export 版本对账；
 - 中断恢复、清理阻塞、脱敏、监控和回归测试。
 
 本功能不包含：

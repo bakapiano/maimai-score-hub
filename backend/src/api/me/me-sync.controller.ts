@@ -47,7 +47,26 @@ export class MeSyncController {
   @Get('latest')
   async latest(@Req() req: AuthedRequest) {
     const friendCode = requireFriendCode(req);
-    return this.syncs.getLatestWithScores(friendCode);
+    const [sync, proberExportState] = await Promise.all([
+      this.syncs.getLatestWithScores(friendCode),
+      this.proberExports.getStateForUser(friendCode),
+    ]);
+    return {
+      ...sync,
+      proberExportState,
+      autoExportResult: proberExportState
+        ? {
+            divingFish: this.toLegacyExportMirror(
+              proberExportState.providers.divingFish,
+              sync.scoreVersion,
+            ),
+            lxns: this.toLegacyExportMirror(
+              proberExportState.providers.lxns,
+              sync.scoreVersion,
+            ),
+          }
+        : null,
+    };
   }
 
   @Post('latest/exports/diving-fish')
@@ -111,5 +130,29 @@ export class MeSyncController {
       Number.isFinite(limit) ? limit : 20,
     );
     return { items };
+  }
+
+  private toLegacyExportMirror(
+    provider: {
+      enabled: boolean;
+      lastSuccessVersion: number | null;
+      status: 'idle' | 'processing' | 'failed';
+      error: string | null;
+    },
+    currentScoreVersion: number,
+  ) {
+    if (!provider.enabled) {
+      return null;
+    }
+    if (provider.status === 'failed') {
+      return { status: 'failed', message: provider.error ?? undefined };
+    }
+    if (provider.status === 'processing') {
+      return { status: 'processing' };
+    }
+    return provider.lastSuccessVersion === null ||
+      provider.lastSuccessVersion < currentScoreVersion
+      ? { status: 'pending' }
+      : { status: 'success' };
   }
 }

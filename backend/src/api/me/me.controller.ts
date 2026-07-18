@@ -33,6 +33,8 @@ import { CabinetService } from '../../modules/users/services/cabinet.service';
 import { UsersService } from '../../modules/users/services/users.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { getImportToken } from '../../common/prober/diving-fish/api';
+import { ProberExportService } from '../../modules/prober-export/services/prober-export.service';
+import type { ProberExportProvider } from '../../modules/prober-export/schemas/prober-export-job.schema';
 
 type AuthedRequest = Request & { userId?: string };
 
@@ -71,6 +73,7 @@ export class MeController {
     private readonly users: UsersService,
     private readonly cabinet: CabinetService,
     private readonly accountDeletion: AccountDeletionService,
+    private readonly proberExports: ProberExportService,
   ) {}
 
   @Get()
@@ -116,6 +119,20 @@ export class MeController {
 
     await this.users.update(userId, updateInput);
     const updated = await this.users.getByIdWithPasswordHash(userId);
+    const resetProviders: ProberExportProvider[] = [];
+    if (body.divingFishImportToken !== undefined) {
+      resetProviders.push('divingFish');
+    }
+    if (body.lxnsImportToken !== undefined) {
+      resetProviders.push('lxns');
+    }
+    if (resetProviders.length) {
+      await this.proberExports.updateProviderConfiguration({
+        friendCode: updated.friendCode,
+        ownerUserId: userId,
+        resetProviders,
+      });
+    }
     return toSafeProfile(updated as unknown as Record<string, unknown>);
   }
 

@@ -148,6 +148,7 @@ export const usersContract = c.router({
         deleted: {
           user: number;
           syncs: number;
+          scoreChanges: number;
           jobs: number;
           passkeys: number;
         };

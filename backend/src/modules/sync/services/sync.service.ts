@@ -1,11 +1,13 @@
+/* eslint-disable max-lines */
 import {
   BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import type { Model } from 'mongoose';
+import { Types, type Model } from 'mongoose';
 import { randomUUID } from 'crypto';
 
 import { MusicEntity } from '../../music/schemas/music.schema';
@@ -15,6 +17,13 @@ import type {
 } from '../../music/schemas/music.schema';
 import { SyncEntity } from '../schemas/sync.schema';
 import type { SyncDocument, SyncScore } from '../schemas/sync.schema';
+import {
+  ScoreChangeEntity,
+  type ScoreChangeField,
+  type ScoreChangeSourceType,
+  type ScoreChangeValue,
+} from '../schemas/score-change.schema';
+import type { ScoreChangeDocument } from '../schemas/score-change.schema';
 import { getRating, normalizeAchievement } from '../../../common/rating';
 import { convertSyncScoresToDivingFishRecords } from '../../../common/prober/diving-fish/converter';
 import { uploadRecords as uploadDivingFishRecords } from '../../../common/prober/diving-fish/api';
@@ -38,10 +47,40 @@ type MusicRow = MusicEntity & {
 };
 
 type ScoreSnapshot = SyncScore;
+type CurrentSync = SyncEntity & { _id: Types.ObjectId; __v: number };
+type ScoreCommitOutcome = 'created' | 'updated' | 'no_change';
+type ScoreChangeDraft = {
+  musicId: string;
+  chartIndex: number;
+  type: string;
+  before: ScoreChangeValue;
+  after: ScoreChangeValue;
+  changedFields: ScoreChangeField[];
+  achievementDelta: number | null;
+  dxScoreDelta: number | null;
+  ratingDelta: number | null;
+  fcRankDelta: number | null;
+  fsRankDelta: number | null;
+};
+type ScoreCommitBuild<T> = { delta: ScoreSnapshot[]; meta: T };
+type ScoreCommitResult<T> = {
+  sync: CurrentSync | null;
+  outcome: ScoreCommitOutcome;
+  changedChartCount: number;
+  beforeScoreVersion: number | null;
+  afterScoreVersion: number | null;
+  meta: T;
+};
 type SyncForExport = {
   id: string;
   friendCode: string;
   scores?: SyncScore[];
+};
+export type CurrentExportSnapshot = {
+  syncId: string;
+  friendCode: string;
+  scoreVersion: number;
+  scores: SyncScore[];
 };
 type MusicCache = {
   at: number;
@@ -122,12 +161,14 @@ function mergeScoreKeepBest(
   old: ScoreSnapshot,
   fresh: ScoreSnapshot,
 ): ScoreSnapshot {
+  const score = pickHigherNumeric(old.score, fresh.score);
   return {
     ...fresh,
     dxScore: pickHigherNumeric(old.dxScore, fresh.dxScore),
-    score: pickHigherNumeric(old.score, fresh.score),
+    score,
     fc: pickHigher(FC_RANK, old.fc, fresh.fc),
     fs: pickHigher(FS_RANK, old.fs, fresh.fs),
+    rating: score === fresh.score ? fresh.rating : old.rating,
   };
 }
 
@@ -139,6 +180,8 @@ export class SyncService {
   constructor(
     @InjectModel(SyncEntity.name)
     private readonly syncModel: Model<SyncDocument>,
+    @InjectModel(ScoreChangeEntity.name)
+    private readonly scoreChangeModel: Model<ScoreChangeDocument>,
     @InjectModel(MusicEntity.name)
     private readonly musicModel: Model<MusicDocument>,
     private readonly proberExportMap: ProberExportMapService,
@@ -152,36 +195,27 @@ export class SyncService {
       return null;
     }
 
-    const syncId = randomUUID();
-    const newScores = await this.mapResultToScores(job.result);
-    if (!newScores.length) {
+    const delta = await this.mapResultToScores(job.result);
+    if (!delta.length) {
       this.logger.warn(
         `No scores mapped for job ${job.id}; skipping sync write.`,
       );
       return null;
     }
 
-    // Merge with previous sync's scores instead of overwriting wholesale.
-    // A job may scrape only a subset of difficulties (default skips
-    // BASIC/ADVANCED/宴会 unless the user opts in to "full sync"), so
-    // wholesale replacement would cause those untouched difficulties to
-    // disappear from /api/me/sync/latest. Key by (musicId, chartIndex);
-    // for overlapping charts, take per-field max (achievement, dxScore,
-    // fc rank, fs rank) — never let an old high score get clobbered by
-    // a fresher lower one (re-attempt that didn't beat the PB).
-    const previous = await this.syncModel
-      .findOne({ friendCode: job.friendCode })
-      .sort({ createdAt: -1 })
-      .lean();
-    const scores = this.mergeWithPrevious(previous?.scores, newScores);
-    const sync = await this.replaceLatestSync({
-      id: syncId,
-      jobId: job.id,
+    const committed = await this.commitScoreDelta({
       friendCode: job.friendCode,
-      scores,
+      sourceType: 'dxnet_update_score',
+      sourceId: job.id,
+      buildDelta: () => ({ delta, meta: null }),
     });
-
-    return sync.toObject();
+    return committed.sync
+      ? {
+          ...committed.sync,
+          commitOutcome: committed.outcome,
+          changedChartCount: committed.changedChartCount,
+        }
+      : null;
   }
 
   async createFromRivalMusic(input: {
@@ -189,61 +223,57 @@ export class SyncService {
     sourceId: string;
     music: SdgbWorkerMusicEntry[];
   }) {
-    const syncId = randomUUID();
-    const newScores = await this.mapRivalMusicToScores(input.music);
-    if (!newScores.length) {
+    const delta = await this.mapRivalMusicToScores(input.music);
+    if (!delta.length) {
       this.logger.warn(
         `No scores mapped for rival source ${input.sourceId}; skipping sync write.`,
       );
       return null;
     }
 
-    const previous = await this.syncModel
-      .findOne({ friendCode: input.friendCode })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const merged = this.mergeWithPrevious(previous?.scores, newScores);
-    const sync = await this.replaceLatestSync({
-      id: syncId,
-      jobId: input.sourceId,
+    const committed = await this.commitScoreDelta({
       friendCode: input.friendCode,
-      scores: merged,
+      sourceType: 'auto_update_rival',
+      sourceId: input.sourceId,
+      buildDelta: () => ({ delta, meta: null }),
     });
-
-    return sync.toObject();
+    return committed.sync
+      ? {
+          ...committed.sync,
+          commitOutcome: committed.outcome,
+          changedChartCount: committed.changedChartCount,
+        }
+      : null;
   }
 
   async createFromUserMusic(input: {
     friendCode: string;
     sourceId: string;
     musicDetails: SdgbWorkerUserMusicDetail[];
+    ownerUserId?: string | null;
   }) {
-    const existing = await this.syncModel.findOne({ jobId: input.sourceId });
-    if (existing) {
-      return existing.toObject();
-    }
-
-    const newScores = await this.mapUserMusicToScores(input.musicDetails);
-    if (!newScores.length) {
+    const delta = await this.mapUserMusicToScores(input.musicDetails);
+    if (!delta.length) {
       this.logger.warn(
         `No scores mapped for user-music source ${input.sourceId}; skipping sync write.`,
       );
       return null;
     }
 
-    const previous = await this.syncModel
-      .findOne({ friendCode: input.friendCode })
-      .sort({ createdAt: -1 })
-      .lean();
-    const merged = this.mergeWithPrevious(previous?.scores, newScores);
-    const sync = await this.replaceLatestSync({
-      id: randomUUID(),
-      jobId: input.sourceId,
+    const committed = await this.commitScoreDelta({
       friendCode: input.friendCode,
-      scores: merged,
+      ownerUserId: input.ownerUserId,
+      sourceType: 'cabinet_qr_update',
+      sourceId: input.sourceId,
+      buildDelta: () => ({ delta, meta: null }),
     });
-    return sync.toObject();
+    return committed.sync
+      ? {
+          ...committed.sync,
+          commitOutcome: committed.outcome,
+          changedChartCount: committed.changedChartCount,
+        }
+      : null;
   }
 
   async mergeRecentEvents(input: {
@@ -256,26 +286,197 @@ export class SyncService {
     updatedCount: number;
     syncId: string | null;
   }> {
-    const events = input.events;
-    const previous = await this.syncModel
-      .findOne({ friendCode: input.friendCode })
-      .sort({ createdAt: -1 })
-      .lean();
-    const previousScores: ScoreSnapshot[] = Array.isArray(previous?.scores)
-      ? [...previous.scores]
-      : [];
-    if (!previousScores.length) {
+    const committed = await this.commitScoreDelta({
+      friendCode: input.friendCode,
+      sourceType: 'auto_update_fcfs',
+      sourceId: input.sourceId,
+      buildDelta: (currentScores) =>
+        this.buildRecentEventDelta(currentScores, input.events),
+    });
+
+    return {
+      ...committed.meta,
+      syncId: committed.sync?.id ?? null,
+    };
+  }
+
+  // Keep the read/build/CAS/retry sequence contiguous; splitting it makes it
+  // too easy for a caller to accidentally reuse a stale merge after conflict.
+  // eslint-disable-next-line max-lines-per-function
+  private async commitScoreDelta<T>(input: {
+    friendCode: string;
+    ownerUserId?: string | null;
+    sourceType: ScoreChangeSourceType;
+    sourceId: string;
+    buildDelta: (
+      currentScores: readonly SyncScore[],
+    ) => ScoreCommitBuild<T> | Promise<ScoreCommitBuild<T>>;
+  }): Promise<ScoreCommitResult<T>> {
+    const ownerUserId = this.toOwnerUserId(input.ownerUserId);
+
+    for (let attempt = 1; attempt <= 8; attempt++) {
+      const current = await this.syncModel
+        .findOne({ friendCode: input.friendCode })
+        .lean<CurrentSync | null>();
+      const built = await input.buildDelta(current?.scores ?? []);
+      const merged = this.mergeWithPrevious(current?.scores, built.delta);
+      const observedAt = new Date();
+
+      if (!current) {
+        if (!merged.length) {
+          return {
+            sync: null,
+            outcome: 'no_change',
+            changedChartCount: 0,
+            beforeScoreVersion: null,
+            afterScoreVersion: null,
+            meta: built.meta,
+          };
+        }
+
+        try {
+          const created = await this.syncModel.create({
+            id: randomUUID(),
+            friendCode: input.friendCode,
+            ownerUserId: ownerUserId ?? null,
+            jobId: input.sourceId,
+            scores: merged,
+            lastSourceType: input.sourceType,
+            lastSourceId: input.sourceId,
+            lastMergedAt: observedAt,
+            scoreUpdatedAt: observedAt,
+          });
+          const sync = created.toObject() as CurrentSync;
+          sync.__v = Number.isFinite(sync.__v) ? sync.__v : 0;
+          const changes = this.diffScores([], merged);
+          await this.recordScoreChangesBestEffort({
+            sync,
+            ownerUserId: ownerUserId ?? null,
+            sourceType: input.sourceType,
+            sourceId: input.sourceId,
+            beforeScoreVersion: null,
+            afterScoreVersion: sync.__v,
+            observedAt,
+            changes,
+          });
+          return {
+            sync,
+            outcome: 'created',
+            changedChartCount: changes.length,
+            beforeScoreVersion: null,
+            afterScoreVersion: sync.__v,
+            meta: built.meta,
+          };
+        } catch (error) {
+          if (this.isDuplicateKey(error)) {
+            await this.waitForCommitRetry(attempt);
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      this.assertMonotonic(current.scores ?? [], merged);
+      const changes = this.diffScores(current.scores ?? [], merged);
+      const commonSet: Record<string, unknown> = {
+        jobId: input.sourceId,
+        lastSourceType: input.sourceType,
+        lastSourceId: input.sourceId,
+        lastMergedAt: observedAt,
+      };
+      if (ownerUserId) {
+        commonSet.ownerUserId = ownerUserId;
+      }
+
+      if (!changes.length) {
+        const touched = await this.syncModel
+          .findOneAndUpdate(
+            { _id: current._id, __v: current.__v },
+            { $set: commonSet },
+            { new: true, runValidators: true },
+          )
+          .lean<CurrentSync | null>();
+        if (touched) {
+          return {
+            sync: touched,
+            outcome: 'no_change',
+            changedChartCount: 0,
+            beforeScoreVersion: current.__v,
+            afterScoreVersion: touched.__v,
+            meta: built.meta,
+          };
+        }
+        await this.waitForCommitRetry(attempt);
+        continue;
+      }
+
+      const updated = await this.syncModel
+        .findOneAndUpdate(
+          { _id: current._id, __v: current.__v },
+          {
+            $set: {
+              ...commonSet,
+              scores: merged,
+              scoreUpdatedAt: observedAt,
+            },
+            $inc: { __v: 1 },
+          },
+          { new: true, runValidators: true },
+        )
+        .lean<CurrentSync | null>();
+      if (!updated) {
+        await this.waitForCommitRetry(attempt);
+        continue;
+      }
+
+      await this.recordScoreChangesBestEffort({
+        sync: updated,
+        ownerUserId: ownerUserId ?? updated.ownerUserId ?? null,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        beforeScoreVersion: current.__v,
+        afterScoreVersion: updated.__v,
+        observedAt,
+        changes,
+      });
       return {
-        eventCount: input.events.length,
-        matchedCount: 0,
-        updatedCount: 0,
-        syncId: null,
+        sync: updated,
+        outcome: 'updated',
+        changedChartCount: changes.length,
+        beforeScoreVersion: current.__v,
+        afterScoreVersion: updated.__v,
+        meta: built.meta,
+      };
+    }
+
+    throw new ServiceUnavailableException({
+      code: 'SYNC_COMMIT_CONTENTION',
+      message: '成绩正在被其他任务更新，请稍后重试',
+    });
+  }
+
+  private async buildRecentEventDelta(
+    currentScores: readonly SyncScore[],
+    events: RecentFcFsEvent[],
+  ): Promise<
+    ScoreCommitBuild<{
+      eventCount: number;
+      matchedCount: number;
+      updatedCount: number;
+    }>
+  > {
+    if (!currentScores.length) {
+      return {
+        delta: [],
+        meta: { eventCount: events.length, matchedCount: 0, updatedCount: 0 },
       };
     }
 
     const { byTitle } = await this.getMusicCache();
+    const delta: ScoreSnapshot[] = [];
     let matchedCount = 0;
     let updatedCount = 0;
+
     for (const event of events) {
       const songName =
         typeof event.songName === 'string' ? event.songName.trim() : '';
@@ -289,66 +490,47 @@ export class SyncService {
       }
 
       const candidates = byTitle.get(songName) ?? [];
-      const candidateIds = new Set(candidates.map((m) => m.id));
+      const candidateIds = new Set(candidates.map((music) => music.id));
       if (!candidateIds.size) {
         continue;
       }
 
-      const matches = previousScores.filter(
+      const matches = currentScores.filter(
         (score) =>
           score.chartIndex === chartIndex && candidateIds.has(score.musicId),
       );
       if (matches.length !== 1) {
         continue;
       }
-      const score = matches[0];
 
+      const current = matches[0];
       matchedCount++;
-      const nextFc =
+      const fc =
         typeof event.fc === 'string'
-          ? pickHigher(FC_RANK, score.fc, event.fc)
-          : score.fc;
-      const nextFs =
+          ? pickHigher(FC_RANK, current.fc, event.fc)
+          : current.fc;
+      const fs =
         typeof event.fs === 'string'
-          ? pickHigher(FS_RANK, score.fs, event.fs)
-          : score.fs;
-      if (nextFc !== score.fc || nextFs !== score.fs) {
-        score.fc = nextFc;
-        score.fs = nextFs;
-        updatedCount++;
+          ? pickHigher(FS_RANK, current.fs, event.fs)
+          : current.fs;
+      if (fc === current.fc && fs === current.fs) {
+        continue;
       }
-    }
 
-    if (updatedCount === 0) {
-      return {
-        eventCount: events.length,
-        matchedCount,
-        updatedCount,
-        syncId: previous?.id ?? null,
-      };
+      updatedCount++;
+      delta.push({ ...current, fc, fs });
     }
-
-    const syncId = randomUUID();
-    const sync = await this.replaceLatestSync({
-      id: syncId,
-      jobId: input.sourceId,
-      friendCode: input.friendCode,
-      scores: previousScores,
-    });
 
     return {
-      eventCount: events.length,
-      matchedCount,
-      updatedCount,
-      syncId: (sync.toObject() as SyncEntity).id,
+      delta,
+      meta: { eventCount: events.length, matchedCount, updatedCount },
     };
   }
 
   async getLatestWithScores(friendCode: string) {
     const sync = await this.syncModel
       .findOne({ friendCode })
-      .sort({ createdAt: -1 })
-      .lean();
+      .lean<CurrentSync | null>();
 
     if (!sync) {
       throw new NotFoundException('No sync found');
@@ -368,8 +550,10 @@ export class SyncService {
       id: sync.id,
       createdAt: sync.createdAt,
       updatedAt: sync.updatedAt,
+      lastMergedAt: sync.lastMergedAt ?? sync.updatedAt ?? sync.createdAt,
+      scoreUpdatedAt: sync.scoreUpdatedAt ?? sync.updatedAt ?? sync.createdAt,
+      scoreVersion: sync.__v ?? 0,
       scores,
-      autoExportResult: sync.autoExportResult ?? null,
     };
   }
 
@@ -389,7 +573,6 @@ export class SyncService {
   async getLatestSyncId(friendCode: string): Promise<string> {
     const sync = await this.syncModel
       .findOne({ friendCode })
-      .sort({ createdAt: -1 })
       .select({ id: 1 })
       .lean<{ id: string } | null>();
     if (!sync) {
@@ -416,14 +599,235 @@ export class SyncService {
     return [...merged.values()];
   }
 
-  private async replaceLatestSync(input: {
-    id: string;
-    jobId: string;
-    friendCode: string;
-    scores: ScoreSnapshot[];
-  }) {
-    await this.syncModel.deleteMany({ friendCode: input.friendCode });
-    return this.syncModel.create(input);
+  private diffScores(
+    beforeScores: readonly SyncScore[],
+    afterScores: readonly SyncScore[],
+  ): ScoreChangeDraft[] {
+    const before = new Map(
+      beforeScores.map((score) => [this.scoreKey(score), score] as const),
+    );
+    const changes: ScoreChangeDraft[] = [];
+
+    for (const after of afterScores) {
+      const previous = before.get(this.scoreKey(after));
+      const changedFields: ScoreChangeField[] = [];
+      if (!previous) {
+        changedFields.push('newChart');
+        if (after.score !== null) {
+          changedFields.push('score');
+        }
+        if (after.dxScore !== null) {
+          changedFields.push('dxScore');
+        }
+        if (after.fc !== null) {
+          changedFields.push('fc');
+        }
+        if (after.fs !== null) {
+          changedFields.push('fs');
+        }
+        if (after.rating !== null) {
+          changedFields.push('rating');
+        }
+      } else {
+        if (previous.score !== after.score) {
+          changedFields.push('score');
+        }
+        if (previous.dxScore !== after.dxScore) {
+          changedFields.push('dxScore');
+        }
+        if (previous.fc !== after.fc) {
+          changedFields.push('fc');
+        }
+        if (previous.fs !== after.fs) {
+          changedFields.push('fs');
+        }
+        if (previous.rating !== after.rating) {
+          changedFields.push('rating');
+        }
+      }
+      if (!changedFields.length) {
+        continue;
+      }
+
+      changes.push({
+        musicId: after.musicId,
+        chartIndex: after.chartIndex,
+        type: after.type,
+        before: this.toScoreChangeValue(previous),
+        after: this.toScoreChangeValue(after),
+        changedFields,
+        achievementDelta: this.numericDelta(previous?.score, after.score),
+        dxScoreDelta: this.numericDelta(previous?.dxScore, after.dxScore),
+        ratingDelta: this.numberDelta(previous?.rating, after.rating),
+        fcRankDelta: this.rankDelta(FC_RANK, previous?.fc, after.fc),
+        fsRankDelta: this.rankDelta(FS_RANK, previous?.fs, after.fs),
+      });
+    }
+    return changes;
+  }
+
+  private assertMonotonic(
+    beforeScores: readonly SyncScore[],
+    afterScores: readonly SyncScore[],
+  ): void {
+    const after = new Map(
+      afterScores.map((score) => [this.scoreKey(score), score] as const),
+    );
+    for (const previous of beforeScores) {
+      const next = after.get(this.scoreKey(previous));
+      if (!next) {
+        throw new Error(`score merge removed chart ${this.scoreKey(previous)}`);
+      }
+      if (
+        numScore(next.score) < numScore(previous.score) ||
+        numScore(next.dxScore) < numScore(previous.dxScore) ||
+        rankIdx(FC_RANK, next.fc) < rankIdx(FC_RANK, previous.fc) ||
+        rankIdx(FS_RANK, next.fs) < rankIdx(FS_RANK, previous.fs)
+      ) {
+        throw new Error(
+          `score merge regressed chart ${this.scoreKey(previous)}`,
+        );
+      }
+    }
+  }
+
+  private async recordScoreChangesBestEffort(input: {
+    sync: CurrentSync;
+    ownerUserId: Types.ObjectId | null;
+    sourceType: ScoreChangeSourceType;
+    sourceId: string;
+    beforeScoreVersion: number | null;
+    afterScoreVersion: number;
+    observedAt: Date;
+    changes: ScoreChangeDraft[];
+  }): Promise<void> {
+    if (!input.changes.length) {
+      return;
+    }
+    const changeSetId = randomUUID();
+
+    try {
+      for (let offset = 0; offset < input.changes.length; offset += 500) {
+        const batch = input.changes.slice(offset, offset + 500);
+        await this.scoreChangeModel.bulkWrite(
+          batch.map((change) => ({
+            updateOne: {
+              filter: {
+                sourceType: input.sourceType,
+                sourceId: input.sourceId,
+                musicId: change.musicId,
+                chartIndex: change.chartIndex,
+              },
+              update: {
+                $setOnInsert: {
+                  id: randomUUID(),
+                  changeSetId,
+                  friendCode: input.sync.friendCode,
+                  ownerUserId: input.ownerUserId,
+                  observedAt: input.observedAt,
+                  sourceType: input.sourceType,
+                  sourceId: input.sourceId,
+                  syncId: input.sync.id,
+                  beforeScoreVersion: input.beforeScoreVersion,
+                  afterScoreVersion: input.afterScoreVersion,
+                  ...change,
+                  createdAt: input.observedAt,
+                },
+              },
+              upsert: true,
+            },
+          })),
+          { ordered: false },
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `best-effort score diff write failed source=${input.sourceType}/${input.sourceId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private scoreKey(score: Pick<SyncScore, 'musicId' | 'chartIndex'>): string {
+    return `${score.musicId}::${score.chartIndex}`;
+  }
+
+  private toScoreChangeValue(score: SyncScore | undefined): ScoreChangeValue {
+    if (!score) {
+      return {};
+    }
+    return {
+      score: score.score,
+      dxScore: score.dxScore,
+      fc: score.fc,
+      fs: score.fs,
+      rating: score.rating,
+    };
+  }
+
+  private numericDelta(
+    before: string | null | undefined,
+    after: string | null | undefined,
+  ): number | null {
+    if (after === null || after === undefined) {
+      return null;
+    }
+    const next = Number.parseFloat(after);
+    if (!Number.isFinite(next)) {
+      return null;
+    }
+    if (before === null || before === undefined) {
+      return next;
+    }
+    const previous = Number.parseFloat(before);
+    return Number.isFinite(previous) ? next - previous : null;
+  }
+
+  private numberDelta(
+    before: number | null | undefined,
+    after: number | null | undefined,
+  ): number | null {
+    if (after === null || after === undefined) {
+      return null;
+    }
+    return after - (before ?? 0);
+  }
+
+  private rankDelta(
+    table: readonly string[],
+    before: string | null | undefined,
+    after: string | null | undefined,
+  ): number | null {
+    if (after === null || after === undefined) {
+      return null;
+    }
+    return rankIdx(table, after) - rankIdx(table, before ?? null);
+  }
+
+  private toOwnerUserId(
+    value: string | null | undefined,
+  ): Types.ObjectId | null {
+    if (!value) {
+      return null;
+    }
+    if (!Types.ObjectId.isValid(value)) {
+      throw new BadRequestException('ownerUserId must be a valid ObjectId');
+    }
+    return new Types.ObjectId(value);
+  }
+
+  private isDuplicateKey(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 11000
+    );
+  }
+
+  private async waitForCommitRetry(attempt: number): Promise<void> {
+    const maxDelay = Math.min(200, 10 * 2 ** (attempt - 1));
+    const delay = Math.max(1, Math.round(maxDelay * (0.5 + Math.random())));
+    await new Promise((resolve) => setTimeout(resolve, delay));
   }
 
   private async getMusicCache(): Promise<MusicCache> {
@@ -706,7 +1110,27 @@ export class SyncService {
     return this.exportDivingFishSync(sync, input.importToken);
   }
 
-  private async exportDivingFishSync(sync: SyncForExport, importToken: string) {
+  async exportSnapshotToDivingFish(
+    snapshot: CurrentExportSnapshot,
+    importToken: string,
+    signal?: AbortSignal,
+  ) {
+    return this.exportDivingFishSync(
+      {
+        id: snapshot.syncId,
+        friendCode: snapshot.friendCode,
+        scores: snapshot.scores,
+      },
+      importToken,
+      signal,
+    );
+  }
+
+  private async exportDivingFishSync(
+    sync: SyncForExport,
+    importToken: string,
+    signal?: AbortSignal,
+  ) {
     const scores: SyncScore[] = Array.isArray(sync.scores) ? sync.scores : [];
     if (!scores.length) {
       return { status: 'skipped', reason: 'no scores to export' };
@@ -732,7 +1156,7 @@ export class SyncService {
     );
 
     try {
-      const res = await uploadDivingFishRecords(records, importToken);
+      const res = await uploadDivingFishRecords(records, importToken, signal);
       return {
         status: res.status,
         scores: scores.length,
@@ -763,7 +1187,64 @@ export class SyncService {
     return this.exportLxnsSync(sync, input.importToken);
   }
 
-  private async exportLxnsSync(sync: SyncForExport, importToken: string) {
+  async exportSnapshotToLxns(
+    snapshot: CurrentExportSnapshot,
+    importToken: string,
+    signal?: AbortSignal,
+  ) {
+    return this.exportLxnsSync(
+      {
+        id: snapshot.syncId,
+        friendCode: snapshot.friendCode,
+        scores: snapshot.scores,
+      },
+      importToken,
+      signal,
+    );
+  }
+
+  async getCurrentExportSnapshot(
+    friendCode: string,
+  ): Promise<CurrentExportSnapshot> {
+    const sync = await this.syncModel
+      .findOne({ friendCode })
+      .select({ id: 1, friendCode: 1, scores: 1, __v: 1 })
+      .lean<CurrentSync | null>();
+    if (!sync) {
+      throw new NotFoundException('Sync not found');
+    }
+    return {
+      syncId: sync.id,
+      friendCode: sync.friendCode,
+      scoreVersion: sync.__v ?? 0,
+      scores: Array.isArray(sync.scores) ? sync.scores : [],
+    };
+  }
+
+  async getExportVersions(
+    friendCodes: string[],
+  ): Promise<
+    Array<{ friendCode: string; syncId: string; scoreVersion: number }>
+  > {
+    if (!friendCodes.length) {
+      return [];
+    }
+    const rows = await this.syncModel
+      .find({ friendCode: { $in: friendCodes } })
+      .select({ _id: 0, friendCode: 1, id: 1, __v: 1 })
+      .lean<Array<Pick<CurrentSync, 'friendCode' | 'id' | '__v'>>>();
+    return rows.map((row) => ({
+      friendCode: row.friendCode,
+      syncId: row.id,
+      scoreVersion: row.__v ?? 0,
+    }));
+  }
+
+  private async exportLxnsSync(
+    sync: SyncForExport,
+    importToken: string,
+    signal?: AbortSignal,
+  ) {
     const scores: SyncScore[] = Array.isArray(sync.scores) ? sync.scores : [];
     if (!scores.length) {
       return { status: 'skipped', reason: 'no scores to export' };
@@ -787,7 +1268,7 @@ export class SyncService {
       exportableScores,
       exportMap.toLxnsId,
     );
-    const res = await uploadLxnsScores(payload, importToken);
+    const res = await uploadLxnsScores(payload, importToken, signal);
 
     return {
       status: res.status,

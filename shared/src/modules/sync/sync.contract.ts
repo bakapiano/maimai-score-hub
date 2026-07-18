@@ -9,6 +9,8 @@ import {
   ProberExportCreateResponseSchema,
   ProberExportJobSchema,
   ProberExportListResponseSchema,
+  ScoreChangeHistoryQuerySchema,
+  ScoreChangeHistoryResponseSchema,
 } from "./sync.schema";
 
 const c = initContract();
@@ -71,5 +73,12 @@ export const syncContract = c.router({
     headers: c.type<{ authorization: string }>(),
     query: c.type<{ limit?: string }>(),
     responses: { 200: ProberExportListResponseSchema },
+  },
+  getScoreChangeHistory: {
+    method: "GET",
+    path: "/me/score-changes",
+    headers: c.type<{ authorization: string }>(),
+    query: ScoreChangeHistoryQuerySchema,
+    responses: { 200: ScoreChangeHistoryResponseSchema },
   },
 });

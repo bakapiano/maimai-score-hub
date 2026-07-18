@@ -1,6 +1,7 @@
-# 二维码成绩更新代码事实
+# 二维码成绩更新事实与目标集成
 
-本文记录当前已实现的用户侧二维码成绩更新，不描述早期方案。相关入口：
+本文记录已实现的二维码/session 安全流程；DXNet 并行、current sync CAS 与 Prober Export
+部分按[成绩更新目标规范](../specs/score-updates/README.md)描述。相关入口：
 
 - 用户 API：`backend/src/api/me/me-cabinet-score-jobs.controller.ts`
 - 业务协调/finalizer：`backend/src/modules/cabinet-score-sync/`
@@ -18,7 +19,9 @@
 | DXNet | `jobs` | `update_score`，必要时先 `send_friend_request` | 每 bot 一个 `dxnet-worker-jobs-<friendCode>` | DXNet worker |
 | 二维码 | `sdgb_jobs` | `get_music_score` | `sdgb-worker-interactive-jobs` | Interactive sdgb-worker |
 
-两种手动更新在创建时共用 `lock:manual-score-create:{friendCode}`，并交叉检查 active job，防止同一用户同时写最新 sync。
+目标并行模型中，两种手动更新使用独立创建状态；成绩结果统一通过 current sync CAS 合并。
+二维码仍单独阻止已有 `get_music_score`、cleanup pending 和 blocked unconfirmed，DXNet active
+不再阻止二维码创建。
 
 ## 用户接口
 
@@ -43,7 +46,6 @@ Authorization: Bearer <jwt>
 
 - 当前用户存在；
 - 已绑定 `cabinetUserId`；
-- 没有 active DXNet 手动同步；
 - 没有 active/pending/unconfirmed-blocked 的 `get_music_score`。
 
 成功返回 HTTP 202。二维码保存在活动 job payload 中供 worker 读取；所有失败/完成终态都会清除 `payload.qrCode`。
@@ -212,7 +214,13 @@ achievement 和 DX 均为 0 的占位记录会过滤；未知曲目/谱面跳过
 { "syncId": "...", "scoreCount": 1234 }
 ```
 
-原始成绩不在 `sdgb_jobs` 重复保存。若用户配置了导入 token，会创建 `trigger=cabinet_qr_update` 的 prober export job；导出失败不回滚 sync。
+目标 current-sync 模型中 `syncId` 是稳定 canonical 文档 ID，不代表本次二维码更新的不可变
+完整快照；本次更新身份由 sdgb job id 和 score CAS 前后版本审计。
+
+原始成绩不在 `sdgb_jobs` 重复保存。score version 增加后只 best-effort 唤醒稳定 per-user
+export delivery；`prober_export_states` 与 `syncs.__v` 的定期对账负责漏投恢复。自动导出不再
+创建 `trigger=cabinet_qr_update` 的来源级 job，导出失败也不回滚 sync。
+详细状态机见 [Prober Export 规范](../specs/prober-export/README.md)。
 
 ## 调度参数
 

@@ -1,6 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
 
-import { JobModule } from '../job/job.module';
 import { ProberExportModule } from '../prober-export/prober-export.module';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { SyncModule } from '../sync/sync.module';
@@ -12,7 +11,6 @@ import { CabinetScoreSyncService } from './cabinet-score-sync.service';
     SdgbWorkerModule,
     ProberExportModule,
     SyncModule,
-    forwardRef(() => JobModule),
     forwardRef(() => UsersModule),
   ],
   providers: [CabinetScoreSyncService],

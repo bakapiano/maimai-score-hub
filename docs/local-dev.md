@@ -32,7 +32,7 @@ Redis is provided by Memurai Developer portable, installed by Chocolatey:
 
 ```text
 Package: memurai-developer.portable 4.1.8
-Binary: C:\ProgramData\chocolatey\bin\memurai.exe
+Binary: C:\ProgramData\chocolatey\lib\memurai-developer.portable\tools\memurai.exe
 CLI: C:\ProgramData\chocolatey\bin\memurai-cli.exe
 Endpoint: 127.0.0.1:6379
 ```
@@ -40,7 +40,7 @@ Endpoint: 127.0.0.1:6379
 This portable install is not registered as a Windows service. Start it manually when needed:
 
 ```powershell
-C:\ProgramData\chocolatey\bin\memurai.exe --port 6379 --dir C:\ProgramData\MemuraiDev
+C:\ProgramData\chocolatey\lib\memurai-developer.portable\tools\memurai.exe --port 6379 --dir C:\ProgramData\MemuraiDev
 ```
 
 Verify:
@@ -58,15 +58,19 @@ PONG
 
 ## One-command local dev with PM2
 
-The repo includes a PM2-based local dev supervisor. It starts:
+The repo includes a local dev supervisor. It starts Memurai directly as a
+hidden native process (tracked by `.local-dev/memurai.pid`), waits for port
+6379, then starts the Node services with PM2. This avoids the Chocolatey shim
+flashing a console window or detaching from PM2. It starts:
 
 - Memurai on `127.0.0.1:6379`
 - backend on `127.0.0.1:9050`
 - frontend on `127.0.0.1:3001`
 - admin portal on `127.0.0.1:3002` (`/admin/`)
 - DXNet worker (`msh-worker`) connected to local backend/Redis
-- four fake sdgb workers (`msh-sdgb-stable-*` / `msh-sdgb-recoverable-*`)
-  connected to local Backend/Redis for active-member and failover testing
+- four real sdgb worker processes (`msh-sdgb-stable-*` /
+  `msh-sdgb-recoverable-*`) connected to local Backend/Redis. Normal real mode
+  activates one preferred worker per lane and keeps the second process standby.
 - Microsoft Dev Tunnels for frontend and admin portal public access
 
 First-time setup:
@@ -82,6 +86,9 @@ Edit `.env.local-dev`:
 - Set `CLICKHOUSE_PASSWORD` to the 101 ClickHouse writer password.
 - Set `FRONTEND_API_PROXY_TARGET` to the backend the Vite frontend should use;
   use `https://api.maiscorehub.bakapiano.com` to test against production.
+- Keep `SDGB_FAKE_UPSTREAM=0` for real QR/Probe calls. Set it to `1` only for
+  local failover/fault-injection testing; fake mode activates two workers per
+  preferred lane.
 
 Start everything:
 
@@ -194,6 +201,7 @@ BACKEND_URL=http://127.0.0.1:9050
 WORKER_ID=sdgb-worker-local-dev
 SDGB_WORKER_CLASS=stable
 SDGB_WORKER_CAPABILITIES=probe,interactive
+SDGB_FAKE_UPSTREAM=0
 
 REDIS_URL=
 REDIS_HOST=127.0.0.1
@@ -203,6 +211,11 @@ REDIS_PASSWORD=
 REDIS_KEY_PREFIX=maimai:
 BULLMQ_PREFIX=
 ```
+
+Real Interactive jobs require the shared 32-byte session encryption key. In
+development the worker reuses `sdgb-worker\.session-lease-key` and creates it
+on first start when absent; the file is git-ignored. Do not delete or rotate it
+while an Interactive session may still require cleanup.
 
 ## Start services
 
@@ -251,6 +264,17 @@ development, prefer the native MongoDB service and Memurai process described
 above.
 
 ## Backend / sdgb-worker E2E tests
+
+Score concurrency and Prober Export ownership tests use two Nest Backend
+instances against an isolated Mongo database and Redis prefix:
+
+```powershell
+npm --prefix backend run test:e2e:score-updates
+```
+
+They cover concurrent CAS merge, score diff persistence, cross-mode creation
+locks, version reconciliation recovery, and single-user export ownership across
+Backend replicas.
 
 Cross-service sdgb tests live in the top-level `e2e\` package instead of
 `backend\test`. By default they reuse the native MongoDB and Memurai endpoints,

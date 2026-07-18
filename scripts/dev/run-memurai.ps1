@@ -1,6 +1,6 @@
 . "$PSScriptRoot\lib.ps1"
 
-$memurai = "C:\ProgramData\chocolatey\bin\memurai.exe"
+$memurai = "C:\ProgramData\chocolatey\lib\memurai-developer.portable\tools\memurai.exe"
 $dir = "C:\ProgramData\MemuraiDev"
 
 if (-not (Test-Path $memurai)) {

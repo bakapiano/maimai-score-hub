@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import type { Model } from 'mongoose';
+import type { Model, Types } from 'mongoose';
 import { isValidObjectId } from 'mongoose';
 import { promisify } from 'node:util';
 import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
@@ -528,5 +528,36 @@ export class UsersService {
       autoUpdate: true,
       cabinetUserId: { $ne: null },
     });
+  }
+
+  async listUsersWithProberTokens(input: {
+    afterId?: Types.ObjectId | null;
+    limit: number;
+  }) {
+    const docs = await this.userModel
+      .find({
+        ...(input.afterId ? { _id: { $gt: input.afterId } } : {}),
+        $or: [
+          { divingFishImportToken: { $type: 'string', $ne: '' } },
+          { lxnsImportToken: { $type: 'string', $ne: '' } },
+        ],
+      })
+      .sort({ _id: 1 })
+      .limit(Math.max(1, Math.min(1000, input.limit)))
+      .select({
+        _id: 1,
+        friendCode: 1,
+        divingFishImportToken: 1,
+        lxnsImportToken: 1,
+      })
+      .lean<
+        Array<{
+          _id: Types.ObjectId;
+          friendCode: string;
+          divingFishImportToken: string | null;
+          lxnsImportToken: string | null;
+        }>
+      >();
+    return docs;
   }
 }

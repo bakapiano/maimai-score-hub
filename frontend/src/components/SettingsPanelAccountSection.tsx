@@ -306,7 +306,7 @@ export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps)
       return;
     }
     const sure = window.confirm(
-      "再次确认：删除后你的成绩同步记录、所有更新任务都会一并消失。\n\n继续？",
+      "再次确认：删除后你的成绩同步记录、变化历史和所有更新任务都会一并消失。\n\n继续？",
     );
     if (!sure) {
       return;
@@ -332,7 +332,7 @@ export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps)
       notifications.show({
         color: "green",
         title: "账号已删除",
-        message: `已清除 ${d.user ?? 0} 用户、${d.syncs ?? 0} 同步记录、${d.jobs ?? 0} 任务、${d.passkeys ?? 0} 个网站密钥。`,
+        message: `已清除 ${d.user ?? 0} 用户、${d.syncs ?? 0} 同步记录、${d.scoreChanges ?? 0} 条变化历史、${d.jobs ?? 0} 任务、${d.passkeys ?? 0} 个网站密钥。`,
       });
       clearDeletedAccountStorage();
       clearToken();

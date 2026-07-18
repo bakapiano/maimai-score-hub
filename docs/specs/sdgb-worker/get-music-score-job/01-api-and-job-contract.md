@@ -46,8 +46,8 @@ backend 必须：
 
 1. 只从 JWT 取得当前用户。
 2. 确认用户已完成机台账号绑定。
-3. 确认当前用户没有其他活动中的手动同步。
-4. 确认没有尚未安全结束的二维码任务。
+3. 确认没有另一个 active `get_music_score`。
+4. 确认没有尚未安全结束的二维码 session cleanup；DXNet 活动任务不阻止创建。
 5. 由 backend 写入任务 owner 和预期绑定账号。
 6. 创建内部 get_music_score 任务并返回 HTTP 202。
 

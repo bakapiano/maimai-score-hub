@@ -1418,6 +1418,13 @@ paths:
                     type: string
                   updatedAt:
                     type: string
+                  lastMergedAt:
+                    type: string
+                  scoreUpdatedAt:
+                    type: string
+                  scoreVersion:
+                    type: integer
+                    minimum: 0
                   scores:
                     type: array
                     items:
@@ -1445,6 +1452,72 @@ paths:
                         required:
                           - status
                         nullable: true
+                    nullable: true
+                  proberExportState:
+                    type: object
+                    properties:
+                      providers:
+                        type: object
+                        properties:
+                          divingFish:
+                            type: object
+                            properties:
+                              enabled:
+                                type: boolean
+                              lastSuccessVersion:
+                                type: integer
+                                minimum: 0
+                                nullable: true
+                              status:
+                                type: string
+                                enum:
+                                  - idle
+                                  - processing
+                                  - failed
+                              error:
+                                type: string
+                                nullable: true
+                              updatedAt:
+                                type: string
+                                nullable: true
+                            required:
+                              - enabled
+                              - lastSuccessVersion
+                              - status
+                              - error
+                              - updatedAt
+                          lxns:
+                            type: object
+                            properties:
+                              enabled:
+                                type: boolean
+                              lastSuccessVersion:
+                                type: integer
+                                minimum: 0
+                                nullable: true
+                              status:
+                                type: string
+                                enum:
+                                  - idle
+                                  - processing
+                                  - failed
+                              error:
+                                type: string
+                                nullable: true
+                              updatedAt:
+                                type: string
+                                nullable: true
+                            required:
+                              - enabled
+                              - lastSuccessVersion
+                              - status
+                              - error
+                              - updatedAt
+                        required:
+                          - divingFish
+                          - lxns
+                    required:
+                      - providers
                     nullable: true
                 required:
                   - id
@@ -1488,11 +1561,25 @@ paths:
                           - auto_update_rival
                           - auto_update_fcfs
                           - cabinet_qr_update
+                          - auto_latest
+                          - manual
+                      kind:
+                        type: string
+                        enum:
+                          - auto
                           - manual
                       friendCode:
                         type: string
                       syncId:
                         type: string
+                      requestedScoreVersion:
+                        type: integer
+                        minimum: 0
+                        nullable: true
+                      exportedScoreVersion:
+                        type: integer
+                        minimum: 0
+                        nullable: true
                       sourceJobId:
                         type: string
                         nullable: true
@@ -1637,11 +1724,25 @@ paths:
                           - auto_update_rival
                           - auto_update_fcfs
                           - cabinet_qr_update
+                          - auto_latest
+                          - manual
+                      kind:
+                        type: string
+                        enum:
+                          - auto
                           - manual
                       friendCode:
                         type: string
                       syncId:
                         type: string
+                      requestedScoreVersion:
+                        type: integer
+                        minimum: 0
+                        nullable: true
+                      exportedScoreVersion:
+                        type: integer
+                        minimum: 0
+                        nullable: true
                       sourceJobId:
                         type: string
                         nullable: true
@@ -1777,11 +1878,25 @@ paths:
                       - auto_update_rival
                       - auto_update_fcfs
                       - cabinet_qr_update
+                      - auto_latest
+                      - manual
+                  kind:
+                    type: string
+                    enum:
+                      - auto
                       - manual
                   friendCode:
                     type: string
                   syncId:
                     type: string
+                  requestedScoreVersion:
+                    type: integer
+                    minimum: 0
+                    nullable: true
+                  exportedScoreVersion:
+                    type: integer
+                    minimum: 0
+                    nullable: true
                   sourceJobId:
                     type: string
                     nullable: true
@@ -1913,11 +2028,25 @@ paths:
                             - auto_update_rival
                             - auto_update_fcfs
                             - cabinet_qr_update
+                            - auto_latest
+                            - manual
+                        kind:
+                          type: string
+                          enum:
+                            - auto
                             - manual
                         friendCode:
                           type: string
                         syncId:
                           type: string
+                        requestedScoreVersion:
+                          type: integer
+                          minimum: 0
+                          nullable: true
+                        exportedScoreVersion:
+                          type: integer
+                          minimum: 0
+                          nullable: true
                         sourceJobId:
                           type: string
                           nullable: true
@@ -2024,6 +2153,170 @@ paths:
                       additionalProperties: true
                 required:
                   - items
+  /me/score-changes:
+    get:
+      tags: *a4
+      parameters:
+        - name: musicId
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - name: chartIndex
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 10
+            nullable: true
+        - name: type
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 32
+        - name: limit
+          in: query
+          schema:
+            default: 30
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+      operationId: sync.getScoreChangeHistory
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        observedAt:
+                          type: string
+                          format: date-time
+                        sourceType:
+                          type: string
+                          enum:
+                            - dxnet_update_score
+                            - auto_update_rival
+                            - auto_update_fcfs
+                            - cabinet_qr_update
+                        beforeScoreVersion:
+                          type: integer
+                          minimum: 0
+                          nullable: true
+                        afterScoreVersion:
+                          type: integer
+                          minimum: 0
+                        musicId:
+                          type: string
+                        chartIndex:
+                          type: integer
+                          minimum: 0
+                        type:
+                          type: string
+                        before:
+                          type: object
+                          properties:
+                            score:
+                              type: string
+                              nullable: true
+                            dxScore:
+                              type: string
+                              nullable: true
+                            fc:
+                              type: string
+                              nullable: true
+                            fs:
+                              type: string
+                              nullable: true
+                            rating:
+                              type: number
+                              nullable: true
+                        after:
+                          type: object
+                          properties:
+                            score:
+                              type: string
+                              nullable: true
+                            dxScore:
+                              type: string
+                              nullable: true
+                            fc:
+                              type: string
+                              nullable: true
+                            fs:
+                              type: string
+                              nullable: true
+                            rating:
+                              type: number
+                              nullable: true
+                        changedFields:
+                          type: array
+                          items:
+                            type: string
+                            enum:
+                              - score
+                              - dxScore
+                              - fc
+                              - fs
+                              - rating
+                              - newChart
+                        achievementDelta:
+                          type: number
+                          nullable: true
+                        dxScoreDelta:
+                          type: number
+                          nullable: true
+                        ratingDelta:
+                          type: number
+                          nullable: true
+                        fcRankDelta:
+                          type: integer
+                          nullable: true
+                        fsRankDelta:
+                          type: integer
+                          nullable: true
+                      required:
+                        - id
+                        - observedAt
+                        - sourceType
+                        - beforeScoreVersion
+                        - afterScoreVersion
+                        - musicId
+                        - chartIndex
+                        - type
+                        - before
+                        - after
+                        - changedFields
+                        - achievementDelta
+                        - dxScoreDelta
+                        - ratingDelta
+                        - fcRankDelta
+                        - fsRankDelta
+                  nextCursor:
+                    type: string
+                    nullable: true
+                required:
+                  - items
+                  - nextCursor
   /me/dxnet-jobs:
     post:
       tags: &a5

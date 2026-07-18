@@ -5,6 +5,9 @@ export const LastSyncSchema = z
     id: z.string(),
     createdAt: z.string(),
     updatedAt: z.string(),
+    lastMergedAt: z.string().optional(),
+    scoreUpdatedAt: z.string().optional(),
+    scoreVersion: z.number().int().nonnegative().optional(),
     scores: z.array(z.unknown()).optional(),
     autoExportResult: z
       .object({
@@ -16,6 +19,27 @@ export const LastSyncSchema = z
           .object({ status: z.string(), message: z.string().optional() })
           .nullable()
           .optional(),
+      })
+      .nullable()
+      .optional(),
+    proberExportState: z
+      .object({
+        providers: z.object({
+          divingFish: z.object({
+            enabled: z.boolean(),
+            lastSuccessVersion: z.number().int().nonnegative().nullable(),
+            status: z.enum(["idle", "processing", "failed"]),
+            error: z.string().nullable(),
+            updatedAt: z.string().nullable(),
+          }),
+          lxns: z.object({
+            enabled: z.boolean(),
+            lastSuccessVersion: z.number().int().nonnegative().nullable(),
+            status: z.enum(["idle", "processing", "failed"]),
+            error: z.string().nullable(),
+            updatedAt: z.string().nullable(),
+          }),
+        }),
       })
       .nullable()
       .optional(),
@@ -67,10 +91,14 @@ export const ProberExportJobSchema = z
       "auto_update_rival",
       "auto_update_fcfs",
       "cabinet_qr_update",
+      "auto_latest",
       "manual",
     ]),
+    kind: z.enum(["auto", "manual"]).optional(),
     friendCode: z.string(),
     syncId: z.string(),
+    requestedScoreVersion: z.number().int().nonnegative().nullable().optional(),
+    exportedScoreVersion: z.number().int().nonnegative().nullable().optional(),
     sourceJobId: z.string().nullable(),
     sourceTaskId: z.string().nullable(),
     targets: z.array(ProberExportProviderSchema),
@@ -162,3 +190,72 @@ export type CabinetScoreJobCreateBody = z.infer<
   typeof CabinetScoreJobCreateBodySchema
 >;
 export type CabinetScoreJob = z.infer<typeof CabinetScoreJobSchema>;
+
+export const ScoreChangeSourceTypeSchema = z.enum([
+  "dxnet_update_score",
+  "auto_update_rival",
+  "auto_update_fcfs",
+  "cabinet_qr_update",
+]);
+
+export const ScoreChangeFieldSchema = z.enum([
+  "score",
+  "dxScore",
+  "fc",
+  "fs",
+  "rating",
+  "newChart",
+]);
+
+export const ScoreChangeValueSchema = z.object({
+  score: z.string().nullable().optional(),
+  dxScore: z.string().nullable().optional(),
+  fc: z.string().nullable().optional(),
+  fs: z.string().nullable().optional(),
+  rating: z.number().nullable().optional(),
+});
+
+export const ScoreChangeSchema = z.object({
+  id: z.string(),
+  observedAt: z.string().datetime(),
+  sourceType: ScoreChangeSourceTypeSchema,
+  beforeScoreVersion: z.number().int().nonnegative().nullable(),
+  afterScoreVersion: z.number().int().nonnegative(),
+  musicId: z.string(),
+  chartIndex: z.number().int().nonnegative(),
+  type: z.string(),
+  before: ScoreChangeValueSchema,
+  after: ScoreChangeValueSchema,
+  changedFields: z.array(ScoreChangeFieldSchema),
+  achievementDelta: z.number().nullable(),
+  dxScoreDelta: z.number().nullable(),
+  ratingDelta: z.number().nullable(),
+  fcRankDelta: z.number().int().nullable(),
+  fsRankDelta: z.number().int().nullable(),
+});
+
+export const ScoreChangeHistoryQuerySchema = z
+  .object({
+    musicId: z.string().trim().min(1).max(64),
+    chartIndex: z.coerce.number().int().min(0).max(10),
+    type: z.string().trim().min(1).max(32),
+    limit: z.coerce.number().int().min(1).max(100).default(30),
+    cursor: z.string().trim().min(1).max(256).optional(),
+  })
+  .strict();
+
+export const ScoreChangeHistoryResponseSchema = z.object({
+  items: z.array(ScoreChangeSchema),
+  nextCursor: z.string().nullable(),
+});
+
+export type ScoreChangeSourceType = z.infer<typeof ScoreChangeSourceTypeSchema>;
+export type ScoreChangeField = z.infer<typeof ScoreChangeFieldSchema>;
+export type ScoreChangeValue = z.infer<typeof ScoreChangeValueSchema>;
+export type ScoreChange = z.infer<typeof ScoreChangeSchema>;
+export type ScoreChangeHistoryQuery = z.infer<
+  typeof ScoreChangeHistoryQuerySchema
+>;
+export type ScoreChangeHistoryResponse = z.infer<
+  typeof ScoreChangeHistoryResponseSchema
+>;

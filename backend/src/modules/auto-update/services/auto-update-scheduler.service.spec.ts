@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { AutoUpdateSchedulerService } from './auto-update-scheduler.service';
 
 function createService(overrides?: {
@@ -72,8 +73,8 @@ function createService(overrides?: {
   };
 }
 
-describe('AutoUpdateSchedulerService FC/FS cooldown', () => {
-  it('records pending FC/FS enrichment instead of dropping cooldown hits', async () => {
+describe('AutoUpdateSchedulerService FC/FS production stopgap', () => {
+  it('does not enqueue FC/FS enrichment while the path is disabled', async () => {
     const { service, stateModel, taskModel, jobs } = createService();
     const now = new Date('2026-07-05T06:00:00.000Z');
     const state = {
@@ -89,61 +90,7 @@ describe('AutoUpdateSchedulerService FC/FS cooldown', () => {
 
     expect(taskModel.create).not.toHaveBeenCalled();
     expect(jobs.create).not.toHaveBeenCalled();
-    expect(stateModel.updateOne).toHaveBeenCalledWith(
-      { friendCode: '634142510810999' },
-      {
-        $set: {
-          pendingRecentEventReason: 'map_delta',
-          pendingRecentEventRequestedAt: now,
-          schedulerVersion: 'rival-first-v1',
-        },
-        $inc: { pendingRecentEventCount: 1 },
-      },
-    );
-  });
-
-  it('runs pending FC/FS enrichment when cooldown is due and clears pending state', async () => {
-    const { service, stateModel, jobs } = createService();
-    const now = new Date('2026-07-05T06:30:00.000Z');
-    const lastRecentEventAt = new Date('2026-07-05T06:00:00.000Z');
-    const state = {
-      friendCode: '634142510810999',
-      cabinetUserId: 456,
-      lastRecentEventAt,
-      nextRecentEventAt: new Date('2026-07-05T06:30:00.000Z'),
-      pendingRecentEventReason: 'rival_hash_changed',
-      pendingRecentEventRequestedAt: new Date('2026-07-05T06:10:00.000Z'),
-      pendingRecentEventCount: 2,
-      recentErrorCount: 0,
-    };
-
-    await (service as any).maybeEnqueueFcfs(state, 'rival_hash_changed', now);
-
-    expect(jobs.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        friendCode: '634142510810999',
-        jobType: 'get_user_recent_event',
-        runAt: new Date('2026-07-05T06:33:00.000Z'),
-        context: {
-          autoUpdateFcfs: true,
-          reason: 'rival_hash_changed',
-        },
-      }),
-    );
-    expect(stateModel.updateOne).toHaveBeenCalledWith(
-      { friendCode: '634142510810999' },
-      {
-        $set: expect.objectContaining({
-          lastRecentEventAt: now,
-          nextRecentEventAt: new Date('2026-07-05T07:00:00.000Z'),
-          recentErrorCount: 0,
-          pendingRecentEventReason: null,
-          pendingRecentEventRequestedAt: null,
-          pendingRecentEventCount: 0,
-          schedulerVersion: 'rival-first-v1',
-        }),
-      },
-    );
+    expect(stateModel.updateOne).not.toHaveBeenCalled();
   });
 
   it('creates a full update_score job for due pending settled updates', async () => {

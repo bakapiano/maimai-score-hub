@@ -115,7 +115,7 @@ ClickHouse 保存历史日志。admin live tail 也优先查 ClickHouse 最近 1
 
 ### external API calls
 
-DXNet worker / sdgb-worker 上报 metadata：
+DXNet worker、sdgb-worker 与 Backend Prober Export executor 上报 metadata：
 
 ```ts
 {
@@ -137,6 +137,9 @@ DXNet worker / sdgb-worker 上报 metadata：
 ```
 
 不保存 raw body。raw body 只进 artifact。
+
+Prober Export 的 provider 成功版本、失败退避和 claim 不以 ClickHouse 为事实来源；它们保留
+在 Mongo state/job，ClickHouse 只接收 requested/exported version 与外部调用 metadata。
 
 ### job timeline
 

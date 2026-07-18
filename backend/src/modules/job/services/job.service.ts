@@ -85,6 +85,9 @@ export class JobService {
     private readonly autoUpdateActivity: AutoUpdateActivityService,
   ) {}
 
+  // Existing job creation intentionally owns friendship resolution, bot
+  // selection, cancellation and dispatch as one transaction-like workflow.
+  // eslint-disable-next-line max-lines-per-function, complexity
   async create(input: {
     friendCode: string;
     jobType?: JobType;
@@ -317,6 +320,17 @@ export class JobService {
       existing as JobEntity,
       body,
     );
+    const commitBeforeTerminal =
+      body.status === 'completed' &&
+      ['update_score', 'get_user_recent_event'].includes(existing.jobType);
+    if (commitBeforeTerminal) {
+      const candidate = {
+        ...(existing as JobEntity),
+        ...((updateOps.$set as Partial<JobEntity> | undefined) ?? {}),
+      } as JobEntity;
+      await this.handleCompletedUpdateScore(candidate, jobId);
+      await this.handleCompletedRecentEvent(candidate, jobId);
+    }
 
     const updated = await this.jobModel.findOneAndUpdate(
       { id: jobId },
@@ -329,14 +343,16 @@ export class JobService {
     }
 
     this.cleanupFinalJobCache(jobId, updated.status, finalStatuses);
-    await this.handleCompletedUpdateScore(
-      updated.toObject() as JobEntity,
-      jobId,
-    );
-    await this.handleCompletedRecentEvent(
-      updated.toObject() as JobEntity,
-      jobId,
-    );
+    if (!commitBeforeTerminal) {
+      await this.handleCompletedUpdateScore(
+        updated.toObject() as JobEntity,
+        jobId,
+      );
+      await this.handleCompletedRecentEvent(
+        updated.toObject() as JobEntity,
+        jobId,
+      );
+    }
 
     const updatedEntity = updated.toObject() as JobEntity;
     this.recordPatchTimeline(existing as JobEntity, updatedEntity, body);
@@ -584,13 +600,11 @@ export class JobService {
     if (!sync?.id) {
       return;
     }
+    if (sync.changedChartCount <= 0) {
+      return;
+    }
     this.proberExports
-      .enqueueAutoExportForSync({
-        trigger: 'dxnet_update_score',
-        friendCode: updated.friendCode,
-        syncId: sync.id,
-        sourceJobId: jobId,
-      })
+      .ensureAutoExportWake(updated.friendCode)
       .catch((err: Error) => {
         this.logger.error(
           `Failed to enqueue auto-export for job ${jobId}: ${err?.message}`,
@@ -619,7 +633,7 @@ export class JobService {
       sourceId: jobId,
       events: events as RecentFcFsEvent[],
     });
-    this.enqueueFcfsAutoExport(updated, jobId, mergeResult);
+    this.enqueueFcfsAutoExport(updated, mergeResult);
     if (context?.autoUpdateFcfs === true) {
       await this.autoUpdateActivity.recordRecentEventFingerprint({
         friendCode: updated.friendCode,
@@ -631,7 +645,6 @@ export class JobService {
 
   private enqueueFcfsAutoExport(
     updated: JobEntity,
-    jobId: string,
     mergeResult: {
       updatedCount: number;
       syncId: string | null;
@@ -645,15 +658,10 @@ export class JobService {
       return;
     }
     this.proberExports
-      .enqueueAutoExportForSync({
-        trigger: 'auto_update_fcfs',
-        friendCode: updated.friendCode,
-        syncId: mergeResult.syncId,
-        sourceJobId: jobId,
-      })
+      .ensureAutoExportWake(updated.friendCode)
       .catch((err: Error) => {
         this.logger.warn(
-          `failed to enqueue fcfs auto-export job=${jobId}: ${err?.message}`,
+          `failed to enqueue fcfs auto-export job=${updated.id}: ${err?.message}`,
         );
       });
   }

@@ -71,6 +71,9 @@ type LastSyncInfo = {
   id: string;
   createdAt: string;
   updatedAt: string;
+  lastMergedAt?: string;
+  scoreUpdatedAt?: string;
+  scoreVersion?: number;
   scoreCount: number;
   autoExportResult?: {
     divingFish?: { status: string; message?: string } | null;
@@ -160,7 +163,22 @@ function exportStatusColor(status: string) {
     ? "green"
     : status === "skipped"
       ? "yellow"
-      : "red";
+      : status === "pending" || status === "processing"
+        ? "blue"
+        : "red";
+}
+
+function exportStatusSymbol(status: string) {
+  if (status === "success") {
+    return "✓";
+  }
+  if (status === "skipped") {
+    return "—";
+  }
+  if (status === "pending" || status === "processing") {
+    return "…";
+  }
+  return "✗";
 }
 
 function normalizeLastSync(
@@ -180,6 +198,9 @@ function normalizeLastSync(
     id: data.id ?? "cached-latest-sync",
     createdAt,
     updatedAt,
+    lastMergedAt: data.lastMergedAt ?? updatedAt,
+    scoreUpdatedAt: data.scoreUpdatedAt ?? updatedAt,
+    scoreVersion: data.scoreVersion,
     scoreCount:
       typeof data.scoreCount === "number"
         ? data.scoreCount
@@ -212,6 +233,9 @@ function rememberLastSync(data: LatestSyncPayload | null | undefined) {
           scores: data.scores ?? [],
           createdAt: normalized.createdAt,
           updatedAt: normalized.updatedAt,
+          lastMergedAt: normalized.lastMergedAt,
+          scoreUpdatedAt: normalized.scoreUpdatedAt,
+          scoreVersion: normalized.scoreVersion,
           autoExportResult: normalized.autoExportResult,
         }),
       1000,
@@ -271,7 +295,9 @@ function getSyncStatusView({
     return lastSync
       ? {
           color: "green",
-          label: `上次更新 ${formatElapsedTime(lastSync.createdAt)}`,
+          label: `上次更新 ${formatElapsedTime(
+            lastSync.lastMergedAt ?? lastSync.updatedAt,
+          )}`,
           text: "点击开始同步数据",
         }
       : { color: "gray", label: "未同步", text: "完成首次同步后即可查看成绩" };
@@ -389,12 +415,7 @@ function AutoExportBadges({
           radius="md"
           color={exportStatusColor(result.divingFish.status)}
         >
-          水鱼{" "}
-          {result.divingFish.status === "success"
-            ? "✓"
-            : result.divingFish.status === "skipped"
-              ? "—"
-              : "✗"}
+          水鱼 {exportStatusSymbol(result.divingFish.status)}
         </Badge>
       )}
       {result.lxns && (
@@ -403,12 +424,7 @@ function AutoExportBadges({
           radius="md"
           color={exportStatusColor(result.lxns.status)}
         >
-          落雪{" "}
-          {result.lxns.status === "success"
-            ? "✓"
-            : result.lxns.status === "skipped"
-              ? "—"
-              : "✗"}
+          落雪 {exportStatusSymbol(result.lxns.status)}
         </Badge>
       )}
     </Group>
@@ -450,11 +466,13 @@ export default function SyncPage() {
     null,
   );
   const [qrText, setQrText] = useState("");
-  const [syncing, setSyncing] = useState(false);
+  const [dxnetSyncing, setDxnetSyncing] = useState(false);
+  const [cabinetSyncing, setCabinetSyncing] = useState(false);
   const [dxnetError, setDxnetError] = useState<string | null>(null);
   const [cabinetError, setCabinetError] = useState<string | null>(null);
   const [dxnetStats, setDxnetStats] = useState<JobRecentStats | null>(null);
   const chainedFriendshipJobIdRef = useRef<string | null>(null);
+  const latestRequestSeqRef = useRef(0);
 
   // Loading state
   const [loading, setLoading] = useState(true);
@@ -468,7 +486,11 @@ export default function SyncPage() {
         return;
       }
 
+      const requestSeq = ++latestRequestSeqRef.current;
       const res = await fetchLatestSync<LatestSyncPayload>(token, options);
+      if (requestSeq !== latestRequestSeqRef.current) {
+        return;
+      }
 
       const nextLastSync = res.ok ? rememberLastSync(res.data) : null;
       if (res.ok && nextLastSync) {
@@ -546,8 +568,9 @@ export default function SyncPage() {
             setSyncMethod("cabinet_qr");
             setCabinetJobId(cabinetActiveRes.job.id);
             setCabinetStatus(cabinetActiveRes.job);
-            setSyncing(true);
-          } else if (activeJobRes.job) {
+            setCabinetSyncing(true);
+          }
+          if (activeJobRes.job) {
             const activeJob = activeJobRes.job;
             setSyncJobId(activeJob.id);
             setSyncStatus(activeJob);
@@ -555,7 +578,7 @@ export default function SyncPage() {
               activeJob.status === "queued" ||
               activeJob.status === "processing"
             ) {
-              setSyncing(true);
+              setDxnetSyncing(true);
             }
           }
         }
@@ -666,7 +689,7 @@ export default function SyncPage() {
         return;
       }
       clearPreviousCabinetJob();
-      setSyncing(true);
+      setCabinetSyncing(true);
       try {
         const created = await createCabinetScoreJob(payload, token);
         setCabinetJobId(created.jobId);
@@ -674,7 +697,7 @@ export default function SyncPage() {
         setQrText("");
         recordAnalyticsEvent("sync_started", { method: "cabinet_qr" });
       } catch (error) {
-        setSyncing(false);
+        setCabinetSyncing(false);
         const message =
           error instanceof Error ? error.message : "二维码任务创建失败";
         setCabinetError(message);
@@ -701,7 +724,7 @@ export default function SyncPage() {
     }
 
     clearPreviousDxnetJob();
-    setSyncing(true);
+    setDxnetSyncing(true);
     chainedFriendshipJobIdRef.current = null;
     recordAnalyticsEvent("sync_started", {
       friendCode: profile.friendCode,
@@ -724,7 +747,7 @@ export default function SyncPage() {
           finalError = fallbackError;
         }
       }
-      setSyncing(false);
+      setDxnetSyncing(false);
       const errorMessage =
         finalError instanceof Error ? finalError.message : "未知错误";
       setDxnetError(`创建同步任务失败: ${errorMessage}`);
@@ -742,12 +765,7 @@ export default function SyncPage() {
 
   // Poll job status
   useEffect(() => {
-    if (
-      syncMethod !== "dxnet_bot" ||
-      !syncJobId ||
-      !syncing ||
-      !token
-    ) {
+    if (!syncJobId || !dxnetSyncing || !token) {
       return;
     }
 
@@ -772,14 +790,14 @@ export default function SyncPage() {
                 await startUpdateScoreJob(job.id);
               } catch (error) {
                 chainedFriendshipJobIdRef.current = null;
-                setSyncing(false);
+                setDxnetSyncing(false);
                 const errorMessage =
                   error instanceof Error ? error.message : "未知错误";
                 setDxnetError(`创建成绩更新任务失败: ${errorMessage}`);
               }
               return;
             }
-            setSyncing(false);
+            setDxnetSyncing(false);
             recordAnalyticsEvent("sync_completed", {
               jobId: job.id,
               jobType: job.jobType,
@@ -796,7 +814,7 @@ export default function SyncPage() {
               }
             }, 3000);
           } else {
-            setSyncing(false);
+            setDxnetSyncing(false);
             recordAnalyticsEvent("sync_failed", {
               jobId: job.id,
               jobType: job.jobType,
@@ -813,8 +831,7 @@ export default function SyncPage() {
     return () => clearInterval(interval);
   }, [
     syncJobId,
-    syncMethod,
-    syncing,
+    dxnetSyncing,
     token,
     loadProfile,
     loadLastSync,
@@ -822,12 +839,7 @@ export default function SyncPage() {
   ]);
 
   useEffect(() => {
-    if (
-      syncMethod !== "cabinet_qr" ||
-      !cabinetJobId ||
-      !syncing ||
-      !token
-    ) {
+    if (!cabinetJobId || !cabinetSyncing || !token) {
       return;
     }
     const interval = setInterval(async () => {
@@ -835,17 +847,21 @@ export default function SyncPage() {
         const job = await getCabinetScoreJob(cabinetJobId, token);
         setCabinetError(null);
         setCabinetStatus(job);
-        const cleanupPending = job.cleanupStatus === "pending";
+        const cleanupBlocked =
+          job.cleanupStatus === "pending" ||
+          (job.cleanupStatus === "unconfirmed" &&
+            !!job.error?.retryAfter &&
+            new Date(job.error.retryAfter).getTime() > Date.now());
         if (job.status === "completed") {
-          setSyncing(false);
+          setCabinetSyncing(false);
           recordAnalyticsEvent("sync_completed", {
             jobId: job.id,
             method: "cabinet_qr",
           });
           void loadProfile();
           void loadLastSync({ force: true });
-        } else if (job.status === "failed" && !cleanupPending) {
-          setSyncing(false);
+        } else if (job.status === "failed" && !cleanupBlocked) {
+          setCabinetSyncing(false);
           recordAnalyticsEvent("sync_failed", {
             jobId: job.id,
             method: "cabinet_qr",
@@ -854,20 +870,13 @@ export default function SyncPage() {
         }
       } catch (error) {
         if (error instanceof CabinetScoreJobApiError && error.status === 404) {
-          setSyncing(false);
+          setCabinetSyncing(false);
           setCabinetError("二维码任务不存在或已过期");
         }
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [
-    cabinetJobId,
-    syncing,
-    syncMethod,
-    token,
-    loadProfile,
-    loadLastSync,
-  ]);
+  }, [cabinetJobId, cabinetSyncing, token, loadProfile, loadLastSync]);
 
   const verifySyncJob = async () => {
     if (!syncJobId || !token) {
@@ -876,7 +885,7 @@ export default function SyncPage() {
 
     const res = await verifyJob(syncJobId, token);
     setSyncStatus(res.job);
-    setSyncing(true);
+    setDxnetSyncing(true);
   };
 
   // Compute sync progress
@@ -905,6 +914,8 @@ export default function SyncPage() {
       : getSyncStageText(syncStatus);
   const effectiveSyncJobStatus =
     syncMethod === "cabinet_qr" ? cabinetStatus?.status : syncStatus?.status;
+  const selectedSyncing =
+    syncMethod === "cabinet_qr" ? cabinetSyncing : dxnetSyncing;
   const cabinetBindingRequired =
     syncMethod === "cabinet_qr" && !profile?.hasCabinetUserId;
   const dxnetTerminalCount = dxnetStats
@@ -978,7 +989,6 @@ export default function SyncPage() {
                 />
                 <RadioCardGroup
                   value={syncMethod}
-                  disabled={syncing}
                   onChange={(value) => {
                     const nextMethod = value as "dxnet_bot" | "cabinet_qr";
                     if (nextMethod === "dxnet_bot") {
@@ -1029,9 +1039,11 @@ export default function SyncPage() {
                           void startCabinetSync(form);
                         }}
                         disabled={
-                          syncing || pageLoading || !profile?.hasCabinetUserId
+                          cabinetSyncing ||
+                          pageLoading ||
+                          !profile?.hasCabinetUserId
                         }
-                        loading={syncing}
+                        loading={cabinetSyncing}
                       />
                       {cabinetStatus?.progress && (
                         <Text size="sm" c="dimmed">
@@ -1059,7 +1071,7 @@ export default function SyncPage() {
                         }}
                       >
                         {pageLoading ||
-                        syncing ||
+                        selectedSyncing ||
                         effectiveSyncJobStatus === "queued" ||
                         effectiveSyncJobStatus === "processing" ? (
                           <Loader size="sm" color={syncStatusView.color} />
@@ -1096,13 +1108,13 @@ export default function SyncPage() {
                     <Button
                       onClick={startSync}
                       disabled={
-                        syncing ||
+                        selectedSyncing ||
                         pageLoading ||
                         (syncMethod === "dxnet_bot"
                           ? !profile?.friendCode
                           : !profile?.hasCabinetUserId || !qrText.trim())
                       }
-                      loading={syncing}
+                      loading={selectedSyncing}
                       variant="light"
                       leftSection={<IconRefresh size={16} />}
                       w={{ base: "100%", xs: "auto" }}
@@ -1132,7 +1144,7 @@ export default function SyncPage() {
                       </Group>
                       <Progress
                         value={progress.percent}
-                        animated={syncing}
+                        animated={dxnetSyncing}
                         size="md"
                         radius="xl"
                         color={progress.percent === 100 ? "green" : "blue"}
@@ -1199,7 +1211,9 @@ export default function SyncPage() {
                   <SyncMetric icon={<IconClock size={18} />} label="最近同步">
                     <Text size="sm" fw={600}>
                       {lastSync
-                        ? formatRelativeDate(lastSync.createdAt)
+                        ? formatRelativeDate(
+                            lastSync.lastMergedAt ?? lastSync.updatedAt,
+                          )
                         : "暂无记录"}
                     </Text>
                   </SyncMetric>
@@ -1232,7 +1246,7 @@ export default function SyncPage() {
             </AppCard>
           </Stack>
 
-          {syncing && syncStatus?.stage === "wait_acceptance" && (
+          {dxnetSyncing && syncStatus?.stage === "wait_acceptance" && (
             <FriendRequestAcceptanceAlert
               key={syncJobId}
               friendRequestSentAt={syncStatus.friendRequestSentAt}
@@ -1268,10 +1282,7 @@ export default function SyncPage() {
             profile={profile}
             onProfileChanged={loadProfile}
             header={
-              <SectionHeader
-                icon={<IconSend size={16} />}
-                title="更新查分器"
-              />
+              <SectionHeader icon={<IconSend size={16} />} title="更新查分器" />
             }
           />
         </Stack>

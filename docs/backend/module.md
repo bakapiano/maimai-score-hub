@@ -1,6 +1,7 @@
 # Backend Module 总览
 
-本文档整理 backend 当前 Nest module 的职责边界。来源以 `backend/src/app.module.ts`、`backend/src/api/backend-api.module.ts`、`backend/src/common/redis/redis.module.ts` 和 `backend/src/modules/**/*.module.ts` 为准。
+本文档整理 backend Nest module 的职责边界。Sync/Prober Export 职责已按
+[目标规范](../specs/score-updates/README.md)更新；对应 rollout 完成前，其余部分仍以当前代码为准。
 
 ## 基础约定
 
@@ -25,14 +26,15 @@
 | `AuthModule`          | `backend/src/modules/auth`          | `AuthService`、`AuthGuard`、`QrLoginService`                                   | 登录、JWT 校验、好友请求登录和机台二维码登录。                                                          |
 | `AutoUpdateModule`    | `backend/src/modules/auto-update`   | `AutoUpdateSchedulerService`                                                   | Rival-first 自动更新调度、Map auxiliary、FC/FS enrichment 触发和失败退避。                              |
 | `BotsModule`          | `backend/src/modules/bots`          | `BotStatusService`、`BotFriendSnapshotService`                                 | DXNet bot 状态、好友快照、可用性选择和不可用任务清理。                                                  |
-| `CabinetScoreSyncModule` | `backend/src/modules/cabinet-score-sync` | `CabinetScoreSyncService`                                                   | 当前用户二维码成绩 job、DXNet/二维码创建互斥、SDGB 结果校验和 sync finalization。                       |
+| `CabinetScoreSyncModule` | `backend/src/modules/cabinet-score-sync` | `CabinetScoreSyncService`                                                   | 当前用户二维码成绩 job、SDGB 结果校验、cleanup fence 和 sync finalization。                             |
 | `CatalogModule`       | `backend/src/modules/catalog`       | `CatalogSyncService`                                                           | 使用可续租 Redis lease 串行执行曲库与缺失封面同步。                                                     |
 | `CoverModule`         | `backend/src/modules/cover`         | `CoverService`                                                                 | 本地封面文件查找、同步、格式变体生成和封面数量统计。                                                    |
 | `JobModule`           | `backend/src/modules/job`           | `JobService`、`JobFriendshipService`、`JobQueueService` 等                     | DXNet worker 任务队列与任务生命周期。                                                                   |
 | `MusicModule`         | `backend/src/modules/music`         | `MusicService`                                                                 | 曲库数据、曲库来源配置、曲库定时同步和曲库缓存。                                                        |
+| `ProberExportModule`  | `backend/src/modules/prober-export` | `ProberExportService`、reconciliation/worker service                           | Provider 版本游标、自动对账补投、手动导出与 per-user 串行执行。                                         |
 | `ScoreExportModule`   | `backend/src/modules/score-export`  | `ScoreExportService`                                                           | 将同步成绩渲染为 PNG 图片。                                                                             |
 | `SdgbWorkerModule`    | `backend/src/modules/sdgb-worker`   | `SdgbJobService`、`SdgbJobDispatcher`                                          | 机台协议 worker 的任务队列、调度和同步调用封装。                                                        |
-| `SyncModule`          | `backend/src/modules/sync`          | `SyncService`                                                                  | 成绩同步快照落库、成绩合并和导出到 prober。                                                             |
+| `SyncModule`          | `backend/src/modules/sync`          | `SyncService`、`ScoreChangeHistoryService`                                      | current score CAS、增量合并、diff、当前用户单谱面历史与 provider payload 转换。                           |
 | `UsersModule`         | `backend/src/modules/users`         | `UsersService`、`CabinetService`、`AccountDeletionService`                     | 用户资料、导入 token、机台绑定、自动更新状态和账号删除。                                                |
 | `ObservabilityModule` | `backend/src/modules/observability` | `ClickHouseService`、`ObservabilityIngestService`、`ObservabilityQueryService` | ClickHouse 批量写入、RUM/analytics/structured logs/external API metadata、admin history/realtime 查询。 |
 
@@ -41,7 +43,8 @@
 ### `AdminModule`
 
 - 面向管理后台聚合数据，不直接表达用户侧业务流程。
-- 统计用户、曲库、同步、封面、DXNet job、自动更新、prober 导出等运维指标。
+- 统计用户、曲库、同步、封面、DXNet job、自动更新，以及 Prober Export version lag、
+  claim/attempt/失败退避等运维指标。
 - 调用 `CoverService` / `MusicService` / `JobService` / `SdgbJobService` 等服务执行管理操作。
 - 按职责拆分为 summary、users、catalog、job query、job metrics、auto-update metrics、prober export metrics 等服务。
 
@@ -68,7 +71,8 @@
 - 用户 API 为 `/me/cabinet-score-jobs`、`/active` 和 `/:jobId`，返回脱敏 view，不暴露原始二维码、cabinet userId、cookie、token 或原始成绩结果。
 - 使用短 Redis mutex 串行化同一好友码的手动同步创建，并同时检查 DXNet `jobs` 与 SDGB `get_music_score`，避免两种手动同步并发覆盖。
 - Worker 完成后由 `WorkerSdgbJobsController` 把 `get_music_score` 的 completed PATCH 路由到 `CabinetScoreSyncService.finalize()`；只有 `cleanupStatus=succeeded`、绑定 ID 三方一致且成绩映射成功，才允许完成 job。
-- 成功后调用 `SyncService.createFromUserMusic()` 写入最新 sync，并用 `trigger=cabinet_qr_update` 创建可选的查分器自动导出任务。
+- 成功后调用统一 score CAS 写入 current sync；version 实际增加时只 best-effort 唤醒
+  per-user 自动导出，版本 reconciliation 负责最终补投。
 - 详细流程见 [二维码成绩更新事实](./cabinet-qr-score-sync.md)。
 
 ### `BotsModule`
@@ -92,7 +96,8 @@
 - 创建 job 时默认会取消同一好友码的旧活跃 job，并按任务类型设置初始 stage；`get_full_friend_list` 这类内部刷新任务可跳过取消旧 job。
 - 创建和唤醒 job 时写入 BullMQ；worker 直接消费队列，处理 `runAt` 延迟、释放 stale execution、超时失败由后台 sweep 兜底。
 - 处理 worker PATCH 回写的状态、stage、进度、profile、result、error 和执行标记。
-- `update_score` 成功完成后会触发 `SyncService.createFromJob()` 写入同步成绩，并按用户设置执行自动导出。
+- `update_score` 通过 commit-first finalization 写入 current sync；version 实际增加后只
+  best-effort 唤醒 per-user 自动导出，不创建来源级导出 job。
 - `get_user_recent_event` 成功完成后会触发 `SyncService.mergeRecentEvents()` 合并唯一命中的 FC/FS；重名或缺失匹配会跳过，不再创建 ambiguous fallback。recent event fingerprint 变化会记录 activity signal。
 - 支持机台绑定用户的 cabinet fast path：通过 sdgb 加 rival 先建立好友关系，再创建普通 `update_score` job。
 - `JobTempCacheService` 用 Redis 临时缓存 `update_score` 中间 FriendVS 解析结果。
@@ -114,6 +119,22 @@
 - `score-export.buckets.ts` 负责分桶、B50 汇总、等级/版本排序；`rendering/` 负责 canvas 渲染、字体和本地素材加载。
 - 还提供按好友码批量生成导出图片的能力，供脚本或后续自动化使用。
 
+### `ProberExportModule`
+
+- `prober_export_states` 保存用户在 Diving Fish/LXNS 的最后成功 score version、失败退避
+  和 Mongo claim；token 仍只保存在 user 文档。
+- 自动导出通过 state 游标与 `syncs.__v` 的差异发现，不与 DXNet/二维码/Rival/FCFS
+  source job 一一绑定。
+- score commit 后可 best-effort 添加稳定 per-user BullMQ wake；定期 reconciliation
+  批量对账并补回丢失 delivery。
+- 两个 Backend replica 使用 Redis 可续期 user lease 串行外部上传，再用 Mongo 原子
+  claimToken fence state 写入。
+- `prober_export_jobs` 保存实际 auto attempt 和立即创建的 manual job，记录 requested/exported
+  score version 与完整 provider 结果。
+- 手动导出与自动导出使用同一用户 lease/claim，成功游标只通过 `$max` 前进。
+- 详细规范见
+  [Diving-Fish / LXNS 成绩导出规范](../specs/prober-export/README.md)。
+
 ### `SdgbWorkerModule`
 
 - 管理 sdgb-worker 使用的机台协议任务，任务类型包括 `scan_qr`、`get_rival_hash`、`get_user_map`、`add_rival` 和 `get_music_score`。
@@ -125,13 +146,17 @@
 
 ### `SyncModule`
 
-- 将 DXNet worker 的 job result、sdgb RivalMusic list 或已登录用户的 `UserMusicDetail[]` 转换为 `SyncScore`，写入最新同步快照。
-- 同一用户只保留最新 sync；新成绩会和上一份 sync 合并，避免单次抓取缺项时丢失旧成绩。
+- 将 DXNet job result、sdgb RivalMusic、Recent Event 或已登录用户的 `UserMusicDetail[]`
+  转成标准 delta，并统一提交到每用户唯一 current sync。
+- 使用 `friendCode + __v` CAS；冲突时必须重新读取最新 current 后 merge，不再
+  `deleteMany + create`。
 - 合并策略保留更高的 achievement、dxScore、FC 和 FS，元数据来自最新曲库。
 - `mergeRecentEvents()` 把 recent event FC/FS list 与当前成绩按 rank 合并；只处理能唯一定位到当前 score 的 event。
-- 对外提供当前用户最新同步成绩查询。
+- 对外提供当前用户最新同步成绩查询，以及按歌曲、难度和谱面类型过滤的
+  `/me/score-changes` 游标历史；历史 service 始终附加 JWT `friendCode` 所有权条件。
 - `ProberExportMapService` 缓存 Diving Fish 与 LXNS 的曲目 id 映射，支持在不同曲库来源下导出。
-- 支持把最新 sync 上传到 Diving Fish 或 LXNS，并记录自动导出结果。
+- 为 ProberExportModule 提供一次性 current export snapshot 与两个 provider payload 转换；
+  自动导出状态不再存入 sync。
 - `createFromUserMusic()` 映射 achievement、DX Score、FC/AP 和 FS/FDX；`syncStatus=5 (SyncPlay)` 不映射为 Full Sync。
 
 ### `UsersModule`
@@ -139,7 +164,8 @@
 - 管理用户主数据：好友码、用户名/密码、导入 token、DXNet profile、最近活跃时间、机台绑定和自动更新开关。
 - `UsersService` 提供用户查找、创建、更新、密码登录、批量 profile patch 和活跃状态查询。部分旧自动更新节流字段仍保留在 user schema，但 Rival-first 状态已迁移到 `auto_update_probe_states`。
 - `CabinetService` 处理机台二维码绑定：解码 QR、调用 sdgb 扫码、用最新 sync 与机台成绩做身份匹配。
-- `AccountDeletionService` 删除账号时同步清理该用户的 sync 和 job 数据。
+- `AccountDeletionService` 删除账号时同步清理该用户的 sync、`score_changes`、业务 job、
+  `prober_export_states` 和用户可归属的 export attempt 数据。
 - 其他模块通常通过好友码读取用户，通过用户 `_id` 更新设置。
 
 ### `ObservabilityModule`

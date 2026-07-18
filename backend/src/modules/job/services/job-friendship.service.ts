@@ -203,7 +203,10 @@ export class JobFriendshipService {
       : null;
     const user = await this.usersService.findByFriendCode(friendCode);
     const hasCabinetUserId =
-      (user as { cabinetUserId?: number | null } | null)?.cabinetUserId != null;
+      (user as { cabinetUserId?: number | null } | null)?.cabinetUserId !==
+        null &&
+      (user as { cabinetUserId?: number | null } | null)?.cabinetUserId !==
+        undefined;
     const recommendedBotFriendCode =
       botFriendCode ?? availableBots[0]?.friendCode ?? null;
 

@@ -23,11 +23,14 @@ import classes from "./ScorePage.module.css";
 
 function readCachedScores() {
   const cached = getCachedSyncLatest();
-  if (!cached) {return null;}
+  if (!cached) {
+    return null;
+  }
 
   return {
     scores: Array.isArray(cached.scores) ? (cached.scores as SyncScore[]) : [],
-    lastSyncAt: cached.createdAt ?? cached.updatedAt ?? null,
+    lastSyncAt:
+      cached.lastMergedAt ?? cached.updatedAt ?? cached.createdAt ?? null,
   };
 }
 
@@ -35,9 +38,7 @@ function readCachedScoresWhenIdle() {
   return runWhenIdle(() => readCachedScores(), 300);
 }
 
-function cacheSyncLatestWhenIdle(
-  data: Parameters<typeof cacheSyncLatest>[0],
-) {
+function cacheSyncLatestWhenIdle(data: Parameters<typeof cacheSyncLatest>[0]) {
   scheduleIdleTask(() => cacheSyncLatest(data), 1000);
 }
 
@@ -57,7 +58,9 @@ export default function ScorePage() {
 
   const applyCachedScores = useCallback(async () => {
     const cached = await readCachedScoresWhenIdle();
-    if (!cached) {return false;}
+    if (!cached) {
+      return false;
+    }
 
     setScores(cached.scores);
     setLastSyncAt(cached.lastSyncAt);
@@ -65,79 +68,108 @@ export default function ScorePage() {
   }, []);
 
   const clearScoresIfEmpty = useCallback(() => {
-    if (hasSyncRef.current) {return;}
+    if (hasSyncRef.current) {
+      return;
+    }
     setScores([]);
     setLastSyncAt(null);
   }, []);
 
-  const loadScores = useCallback(async (options: { force?: boolean } = {}) => {
-    // Offline mode: load from cache
-    if (offline) {
+  const loadScores = useCallback(
+    async (options: { force?: boolean } = {}) => {
+      // Offline mode: load from cache
+      if (offline) {
+        setLoading(!hasSyncRef.current);
+        if (!(await applyCachedScores())) {
+          clearScoresIfEmpty();
+        }
+        setLoading(false);
+        return;
+      }
+
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+
       setLoading(!hasSyncRef.current);
-      if (!(await applyCachedScores())) {clearScoresIfEmpty();}
-      setLoading(false);
-      return;
-    }
+      setError(null);
 
-    if (!token) {
-      setLoading(false);
-      return;
-    }
+      try {
+        const latestRes = await fetchLatestSync<{
+          id?: string;
+          scores?: SyncScore[];
+          createdAt?: string;
+          updatedAt?: string;
+          lastMergedAt?: string;
+          scoreUpdatedAt?: string;
+          scoreVersion?: number;
+        }>(token, options);
 
-    setLoading(!hasSyncRef.current);
-    setError(null);
-
-    try {
-      const latestRes = await fetchLatestSync<{
-        id?: string;
-        scores?: SyncScore[];
-        createdAt?: string;
-        updatedAt?: string;
-      }>(token, options);
-
-      if (latestRes.status !== 200) {
-        if (latestRes.status === 404) {
-          setError(null);
-          if (!(await applyCachedScores())) {clearScoresIfEmpty();}
-          return;
-        }
-        if (!hasSyncRef.current) {
-          setError(`获取成绩失败 (HTTP ${latestRes.status})`);
-        }
-        if (!(await applyCachedScores())) {clearScoresIfEmpty();}
-      } else if (latestRes.data) {
-        const { id, scores: syncScores, createdAt, updatedAt } = latestRes.data;
-        if (Array.isArray(syncScores)) {
-          setScores(syncScores);
-          cacheSyncLatestWhenIdle({
+        if (latestRes.status !== 200) {
+          if (latestRes.status === 404) {
+            setError(null);
+            if (!(await applyCachedScores())) {
+              clearScoresIfEmpty();
+            }
+            return;
+          }
+          if (!hasSyncRef.current) {
+            setError(`获取成绩失败 (HTTP ${latestRes.status})`);
+          }
+          if (!(await applyCachedScores())) {
+            clearScoresIfEmpty();
+          }
+        } else if (latestRes.data) {
+          const {
             id,
             scores: syncScores,
             createdAt,
             updatedAt,
-          });
+            lastMergedAt,
+            scoreUpdatedAt,
+            scoreVersion,
+          } = latestRes.data;
+          if (Array.isArray(syncScores)) {
+            setScores(syncScores);
+            cacheSyncLatestWhenIdle({
+              id,
+              scores: syncScores,
+              createdAt,
+              updatedAt,
+              lastMergedAt,
+              scoreUpdatedAt,
+              scoreVersion,
+            });
+          } else {
+            setScores([]);
+          }
+          setLastSyncAt(lastMergedAt ?? updatedAt ?? createdAt ?? null);
         } else {
-          setScores([]);
+          clearScoresIfEmpty();
         }
-        setLastSyncAt(createdAt ?? updatedAt ?? null);
-      } else {
-        clearScoresIfEmpty();
+      } catch (err) {
+        if (!hasSyncRef.current) {
+          setError((err as Error)?.message ?? "请求失败");
+        }
+        if (!(await applyCachedScores())) {
+          clearScoresIfEmpty();
+        }
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      if (!hasSyncRef.current) {
-        setError((err as Error)?.message ?? "请求失败");
-      }
-      if (!(await applyCachedScores())) {clearScoresIfEmpty();}
-    } finally {
-      setLoading(false);
-    }
-  }, [applyCachedScores, clearScoresIfEmpty, offline, token]);
+    },
+    [applyCachedScores, clearScoresIfEmpty, offline, token],
+  );
 
   useEffect(() => {
     void loadScores();
   }, [loadScores]);
 
   useEffect(() => {
-    if (!token || offline) {return;}
+    if (!token || offline) {
+      return;
+    }
 
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") {

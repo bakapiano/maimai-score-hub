@@ -2,7 +2,7 @@
 
 [← 返回总览](./README.md)
 
-状态：Implemented
+状态：二维码/session 基线已实现；并行 sync CAS 与新版 Prober Export 条目为目标验收
 
 测试只验证公开行为、安全边界和集成结果。机台侧协议测试、私有调用样例和 worker 源码级测试不写入本仓库文档。
 
@@ -19,7 +19,8 @@
 - 结果 owner 或绑定账号不一致时不写 sync。
 - cleanup 未成功时不写 sync。
 - 无有效成绩时不覆盖旧 sync。
-- 重复完成请求只创建一个 sync 和一个自动导出任务。
+- 重复完成请求不会重复增加 current score version；per-user export wake 可重复调用但只保留
+  一个 active delivery。
 - finalization 后只保留 syncId 和 scoreCount 摘要。
 
 ## 2. Frontend 测试
@@ -35,7 +36,7 @@
 - unconfirmed 显示 retryAfter。
 - completed 刷新 latest sync。
 - failed 不自动复用旧二维码。
-- 活动任务期间不能切换方式或重复创建。
+- 同模式 active 时不能重复创建；DXNet 与二维码可以独立运行和轮询。
 
 ## 3. Worker 黑盒验收
 
@@ -62,7 +63,7 @@
 5. 任务完成后账号可以正常继续使用，证明没有遗留临时状态。
 6. 在测试环境中模拟 worker 中断，重启后能完成安全清理，旧任务不落成绩。
 7. MongoDB、队列、Backend 日志、Worker 日志、Admin API 和浏览器存储中搜索不到二维码或临时凭据。
-8. 自动导出失败不会回滚已写入的 sync。
+8. 自动导出失败不会回滚 current sync，provider 成功游标保持旧版本并按退避重试。
 
 ## 5. 回归范围
 
@@ -70,7 +71,7 @@
 - 二维码绑定与登录；
 - Rival-first 自动更新；
 - 最新 sync 查询与成绩页；
-- Diving-Fish / LXNS 自动导出；
+- Diving-Fish/LXNS export state 对账、per-user 串行和实际 attempt；
 - 多 backend 实例的幂等 finalization；
 - sdgb job 队列修复与超时终态；
 - Admin 任务列表和统计。
@@ -100,14 +101,15 @@
 
 - 用户可以明确选择 DX Net Bot 或二维码。
 - 二维码方式支持文本和 PNG/JPEG/WebP 图片。
-- 只允许已登录、已绑定且没有活动手动同步的用户创建任务。
+- 只允许已登录、已绑定且没有活动二维码任务/cleanup fence 的用户创建二维码任务；
+  DXNet 活动任务不再阻止二维码创建。
 - 任务状态可以在页面刷新后恢复。
 - 账号不匹配时不读取、不写入成绩。
 - cleanup 未确认时不写 sync，并阻止新二维码任务。
 - 成功结果正确更新 achievement、DX Score、FC/AP 和 FS/FDX。
 - 用户、Admin、日志和长期任务记录不泄露敏感输入、临时凭据、绑定账号或原始成绩。
 - 仓库文档不包含机台侧调用方法、服务地址、协议材料或 sdgb-worker 私有源码细节。
-- 现有同步、绑定、自动更新和自动导出流程无回归。
+- 现有同步、绑定和自动更新无回归；自动导出最终收敛到 current score version。
 
 ## 9. 文档维护
 

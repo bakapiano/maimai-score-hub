@@ -30,6 +30,7 @@ import {
   ScoreDetailBudgetTable,
   TARGET_ACHIEVEMENT_OPTIONS,
 } from "./ScoreDetailBudgetTable";
+import { ScoreChangeHistorySection } from "./ScoreChangeHistorySection";
 import classes from "./ScoreDetailModal.module.css";
 
 export interface ScoreDetailModalProps {
@@ -762,6 +763,11 @@ export function ScoreDetailModal({
               <ChartDetails
                 scoreData={scoreData}
                 noteStats={noteStats}
+                maxDxScore={maxDxScore}
+              />
+              <ScoreChangeHistorySection
+                opened={opened}
+                scoreData={scoreData}
                 maxDxScore={maxDxScore}
               />
             </>

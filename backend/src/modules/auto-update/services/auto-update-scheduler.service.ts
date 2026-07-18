@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import {
   Injectable,
   Logger,
@@ -195,6 +196,7 @@ export class AutoUpdateSchedulerService
     return summary;
   }
 
+  // eslint-disable-next-line max-lines-per-function
   async runSweep(signal?: AbortSignal): Promise<{
     totalUsers: number;
     triggered: number;
@@ -663,7 +665,9 @@ export class AutoUpdateSchedulerService
     if (!sync) {
       throw new Error('rival music returned no mappable scores');
     }
-    this.enqueueRivalAutoExport(state.friendCode, sync.id, taskId);
+    if (sync.changedChartCount > 0) {
+      this.enqueueRivalAutoExport(state.friendCode);
+    }
     await this.stateModel.updateOne(
       { friendCode: state.friendCode },
       {
@@ -699,18 +703,9 @@ export class AutoUpdateSchedulerService
     };
   }
 
-  private enqueueRivalAutoExport(
-    friendCode: string,
-    syncId: string,
-    taskId: string,
-  ): void {
+  private enqueueRivalAutoExport(friendCode: string): void {
     this.proberExports
-      .enqueueAutoExportForSync({
-        trigger: 'auto_update_rival',
-        friendCode,
-        syncId,
-        sourceTaskId: taskId,
-      })
+      .ensureAutoExportWake(friendCode)
       .catch((err) =>
         this.logger.warn(
           `failed to enqueue rival auto-export fc=${friendCode}: ${
@@ -961,11 +956,13 @@ export class AutoUpdateSchedulerService
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   private async maybeEnqueueFcfs(
     state: AutoUpdateProbeStateEntity,
     reason: AutoUpdateFcfsReason,
-    now: Date,
+    _now: Date,
   ): Promise<void> {
+    void _now;
     this.logger.warn(
       `FCFS enrichment disabled temporarily; skip addRival/get_user_recent_event fc=${state.friendCode} reason=${reason}`,
     );

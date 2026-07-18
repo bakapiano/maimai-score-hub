@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import type { HydratedDocument } from 'mongoose';
+import type { HydratedDocument, Types } from 'mongoose';
 import { Schema as MongooseSchema } from 'mongoose';
 
 export type ProberExportProvider = 'divingFish' | 'lxns';
@@ -8,6 +8,7 @@ export type ProberExportTrigger =
   | 'auto_update_rival'
   | 'auto_update_fcfs'
   | 'cabinet_qr_update'
+  | 'auto_latest'
   | 'manual';
 export type ProberExportStatus =
   | 'queued'
@@ -40,11 +41,23 @@ export class ProberExportJobEntity {
   @Prop({ required: true, type: String, index: true })
   trigger!: ProberExportTrigger;
 
+  @Prop({ required: true, type: String, index: true, default: 'manual' })
+  kind!: 'auto' | 'manual';
+
   @Prop({ required: true, type: String, index: true })
   friendCode!: string;
 
+  @Prop({ type: MongooseSchema.Types.ObjectId, default: null, index: true })
+  ownerUserId!: Types.ObjectId | null;
+
   @Prop({ required: true, type: String, index: true })
   syncId!: string;
+
+  @Prop({ type: Number, default: null })
+  requestedScoreVersion!: number | null;
+
+  @Prop({ type: Number, default: null })
+  exportedScoreVersion!: number | null;
 
   @Prop({ type: String, default: null })
   sourceJobId!: string | null;
@@ -69,6 +82,9 @@ export class ProberExportJobEntity {
 
   @Prop({ type: Date, default: null })
   claimedAt!: Date | null;
+
+  @Prop({ type: String, default: null })
+  claimToken!: string | null;
 
   @Prop({ type: Date, default: null })
   completedAt!: Date | null;

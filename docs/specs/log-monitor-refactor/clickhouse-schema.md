@@ -229,6 +229,9 @@ TTL toDateTime(ts) + INTERVAL 90 DAY DELETE;
 - `diving_fish.export`
 - `lxns.export`
 
+Prober Export 调用的 `attrs` 应包含 `kind=auto|manual`、provider、attemptId、
+`requestedScoreVersion` 和 `exportedScoreVersion`；不得包含 import token 或成绩 payload。
+
 ## `job_timeline_events`
 
 job 状态流转和 stage 变化。

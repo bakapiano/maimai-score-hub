@@ -40,6 +40,7 @@ import {
   type DetailedMusicScoreCardProps,
 } from "./MusicScoreCard";
 import { DeferredImage } from "./DeferredImage";
+import { getDxStar, parseDxScore } from "../utils/dxScore";
 import classes from "./ScoreDetailModal.module.css";
 
 const FALLBACK_COVER =
@@ -135,36 +136,6 @@ function getSearchQuery(
   difficultyName: string,
 ) {
   return `${scoreData.songMetadata?.title || scoreData.musicId} ${difficultyName}`.trim();
-}
-
-function parseDxScore(value: string | number | null | undefined) {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  const parsed =
-    typeof value === "number"
-      ? value
-      : Number(String(value).replace(/,/g, ""));
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function getDxStar(dxPercent: number) {
-  if (dxPercent <= 85) {
-    return 0;
-  }
-  if (dxPercent <= 90) {
-    return 1;
-  }
-  if (dxPercent <= 93) {
-    return 2;
-  }
-  if (dxPercent <= 95) {
-    return 3;
-  }
-  if (dxPercent <= 97) {
-    return 4;
-  }
-  return 5;
 }
 
 function getVisibleMetadataItems(

@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Worker } from 'bullmq';
+import { DelayedError, Worker } from 'bullmq';
 
 import {
   PROBER_EXPORT_QUEUE_NAME,
@@ -44,7 +44,11 @@ export class ProberExportWorkerService
     this.worker = new Worker<ProberExportJobData>(
       PROBER_EXPORT_QUEUE_NAME,
       async (job) => {
-        await this.exports.process(job.data.jobId);
+        const outcome = await this.exports.processDelivery(job.data);
+        if (outcome.kind === 'lease_busy') {
+          await job.moveToDelayed(Date.now() + outcome.delayMs, job.token);
+          throw new DelayedError();
+        }
       },
       {
         connection: queueOptions.connection,

@@ -217,6 +217,7 @@ export type UploadRecordsResponse = {
 export async function uploadRecords(
   records: DivingFishRecord[],
   importToken: string,
+  signal?: AbortSignal,
 ): Promise<UploadRecordsResponse> {
   const treatAsSuccess = (status: number, body: string): boolean => {
     // diving-fish 500 with default flask html error page actually means
@@ -231,8 +232,9 @@ export async function uploadRecords(
 
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < LONG_BACKOFF_MS.length; attempt++) {
+    signal?.throwIfAborted();
     if (LONG_BACKOFF_MS[attempt] > 0) {
-      await new Promise((r) => setTimeout(r, LONG_BACKOFF_MS[attempt]));
+      await abortableSleep(LONG_BACKOFF_MS[attempt], signal);
     }
     let res: Response;
     try {
@@ -255,6 +257,7 @@ export async function uploadRecords(
               'Import-Token': importToken,
             },
             body: JSON.stringify(records),
+            signal,
           }),
       );
     } catch (err) {
@@ -296,6 +299,26 @@ export async function uploadRecords(
   throw lastErr instanceof Error
     ? lastErr
     : new Error('Diving-fish upload failed after retries');
+}
+
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  signal.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(
+        signal.reason instanceof Error ? signal.reason : new Error('aborted'),
+      );
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 function classifyDivingFishUrl(url: string): string {

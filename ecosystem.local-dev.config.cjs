@@ -3,6 +3,8 @@ const fs = require("node:fs");
 
 const root = __dirname;
 const env = readEnvFile(path.join(root, ".env.local-dev"));
+const fakeSdgb = env.SDGB_FAKE_UPSTREAM === "1";
+const sdgbDesiredActiveCount = fakeSdgb ? "2" : "1";
 
 function sdgbWorkerApp(name, workerId, workerClass) {
   return {
@@ -13,6 +15,7 @@ function sdgbWorkerApp(name, workerId, workerClass) {
     env: {
       ...env,
       NODE_ENV: "dev",
+      ENV_PATH: path.join(root, "sdgb-worker", ".env"),
       WORKER_ID: workerId,
       SDGB_WORKER_CLASS: workerClass,
       SDGB_WORKER_CAPABILITIES: "probe,interactive",
@@ -24,20 +27,16 @@ function sdgbWorkerApp(name, workerId, workerClass) {
       ...(workerClass === "recoverable"
         ? { SDGB_AUTO_RECOVERY_HOOK_KIND: "noop" }
         : {}),
-      SDGB_FAKE_UPSTREAM: "1",
+      SDGB_FAKE_UPSTREAM: fakeSdgb ? "1" : "0",
       BACKEND_URL: "http://127.0.0.1:9050",
       REDIS_HOST: "127.0.0.1",
       REDIS_PORT: "6379",
       REDIS_DB: "0",
       REDIS_KEY_PREFIX: "maimai:",
       API_SHARED_SECRET:
-        env.API_SHARED_SECRET ||
-        env.ADMIN_PASSWORD ||
-        "change-me-local-admin",
+        env.API_SHARED_SECRET || env.ADMIN_PASSWORD || "change-me-local-admin",
       ADMIN_PASSWORD:
-        env.ADMIN_PASSWORD ||
-        env.API_SHARED_SECRET ||
-        "change-me-local-admin",
+        env.ADMIN_PASSWORD || env.API_SHARED_SECRET || "change-me-local-admin",
     },
     autorestart: true,
     max_restarts: 5,
@@ -70,15 +69,6 @@ function readEnvFile(file) {
 module.exports = {
   apps: [
     {
-      name: "msh-memurai",
-      script: "C:\\ProgramData\\chocolatey\\bin\\memurai.exe",
-      args: "--port 6379 --dir C:\\ProgramData\\MemuraiDev",
-      cwd: root,
-      interpreter: "none",
-      autorestart: true,
-      max_restarts: 5,
-    },
-    {
       name: "msh-backend",
       script: path.join(root, "backend", "dist", "main.js"),
       cwd: path.join(root, "backend"),
@@ -95,14 +85,15 @@ module.exports = {
         REDIS_KEY_PREFIX: "maimai:",
         AUTH_JWT_SECRET: "change-me-local",
         SKIP_AUTH: "true",
+        PROBER_AUTO_EXPORT_ENABLED: "false",
         OBSERVABILITY_ENV: "dev",
         OBSERVABILITY_INSTANCE: "local-admin-dashboard",
         CLICKHOUSE_DATABASE: "maimai_observability",
         CLICKHOUSE_FLUSH_INTERVAL_MS: "1000",
-        SDGB_PROBE_PREFERRED_ACTIVE_COUNT: "2",
-        SDGB_PROBE_FALLBACK_ACTIVE_COUNT: "2",
-        SDGB_INTERACTIVE_PREFERRED_ACTIVE_COUNT: "2",
-        SDGB_INTERACTIVE_FALLBACK_ACTIVE_COUNT: "2",
+        SDGB_PROBE_PREFERRED_ACTIVE_COUNT: sdgbDesiredActiveCount,
+        SDGB_PROBE_FALLBACK_ACTIVE_COUNT: sdgbDesiredActiveCount,
+        SDGB_INTERACTIVE_PREFERRED_ACTIVE_COUNT: sdgbDesiredActiveCount,
+        SDGB_INTERACTIVE_FALLBACK_ACTIVE_COUNT: sdgbDesiredActiveCount,
         SDGB_WORKER_STALE_MS: "3000",
         SDGB_WORKER_REGISTRY_TTL_SECONDS: "10",
         SDGB_DESIRED_MEMBERS_TTL_SECONDS: "10",
@@ -174,16 +165,8 @@ module.exports = {
       autorestart: true,
       max_restarts: 5,
     },
-    sdgbWorkerApp(
-      "msh-sdgb-stable-a",
-      "sdgb-stable-local-a",
-      "stable",
-    ),
-    sdgbWorkerApp(
-      "msh-sdgb-stable-b",
-      "sdgb-stable-local-b",
-      "stable",
-    ),
+    sdgbWorkerApp("msh-sdgb-stable-a", "sdgb-stable-local-a", "stable"),
+    sdgbWorkerApp("msh-sdgb-stable-b", "sdgb-stable-local-b", "stable"),
     sdgbWorkerApp(
       "msh-sdgb-recoverable-a",
       "sdgb-recoverable-local-a",

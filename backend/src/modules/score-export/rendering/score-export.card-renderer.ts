@@ -38,6 +38,8 @@ export async function drawCardGrid(
   }
 }
 
+// Rendering is deliberately linear so canvas state changes remain auditable.
+// eslint-disable-next-line max-lines-per-function, complexity
 async function drawCard(
   ctx: CanvasContext,
   x: number,

@@ -1,6 +1,8 @@
 # Backend API 总览
 
-本文档整理 backend 当前对外暴露的 HTTP API。来源以 `backend/src/main.ts`、`backend/src/api/**/*.controller.ts` 和 `shared/src/modules/**/*.schema.ts` 为准。
+本文档整理 backend 对外 HTTP API。Sync/Prober Export 响应语义已按
+[目标导出规范](../specs/prober-export/README.md)更新；对应 rollout 完成前，
+其余路由仍以当前 controller/shared contract 为准。
 
 ## 基础约定
 
@@ -8,7 +10,7 @@
 - Swagger UI：`/api/v1/swagger`，加载 `shared/openapi/openapi.yaml`。注意该 OpenAPI 文件由 shared ts-rest contracts 生成，不覆盖所有 controller-only 接口。
 - CORS：`origin: true`。
 - 请求体大小：JSON 和 urlencoded 均为 `100mb`。
-- 业务端点数量：66 个，含 `/health`，不含 Swagger 静态资源。
+- 业务端点数量：67 个，含 `/health`，不含 Swagger 静态资源。
 
 ## 路由分层
 
@@ -17,7 +19,7 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | 前缀         | 调用方       | 说明                                                           |
 | ------------ | ------------ | -------------------------------------------------------------- |
 | `/auth/*`    | 未登录用户   | 登录请求、登录轮询、二维码登录。                               |
-| `/me/*`      | 当前登录用户 | 当前用户资料、同步数据、成绩图导出、个人 DXNet/二维码成绩 job、机台绑定。 |
+| `/me/*`      | 当前登录用户 | 当前用户资料、同步数据、单谱面变化历史、成绩图导出、个人 DXNet/二维码成绩 job、机台绑定。 |
 | `/catalog/*` | 公开访问     | 曲库和封面等公开只读资源。                                     |
 | `/public/*`  | 公开访问     | 非当前用户语义的公开查询接口。                                 |
 | `/workers/*` | 后台 worker  | DXNet worker、SDGB worker、worker 日志、bot 心跳。             |
@@ -51,12 +53,12 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | 方法   | 路径                            | 入参                                                              | 说明                                                                                                                                       |
 | ------ | ------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | GET    | `/me`                           | -                                                                 | 返回当前用户资料。不会暴露 import token 或原始 `cabinetUserId`，只返回 `has*` 布尔标记。                                                   |
-| PATCH  | `/me`                           | body: `divingFishImportToken?`, `lxnsImportToken?`, `autoUpdate?` | 更新导入 token 和自动更新开关。保存 token 后同步完成会默认自动导出到对应查分器；开启自动更新前必须已绑定机台二维码；返回脱敏后的用户资料。 |
+| PATCH  | `/me`                           | body: `divingFishImportToken?`, `lxnsImportToken?`, `autoUpdate?` | 更新导入 token 和自动更新开关。新增/更换 token 会启用对应 export state 并安排 current 全量导出；删除/失效 token 会禁用对应 provider。开启自动更新前必须已绑定机台二维码；返回脱敏资料。 |
 | PUT    | `/me/password`                  | body: `username?`, `currentPassword?`, `newPassword?`             | 已登录用户设置/修改用户名和密码。已有密码时需要 `currentPassword`。                                                                        |
 | POST   | `/me/prober-tokens/diving-fish` | body: `username`, `password`                                      | 用 Diving Fish 账号密码一次性获取 import token；用户名密码不保存。                                                                         |
 | PUT    | `/me/cabinet`                   | JSON body: `qrCode?`，或 multipart field: `image`                 | 绑定机台 `cabinetUserId`。少于 4 条成绩时使用二维码登录同款反查；4 条以上时最多匹配 10 条，不足 10 条则全部匹配；失败返回 409。                 |
 | DELETE | `/me/cabinet`                   | -                                                                 | 解绑机台 userId，并关闭自动更新。                                                                                                          |
-| DELETE | `/me`                           | -                                                                 | 删除当前账号及相关数据，返回删除统计。                                                                                                     |
+| DELETE | `/me`                           | -                                                                 | 删除当前账号及相关数据（包含 `score_changes`），返回删除统计。                                                                              |
 
 ## 同步与成绩导出
 
@@ -64,9 +66,10 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 | 方法 | 路径                                  | 入参                                    | 说明                                                                                        |
 | ---- | ------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------- |
-| GET  | `/me/sync/latest`                     | -                                       | 返回当前用户最近一次同步记录和 scores，可能为 `null`。                                      |
-| POST | `/me/sync/latest/exports/diving-fish` | -                                       | 创建异步 Diving Fish 导出任务，返回 `exportJobId`。要求用户已保存 `divingFishImportToken`。 |
-| POST | `/me/sync/latest/exports/lxns`        | -                                       | 创建异步 LXNS 导出任务，返回 `exportJobId`。要求用户已保存 `lxnsImportToken`。              |
+| GET  | `/me/sync/latest`                     | -                                       | 返回 current sync、scores、最近 merge 时间，以及 `prober_export_states` 的安全 provider 状态投影；可能为 `null`。 |
+| GET  | `/me/score-changes`                   | query: `musicId`, `chartIndex`, `type`, `limit?`, `cursor?` | 查询当前用户指定歌曲/谱面的变化历史，按观察时间倒序；`limit` 默认 30、最大 100，返回 `{ items, nextCursor }`。用户范围只取 JWT 的 `friendCode`，不会接受或返回其他用户标识。 |
+| POST | `/me/sync/latest/exports/diving-fish` | -                                       | 创建高优先级手动异步导出任务。实际执行时读取 latest current，成功后原子推进 Diving Fish 成功版本。 |
+| POST | `/me/sync/latest/exports/lxns`        | -                                       | 创建高优先级手动异步导出任务。实际执行时读取 latest current，成功后原子推进 LXNS 成功版本。 |
 | GET  | `/me/sync/prober-export-jobs/:exportJobId` | path: `exportJobId`                     | 查询当前用户自己的查分器导出任务结果。                                                      |
 | GET  | `/me/sync/prober-export-jobs`              | query: `limit?`                         | 查询当前用户最近的查分器导出任务。                                                          |
 | GET  | `/me/score-exports/best50`            | -                                       | 生成 Best 50 PNG，响应 `Content-Type: image/png`，下载名 `best50.png`。                     |
@@ -172,7 +175,7 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | ---- | ---------------------------------------- | --------------------------------------- | -------------------------------------------- |
 | GET  | `/admin/dashboard/stats`                 | -                                       | 基础统计：用户数、曲目数、同步数、封面数等。 |
 | GET  | `/admin/dashboard/job-stats`             | -                                       | job 聚合统计。                               |
-| GET  | `/admin/dashboard/prober-export-metrics` | query: `window? = 24h \| 7d`            | 自动导出到 prober 的聚合指标；默认 `24h`。   |
+| GET  | `/admin/dashboard/prober-export-metrics` | query: `window? = 24h \| 7d`            | 基于 export state/version lag 与实际 attempt 的聚合指标；默认 `24h`。 |
 | GET  | `/admin/dashboard/job-trend`             | query: `hours?`，范围 1 到 720，默认 24 | job 趋势数据。                               |
 | GET  | `/admin/dashboard/job-error-stats`       | -                                       | job 错误统计。                               |
 

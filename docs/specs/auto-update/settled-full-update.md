@@ -256,10 +256,14 @@ recordRecentEventFingerprint({
 
 全量 `update_score` 完成后沿用现有逻辑：
 
-- `SyncService.createFromJob()` 写最新 sync。
-- `ProberExportService.enqueueAutoExportForSync({ trigger: 'dxnet_update_score' })` 自动导出。
+- `SyncService.createFromJob()` 通过统一 CAS 把 delta 合并进 current sync。
+- score version 实际增加后 best-effort 唤醒稳定的 per-user export delivery。
+- `prober_export_states` 与 `syncs.__v` 的定期 reconciliation 是漏投恢复来源。
 
-不新增导出 trigger。全量收尾仍沿用 `dxnet_update_score`；如需排查来源，看 DXNet job context 的 `source: "auto_update_settled_full_update"`。
+不为 settled full update 新增来源级导出 trigger；实际 auto attempt 只记录 requested/exported
+score version。如需排查成绩来源，看 DXNet job context 的
+`source: "auto_update_settled_full_update"`。导出状态机见
+[Prober Export 规范](../prober-export/README.md)。
 
 ## 失败与退避
 
@@ -279,6 +283,6 @@ recordRecentEventFingerprint({
 2. Full update 使用 worker 默认难度范围 `[0,1,2,3,4,10]`，包含 utage。
 3. Continuous play 不设置最大延迟上限，始终等待 quiet window。
 4. Due 时已有 active `update_score` 则直接清 pending，认为该 job 已覆盖本次收尾。
-5. 不新增导出 trigger，沿用 `dxnet_update_score`。
+5. 不创建来源级导出 trigger；score version 增加后走统一 per-user wake 与版本 reconciliation。
 6. Settled full update 使用独立的 12 个 batch/active 水位，不再复用 Map batch。
 7. 自动 full update 使用 priority 1；手动 update_score 保持 priority 2。

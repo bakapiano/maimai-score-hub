@@ -44,12 +44,7 @@ export class MeDxnetJobsController {
       throw new BadRequestException('Missing friendCode in token');
     }
 
-    const ownerUserId = req.user?.sub;
-    if (!ownerUserId) {
-      throw new BadRequestException('Missing sub in token');
-    }
-    return this.cabinetScores.withCreateLock(friendCode, async () => {
-      await this.cabinetScores.assertNoActiveCabinetJob(ownerUserId);
+    return this.cabinetScores.withCreateLock(friendCode, 'dxnet', async () => {
       return this.jobs.create({
         friendCode,
         jobType: body.jobType,

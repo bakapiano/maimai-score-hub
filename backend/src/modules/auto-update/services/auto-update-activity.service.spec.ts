@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import { AutoUpdateActivityService } from './auto-update-activity.service';
 
 describe('AutoUpdateActivityService', () => {

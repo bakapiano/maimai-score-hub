@@ -1,6 +1,7 @@
 # 非自动更新 update_score Job 流程
 
-本文档根据当前代码实现整理，范围只覆盖**不是由 `AutoUpdateSchedulerService` 定时触发**的 `update_score` job，也就是用户在前端点击“同步成绩 / 更新数据”后最终用于抓取并写入成绩的 DXNet job。
+本文档整理非 scheduler `update_score` 主流程。抓取/job 基线以当前代码为准；current sync
+CAS 与 Prober Export 部分按[成绩更新目标规范](../score-updates/README.md)描述。
 
 ## 关键结论
 
@@ -8,7 +9,8 @@
 - **前端会先确认好友关系 / 机台绑定状态，再创建 `update_score`**：如果当前用户已是可用 Bot 好友，或已绑定 `cabinetUserId`，前端会直接创建 `update_score`；否则才先走好友关系建立流程。
 - **后端不会把 `update_score` 自动改写成好友申请 job**：创建 `update_score` 时如果仍无法确认好友关系，会返回 `code: "needs_friendship"`。
 - **Job 状态以 MongoDB `jobs` 集合为准**：BullMQ 只负责分发 `{ jobId }`。
-- **“同步后自动导出”不是“自动更新”**：它是在一次普通 `update_score` 成功写入 sync 后，把最新成绩导出到 Diving-Fish / LXNS。
+- **“同步后自动导出”不是“自动更新”**：score version 增加后只唤醒统一导出执行器；
+  `prober_export_states` 与 `syncs.__v` 的版本差决定是否需要上传到 Diving-Fish/LXNS。
 
 ## 相关代码入口
 
@@ -174,13 +176,20 @@ Worker PATCH `update_score` 为 `completed` 后，`JobService.patch()` 会做以
 - `updated.jobType === "update_score"`
 - `updated.result` 存在
 
-`SyncService.createFromJob()` 会把 worker 聚合结果映射到本地 music 表，合并上一份 sync，保留更高的 dxScore / achievement / FC / FS，然后删除旧 sync 并创建新的 `syncs` 记录。
+`SyncService.createFromJob()` 将 worker 结果映射为 delta，通过统一 CAS 合并到 current sync，
+保留更高的 dxScore/achievement/FC/FS。CAS 冲突时重新读取最新 current 后 merge，不再删除
+旧 sync 并创建新文档。
 
 ### 3. 同步后自动导出
 
-如果用户配置了 Diving-Fish / LXNS token，`JobService` 会在 sync 写入后创建 `prober_export_jobs` 并加入 backend 内嵌导出队列。导出结果以 `prober_export_jobs.result` 为 source of truth，并镜像简化结果到对应 `syncs.autoExportResult`；DXNet `jobs` 不再保存 `autoExportResult`。
+score version 实际增加后，`JobService` 只 best-effort 确保存在稳定的 per-user BullMQ wake。
+即使 enqueue 丢失，定期 reconciliation 也会比较 provider `lastSuccessVersion` 与
+`syncs.__v` 并补投。自动导出结果和版本游标保存在 `prober_export_states`；
+`prober_export_jobs` 只记录实际 attempt，不再把结果镜像到 `syncs.autoExportResult`。
 
-前端在 `update_score` job 完成后会延迟 3 秒重新拉一次 job，以展示导出结果。
+自动导出独立于 DXNet job 完成；前端从 export state 的安全投影展示 provider 进度，完整
+attempt 结果通过 prober-export job 查询。详细状态机见
+[Diving-Fish / LXNS 成绩导出规范](../prober-export/README.md)。
 
 ## 与自动更新 update_score 的区别
 

@@ -179,6 +179,48 @@
   padding-inline: 0;
 }
 
+.historySection {
+  padding: var(--modal-section-padding);
+  border-top: 1px solid light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));
+  margin-inline: var(--modal-section-padding);
+  padding-inline: 0;
+}
+
+.historyToggle {
+  display: block;
+  width: 100%;
+}
+
+.historyRow {
+  background: light-dark(var(--mantine-color-white), var(--mantine-color-dark-7));
+}
+
+.historyTime {
+  font-variant-numeric: tabular-nums;
+}
+
+.historyChangeValue {
+  min-width: 112px;
+  padding: 7px 9px;
+  border-radius: var(--mantine-radius-sm);
+  background: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-6));
+}
+
+.historyTransition,
+.historyValueSide {
+  min-width: 0;
+}
+
+.historyTransition {
+  min-height: 28px;
+}
+
+.historyDxStarImage {
+  flex: 0 0 auto;
+  width: 38px;
+  height: auto;
+}
+
 .verificationSection {
   padding: var(--modal-section-padding);
   border-top: 1px solid light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));

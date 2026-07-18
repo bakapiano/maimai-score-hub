@@ -15,7 +15,9 @@ const KEYS = {
 function safeGet<T>(key: string): T | null {
   try {
     const raw = localStorage.getItem(key);
-    if (!raw) {return null;}
+    if (!raw) {
+      return null;
+    }
     return JSON.parse(raw) as T;
   } catch {
     return null;
@@ -53,6 +55,9 @@ export type CachedSyncLatest = {
   scores: unknown[];
   createdAt?: string;
   updatedAt?: string;
+  lastMergedAt?: string;
+  scoreUpdatedAt?: string;
+  scoreVersion?: number;
   autoExportResult?: {
     divingFish?: { status: string; message?: string } | null;
     lxns?: { status: string; message?: string } | null;
@@ -63,6 +68,9 @@ export type CachedSyncLatestSummary = {
   id?: string;
   createdAt?: string;
   updatedAt?: string;
+  lastMergedAt?: string;
+  scoreUpdatedAt?: string;
+  scoreVersion?: number;
   scoreCount: number;
   autoExportResult?: CachedSyncLatest["autoExportResult"];
 };
@@ -73,6 +81,9 @@ export function cacheSyncLatest(data: CachedSyncLatest): void {
     id: data.id,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
+    lastMergedAt: data.lastMergedAt,
+    scoreUpdatedAt: data.scoreUpdatedAt,
+    scoreVersion: data.scoreVersion,
     scoreCount: Array.isArray(data.scores) ? data.scores.length : 0,
     autoExportResult: data.autoExportResult ?? null,
   } satisfies CachedSyncLatestSummary);
@@ -104,8 +115,12 @@ export function cacheMusicList<T>(items: T[]): void {
 
 export function getCachedMusicList<T = unknown>(): T[] | null {
   const cached = safeGet<CachedMusicList<T> | T[]>(KEYS.musicList);
-  if (Array.isArray(cached)) {return cached;}
-  if (cached && Array.isArray(cached.items)) {return cached.items;}
+  if (Array.isArray(cached)) {
+    return cached;
+  }
+  if (cached && Array.isArray(cached.items)) {
+    return cached.items;
+  }
   return null;
 }
 

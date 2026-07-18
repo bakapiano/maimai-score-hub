@@ -3,7 +3,9 @@ import type { HydratedDocument } from 'mongoose';
 
 export type AutoUpdateTier = 'hot' | 'warm' | 'cold';
 export type AutoUpdateFcfsReason =
-  'rival_hash_changed' | 'map_delta' | 'manual';
+  | 'rival_hash_changed'
+  | 'map_delta'
+  | 'manual';
 
 @Schema({ collection: 'auto_update_probe_states', timestamps: true })
 export class AutoUpdateProbeStateEntity {

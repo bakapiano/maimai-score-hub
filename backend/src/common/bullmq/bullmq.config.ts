@@ -6,9 +6,10 @@ export interface DxnetWorkerJobData {
   jobId: string;
 }
 
-export interface ProberExportJobData {
-  jobId: string;
-}
+export type ProberExportJobData =
+  | { kind: 'auto'; friendCode: string }
+  | { kind: 'manual'; jobId: string; friendCode: string }
+  | { jobId: string };
 
 function getInt(config: ConfigService, key: string, fallback: number): number {
   const raw = config.get<string | number>(key);

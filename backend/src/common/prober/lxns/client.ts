@@ -21,12 +21,14 @@ type UploadResponse = {
 export async function uploadLxnsScores(
   scores: LxnsScore[],
   token: string,
+  signal?: AbortSignal,
 ): Promise<UploadResponse> {
   const backoffMs = [0, 15_000, 60_000, 240_000];
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < backoffMs.length; attempt++) {
+    signal?.throwIfAborted();
     if (backoffMs[attempt] > 0) {
-      await new Promise((r) => setTimeout(r, backoffMs[attempt]));
+      await abortableSleep(backoffMs[attempt], signal);
     }
     let result: { ok: boolean; status: number; data: unknown };
     const controller = new AbortController();
@@ -34,6 +36,9 @@ export async function uploadLxnsScores(
       () => controller.abort(),
       LXNS_UPLOAD_TIMEOUT_MS,
     );
+    const requestSignal = signal
+      ? AbortSignal.any([signal, controller.signal])
+      : controller.signal;
     try {
       const res = await observeFetch(
         {
@@ -54,7 +59,7 @@ export async function uploadLxnsScores(
               'X-User-Token': token,
             },
             body: JSON.stringify({ scores }),
-            signal: controller.signal,
+            signal: requestSignal,
           }),
       );
       const text = await res.text();
@@ -94,4 +99,24 @@ export async function uploadLxnsScores(
   throw lastErr instanceof Error
     ? lastErr
     : new Error('LXNS upload failed after retries');
+}
+
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  signal.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(
+        signal.reason instanceof Error ? signal.reason : new Error('aborted'),
+      );
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }

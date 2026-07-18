@@ -4,6 +4,11 @@ import { fileURLToPath, URL } from "node:url";
 
 const apiProxyTarget =
   process.env.FRONTEND_API_PROXY_TARGET ?? "http://127.0.0.1:9050";
+const apiProxyOrigin = /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|$)/.test(
+  apiProxyTarget,
+)
+  ? "http://localhost:3001"
+  : "https://maiscorehub.bakapiano.com";
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -43,7 +48,7 @@ export default defineConfig({
         changeOrigin: true,
         secure: true,
         headers: {
-          Origin: "https://maiscorehub.bakapiano.com",
+          Origin: apiProxyOrigin,
         },
       },
       "/maimai-mobile/img": {

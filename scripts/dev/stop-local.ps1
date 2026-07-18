@@ -26,3 +26,13 @@ foreach ($app in $apps) {
   }
 }
 Invoke-Pm2 status
+
+$memuraiPidFile = Join-Path $root ".local-dev\memurai.pid"
+if (Test-Path -LiteralPath $memuraiPidFile) {
+  $memuraiPid = [int](Get-Content -LiteralPath $memuraiPidFile -Raw)
+  $memurai = Get-Process -Id $memuraiPid -ErrorAction SilentlyContinue
+  if ($memurai -and $memurai.ProcessName -eq "memurai") {
+    Stop-Process -Id $memuraiPid -Force
+  }
+  Remove-Item -LiteralPath $memuraiPidFile -Force
+}

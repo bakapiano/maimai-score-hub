@@ -7,6 +7,10 @@ import {
 } from './schemas/prober-export-job.schema';
 import { ProberExportService } from './services/prober-export.service';
 import { ProberExportWorkerService } from './services/prober-export-worker.service';
+import {
+  ProberExportStateEntity,
+  ProberExportStateSchema,
+} from './schemas/prober-export-state.schema';
 import { SyncModule } from '../sync/sync.module';
 import { UsersModule } from '../users/users.module';
 
@@ -16,6 +20,7 @@ import { UsersModule } from '../users/users.module';
     forwardRef(() => UsersModule),
     MongooseModule.forFeature([
       { name: ProberExportJobEntity.name, schema: ProberExportJobSchema },
+      { name: ProberExportStateEntity.name, schema: ProberExportStateSchema },
     ]),
   ],
   providers: [ProberExportService, ProberExportWorkerService],
