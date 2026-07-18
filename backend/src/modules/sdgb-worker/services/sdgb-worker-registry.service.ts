@@ -470,20 +470,25 @@ export class SdgbWorkerRegistryService
         );
       }
     }
-    const draining = new Set<string>();
+    const unavailable = new Set<string>();
     await Promise.all(
       workers.map(async (worker) => {
-        const drain = await this.redis.getJson<unknown>(
-          this.redis.key('sdgb:workers:' + worker.workerId + ':drain'),
-        );
-        if (drain) {
-          draining.add(worker.workerId);
+        const [drain, recovery] = await Promise.all([
+          this.redis.getJson<unknown>(
+            this.redis.key('sdgb:workers:' + worker.workerId + ':drain'),
+          ),
+          this.redis.getJson<unknown>(
+            this.redis.key('sdgb:workers:' + worker.workerId + ':recovery'),
+          ),
+        ]);
+        if (drain || recovery) {
+          unavailable.add(worker.workerId);
         }
       }),
     );
 
     return workers.filter((worker) => {
-      if (draining.has(worker.workerId)) {
+      if (unavailable.has(worker.workerId)) {
         return false;
       }
       if (now - Date.parse(worker.lastSeenAt) > this.workerStaleMs) {

@@ -141,6 +141,23 @@ describe('SdgbWorkerRegistryService', () => {
     ]);
   });
 
+  it('keeps Stable Probe fallback while a Recoverable verifies recovery', async () => {
+    const redis = new MemoryRedis();
+    const registry = service(redis);
+    await registry.heartbeat(heartbeat('recoverable-a', 'recoverable'));
+    await registry.heartbeat(heartbeat('stable-a', 'stable'));
+    await redis.setJson(redis.key('sdgb:workers:recoverable-a:recovery'), {
+      requestId: 'maintenance-1',
+    });
+
+    await registry.reconcile();
+
+    const probe = await registry.getDesiredMemberSet('probe');
+    expect(probe?.members.map((member) => member.workerId)).toEqual([
+      'stable-a',
+    ]);
+  });
+
   it('rejects a Stable worker without strict rate policy', async () => {
     const registry = service(new MemoryRedis());
     const invalid = {
