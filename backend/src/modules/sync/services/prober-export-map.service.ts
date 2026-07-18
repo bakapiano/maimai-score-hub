@@ -26,6 +26,7 @@ export type ProberExportMap = {
 export class ProberExportMapService {
   private readonly logger = new Logger(ProberExportMapService.name);
   private cache: { value: ProberExportMap; expiresAt: number } | null = null;
+  private buildInFlight: Promise<ProberExportMap> | null = null;
 
   async getMap(): Promise<ProberExportMap> {
     const now = Date.now();
@@ -33,9 +34,17 @@ export class ProberExportMapService {
       return this.cache.value;
     }
 
-    const value = await this.buildMap();
-    this.cache = { value, expiresAt: now + CACHE_TTL_MS };
-    return value;
+    if (!this.buildInFlight) {
+      this.buildInFlight = this.buildMap()
+        .then((value) => {
+          this.cache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
+          return value;
+        })
+        .finally(() => {
+          this.buildInFlight = null;
+        });
+    }
+    return this.buildInFlight;
   }
 
   private async buildMap(): Promise<ProberExportMap> {
