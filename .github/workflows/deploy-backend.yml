@@ -92,24 +92,24 @@ jobs:
               mkdir -p "$RUNTIME_DIR/backend"
               cp -a backend/.env "$RUNTIME_DIR/backend/.env"
             fi
-            if [ -d backend/covers ]; then
-              mkdir -p "$RUNTIME_DIR/backend"
-              cp -a backend/covers "$RUNTIME_DIR/backend/covers"
-            fi
             if [ -d backend/assets ]; then
               mkdir -p "$RUNTIME_DIR/backend"
               cp -a backend/assets "$RUNTIME_DIR/backend/assets"
             fi
 
-            rm -rf backend shared package.json package-lock.json
+            # Running replicas bind-mount backend/covers. Never delete or
+            # replace that directory while they are serving: a recreated path
+            # has a new inode, while existing containers remain mounted to the
+            # now-empty deleted directory until the rolling restart finishes.
+            if [ -d backend ]; then
+              find backend -mindepth 1 -maxdepth 1 ! -name covers \
+                -exec rm -rf -- {} +
+            fi
+            rm -rf shared package.json package-lock.json
             tar -xzf "$SOURCE_ARCHIVE" -C "$DEPLOY_PATH"
             rm -f "$SOURCE_ARCHIVE"
             if [ -f "$RUNTIME_DIR/backend/.env" ]; then
               cp -a "$RUNTIME_DIR/backend/.env" backend/.env
-            fi
-            if [ -d "$RUNTIME_DIR/backend/covers" ]; then
-              rm -rf backend/covers
-              cp -a "$RUNTIME_DIR/backend/covers" backend/covers
             fi
             if [ -d "$RUNTIME_DIR/backend/assets" ]; then
               mkdir -p backend/assets
