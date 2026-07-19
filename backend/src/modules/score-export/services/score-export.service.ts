@@ -239,6 +239,7 @@ export class ScoreExportService {
       {
         newest: ScoreChangeEntity;
         oldest: ScoreChangeEntity;
+        isNew: boolean;
       }
     >();
     for (const row of rows) {
@@ -246,15 +247,17 @@ export class ScoreExportService {
       const group = groups.get(key);
       if (group) {
         group.oldest = row;
+        group.isNew ||= row.changedFields.includes('newChart');
       } else {
         groups.set(key, {
           newest: row,
           oldest: row,
+          isNew: row.changedFields.includes('newChart'),
         });
       }
     }
 
-    return [...groups.values()].map(({ newest, oldest }) => {
+    return [...groups.values()].map(({ newest, oldest, isNew }) => {
       const music = musicMap.get(newest.musicId);
       const chart = music?.charts?.[newest.chartIndex];
       const dxScoreMax = this.getDxScoreMax(chart);
@@ -270,6 +273,7 @@ export class ScoreExportService {
             ? chart.detailLevel.toFixed(1)
             : (chart?.level ?? '?'),
         observedAt: new Date(newest.observedAt),
+        isNew,
         before: oldest.before ?? {},
         after: newest.after ?? {},
         achievementDelta: this.scoreValueDelta(

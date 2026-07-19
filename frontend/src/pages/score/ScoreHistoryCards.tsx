@@ -207,8 +207,14 @@ function DxScoreMetricRow({
             maxDxScore={maxDxScore}
           />
           <Group wrap="nowrap" className={classes.currentStatuses}>
-            <CurrentStatusIcon value={change.after.fc} />
-            <CurrentStatusIcon value={change.after.fs} />
+            <CurrentStatusChange
+              before={change.before.fc}
+              after={change.after.fc}
+            />
+            <CurrentStatusChange
+              before={change.before.fs}
+              after={change.after.fs}
+            />
           </Group>
         </>
       ) : (
@@ -218,11 +224,30 @@ function DxScoreMetricRow({
   );
 }
 
-function CurrentStatusIcon({ value }: { value: string | null | undefined }) {
-  return hasValue(value) ? (
-    renderScoreStatusIcon(value, { size: 24 })
-  ) : (
-    <EmptyStatusDot />
+function CurrentStatusChange({
+  before,
+  after,
+}: {
+  before: string | null | undefined;
+  after: string | null | undefined;
+}) {
+  if (!hasValue(after)) {
+    return null;
+  }
+  const beforeValue = hasValue(before) ? before : null;
+  const changed = beforeValue?.toLowerCase() !== after.toLowerCase();
+  return (
+    <Group wrap="nowrap" className={classes.currentStatusChange}>
+      {changed ? (
+        beforeValue ? (
+          renderScoreStatusIcon(beforeValue, { size: 24 })
+        ) : (
+          <EmptyStatusDot />
+        )
+      ) : null}
+      {changed ? <Text className={classes.inlineArrow}>→</Text> : null}
+      {renderScoreStatusIcon(after, { size: 24 })}
+    </Group>
   );
 }
 
@@ -380,9 +405,7 @@ function ScoreHistoryCard({
           onClick();
         }
       }}
-      style={
-        { "--history-level-color": difficultyColor } as CSSProperties
-      }
+      style={{ "--history-level-color": difficultyColor } as CSSProperties}
     >
       <Box className={classes.cardHero}>
         <DeferredImage
@@ -402,10 +425,7 @@ function ScoreHistoryCard({
         </Group>
 
         <Box className={classes.cardChanges}>
-          <ScoreChangeSummary
-            change={change}
-            maxDxScore={maxDxScore}
-          />
+          <ScoreChangeSummary change={change} maxDxScore={maxDxScore} />
         </Box>
       </Box>
       <HistoryCardFooter change={change} levelText={levelText} />

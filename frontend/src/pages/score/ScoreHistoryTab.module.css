@@ -198,11 +198,8 @@
   max-width: 9.048cqw !important;
   max-height: 5.238cqw !important;
   object-fit: contain;
-  filter:
-    drop-shadow(-1px 0 0 #111)
-    drop-shadow(1px 0 0 #111)
-    drop-shadow(0 -1px 0 #111)
-    drop-shadow(0 1px 0 #111);
+  filter: drop-shadow(-1px 0 0 #111) drop-shadow(1px 0 0 #111)
+    drop-shadow(0 -1px 0 #111) drop-shadow(0 1px 0 #111);
 }
 
 .inlineArrow {
@@ -264,13 +261,18 @@
   gap: 0.476cqw !important;
 }
 
-.currentStatuses > img,
-.currentStatuses > svg {
+.currentStatusChange {
+  min-width: 0;
+  gap: 0 !important;
+}
+
+.currentStatusChange > img,
+.currentStatusChange > svg {
   width: 6.667cqw !important;
   height: 6.667cqw !important;
 }
 
-.currentStatuses .emptyStatusDot {
+.currentStatusChange .emptyStatusDot {
   width: 4.762cqw;
   height: 4.762cqw;
 }
@@ -278,7 +280,8 @@
 .cardFooter {
   min-height: 8.571cqw;
   padding: 1.19cqw 2.381cqw;
-  border-top: 1px solid light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));
+  border-top: 1px solid
+    light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));
   background: #fff;
   gap: 1.19cqw !important;
 }

@@ -24,6 +24,7 @@ import { AppModule } from '../src/app.module';
 import { CabinetScoreSyncService } from '../src/modules/cabinet-score-sync/cabinet-score-sync.service';
 import { AuthService } from '../src/modules/auth/services/auth.service';
 import { AccountDeletionService } from '../src/modules/users/services/account-deletion.service';
+import { countRgbPixelsInRegion } from './png-test-utils';
 
 jest.setTimeout(120_000);
 
@@ -480,6 +481,10 @@ describe('score update concurrency and export ownership (local e2e)', () => {
         chartIndex: index < 10 ? 3 : 2,
       }),
     );
+    rows[0].changedFields = [
+      'score',
+      'newChart',
+    ] as ScoreChangeEntity['changedFields'];
     rows.push(
       scoreHistoryRow({
         id: 'history-export-duplicate',
@@ -515,6 +520,12 @@ describe('score update concurrency and export ownership (local e2e)', () => {
     );
     expect(png.readUInt32BE(16)).toBe(3040);
     expect(png.readUInt32BE(20)).toBe(1778);
+    const newBadgePixelCount = await countRgbPixelsInRegion(
+      png,
+      { left: 32, top: 658, width: 720, height: 64 },
+      [0xd8, 0xf5, 0xf8],
+    );
+    expect(newBadgePixelCount).toBeGreaterThan(200);
   });
 
   it('filters history by time and groups business days in the browser zone', async () => {

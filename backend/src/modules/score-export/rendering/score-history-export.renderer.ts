@@ -28,6 +28,17 @@ const CARD_HEIGHT = 126;
 const CARD_STEP_X = 372;
 const CARD_STEP_Y = 136;
 const TOP_HEIGHT = 94;
+const STATUS_ICON_SIZE = 22;
+const STATUS_ARROW_WIDTH = 8;
+const STATUS_GROUP_GAP = 2;
+
+type StatusKind = 'fc' | 'fs';
+type StatusChange = {
+  kind: StatusKind;
+  before: string | null;
+  after: string;
+  changed: boolean;
+};
 
 type Payload = {
   date: string;
@@ -189,17 +200,23 @@ async function drawHistoryCard(
     dxCursor += ctx.measureText(deltaText).width + 1;
   }
   dxCursor += 4;
-  const statusCount =
-    Number(Boolean(card.after.fc)) + Number(Boolean(card.after.fs));
+  const statusChanges = getStatusChanges(card);
+  const statusWidth = getStatusChangesNaturalWidth(statusChanges);
   const right = x + CARD_WIDTH - 8;
   dxCursor = await drawStarChange(
     ctx,
     card,
     dxCursor,
-    right - statusCount * 22,
+    right - statusWidth - (statusWidth > 0 ? 2 : 0),
     y + 75,
   );
-  await drawCurrentStatuses(ctx, card, dxCursor + 2, right, y + 75);
+  await drawStatusChanges(
+    ctx,
+    statusChanges,
+    dxCursor + (statusWidth > 0 ? 2 : 0),
+    right,
+    y + 75,
+  );
 
   const type = await loadTypeAsset(card.type);
   if (type) {
@@ -212,11 +229,12 @@ async function drawHistoryCard(
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#6c757d';
-  ctx.fillText(
-    formatTime(card.observedAt, timeZone),
-    x + CARD_WIDTH - 8,
-    y + 110,
-  );
+  const time = formatTime(card.observedAt, timeZone);
+  const timeRight = x + CARD_WIDTH - 8;
+  ctx.fillText(time, timeRight, y + 110);
+  if (card.isNew) {
+    drawNewBadge(ctx, timeRight - ctx.measureText(time).width - 39, y + 100);
+  }
 }
 
 async function drawRankChange(
@@ -322,26 +340,109 @@ async function drawStarChange(
   return cursor + iconWidth;
 }
 
-async function drawCurrentStatuses(
+function normalizeStatus(value: string | null | undefined) {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : null;
+}
+
+function getStatusChanges(card: HistoryExportCard): StatusChange[] {
+  return (['fc', 'fs'] as const).flatMap((kind) => {
+    const after = normalizeStatus(card.after[kind]);
+    if (!after) {
+      return [];
+    }
+    const before = normalizeStatus(card.before[kind]);
+    return [{ kind, before, after, changed: before !== after }];
+  });
+}
+
+function getStatusChangesNaturalWidth(changes: StatusChange[]) {
+  if (changes.length === 0) {
+    return 0;
+  }
+  const contentWidth = changes.reduce(
+    (width, change) =>
+      width +
+      (change.changed
+        ? STATUS_ICON_SIZE * 2 + STATUS_ARROW_WIDTH
+        : STATUS_ICON_SIZE),
+    0,
+  );
+  return contentWidth + STATUS_GROUP_GAP * (changes.length - 1);
+}
+
+function loadStatusAsset(kind: StatusKind, value: string) {
+  return kind === 'fc' ? loadFcAsset(value) : loadFsAsset(value);
+}
+
+async function drawStatusChanges(
   ctx: CanvasContext,
-  card: HistoryExportCard,
+  changes: StatusChange[],
   start: number,
   right: number,
   centerY: number,
 ) {
-  const fc = card.after.fc ? await loadFcAsset(card.after.fc) : null;
-  const fs = card.after.fs ? await loadFsAsset(card.after.fs) : null;
-  const count = Number(Boolean(fc)) + Number(Boolean(fs));
-  const size = count > 0 ? Math.min(22, Math.max(0, right - start) / count) : 0;
+  const naturalWidth = getStatusChangesNaturalWidth(changes);
+  if (naturalWidth === 0) {
+    return;
+  }
+  const scale = Math.min(1, Math.max(0, right - start) / naturalWidth);
+  const size = STATUS_ICON_SIZE * scale;
+  const arrowWidth = STATUS_ARROW_WIDTH * scale;
+  const groupGap = STATUS_GROUP_GAP * scale;
   const y = centerY - size / 2;
   let cursor = start;
-  if (fc) {
-    ctx.drawImage(fc, cursor, y, size, size);
+
+  for (const [index, change] of changes.entries()) {
+    if (index > 0) {
+      cursor += groupGap;
+    }
+    if (change.changed) {
+      if (change.before) {
+        const beforeImage = await loadStatusAsset(change.kind, change.before);
+        if (beforeImage) {
+          ctx.drawImage(beforeImage, cursor, y, size, size);
+        }
+      } else {
+        drawEmptyStatusDot(ctx, cursor, centerY, size, scale);
+      }
+      cursor += size;
+      ctx.font = `bold ${Math.max(6, 8 * scale)}px ${FONT_FAMILY}`;
+      ctx.textAlign = 'center';
+      drawOutlinedText(
+        ctx,
+        '→',
+        cursor + arrowWidth / 2,
+        centerY,
+        '#fff',
+        '#000',
+        1,
+      );
+      cursor += arrowWidth;
+    }
+    const afterImage = await loadStatusAsset(change.kind, change.after);
+    if (afterImage) {
+      ctx.drawImage(afterImage, cursor, y, size, size);
+    }
     cursor += size;
   }
-  if (fs) {
-    ctx.drawImage(fs, cursor, y, size, size);
-  }
+}
+
+function drawEmptyStatusDot(
+  ctx: CanvasContext,
+  slotX: number,
+  centerY: number,
+  slotSize: number,
+  scale: number,
+) {
+  const diameter = slotSize * (20 / 28);
+  ctx.beginPath();
+  ctx.arc(slotX + slotSize / 2, centerY, diameter / 2, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.62)';
+  ctx.fill();
+  ctx.lineWidth = Math.max(0.5, scale);
+  ctx.strokeStyle = 'rgba(204,204,204,0.62)';
+  ctx.stroke();
 }
 
 function drawIdBadge(
@@ -383,6 +484,16 @@ function drawRatingBadge(
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#fff';
   ctx.fillText(truncateText(ctx, text, 78), x + 41, y + 10);
+}
+
+function drawNewBadge(ctx: CanvasContext, x: number, y: number) {
+  ctx.fillStyle = '#d8f5f8';
+  ctx.fillRect(x, y, 34, 19);
+  ctx.font = `bold 9px ${FONT_FAMILY}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#0b7285';
+  ctx.fillText('NEW', x + 17, y + 10);
 }
 
 function formatAchievement(value: string | null | undefined) {

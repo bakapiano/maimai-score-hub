@@ -63,6 +63,7 @@ export type HistoryExportCard = {
   title: string;
   detailLevelText: string;
   observedAt: Date;
+  isNew: boolean;
   before: ScoreChangeValue;
   after: ScoreChangeValue;
   achievementDelta: number | null;
