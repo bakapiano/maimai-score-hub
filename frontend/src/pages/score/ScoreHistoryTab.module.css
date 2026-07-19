@@ -1,0 +1,303 @@
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 398px), 1fr));
+  justify-content: start;
+  gap: 8px;
+  width: 100%;
+}
+
+.historyCard {
+  container-type: inline-size;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: transparent;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.16),
+    0 2px 6px rgba(0, 0, 0, 0.12);
+  font-family:
+    "Resource Han Rounded CN", "Torus", "PingFang SC", "Noto Sans CJK SC",
+    sans-serif;
+  cursor: pointer;
+  transition:
+    filter 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.historyCard:hover {
+  filter: brightness(1.03);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.2),
+    0 3px 9px rgba(0, 0, 0, 0.18);
+}
+
+.historyCard:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+.cardHero {
+  display: grid;
+  grid-template-columns: 21.429cqw minmax(0, 1fr);
+  grid-template-rows: 6.19cqw 15.238cqw;
+  align-items: center;
+  gap: 0 2.381cqw;
+  min-height: 26.19cqw;
+  padding: 2.381cqw;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 55%),
+    var(--history-level-color);
+}
+
+.cardCover {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  flex: 0 0 auto;
+  width: 21.429cqw;
+  height: 21.429cqw;
+  object-fit: cover;
+  border-radius: 0;
+}
+
+.cardTitleRow {
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 1.19cqw !important;
+  padding: 0 0 1.667cqw;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.22);
+}
+
+.cardTitle {
+  flex: 1;
+  box-sizing: border-box;
+  min-width: 0;
+  padding-left: 0.536cqw;
+  color: #fff;
+  font-size: 3.81cqw;
+  line-height: 1.1;
+  -webkit-text-stroke: 0.536cqw #000;
+  paint-order: stroke fill;
+  text-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.28);
+}
+
+.cardMetadata {
+  flex: 0 0 auto;
+  gap: 0.714cqw !important;
+}
+
+.cardTypeBadge {
+  display: block;
+  flex: 0 0 auto;
+  width: 14.015cqw;
+  height: 5.238cqw;
+  object-fit: contain;
+}
+
+.cardMetaBadge {
+  height: 5.238cqw !important;
+  min-height: 5.238cqw;
+  max-height: 5.238cqw;
+  padding-inline: 0.714cqw;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(0, 0, 0, 0.24);
+  color: #fff;
+  font-size: 2.619cqw;
+  font-weight: 700;
+  line-height: 1;
+  -webkit-text-stroke: 0.357cqw #000;
+  paint-order: stroke fill;
+  text-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.28);
+}
+
+.musicIdBadge {
+  min-width: 13.258cqw;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  background: #fff;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+}
+
+.cardChanges {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  background: transparent;
+}
+
+.changeSummary {
+  display: grid;
+  grid-template-rows: 5.238cqw 6.667cqw;
+  gap: 1.667cqw;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 100%;
+  padding: 1.667cqw 0 0;
+  background: transparent;
+  color: #fff;
+  -webkit-text-stroke: 0.536cqw #000;
+  paint-order: stroke fill;
+  text-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.28);
+}
+
+.metricRow {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  gap: 1.19cqw !important;
+}
+
+.metricValue {
+  flex: 0 0 auto;
+  color: #fff;
+  font-size: 3.571cqw;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.achievementRow .metricValue {
+  font-size: 5.238cqw;
+}
+
+.dxMetricRow {
+  align-items: center !important;
+  gap: 0 !important;
+}
+
+.metricDelta {
+  margin-left: 0.238cqw;
+  font-size: 2.857cqw;
+}
+
+.metricStatus {
+  min-width: 0;
+  gap: 0 !important;
+}
+
+.metricStatus img,
+.metricStatus svg {
+  width: 11.429cqw !important;
+  max-width: 11.429cqw;
+  max-height: 5.238cqw;
+  object-fit: contain;
+}
+
+.dxStarImage {
+  width: 9.048cqw !important;
+  max-width: 9.048cqw !important;
+  max-height: 5.238cqw !important;
+  object-fit: contain;
+  filter:
+    drop-shadow(-1px 0 0 #111)
+    drop-shadow(1px 0 0 #111)
+    drop-shadow(0 -1px 0 #111)
+    drop-shadow(0 1px 0 #111);
+}
+
+.inlineArrow {
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.inlineArrow {
+  margin-inline: -0.357cqw;
+  font-size: 3.571cqw;
+}
+
+.emptyStatusDot {
+  flex: 0 0 auto;
+  width: 4.762cqw;
+  height: 4.762cqw;
+  border: 1px solid rgba(204, 204, 204, 0.62);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.cardTime {
+  font-size: 2.619cqw;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.footerRight {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.footerRatingBadge {
+  max-width: 100%;
+  height: 5.238cqw !important;
+  min-height: 5.238cqw;
+  max-height: 5.238cqw;
+  min-width: 0;
+  padding-inline: 0.714cqw;
+  overflow: hidden;
+  font-size: 2.619cqw;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footerInfo {
+  min-width: 0;
+}
+
+.footerRatingBadge .metricDelta {
+  font-size: inherit;
+}
+
+.currentStatuses {
+  min-width: 0;
+  gap: 0.476cqw !important;
+}
+
+.currentStatuses > img,
+.currentStatuses > svg {
+  width: 6.667cqw !important;
+  height: 6.667cqw !important;
+}
+
+.currentStatuses .emptyStatusDot {
+  width: 4.762cqw;
+  height: 4.762cqw;
+}
+
+.cardFooter {
+  min-height: 8.571cqw;
+  padding: 1.19cqw 2.381cqw;
+  border-top: 1px solid light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));
+  background: #fff;
+  gap: 1.19cqw !important;
+}
+
+.cardFooter :global(.mantine-Group-root) {
+  gap: 1.19cqw !important;
+}
+
+.cardFooter .cardTime {
+  color: #6c757d;
+}
+
+.footerBadge {
+  height: 4.286cqw;
+  padding-inline: 0.714cqw;
+  font-size: 2.619cqw;
+}
+
+.newBadge {
+  height: 4.286cqw;
+  font-size: 2.619cqw;
+}

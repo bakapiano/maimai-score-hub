@@ -5,7 +5,11 @@ import type { Model, Types } from 'mongoose';
 import { createClient } from 'redis';
 import request from 'supertest';
 import type { App } from 'supertest/types';
-import { ScoreChangeHistoryResponseSchema } from '@maimai-score-hub/shared';
+import {
+  ScoreChangeHistoryResponseSchema,
+  ScoreHistoryCalendarResponseSchema,
+  ScoreHistoryFeedResponseSchema,
+} from '@maimai-score-hub/shared';
 
 import { MusicEntity } from '../src/modules/music/schemas/music.schema';
 import { UserEntity } from '../src/modules/users/schemas/user.schema';
@@ -344,6 +348,248 @@ describe('score update concurrency and export ownership (local e2e)', () => {
       .get('/me/score-changes')
       .query({ musicId: '17', chartIndex: '3', type: 'standard' })
       .expect(401);
+  });
+
+  it('filters the authenticated user full score history by integer time window', async () => {
+    const owner = await userModel.create({ friendCode });
+    const other = await userModel.create({ friendCode: '700000000000097' });
+    const inserted = await scoreChangeModel.insertMany([
+      scoreHistoryRow({
+        id: 'feed-latest',
+        rowFriendCode: friendCode,
+        ownerUserId: owner._id,
+        observedAt: '2026-01-01T00:00:06.000Z',
+      }),
+      scoreHistoryRow({
+        id: 'feed-tied-a',
+        rowFriendCode: friendCode,
+        ownerUserId: owner._id,
+        observedAt: '2026-01-01T00:00:05.000Z',
+        chartIndex: 2,
+      }),
+      scoreHistoryRow({
+        id: 'feed-tied-b',
+        rowFriendCode: friendCode,
+        ownerUserId: owner._id,
+        observedAt: '2026-01-01T00:00:05.000Z',
+        type: 'dx',
+      }),
+      scoreHistoryRow({
+        id: 'feed-oldest',
+        rowFriendCode: friendCode,
+        ownerUserId: owner._id,
+        observedAt: '2026-01-01T00:00:04.000Z',
+      }),
+      scoreHistoryRow({
+        id: 'feed-other-user',
+        rowFriendCode: other.friendCode,
+        ownerUserId: other._id,
+        observedAt: '2026-01-01T00:00:07.000Z',
+      }),
+    ]);
+    const expectedIds = inserted
+      .filter((row) => row.friendCode === friendCode)
+      .sort(
+        (a, b) =>
+          b.observedAt.getTime() - a.observedAt.getTime() ||
+          String(b._id).localeCompare(String(a._id)),
+      )
+      .map((row) => row.id);
+    const { token } = await moduleA
+      .get(AuthService)
+      .issueTokenForUser({ _id: owner._id, friendCode: owner.friendCode });
+
+    const fullWindowResponse = await request(appA.getHttpServer())
+      .get('/me/score-history')
+      .set('Authorization', `Bearer ${token}`)
+      .query({
+        start: Date.parse('2026-01-01T00:00:04.000Z'),
+        end: Date.parse('2026-01-01T00:00:07.000Z'),
+      })
+      .expect(200);
+    const fullWindow = ScoreHistoryFeedResponseSchema.parse(
+      fullWindowResponse.body as unknown,
+    );
+    expect(fullWindow.items.map((item) => item.id)).toEqual(expectedIds);
+    expect(fullWindow.hasEarlier).toBe(false);
+
+    const recentWindowResponse = await request(appA.getHttpServer())
+      .get('/me/score-history')
+      .set('Authorization', `Bearer ${token}`)
+      .query({
+        start: Date.parse('2026-01-01T00:00:05.000Z'),
+        end: Date.parse('2026-01-01T00:00:07.000Z'),
+      })
+      .expect(200);
+    const recentWindow = ScoreHistoryFeedResponseSchema.parse(
+      recentWindowResponse.body as unknown,
+    );
+    expect(recentWindow.items.map((item) => item.id)).toEqual(
+      expectedIds.slice(0, 3),
+    );
+    expect(recentWindow.hasEarlier).toBe(true);
+
+    await request(appA.getHttpServer())
+      .get('/me/score-history')
+      .set('Authorization', `Bearer ${token}`)
+      .query({ start: Date.parse('2026-01-01T00:00:05.000Z') })
+      .expect(400);
+    await request(appA.getHttpServer()).get('/me/score-history').expect(401);
+  });
+
+  it('returns every score change in one day without count pagination', async () => {
+    const owner = await userModel.create({ friendCode });
+    const start = Date.parse('2026-02-01T00:00:00.000Z');
+    await scoreChangeModel.insertMany(
+      Array.from({ length: 105 }, (_, index) =>
+        scoreHistoryRow({
+          id: `full-day-${index}`,
+          rowFriendCode: friendCode,
+          ownerUserId: owner._id,
+          observedAt: new Date(start + index * 1000).toISOString(),
+        }),
+      ),
+    );
+    const { token } = await moduleA
+      .get(AuthService)
+      .issueTokenForUser({ _id: owner._id, friendCode: owner.friendCode });
+
+    const response = await request(appA.getHttpServer())
+      .get('/me/score-history')
+      .set('Authorization', `Bearer ${token}`)
+      .query({ start, end: start + 24 * 60 * 60 * 1000 })
+      .expect(200);
+    const feed = ScoreHistoryFeedResponseSchema.parse(response.body as unknown);
+
+    expect(feed.items).toHaveLength(105);
+    expect(feed.items[0]?.id).toBe('full-day-104');
+    expect(feed.items.at(-1)?.id).toBe('full-day-0');
+    expect(feed.hasEarlier).toBe(false);
+  });
+
+  it('merges one business day and exports a four-column history PNG', async () => {
+    const owner = await userModel.create({ friendCode });
+    const start = Date.parse('2026-03-01T00:00:00.000Z');
+    const rows = Array.from({ length: 15 }, (_, index) =>
+      scoreHistoryRow({
+        id: `history-export-${index}`,
+        rowFriendCode: friendCode,
+        ownerUserId: owner._id,
+        observedAt: new Date(start + (index + 1) * 1000).toISOString(),
+        musicId: String(17 + (index % 10)),
+        chartIndex: index < 10 ? 3 : 2,
+      }),
+    );
+    rows.push(
+      scoreHistoryRow({
+        id: 'history-export-duplicate',
+        rowFriendCode: friendCode,
+        ownerUserId: owner._id,
+        observedAt: new Date(start + 60_000).toISOString(),
+        musicId: '17',
+        chartIndex: 3,
+      }),
+    );
+    await scoreChangeModel.insertMany(rows);
+    const { token } = await moduleA
+      .get(AuthService)
+      .issueTokenForUser({ _id: owner._id, friendCode: owner.friendCode });
+
+    const response = await request(appA.getHttpServer())
+      .get('/me/score-exports/history')
+      .set('Authorization', `Bearer ${token}`)
+      .query({
+        date: '2026-03-01',
+        start,
+        end: start + 24 * 60 * 60 * 1000,
+        timeZone: 'Asia/Shanghai',
+        dayStartHour: 6,
+      })
+      .expect(200)
+      .expect('Content-Type', /image\/png/)
+      .expect('Content-Disposition', /score-history-2026-03-01\.png/);
+
+    const png = Buffer.from(response.body as Uint8Array);
+    expect(png.subarray(0, 8)).toEqual(
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    );
+    expect(png.readUInt32BE(16)).toBe(3040);
+    expect(png.readUInt32BE(20)).toBe(1778);
+  });
+
+  it('filters history by time and groups business days in the browser zone', async () => {
+    const owner = await userModel.create({ friendCode });
+    const other = await userModel.create({ friendCode: '700000000000096' });
+    await scoreChangeModel.insertMany([
+      scoreHistoryRow({
+        id: 'calendar-current-a',
+        rowFriendCode: friendCode,
+        ownerUserId: owner._id,
+        observedAt: '2026-01-01T00:10:00.000Z',
+      }),
+      scoreHistoryRow({
+        id: 'calendar-current-b',
+        rowFriendCode: friendCode,
+        ownerUserId: owner._id,
+        observedAt: '2026-01-01T00:20:00.000Z',
+      }),
+      scoreHistoryRow({
+        id: 'calendar-before-six',
+        rowFriendCode: friendCode,
+        ownerUserId: owner._id,
+        observedAt: '2025-12-31T21:00:00.000Z',
+      }),
+      scoreHistoryRow({
+        id: 'calendar-other-user',
+        rowFriendCode: other.friendCode,
+        ownerUserId: other._id,
+        observedAt: '2026-01-01T00:30:00.000Z',
+      }),
+    ]);
+    const { token } = await moduleA
+      .get(AuthService)
+      .issueTokenForUser({ _id: owner._id, friendCode: owner.friendCode });
+    const from = Date.parse('2025-12-31T12:00:00.000Z');
+    const to = Date.parse('2026-01-01T12:00:00.000Z');
+
+    const calendarResponse = await request(appA.getHttpServer())
+      .get('/me/score-history/calendar')
+      .set('Authorization', `Bearer ${token}`)
+      .query({ from, to, timeZone: 'Asia/Shanghai', dayStartHour: 6 })
+      .expect(200);
+    const calendar = ScoreHistoryCalendarResponseSchema.parse(
+      calendarResponse.body as unknown,
+    );
+    expect(calendar).toEqual({
+      days: [
+        { day: '2026-01-01', count: 2 },
+        { day: '2025-12-31', count: 1 },
+      ],
+      hasEarlier: false,
+    });
+
+    const feedResponse = await request(appA.getHttpServer())
+      .get('/me/score-history')
+      .set('Authorization', `Bearer ${token}`)
+      .query({
+        start: Date.parse('2026-01-01T00:00:00.000Z'),
+        end: Date.parse('2026-01-01T01:00:00.000Z'),
+      })
+      .expect(200);
+    const feed = ScoreHistoryFeedResponseSchema.parse(
+      feedResponse.body as unknown,
+    );
+    expect(feed.items.map((item) => item.id)).toEqual([
+      'calendar-current-b',
+      'calendar-current-a',
+    ]);
+    expect(feed.hasEarlier).toBe(true);
+
+    await request(appA.getHttpServer())
+      .get('/me/score-history/calendar')
+      .set('Authorization', `Bearer ${token}`)
+      .query({ from, to, timeZone: 'Not/A_Real_Zone', dayStartHour: 6 })
+      .expect(400);
   });
 
   it('deletes score change history with the owning account', async () => {

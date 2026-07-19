@@ -1,0 +1,69 @@
+.root {
+  width: 100%;
+}
+
+.loadMore {
+  flex: 0 0 auto;
+}
+
+.selectorWrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.scroller {
+  overflow-x: auto;
+  padding-inline: 36px;
+  cursor: grab;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  user-select: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.selector {
+  width: max-content;
+}
+
+.selector :global(.mantine-SegmentedControl-label) {
+  min-width: 64px;
+  text-align: center;
+  color: var(--mantine-color-blue-6);
+}
+
+.selector :global(.mantine-SegmentedControl-label[data-active]) {
+  color: white;
+}
+
+.scrollButton {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 10;
+  margin-block: auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.scrollLeft {
+  left: 0;
+}
+
+.scrollRight {
+  right: 0;
+}
+
+@media (max-width: 520px) {
+  .root {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .loadMore {
+    align-self: flex-start;
+  }
+}

@@ -158,7 +158,8 @@ current sync 的正确性，也不承诺回填功能上线前的历史。
 
 索引：
 
-- `id` unique、`changeSetId`、`{ friendCode: 1, observedAt: -1 }`；
+- `id` unique、`changeSetId`、
+  `{ friendCode: 1, observedAt: -1, _id: -1 }`（名称 `friend_timeline`）；
 - `{ friendCode: 1, musicId: 1, chartIndex: 1, type: 1, observedAt: -1, _id: -1 }`
   支持当前用户单谱面游标时间线；
 - `{ ownerUserId: 1, observedAt: -1 }`；

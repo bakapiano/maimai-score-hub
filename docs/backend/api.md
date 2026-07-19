@@ -10,7 +10,7 @@
 - Swagger UI：`/api/v1/swagger`，加载 `shared/openapi/openapi.yaml`。注意该 OpenAPI 文件由 shared ts-rest contracts 生成，不覆盖所有 controller-only 接口。
 - CORS：`origin: true`。
 - 请求体大小：JSON 和 urlencoded 均为 `100mb`。
-- 业务端点数量：67 个，含 `/health`，不含 Swagger 静态资源。
+- 业务端点数量：69 个，含 `/health`，不含 Swagger 静态资源。
 
 ## 路由分层
 
@@ -68,11 +68,14 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | ---- | ------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------- |
 | GET  | `/me/sync/latest`                     | -                                       | 返回 current sync、scores、最近 merge 时间，以及 `prober_export_states` 的安全 provider 状态投影；可能为 `null`。 |
 | GET  | `/me/score-changes`                   | query: `musicId`, `chartIndex`, `type`, `limit?`, `cursor?` | 查询当前用户指定歌曲/谱面的变化历史，按观察时间倒序；`limit` 默认 30、最大 100，返回 `{ items, nextCursor }`。用户范围只取 JWT 的 `friendCode`，不会接受或返回其他用户标识。 |
+| GET  | `/me/score-history`                   | query: `start`, `end` | 查询当前用户在 `[start, end)` epoch 毫秒时间窗内的全部谱面成绩历史，不按条数截断；单次时间窗最大 100 天，返回 `{ items, hasEarlier }`。 |
+| GET  | `/me/score-history/calendar`          | query: `from`, `to`, `timeZone`, `dayStartHour?` | 按浏览器 IANA 时区和换日小时聚合有历史的业务日期及条数；单次范围最大 370 天，并返回是否还有更早记录。 |
 | POST | `/me/sync/latest/exports/diving-fish` | -                                       | 创建高优先级手动异步导出任务。实际执行时读取 latest current，成功后原子推进 Diving Fish 成功版本。 |
 | POST | `/me/sync/latest/exports/lxns`        | -                                       | 创建高优先级手动异步导出任务。实际执行时读取 latest current，成功后原子推进 LXNS 成功版本。 |
 | GET  | `/me/sync/prober-export-jobs/:exportJobId` | path: `exportJobId`                     | 查询当前用户自己的查分器导出任务结果。                                                      |
 | GET  | `/me/sync/prober-export-jobs`              | query: `limit?`                         | 查询当前用户最近的查分器导出任务。                                                          |
 | GET  | `/me/score-exports/best50`            | -                                       | 生成 Best 50 PNG，响应 `Content-Type: image/png`，下载名 `best50.png`。                     |
+| GET  | `/me/score-exports/history`           | query: `date`, `start`, `end`, `timeZone`, `dayStartHour` | 合并指定业务日内同谱面推分并生成四列成绩历史 PNG，下载名 `score-history-<date>.png`。 |
 | GET  | `/me/score-exports/level`             | query: `level?`                         | 按等级生成成绩 PNG，下载名 `level-<level>.png`。                                            |
 | GET  | `/me/score-exports/version`           | query: `version?`, `minLevel?`, `plan?` | 按版本/牌子计划生成成绩 PNG。`plan` 支持 `jiang`、`ji`、`wuwu`、`shen`，非法值按 `jiang`。  |
 

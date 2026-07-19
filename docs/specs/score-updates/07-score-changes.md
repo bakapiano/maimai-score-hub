@@ -175,9 +175,43 @@ Authorization: Bearer <jwt>
 - 响应不暴露 `friendCode`、`ownerUserId`、`sourceId`、`syncId` 或 Mongo `_id`。
 - 页面 `/app/scores` 打开成绩详情时立即加载历史；“成绩历史”作为最后一个 section 默认
   折叠。每个 diff 文档独立显示一条，只展示带对应评级图片的达成率、带 DX 星级图片的
-  DX 分数、FC 和 FS 的 `before → after`，空值显示 `N/A`，不展示 Rating，并明确提示历史
-  只从功能上线后开始积累。
+  DX 分数，以及对应状态图片的 FC 和 FS `before → after`；空值显示 `N/A`，不展示
+  Rating，并明确提示历史只从功能上线后开始积累。
 - 删除账号时按 `friendCode` 同步删除该用户的 `score_changes`。
+
+### 全部成绩历史 Feed
+
+```http
+GET /api/v1/me/score-history
+  ?start=<epoch milliseconds>
+  &end=<epoch milliseconds>
+Authorization: Bearer <jwt>
+```
+
+- `start/end` 都是必填的 UTC epoch 毫秒整数，使用 `[start, end)` 查询；单次范围不得超过
+  100 天。API 不接收本地日期字符串，也不根据服务器时区切页。
+- 服务端返回该时间窗内按 `observedAt DESC, _id DESC` 排序的全部记录，不使用条数
+  `limit` 或 cursor 截断；`hasEarlier` 表示 `start` 之前是否仍有记录。
+- `/app/scores` 的“成绩历史”Tab 使用浏览器 `Date` 与当前 IANA timezone，把记录按用户
+  本地业务日分组，并以本地时间展示。
+- 页面默认查询并缓存最近三个月，常驻横向日期切换条必须选中一个有成绩的业务日；今天
+  有记录时默认选今天，否则选已加载范围内最近有记录的一天。切换日期只做前端过滤，
+  不再请求 Feed API。
+- `[start, end)` 表示前端已经缓存的完整时间窗。“加载更多”每次只查询
+  `[start-3个月, start)` 并按 `id` 增量追加，再向前推进 `start`。
+- 日期切换条只展示已缓存且实际有记录的日期；“加载更多”每次增量加载前一个三个月窗
+  口，成功后把新发现的日期追加到切换条。
+- 用户可设置本地换日小时（默认 06:00）以及是否将同一业务日内相同
+  `musicId + chartIndex + type` 的记录合并为一条；合并默认开启。
+- Calendar API 仍可供其他客户端按 `from/to/timeZone/dayStartHour` 聚合日期；当前成绩
+  历史 Tab 不依赖它预判日期，日期和计数直接从已缓存 Feed 记录生成。
+
+### 当日成绩历史图片导出
+
+`GET /api/v1/me/score-exports/history` 接收 `date/start/end/timeZone/dayStartHour`。后端只
+查询 JWT 用户在 `[start, end)` 内的 diff，并按 `musicId + chartIndex + type` 合并为最早
+`before` 与最新 `after`。PNG 复用 B50 背景、字体、封面和状态素材，按当前成绩历史卡片
+语义绘制，每行固定四张；没有当日记录时返回 404。
 
 ## 存储与保留
 

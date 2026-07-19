@@ -1,6 +1,7 @@
 import {
   IconCalendarStar,
   IconChartBar,
+  IconHistory,
   IconList,
   IconRefresh,
   IconTrophy,
@@ -12,6 +13,7 @@ import { Link } from "react-router-dom";
 import { AllScoresTab } from "./score/AllScoresTab";
 import { Best50Tab } from "./score/Best50Tab";
 import { LevelScoresTab } from "./score/LevelScoresTab";
+import { ScoreHistoryTab } from "./score/ScoreHistoryTab";
 import type { SyncScore } from "../types/syncScore";
 import { VersionScoresTab } from "./score/VersionScoresTab";
 import { useAuth } from "../providers/AuthContext";
@@ -49,7 +51,9 @@ export default function ScorePage() {
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(() => Boolean(token || offline));
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("best");
   const hasSync = Boolean(lastSyncAt) || scores.length > 0;
+  const historyActive = activeTab === "history";
   const hasSyncRef = useRef(hasSync);
 
   useEffect(() => {
@@ -204,14 +208,15 @@ export default function ScorePage() {
       <Box style={{ position: "relative" }}>
         <Box
           style={{
-            pointerEvents: !hasSync && !error ? "none" : "auto",
-            filter: !hasSync && !error ? "blur(1px)" : "none",
-            opacity: !hasSync && !error ? 0.6 : 1,
+            pointerEvents: !historyActive && !hasSync && !error ? "none" : "auto",
+            filter: !historyActive && !hasSync && !error ? "blur(1px)" : "none",
+            opacity: !historyActive && !hasSync && !error ? 0.6 : 1,
             transition: "filter 120ms ease, opacity 120ms ease",
           }}
         >
           <Tabs
-            defaultValue="best"
+            value={activeTab}
+            onChange={(value) => setActiveTab(value ?? "best")}
             keepMounted={false}
             classNames={{
               root: classes.tabsRoot,
@@ -234,6 +239,10 @@ export default function ScorePage() {
               >
                 <span className={classes.tabLabelFull}>按版本</span>
                 <span className={classes.tabLabelShort}>版本</span>
+              </Tabs.Tab>
+              <Tabs.Tab value="history" leftSection={<IconHistory size={16} />}>
+                <span className={classes.tabLabelFull}>成绩历史</span>
+                <span className={classes.tabLabelShort}>历史</span>
               </Tabs.Tab>
               <Tabs.Tab value="all" leftSection={<IconList size={16} />}>
                 <span className={classes.tabLabelFull}>全部成绩</span>
@@ -263,13 +272,17 @@ export default function ScorePage() {
               />
             </Tabs.Panel>
 
+            <Tabs.Panel value="history" pt="md">
+              <ScoreHistoryTab />
+            </Tabs.Panel>
+
             <Tabs.Panel value="all" pt="md">
               <AllScoresTab scores={scores} loading={loading} error={error} />
             </Tabs.Panel>
           </Tabs>
         </Box>
 
-        {!hasSync && !error && (
+        {!historyActive && !hasSync && !error && (
           <Box
             style={{
               position: "absolute",

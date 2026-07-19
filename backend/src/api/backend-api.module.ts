@@ -24,6 +24,7 @@ import { MeCabinetScoreJobsController } from './me/me-cabinet-score-jobs.control
 import { MeDxnetJobsController } from './me/me-dxnet-jobs.controller';
 import { MeScoreExportController } from './me/me-score-export.controller';
 import { MeScoreChangesController } from './me/me-score-changes.controller';
+import { MeScoreHistoryController } from './me/me-score-history.controller';
 import { MeSyncController } from './me/me-sync.controller';
 import { MusicCatalogController } from './catalog/music-catalog.controller';
 import { MusicModule } from '../modules/music/music.module';
@@ -72,6 +73,7 @@ import { WorkerSdgbMaintenanceController } from './workers/worker-sdgb-maintenan
     MeDxnetJobsController,
     MeScoreExportController,
     MeScoreChangesController,
+    MeScoreHistoryController,
     MeSyncController,
     MusicCatalogController,
     CoverCatalogController,

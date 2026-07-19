@@ -39,3 +39,51 @@ export function getDxStarForScore(
   }
   return getDxStar((dxScore / maxDxScore) * 100);
 }
+
+const NOTE_KEYS = ["tap", "hold", "slide", "touch", "break"] as const;
+
+function noteNumber(value: unknown): number | null {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value.replace(/,/g, ""))
+        : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function noteTotal(notes: unknown): number | null {
+  if (Array.isArray(notes)) {
+    const values = notes.map(noteNumber).filter((value) => value !== null);
+    return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+  }
+  if (!notes || typeof notes !== "object") {
+    return null;
+  }
+  const record = notes as Record<string, unknown>;
+  const explicit = noteNumber(record.total);
+  if (explicit !== null) {
+    return explicit;
+  }
+  if (record.notes !== undefined) {
+    const nested = noteTotal(record.notes);
+    if (nested !== null) {
+      return nested;
+    }
+  }
+  if (record.left !== undefined || record.right !== undefined) {
+    const sides = [noteTotal(record.left), noteTotal(record.right)].filter(
+      (value) => value !== null,
+    );
+    return sides.length ? sides.reduce((sum, value) => sum + value, 0) : null;
+  }
+  const values = NOTE_KEYS.map((key) => noteNumber(record[key])).filter(
+    (value) => value !== null,
+  );
+  return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+}
+
+export function getMaxDxScoreFromNotes(notes: unknown): number | null {
+  const total = noteTotal(notes);
+  return total !== null && total > 0 ? total * 3 : null;
+}

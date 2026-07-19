@@ -8,7 +8,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import {
+  ScoreHistoryExportQuerySchema,
+  type ScoreHistoryExportQuery,
+} from '@maimai-score-hub/shared';
 
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthGuard } from '../../modules/auth/guards/auth.guard';
 import { ScoreExportService } from '../../modules/score-export/services/score-export.service';
 import type { PlatePlan } from '../../modules/score-export/score-export.types';
@@ -82,6 +87,26 @@ export class MeScoreExportController {
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="version-${sanitizeFilename(version)}.png"`,
+    );
+    res.end(buffer);
+  }
+
+  @Get('history')
+  async history(
+    @Req() req: AuthedRequest,
+    @Res() res: Response,
+    @Query(new ZodValidationPipe(ScoreHistoryExportQuerySchema))
+    query: ScoreHistoryExportQuery,
+  ) {
+    const friendCode = requireFriendCode(req);
+    const buffer = await this.exporter.generateScoreHistoryImage(
+      friendCode,
+      query,
+    );
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="score-history-${query.date}.png"`,
     );
     res.end(buffer);
   }

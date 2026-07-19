@@ -99,7 +99,10 @@ export type ScoreChangeDocument = HydratedDocument<ScoreChangeEntity>;
 export const ScoreChangeSchema =
   SchemaFactory.createForClass(ScoreChangeEntity);
 
-ScoreChangeSchema.index({ friendCode: 1, observedAt: -1 });
+ScoreChangeSchema.index(
+  { friendCode: 1, observedAt: -1, _id: -1 },
+  { name: 'friend_timeline' },
+);
 ScoreChangeSchema.index({
   friendCode: 1,
   musicId: 1,

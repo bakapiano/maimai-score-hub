@@ -11,6 +11,10 @@ import {
   ProberExportListResponseSchema,
   ScoreChangeHistoryQuerySchema,
   ScoreChangeHistoryResponseSchema,
+  ScoreHistoryFeedQuerySchema,
+  ScoreHistoryFeedResponseSchema,
+  ScoreHistoryCalendarQuerySchema,
+  ScoreHistoryCalendarResponseSchema,
 } from "./sync.schema";
 
 const c = initContract();
@@ -80,5 +84,19 @@ export const syncContract = c.router({
     headers: c.type<{ authorization: string }>(),
     query: ScoreChangeHistoryQuerySchema,
     responses: { 200: ScoreChangeHistoryResponseSchema },
+  },
+  listScoreHistory: {
+    method: "GET",
+    path: "/me/score-history",
+    headers: c.type<{ authorization: string }>(),
+    query: ScoreHistoryFeedQuerySchema,
+    responses: { 200: ScoreHistoryFeedResponseSchema },
+  },
+  getScoreHistoryCalendar: {
+    method: "GET",
+    path: "/me/score-history/calendar",
+    headers: c.type<{ authorization: string }>(),
+    query: ScoreHistoryCalendarQuerySchema,
+    responses: { 200: ScoreHistoryCalendarResponseSchema },
   },
 });

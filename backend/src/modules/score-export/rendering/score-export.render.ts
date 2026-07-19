@@ -36,6 +36,8 @@ import {
   type LoadRemoteImage,
 } from './score-export.render-utils';
 
+export { renderScoreHistoryImage } from './score-history-export.renderer';
+
 // ─── B50 ───────────────────────────────────────────────────────────────
 
 export async function renderBest50Image(

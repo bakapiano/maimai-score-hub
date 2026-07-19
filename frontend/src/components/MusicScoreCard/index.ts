@@ -33,6 +33,7 @@ export {
   getCoverUrl,
   getIconUrl,
   renderMusicIcon,
+  renderScoreStatusIcon,
 } from "./utils";
 
 // Components

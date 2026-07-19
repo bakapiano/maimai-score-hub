@@ -32,7 +32,7 @@
 | `JobModule`           | `backend/src/modules/job`           | `JobService`、`JobFriendshipService`、`JobQueueService` 等                     | DXNet worker 任务队列与任务生命周期。                                                                   |
 | `MusicModule`         | `backend/src/modules/music`         | `MusicService`                                                                 | 曲库数据、曲库来源配置、曲库定时同步和曲库缓存。                                                        |
 | `ProberExportModule`  | `backend/src/modules/prober-export` | `ProberExportService`、reconciliation/worker service                           | Provider 版本游标、自动对账补投、手动导出与 per-user 串行执行。                                         |
-| `ScoreExportModule`   | `backend/src/modules/score-export`  | `ScoreExportService`                                                           | 将同步成绩渲染为 PNG 图片。                                                                             |
+| `ScoreExportModule`   | `backend/src/modules/score-export`  | `ScoreExportService`                                                           | 将 B50、等级、版本及指定业务日的合并成绩历史渲染为 PNG 图片。                                             |
 | `SdgbWorkerModule`    | `backend/src/modules/sdgb-worker`   | `SdgbJobService`、`SdgbJobDispatcher`                                          | 机台协议 worker 的任务队列、调度和同步调用封装。                                                        |
 | `SyncModule`          | `backend/src/modules/sync`          | `SyncService`、`ScoreChangeHistoryService`                                      | current score CAS、增量合并、diff、当前用户单谱面历史与 provider payload 转换。                           |
 | `UsersModule`         | `backend/src/modules/users`         | `UsersService`、`CabinetService`、`AccountDeletionService`                     | 用户资料、导入 token、机台绑定、自动更新状态和账号删除。                                                |
@@ -114,7 +114,8 @@
 ### `ScoreExportModule`
 
 - 根据最新同步成绩和曲库数据生成图片，输出 `image/png`。
-- 支持 Best 50、指定等级成绩图、按版本/牌子计划成绩图。
+- 支持 Best 50、指定等级成绩图、按版本/牌子计划成绩图，以及按业务日合并 diff 后的
+  四列成绩历史图。
 - 使用 `CoverService` 加载本地封面，使用用户 profile 渲染头部信息。
 - `score-export.buckets.ts` 负责分桶、B50 汇总、等级/版本排序；`rendering/` 负责 canvas 渲染、字体和本地素材加载。
 - 还提供按好友码批量生成导出图片的能力，供脚本或后续自动化使用。
@@ -152,8 +153,9 @@
   `deleteMany + create`。
 - 合并策略保留更高的 achievement、dxScore、FC 和 FS，元数据来自最新曲库。
 - `mergeRecentEvents()` 把 recent event FC/FS list 与当前成绩按 rank 合并；只处理能唯一定位到当前 score 的 event。
-- 对外提供当前用户最新同步成绩查询，以及按歌曲、难度和谱面类型过滤的
-  `/me/score-changes` 游标历史；历史 service 始终附加 JWT `friendCode` 所有权条件。
+- 对外提供当前用户最新同步成绩查询、按歌曲/难度/谱面类型过滤的
+  `/me/score-changes`，以及全部谱面的 `/me/score-history` 时间窗 feed；历史 service
+  始终附加 JWT `friendCode` 所有权条件。
 - `ProberExportMapService` 缓存 Diving Fish 与 LXNS 的曲目 id 映射，支持在不同曲库来源下导出。
 - 为 ProberExportModule 提供一次性 current export snapshot 与两个 provider payload 转换；
   自动导出状态不再存入 sync。

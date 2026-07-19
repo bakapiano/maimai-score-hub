@@ -15,17 +15,17 @@ import {
 import type {
   ScoreChange,
   ScoreChangeField,
-  ScoreChangeSourceType,
   ScoreChangeValue,
 } from "@maimai-score-hub/shared";
 import { IconChevronDown, IconChevronUp } from "@tabler/icons-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { fetchScoreChangeHistory } from "../api/scoreChanges";
 import { useAuth } from "../providers/AuthContext";
 import { getAchievementRank } from "../utils/achievementRank";
 import { getDxStarForScore, parseDxScore } from "../utils/dxScore";
 import {
+  renderMusicIcon,
   renderRank,
   type DetailedMusicScoreCardProps,
 } from "./MusicScoreCard";
@@ -39,30 +39,24 @@ type Props = {
   maxDxScore: number | null;
 };
 
-type VisibleField = Extract<ScoreChangeField, "score" | "dxScore" | "fc" | "fs">;
+export type ScoreChangeVisibleField = Extract<
+  ScoreChangeField,
+  "score" | "dxScore" | "fc" | "fs"
+>;
 
-const FIELD_LABELS: Record<VisibleField, string> = {
+const FIELD_LABELS: Record<ScoreChangeVisibleField, string> = {
   score: "达成率",
   dxScore: "DX 分",
   fc: "FC",
   fs: "FS",
 };
 
-const SOURCE_LABELS: Record<ScoreChangeSourceType, string> = {
-  dxnet_update_score: "DXNET",
-  auto_update_rival: "自动更新",
-  auto_update_fcfs: "最近游玩",
-  cabinet_qr_update: "二维码",
-};
-
-const SOURCE_COLORS: Record<ScoreChangeSourceType, string> = {
-  dxnet_update_score: "blue",
-  auto_update_rival: "teal",
-  auto_update_fcfs: "grape",
-  cabinet_qr_update: "orange",
-};
-
-const VISIBLE_FIELDS: VisibleField[] = ["score", "dxScore", "fc", "fs"];
+const VISIBLE_FIELDS: ScoreChangeVisibleField[] = [
+  "score",
+  "dxScore",
+  "fc",
+  "fs",
+];
 
 function formatObservedAt(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -77,7 +71,7 @@ function formatObservedAt(value: string) {
 }
 
 function formatValue(
-  field: VisibleField,
+  field: ScoreChangeVisibleField,
   value: ScoreChangeValue,
 ) {
   const raw = value[field];
@@ -94,12 +88,12 @@ function formatValue(
   return String(raw);
 }
 
-function HistoryValue({
+export function ScoreChangeHistoryValue({
   field,
   value,
   maxDxScore,
 }: {
-  field: VisibleField;
+  field: ScoreChangeVisibleField;
   value: ScoreChangeValue;
   maxDxScore: number | null;
 }) {
@@ -134,6 +128,14 @@ function HistoryValue({
     );
   }
 
+  if (field === "fc" || field === "fs") {
+    return (
+      <Group gap={5} wrap="nowrap" className={classes.historyValueSide}>
+        {renderMusicIcon(text, { compact: true, alt: text })}
+      </Group>
+    );
+  }
+
   return <Text fw={600}>{text}</Text>;
 }
 
@@ -142,31 +144,25 @@ function changedValueFields(change: ScoreChange) {
   return VISIBLE_FIELDS.filter((field) => changed.has(field));
 }
 
-function HistoryRow({
+export function ScoreChangeHistoryRow({
   change,
   maxDxScore,
+  header,
 }: {
   change: ScoreChange;
   maxDxScore: number | null;
+  header?: ReactNode;
 }) {
   const fields = changedValueFields(change);
   const isNew = change.changedFields.includes("newChart");
 
   return (
     <Paper withBorder p="sm" radius="md" className={classes.historyRow}>
+      {header ? <Box mb="xs">{header}</Box> : null}
       <Group justify="space-between" align="flex-start" gap="xs">
-        <Group gap="xs">
-          <Text size="xs" c="dimmed" className={classes.historyTime}>
-            {formatObservedAt(change.observedAt)}
-          </Text>
-          <Badge
-            size="xs"
-            variant="light"
-            color={SOURCE_COLORS[change.sourceType]}
-          >
-            {SOURCE_LABELS[change.sourceType]}
-          </Badge>
-        </Group>
+        <Text size="xs" c="dimmed" className={classes.historyTime}>
+          {formatObservedAt(change.observedAt)}
+        </Text>
         {isNew ? (
           <Badge size="xs" variant="light" color="cyan">
             首次记录
@@ -181,7 +177,7 @@ function HistoryRow({
               {FIELD_LABELS[field]}
             </Text>
             <Group gap={5} wrap="nowrap" className={classes.historyTransition}>
-              <HistoryValue
+              <ScoreChangeHistoryValue
                 field={field}
                 value={change.before}
                 maxDxScore={maxDxScore}
@@ -189,7 +185,7 @@ function HistoryRow({
               <Text component="span" c="dimmed">
                 →
               </Text>
-              <HistoryValue
+              <ScoreChangeHistoryValue
                 field={field}
                 value={change.after}
                 maxDxScore={maxDxScore}
@@ -350,7 +346,7 @@ export function ScoreChangeHistorySection({
         ) : (
           <Stack gap="xs">
             {items.map((change) => (
-              <HistoryRow
+              <ScoreChangeHistoryRow
                 key={change.id}
                 change={change}
                 maxDxScore={maxDxScore}

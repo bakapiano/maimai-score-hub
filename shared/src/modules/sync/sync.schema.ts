@@ -249,6 +249,62 @@ export const ScoreChangeHistoryResponseSchema = z.object({
   nextCursor: z.string().nullable(),
 });
 
+export const ScoreHistoryFeedQuerySchema = z
+  .object({
+    start: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(8_640_000_000_000_000),
+    end: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(8_640_000_000_000_000),
+  })
+  .strict()
+  .refine((query) => query.start < query.end, {
+    message: "start must be earlier than end",
+  })
+  .refine((query) => query.end - query.start <= 100 * 24 * 60 * 60 * 1000, {
+    message: "history range cannot exceed 100 days",
+  });
+
+export const ScoreHistoryFeedResponseSchema = z.object({
+  items: z.array(ScoreChangeSchema),
+  hasEarlier: z.boolean(),
+});
+
+export const ScoreHistoryCalendarQuerySchema = z
+  .object({
+    from: z.coerce.number().int().min(0).max(8_640_000_000_000_000),
+    to: z.coerce.number().int().min(0).max(8_640_000_000_000_000),
+    timeZone: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .regex(/^[A-Za-z0-9_+\-/]+$/),
+    dayStartHour: z.coerce.number().int().min(0).max(23).default(6),
+  })
+  .strict()
+  .refine((query) => query.from < query.to, {
+    message: "from must be earlier than to",
+  })
+  .refine((query) => query.to - query.from <= 370 * 24 * 60 * 60 * 1000, {
+    message: "calendar range cannot exceed 370 days",
+  });
+
+export const ScoreHistoryCalendarResponseSchema = z.object({
+  days: z.array(
+    z.object({
+      day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      count: z.number().int().positive(),
+    }),
+  ),
+  hasEarlier: z.boolean(),
+});
+
 export type ScoreChangeSourceType = z.infer<typeof ScoreChangeSourceTypeSchema>;
 export type ScoreChangeField = z.infer<typeof ScoreChangeFieldSchema>;
 export type ScoreChangeValue = z.infer<typeof ScoreChangeValueSchema>;
@@ -258,4 +314,16 @@ export type ScoreChangeHistoryQuery = z.infer<
 >;
 export type ScoreChangeHistoryResponse = z.infer<
   typeof ScoreChangeHistoryResponseSchema
+>;
+export type ScoreHistoryFeedQuery = z.infer<
+  typeof ScoreHistoryFeedQuerySchema
+>;
+export type ScoreHistoryFeedResponse = z.infer<
+  typeof ScoreHistoryFeedResponseSchema
+>;
+export type ScoreHistoryCalendarQuery = z.infer<
+  typeof ScoreHistoryCalendarQuerySchema
+>;
+export type ScoreHistoryCalendarResponse = z.infer<
+  typeof ScoreHistoryCalendarResponseSchema
 >;

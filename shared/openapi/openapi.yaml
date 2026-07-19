@@ -2317,6 +2317,215 @@ paths:
                 required:
                   - items
                   - nextCursor
+  /me/score-history:
+    get:
+      tags: *a4
+      parameters:
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 8640000000000000
+            nullable: true
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 8640000000000000
+            nullable: true
+      operationId: sync.listScoreHistory
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        observedAt:
+                          type: string
+                          format: date-time
+                        sourceType:
+                          type: string
+                          enum:
+                            - dxnet_update_score
+                            - auto_update_rival
+                            - auto_update_fcfs
+                            - cabinet_qr_update
+                        beforeScoreVersion:
+                          type: integer
+                          minimum: 0
+                          nullable: true
+                        afterScoreVersion:
+                          type: integer
+                          minimum: 0
+                        musicId:
+                          type: string
+                        chartIndex:
+                          type: integer
+                          minimum: 0
+                        type:
+                          type: string
+                        before:
+                          type: object
+                          properties:
+                            score:
+                              type: string
+                              nullable: true
+                            dxScore:
+                              type: string
+                              nullable: true
+                            fc:
+                              type: string
+                              nullable: true
+                            fs:
+                              type: string
+                              nullable: true
+                            rating:
+                              type: number
+                              nullable: true
+                        after:
+                          type: object
+                          properties:
+                            score:
+                              type: string
+                              nullable: true
+                            dxScore:
+                              type: string
+                              nullable: true
+                            fc:
+                              type: string
+                              nullable: true
+                            fs:
+                              type: string
+                              nullable: true
+                            rating:
+                              type: number
+                              nullable: true
+                        changedFields:
+                          type: array
+                          items:
+                            type: string
+                            enum:
+                              - score
+                              - dxScore
+                              - fc
+                              - fs
+                              - rating
+                              - newChart
+                        achievementDelta:
+                          type: number
+                          nullable: true
+                        dxScoreDelta:
+                          type: number
+                          nullable: true
+                        ratingDelta:
+                          type: number
+                          nullable: true
+                        fcRankDelta:
+                          type: integer
+                          nullable: true
+                        fsRankDelta:
+                          type: integer
+                          nullable: true
+                      required:
+                        - id
+                        - observedAt
+                        - sourceType
+                        - beforeScoreVersion
+                        - afterScoreVersion
+                        - musicId
+                        - chartIndex
+                        - type
+                        - before
+                        - after
+                        - changedFields
+                        - achievementDelta
+                        - dxScoreDelta
+                        - ratingDelta
+                        - fcRankDelta
+                        - fsRankDelta
+                  hasEarlier:
+                    type: boolean
+                required:
+                  - items
+                  - hasEarlier
+  /me/score-history/calendar:
+    get:
+      tags: *a4
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 8640000000000000
+            nullable: true
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 8640000000000000
+            nullable: true
+        - name: timeZone
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: ^[A-Za-z0-9_+\-/]+$
+        - name: dayStartHour
+          in: query
+          schema:
+            default: 6
+            type: integer
+            minimum: 0
+            maximum: 23
+            nullable: true
+      operationId: sync.getScoreHistoryCalendar
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  days:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        day:
+                          type: string
+                          pattern: ^\d{4}-\d{2}-\d{2}$
+                        count:
+                          type: integer
+                          minimum: 0
+                          exclusiveMinimum: 0
+                      required:
+                        - day
+                        - count
+                  hasEarlier:
+                    type: boolean
+                required:
+                  - days
+                  - hasEarlier
   /me/dxnet-jobs:
     post:
       tags: &a5
@@ -4071,6 +4280,51 @@ paths:
       tags: *a8
       parameters: []
       operationId: scoreExport.version
+      responses:
+        "200":
+          description: "200"
+  /me/score-exports/history:
+    get:
+      tags: *a8
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: ^\d{4}-\d{2}-\d{2}$
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 8640000000000000
+            nullable: true
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 8640000000000000
+            nullable: true
+        - name: timeZone
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - name: dayStartHour
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 23
+            nullable: true
+      operationId: scoreExport.history
       responses:
         "200":
           description: "200"

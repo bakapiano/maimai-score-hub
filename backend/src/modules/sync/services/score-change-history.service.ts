@@ -4,6 +4,10 @@ import type {
   ScoreChange,
   ScoreChangeHistoryQuery,
   ScoreChangeHistoryResponse,
+  ScoreHistoryFeedQuery,
+  ScoreHistoryFeedResponse,
+  ScoreHistoryCalendarQuery,
+  ScoreHistoryCalendarResponse,
 } from '@maimai-score-hub/shared';
 import { Types, type Model, type QueryFilter } from 'mongoose';
 
@@ -56,6 +60,85 @@ export class ScoreChangeHistoryService {
     return {
       items: page.map((row) => this.toResponse(row)),
       nextCursor: hasMore && last ? this.encodeCursor(last) : null,
+    };
+  }
+
+  async listFeedForUser(
+    friendCode: string,
+    query: ScoreHistoryFeedQuery,
+  ): Promise<ScoreHistoryFeedResponse> {
+    const filter: QueryFilter<ScoreChangeDocument> = {
+      friendCode,
+      observedAt: {
+        $gte: new Date(query.start),
+        $lt: new Date(query.end),
+      },
+    };
+
+    const rows = await this.scoreChanges
+      .find(filter)
+      .sort({ observedAt: -1, _id: -1 })
+      .lean<ScoreChangeRow[]>();
+    const hasEarlier = Boolean(
+      await this.scoreChanges.exists({
+        friendCode,
+        observedAt: { $lt: new Date(query.start) },
+      }),
+    );
+
+    return {
+      items: rows.map((row) => this.toResponse(row)),
+      hasEarlier,
+    };
+  }
+
+  async getCalendarForUser(
+    friendCode: string,
+    query: ScoreHistoryCalendarQuery,
+  ): Promise<ScoreHistoryCalendarResponse> {
+    this.assertTimeZone(query.timeZone);
+    const days = await this.scoreChanges
+      .aggregate<{ _id: string; count: number }>([
+        {
+          $match: {
+            friendCode,
+            observedAt: {
+              $gte: new Date(query.from),
+              $lt: new Date(query.to),
+            },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: {
+                format: '%Y-%m-%d',
+                timezone: query.timeZone,
+                date: {
+                  $dateSubtract: {
+                    startDate: '$observedAt',
+                    unit: 'hour',
+                    amount: query.dayStartHour,
+                    timezone: query.timeZone,
+                  },
+                },
+              },
+            },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: -1 } },
+      ])
+      .option({ maxTimeMS: 5000 });
+    const hasEarlier = Boolean(
+      await this.scoreChanges.exists({
+        friendCode,
+        observedAt: { $lt: new Date(query.from) },
+      }),
+    );
+    return {
+      days: days.map((row) => ({ day: row._id, count: row.count })),
+      hasEarlier,
     };
   }
 
@@ -125,5 +208,16 @@ export class ScoreChangeHistoryService {
       code: 'INVALID_SCORE_CHANGE_CURSOR',
       message: 'Invalid score change history cursor',
     });
+  }
+
+  private assertTimeZone(timeZone: string): void {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone }).format(new Date(0));
+    } catch {
+      throw new BadRequestException({
+        code: 'INVALID_TIME_ZONE',
+        message: 'Invalid browser time zone',
+      });
+    }
   }
 }

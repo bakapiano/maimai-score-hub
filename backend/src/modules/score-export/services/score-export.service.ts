@@ -1,9 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { loadImage } from '@napi-rs/canvas';
 import { join } from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
+import type { ScoreHistoryExportQuery } from '@maimai-score-hub/shared';
 
 import { CoverService } from '../../cover/services/cover.service';
 import { MusicEntity } from '../../music/schemas/music.schema';
@@ -13,6 +18,11 @@ import type {
 } from '../../music/schemas/music.schema';
 import { SyncEntity } from '../../sync/schemas/sync.schema';
 import type { SyncDocument, SyncScore } from '../../sync/schemas/sync.schema';
+import {
+  ScoreChangeEntity,
+  type ScoreChangeDocument,
+  type ScoreChangeValue,
+} from '../../sync/schemas/score-change.schema';
 import { UsersService } from '../../users/services/users.service';
 import type { UserNetProfile } from '../../users/user.types';
 import { ensureFontsLoaded } from '../rendering/score-export.fonts';
@@ -24,12 +34,14 @@ import {
 import type {
   ChartEntry,
   CompactCard,
+  HistoryExportCard,
   MusicRow,
   PlatePlan,
   VersionBucket,
 } from '../score-export.types';
 import {
   renderBest50Image,
+  renderScoreHistoryImage,
   renderLevelScoresImage,
   renderVersionScoresImage,
 } from '../rendering/score-export.render';
@@ -67,6 +79,8 @@ export class ScoreExportService {
     private readonly syncModel: Model<SyncDocument>,
     @InjectModel(MusicEntity.name)
     private readonly musicModel: Model<MusicDocument>,
+    @InjectModel(ScoreChangeEntity.name)
+    private readonly scoreChangeModel: Model<ScoreChangeDocument>,
     private readonly covers: CoverService,
     private readonly users: UsersService,
   ) {}
@@ -176,6 +190,141 @@ export class ScoreExportService {
       (musicId) => this.loadCoverImage(musicId),
       (url) => this.loadRemoteImage(url),
     );
+  }
+
+  async generateScoreHistoryImage(
+    friendCode: string,
+    query: ScoreHistoryExportQuery,
+  ): Promise<Buffer> {
+    ensureFontsLoaded();
+    this.assertTimeZone(query.timeZone);
+    const rows = await this.scoreChangeModel
+      .find({
+        friendCode,
+        observedAt: {
+          $gte: new Date(query.start),
+          $lt: new Date(query.end),
+        },
+      })
+      .sort({ observedAt: -1, _id: -1 })
+      .lean<ScoreChangeEntity[]>();
+    if (!rows.length) {
+      throw new NotFoundException('No score history for selected day');
+    }
+
+    const musics = (await this.musicModel.find().lean()) as MusicRow[];
+    const musicMap = new Map(musics.map((music) => [music.id, music]));
+    const cards = this.mergeHistoryCards(rows, musicMap);
+    const profile = await this.loadOptionalProfile(friendCode);
+
+    return renderScoreHistoryImage(
+      {
+        date: query.date,
+        dayStartHour: query.dayStartHour,
+        timeZone: query.timeZone,
+        cards,
+        profile,
+      },
+      (musicId) => this.loadCoverImage(musicId),
+      (url) => this.loadRemoteImage(url),
+    );
+  }
+
+  private mergeHistoryCards(
+    rows: ScoreChangeEntity[],
+    musicMap: Map<string, MusicRow>,
+  ): HistoryExportCard[] {
+    const groups = new Map<
+      string,
+      {
+        newest: ScoreChangeEntity;
+        oldest: ScoreChangeEntity;
+      }
+    >();
+    for (const row of rows) {
+      const key = `${row.musicId}:${row.chartIndex}:${row.type}`;
+      const group = groups.get(key);
+      if (group) {
+        group.oldest = row;
+      } else {
+        groups.set(key, {
+          newest: row,
+          oldest: row,
+        });
+      }
+    }
+
+    return [...groups.values()].map(({ newest, oldest }) => {
+      const music = musicMap.get(newest.musicId);
+      const chart = music?.charts?.[newest.chartIndex];
+      const dxScoreMax = this.getDxScoreMax(chart);
+      const beforeDx = this.parseDxScore(oldest.before?.dxScore);
+      const afterDx = this.parseDxScore(newest.after?.dxScore);
+      return {
+        musicId: newest.musicId,
+        chartIndex: newest.chartIndex,
+        type: newest.type,
+        title: music?.title ?? 'Unknown Title',
+        detailLevelText:
+          typeof chart?.detailLevel === 'number'
+            ? chart.detailLevel.toFixed(1)
+            : (chart?.level ?? '?'),
+        observedAt: new Date(newest.observedAt),
+        before: oldest.before ?? {},
+        after: newest.after ?? {},
+        achievementDelta: this.scoreValueDelta(
+          oldest.before,
+          newest.after,
+          'score',
+        ),
+        dxScoreDelta: this.scoreValueDelta(
+          oldest.before,
+          newest.after,
+          'dxScore',
+        ),
+        ratingDelta: this.ratingValueDelta(oldest.before, newest.after),
+        beforeDxStar: this.dxStarForScore(beforeDx, dxScoreMax),
+        afterDxStar: this.dxStarForScore(afterDx, dxScoreMax),
+      };
+    });
+  }
+
+  private scoreValueDelta(
+    before: ScoreChangeValue,
+    after: ScoreChangeValue,
+    field: 'score' | 'dxScore',
+  ): number | null {
+    const next = this.toFiniteNumber(after[field]?.replace('%', ''));
+    const previous = this.toFiniteNumber(before[field]?.replace('%', ''));
+    return next === null || previous === null ? null : next - previous;
+  }
+
+  private ratingValueDelta(
+    before: ScoreChangeValue,
+    after: ScoreChangeValue,
+  ): number | null {
+    const next = after.rating;
+    const previous = before.rating;
+    return typeof next === 'number' && typeof previous === 'number'
+      ? next - previous
+      : null;
+  }
+
+  private dxStarForScore(
+    score: number | null,
+    maximum: number | null,
+  ): number | null {
+    return score !== null && maximum !== null && maximum > 0
+      ? this.getDxStar((score / maximum) * 100)
+      : null;
+  }
+
+  private assertTimeZone(timeZone: string): void {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone }).format(new Date(0));
+    } catch {
+      throw new BadRequestException('Invalid time zone');
+    }
   }
 
   private resolveVersionBucket(
