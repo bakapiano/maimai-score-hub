@@ -52,6 +52,18 @@ function toNumber(value: string | number | null | undefined): number | null {
   return null;
 }
 
+function toIsoTime(value: unknown): string | null {
+  const parsed =
+    value instanceof Date
+      ? value
+      : typeof value === 'string' || typeof value === 'number'
+        ? new Date(value)
+        : null;
+  return parsed && Number.isFinite(parsed.getTime())
+    ? parsed.toISOString()
+    : null;
+}
+
 function mapMusicId(
   type: string,
   id: string,
@@ -71,10 +83,13 @@ function mapMusicId(
 export function convertSyncScoresToLxnsPayload(
   scores: SyncScore[],
   idMap?: ReadonlyMap<string, string>,
+  fallbackObservedAt = new Date(),
 ): {
   scores: LxnsScore[];
 } {
   const payload: LxnsScore[] = [];
+  const fallbackPlayTime =
+    toIsoTime(fallbackObservedAt) ?? new Date().toISOString();
 
   for (const score of scores) {
     const id = mapMusicId(score.type, score.musicId, idMap);
@@ -88,6 +103,7 @@ export function convertSyncScoresToLxnsPayload(
       dx_score: toNumber(score.dxScore),
       dx_star: 0,
       type: mapType(score.type),
+      play_time: toIsoTime(score.observedAt) ?? fallbackPlayTime,
     });
   }
 

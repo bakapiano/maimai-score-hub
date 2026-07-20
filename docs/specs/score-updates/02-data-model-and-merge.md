@@ -26,6 +26,11 @@ type SyncEntity = {
   updatedAt: Date;
   __v: number;                   // 内部 CAS token
 };
+
+type SyncScore = {
+  // 真实游玩时间可用时使用真实值，否则为系统观察到该最佳值的时间。
+  observedAt?: Date | null;
+};
 ```
 
 索引：
@@ -105,6 +110,7 @@ scoreKey = musicId + '::' + chartIndex
 | `fs` | `null < fs < fsp < fdx < fdxp` |
 | `rating` | 使用最终 achievement 和当前 catalog 定数重新计算 |
 | `cid/type/isNew` | 使用当前 catalog 生成或刷新 |
+| `observedAt` | 最佳值实际变化时采用 winning delta 的观察时间；no-op 保留旧值 |
 
 补充规则：
 

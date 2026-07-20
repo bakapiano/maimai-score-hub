@@ -58,6 +58,10 @@ S(next) = S(latest) ⊔ Delta(source)
 | `auto_update_fcfs` | DXNet Recent Event | `SyncService.mergeRecentEvents()` | FC、FS | 只更新 current 中唯一命中的谱面 |
 | `cabinet_qr_update` | sdgb `get_music_score` finalizer | `SyncService.createFromUserMusic()` | achievement、DX Score、FC、FS | cleanup 和身份校验成功后才提交 |
 
+每条 current score 还保存可选的 `observedAt`。Recent Event 将北京时间、分钟精度的
+`YYYY/MM/DD HH:mm` 转为 UTC；其余三个来源没有单谱面游玩时间，使用 winning CAS
+attempt 的当前时间。Recent Event 时间缺失或无效时也回退到该当前时间。
+
 以下不是成绩写入：
 
 - `prober_export_states` 的 provider 游标和结果不属于成绩写入；

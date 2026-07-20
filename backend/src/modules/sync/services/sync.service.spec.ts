@@ -279,6 +279,7 @@ describe('SyncService initial score commit', () => {
       fc: 'app',
       fs: 'fdxp',
     });
+    expect(result?.scores[0].observedAt).toBeInstanceOf(Date);
     expect(harness.scoreChangeModel.bulkWrite).toHaveBeenCalledTimes(1);
     const [operations, options] = scoreChangeCalls(harness)[0];
     const inserted = operations[0].updateOne.update.$setOnInsert;
@@ -385,11 +386,13 @@ describe('SyncService score change details', () => {
     };
     await harness.service.createFromUserMusic(payload);
     const version = harness.current()?.__v;
+    const observedAt = harness.current()?.scores[0].observedAt;
     const diffWrites = harness.scoreChangeModel.bulkWrite.mock.calls.length;
     const repeated = await harness.service.createFromUserMusic(payload);
 
     expect(repeated?.commitOutcome).toBe('no_change');
     expect(harness.current()?.__v).toBe(version);
+    expect(harness.current()?.scores[0].observedAt).toEqual(observedAt);
     expect(harness.scoreChangeModel.bulkWrite).toHaveBeenCalledTimes(
       diffWrites,
     );
@@ -511,6 +514,8 @@ describe('SyncService best-effort score change delivery', () => {
   });
 });
 
+// The cases share full score fixtures so each timestamp path stays explicit.
+// eslint-disable-next-line max-lines-per-function
 describe('SyncService.mergeRecentEvents', () => {
   it('merges a uniquely matched FC/FS event through the same CAS path', async () => {
     const harness = createHarness({
@@ -527,6 +532,7 @@ describe('SyncService.mergeRecentEvents', () => {
             fc: null,
             rating: 292,
             isNew: false,
+            observedAt: new Date('2026-06-20T00:00:00.000Z'),
           },
         ],
       },
@@ -536,6 +542,7 @@ describe('SyncService.mergeRecentEvents', () => {
       sourceId: 'recent-event-job',
       events: [
         {
+          time: '2026/06/19 12:38',
           songName: 'test-17',
           difficulty: 'master',
           fs: 'fsp',
@@ -550,6 +557,53 @@ describe('SyncService.mergeRecentEvents', () => {
       syncId: 'stable-sync',
     });
     expect(harness.current()?.scores[0].fs).toBe('fsp');
+    expect(harness.current()?.scores[0].observedAt?.toISOString()).toBe(
+      '2026-06-19T04:38:00.000Z',
+    );
+  });
+
+  it('falls back to commit time when an event time is invalid', async () => {
+    jest.useFakeTimers();
+    const fallbackNow = new Date('2026-07-20T05:06:07.000Z');
+    jest.setSystemTime(fallbackNow);
+    try {
+      const harness = createHarness({
+        current: {
+          scores: [
+            {
+              musicId: '17',
+              cid: '17_3',
+              chartIndex: 3,
+              type: 'standard',
+              dxScore: '1019',
+              score: '100.7833%',
+              fs: null,
+              fc: null,
+              rating: 292,
+              isNew: false,
+              observedAt: new Date('2026-06-20T00:00:00.000Z'),
+            },
+          ],
+        },
+      });
+
+      await harness.service.mergeRecentEvents({
+        friendCode: '634142510810999',
+        sourceId: 'recent-event-invalid-time',
+        events: [
+          {
+            time: 'not-a-time',
+            songName: 'test-17',
+            difficulty: 'master',
+            fc: 'ap',
+          },
+        ],
+      });
+
+      expect(harness.current()?.scores[0].observedAt).toEqual(fallbackNow);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('skips an ambiguous title without changing the score version', async () => {
