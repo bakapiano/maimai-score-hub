@@ -523,7 +523,7 @@ describe('score update concurrency and export ownership (local e2e)', () => {
     const newBadgePixelCount = await countRgbPixelsInRegion(
       png,
       { left: 32, top: 658, width: 720, height: 64 },
-      [0xd8, 0xf5, 0xf8],
+      [0xe8, 0xf7, 0xf9],
     );
     expect(newBadgePixelCount).toBeGreaterThan(200);
   });

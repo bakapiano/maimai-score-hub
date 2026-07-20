@@ -177,7 +177,10 @@
 
 .metricDelta {
   margin-left: 0.238cqw;
+  color: #ffe066;
   font-size: 2.857cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .metricStatus {
@@ -223,6 +226,10 @@
   background: rgba(255, 255, 255, 0.62);
 }
 
+.emptyStatusDot + .inlineArrow {
+  margin-left: 0.119cqw;
+}
+
 .cardTime {
   font-size: 2.619cqw;
   font-variant-numeric: tabular-nums;
@@ -254,6 +261,8 @@
 
 .footerRatingBadge .metricDelta {
   font-size: inherit;
+  -webkit-text-stroke: 0.18cqw rgba(0, 0, 0, 0.72);
+  paint-order: stroke fill;
 }
 
 .currentStatuses {
