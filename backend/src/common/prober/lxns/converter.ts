@@ -83,17 +83,15 @@ function mapMusicId(
 export function convertSyncScoresToLxnsPayload(
   scores: SyncScore[],
   idMap?: ReadonlyMap<string, string>,
-  fallbackObservedAt = new Date(),
 ): {
   scores: LxnsScore[];
 } {
   const payload: LxnsScore[] = [];
-  const fallbackPlayTime =
-    toIsoTime(fallbackObservedAt) ?? new Date().toISOString();
 
   for (const score of scores) {
     const id = mapMusicId(score.type, score.musicId, idMap);
     const levelIndex = score.type === 'utage' ? 0 : score.chartIndex;
+    const playTime = toIsoTime(score.observedAt);
     payload.push({
       id,
       level_index: levelIndex,
@@ -103,7 +101,7 @@ export function convertSyncScoresToLxnsPayload(
       dx_score: toNumber(score.dxScore),
       dx_star: 0,
       type: mapType(score.type),
-      play_time: toIsoTime(score.observedAt) ?? fallbackPlayTime,
+      ...(playTime ? { play_time: playTime } : {}),
     });
   }
 

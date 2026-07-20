@@ -164,6 +164,19 @@ function validObservation(value: unknown): Date | null {
   return parsed && Number.isFinite(parsed.getTime()) ? parsed : null;
 }
 
+function latestObservation(
+  previous: Date | null,
+  incoming: Date | null,
+): Date | null {
+  if (!previous) {
+    return incoming;
+  }
+  if (!incoming) {
+    return previous;
+  }
+  return previous.getTime() >= incoming.getTime() ? previous : incoming;
+}
+
 function hasBestValueChange(
   previous: ScoreSnapshot,
   next: ScoreSnapshot,
@@ -229,9 +242,12 @@ function mergeScoreKeepBest(
   };
   const previousObservedAt = validObservation(old.observedAt);
   const freshObservedAt = validObservation(fresh.observedAt);
-  const observedAt = hasBestValueChange(old, merged)
-    ? (freshObservedAt ?? previousObservedAt)
-    : previousObservedAt;
+  let observedAt = previousObservedAt;
+  if (!observedAt) {
+    observedAt = freshObservedAt;
+  } else if (hasBestValueChange(old, merged)) {
+    observedAt = latestObservation(previousObservedAt, freshObservedAt);
+  }
   if (observedAt) {
     merged.observedAt = observedAt;
   } else {
@@ -448,8 +464,16 @@ export class SyncService {
         }
       }
 
-      this.assertMonotonic(current.scores ?? [], merged);
-      const changes = this.diffScores(current.scores ?? [], merged);
+      const previousScores = current.scores ?? [];
+      this.assertMonotonic(previousScores, merged);
+      const changes = this.diffScores(previousScores, merged);
+      const changedChartKeys = new Set(
+        changes.map((change) => this.scoreKey(change)),
+      );
+      for (const key of this.observationBackfillKeys(previousScores, merged)) {
+        changedChartKeys.add(key);
+      }
+      const changedChartCount = changedChartKeys.size;
       const commonSet: Record<string, unknown> = {
         jobId: input.sourceId,
         lastSourceType: input.sourceType,
@@ -460,7 +484,7 @@ export class SyncService {
         commonSet.ownerUserId = ownerUserId;
       }
 
-      if (!changes.length) {
+      if (!changedChartCount) {
         const touched = await this.syncModel
           .findOneAndUpdate(
             { _id: current._id, __v: current.__v },
@@ -514,7 +538,7 @@ export class SyncService {
       return {
         sync: updated,
         outcome: 'updated',
-        changedChartCount: changes.length,
+        changedChartCount,
         beforeScoreVersion: current.__v,
         afterScoreVersion: updated.__v,
         meta: built.meta,
@@ -752,6 +776,28 @@ export class SyncService {
       });
     }
     return changes;
+  }
+
+  private observationBackfillKeys(
+    beforeScores: readonly SyncScore[],
+    afterScores: readonly SyncScore[],
+  ): Set<string> {
+    const before = new Map(
+      beforeScores.map((score) => [this.scoreKey(score), score] as const),
+    );
+    const backfilled = new Set<string>();
+    for (const after of afterScores) {
+      const key = this.scoreKey(after);
+      const previous = before.get(key);
+      if (
+        previous &&
+        !validObservation(previous.observedAt) &&
+        validObservation(after.observedAt)
+      ) {
+        backfilled.add(key);
+      }
+    }
+    return backfilled;
   }
 
   private assertMonotonic(

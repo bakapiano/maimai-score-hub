@@ -25,6 +25,7 @@ import { AppModule } from '../src/app.module';
 import { CabinetScoreSyncService } from '../src/modules/cabinet-score-sync/cabinet-score-sync.service';
 import { AuthService } from '../src/modules/auth/services/auth.service';
 import { AccountDeletionService } from '../src/modules/users/services/account-deletion.service';
+import { getRating } from '../src/common/rating';
 import { countRgbPixelsInRegion } from './png-test-utils';
 
 jest.setTimeout(120_000);
@@ -733,7 +734,8 @@ describe('score update concurrency and export ownership (local e2e)', () => {
     ).toBe(1);
   });
 
-  it('exports score observations and one fallback time to LXNS', async () => {
+  // eslint-disable-next-line max-lines-per-function
+  it('backfills one legacy observation and omits untouched play_time', async () => {
     await userModel.create({
       friendCode: lxnsExportFriendCode,
       divingFishImportToken: null,
@@ -756,7 +758,7 @@ describe('score update concurrency and export ownership (local e2e)', () => {
       score: '99.0000%',
       fs: null,
       fc: null,
-      rating: 200,
+      rating: getRating(13.5, 99),
       isNew: false,
     }));
     const currentSync = await syncModel
@@ -769,6 +771,27 @@ describe('score update concurrency and export ownership (local e2e)', () => {
         $inc: { __v: 1 },
       },
     );
+    const backfilled = await syncA.createFromUserMusic({
+      friendCode: lxnsExportFriendCode,
+      sourceId: 'lxns-legacy-observation-backfill',
+      musicDetails: [
+        {
+          musicId: 18,
+          level: 3,
+          playCount: 1,
+          achievement: 990000,
+          comboStatus: 0,
+          syncStatus: 0,
+          deluxscoreMax: 1018,
+          scoreRank: 10,
+        },
+      ],
+    });
+    const backfilledAt = backfilled?.scores.find(
+      (score) => score.musicId === '18',
+    )?.observedAt;
+    expect(backfilled?.changedChartCount).toBe(1);
+    expect(backfilledAt).toBeInstanceOf(Date);
     await exportStateModel.create({
       friendCode: lxnsExportFriendCode,
       providers: {
@@ -807,8 +830,9 @@ describe('score update concurrency and export ownership (local e2e)', () => {
       .spyOn(moduleA.get(ProberExportMapService), 'getMap')
       .mockResolvedValue(exportMap);
 
-    let uploaded: { scores: Array<{ id: number; play_time: string }> } | null =
-      null;
+    let uploaded: {
+      scores: Array<{ id: number; play_time?: string }>;
+    } | null = null;
     global.fetch = jest.fn(
       (url: string | URL | Request, init?: RequestInit) => {
         const target =
@@ -833,22 +857,18 @@ describe('score update concurrency and export ownership (local e2e)', () => {
       },
     ) as typeof fetch;
 
-    const beforeExport = Date.now();
     await expect(
       exportA.processDelivery({
         kind: 'auto',
         friendCode: lxnsExportFriendCode,
       }),
     ).resolves.toEqual({ kind: 'done' });
-    const afterExport = Date.now();
 
     expect(uploaded).not.toBeNull();
     const byId = new Map(uploaded!.scores.map((score) => [score.id, score]));
     expect(byId.get(17)?.play_time).toBe(observedAt?.toISOString());
-    expect(byId.get(18)?.play_time).toBe(byId.get(19)?.play_time);
-    const fallbackTime = new Date(byId.get(18)!.play_time).getTime();
-    expect(fallbackTime).toBeGreaterThanOrEqual(beforeExport);
-    expect(fallbackTime).toBeLessThanOrEqual(afterExport);
+    expect(byId.get(18)?.play_time).toBe(backfilledAt?.toISOString());
+    expect(byId.get(19)).not.toHaveProperty('play_time');
   });
 
   it('repairs a missing wake by reconciling state version against current sync', async () => {

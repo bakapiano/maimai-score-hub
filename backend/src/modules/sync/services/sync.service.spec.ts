@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 
+import { getRating } from '../../../common/rating';
 import type { SyncScore } from '../schemas/sync.schema';
 import { SyncService } from './sync.service';
 
@@ -374,6 +375,7 @@ describe('SyncService CAS conflict handling', () => {
   });
 });
 
+// eslint-disable-next-line max-lines-per-function
 describe('SyncService score change details', () => {
   it('treats a repeated source delta as a no-op without incrementing __v', async () => {
     const harness = createHarness();
@@ -462,6 +464,92 @@ describe('SyncService score change details', () => {
       'rating',
     ]);
   });
+
+  it('preserves observedAt when only the derived rating changes', async () => {
+    const observedAt = new Date('2026-07-19T00:00:00.000Z');
+    const harness = createHarness({
+      current: {
+        scores: [
+          {
+            musicId: '17',
+            cid: '17_3',
+            chartIndex: 3,
+            type: 'standard',
+            dxScore: '800',
+            score: '99.0000%',
+            fc: null,
+            fs: null,
+            rating: -1,
+            isNew: false,
+            observedAt,
+          },
+        ],
+      },
+    });
+
+    const result = await harness.service.createFromUserMusic({
+      friendCode: '634142510810999',
+      sourceId: 'rating-only-refresh',
+      musicDetails: [
+        cabinetDetail({ musicId: 17, achievement: 990000, dxScore: 800 }),
+      ],
+    });
+
+    expect(result?.commitOutcome).toBe('updated');
+    expect(harness.current()?.scores[0].rating).not.toBe(-1);
+    expect(harness.current()?.scores[0].observedAt).toEqual(observedAt);
+  });
+
+  it('backfills a missing observedAt exactly once without a score diff', async () => {
+    jest.useFakeTimers();
+    const firstObservation = new Date('2026-07-20T06:00:00.000Z');
+    jest.setSystemTime(firstObservation);
+    try {
+      const harness = createHarness({
+        current: {
+          scores: [
+            {
+              musicId: '17',
+              cid: '17_3',
+              chartIndex: 3,
+              type: 'standard',
+              dxScore: '800',
+              score: '99.0000%',
+              fc: null,
+              fs: null,
+              rating: getRating(13.5, 99),
+              isNew: false,
+            },
+          ],
+        },
+      });
+      const payload = {
+        friendCode: '634142510810999',
+        sourceId: 'legacy-observation-backfill',
+        musicDetails: [
+          cabinetDetail({ musicId: 17, achievement: 990000, dxScore: 800 }),
+        ],
+      };
+
+      const first = await harness.service.createFromUserMusic(payload);
+      expect(first?.commitOutcome).toBe('updated');
+      expect(first?.changedChartCount).toBe(1);
+      expect(harness.current()?.__v).toBe(1);
+      expect(harness.current()?.scores[0].observedAt).toEqual(firstObservation);
+      expect(harness.scoreChangeModel.bulkWrite).not.toHaveBeenCalled();
+
+      jest.setSystemTime(new Date('2026-07-20T07:00:00.000Z'));
+      const repeated = await harness.service.createFromUserMusic({
+        ...payload,
+        sourceId: 'legacy-observation-backfill-repeat',
+      });
+      expect(repeated?.commitOutcome).toBe('no_change');
+      expect(harness.current()?.__v).toBe(1);
+      expect(harness.current()?.scores[0].observedAt).toEqual(firstObservation);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
 
 describe('SyncService best-effort score change delivery', () => {
@@ -532,7 +620,7 @@ describe('SyncService.mergeRecentEvents', () => {
             fc: null,
             rating: 292,
             isNew: false,
-            observedAt: new Date('2026-06-20T00:00:00.000Z'),
+            observedAt: new Date('2026-06-18T00:00:00.000Z'),
           },
         ],
       },
@@ -560,6 +648,45 @@ describe('SyncService.mergeRecentEvents', () => {
     expect(harness.current()?.scores[0].observedAt?.toISOString()).toBe(
       '2026-06-19T04:38:00.000Z',
     );
+  });
+
+  it('does not move observedAt backwards for an older real event', async () => {
+    const previousObservedAt = new Date('2026-06-20T00:00:00.000Z');
+    const harness = createHarness({
+      current: {
+        scores: [
+          {
+            musicId: '17',
+            cid: '17_3',
+            chartIndex: 3,
+            type: 'standard',
+            dxScore: '1019',
+            score: '100.7833%',
+            fs: null,
+            fc: null,
+            rating: 292,
+            isNew: false,
+            observedAt: previousObservedAt,
+          },
+        ],
+      },
+    });
+
+    await harness.service.mergeRecentEvents({
+      friendCode: '634142510810999',
+      sourceId: 'recent-event-older-than-current',
+      events: [
+        {
+          time: '2026/06/19 12:38',
+          songName: 'test-17',
+          difficulty: 'master',
+          fs: 'fsp',
+        },
+      ],
+    });
+
+    expect(harness.current()?.scores[0].fs).toBe('fsp');
+    expect(harness.current()?.scores[0].observedAt).toEqual(previousObservedAt);
   });
 
   it('falls back to commit time when an event time is invalid', async () => {

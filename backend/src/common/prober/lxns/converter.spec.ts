@@ -29,28 +29,21 @@ describe('convertSyncScoresToLxnsPayload', () => {
     });
   });
 
-  it('uses one fallback time for legacy scores without observations', () => {
-    const fallback = new Date('2026-07-20T05:00:00.000Z');
-    const result = convertSyncScoresToLxnsPayload(
-      [score(), score({ musicId: '10018', cid: '10018_3' })],
-      undefined,
-      fallback,
-    );
-
-    expect(result.scores.map((entry) => entry.play_time)).toEqual([
-      fallback.toISOString(),
-      fallback.toISOString(),
+  it('omits play_time for legacy scores without observations', () => {
+    const result = convertSyncScoresToLxnsPayload([
+      score(),
+      score({ musicId: '10018', cid: '10018_3' }),
     ]);
+
+    expect(result.scores[0]).not.toHaveProperty('play_time');
+    expect(result.scores[1]).not.toHaveProperty('play_time');
   });
 
-  it('falls back when a stored observation is invalid', () => {
-    const fallback = new Date('2026-07-20T06:00:00.000Z');
-    const result = convertSyncScoresToLxnsPayload(
-      [score({ observedAt: new Date('invalid') })],
-      undefined,
-      fallback,
-    );
+  it('omits play_time when a stored observation is invalid', () => {
+    const result = convertSyncScoresToLxnsPayload([
+      score({ observedAt: new Date('invalid') }),
+    ]);
 
-    expect(result.scores[0].play_time).toBe(fallback.toISOString());
+    expect(result.scores[0]).not.toHaveProperty('play_time');
   });
 });
