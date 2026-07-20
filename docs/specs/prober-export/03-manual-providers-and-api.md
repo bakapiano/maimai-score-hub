@@ -48,7 +48,9 @@ POST https://maimai.lxns.net/api/v0/user/maimai/player/scores
 X-User-Token: <token>
 ```
 
-`fdxp → fsdp`、`fdx → fsd`，`fsp/fs` 原样。网络/5xx 重试，4xx 立即失败。
+`fdxp → fsdp`、`fdx → fsd`，`fsp/fs` 原样。每条成绩将有效的
+`scores[].observedAt` 作为 `play_time`；旧数据缺少或包含无效时间时不发送
+`play_time`。网络/5xx 重试，4xx 立即失败。
 
 ## 用户可见状态
 

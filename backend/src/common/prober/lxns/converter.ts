@@ -52,6 +52,18 @@ function toNumber(value: string | number | null | undefined): number | null {
   return null;
 }
 
+function toIsoTime(value: unknown): string | null {
+  const parsed =
+    value instanceof Date
+      ? value
+      : typeof value === 'string' || typeof value === 'number'
+        ? new Date(value)
+        : null;
+  return parsed && Number.isFinite(parsed.getTime())
+    ? parsed.toISOString()
+    : null;
+}
+
 function mapMusicId(
   type: string,
   id: string,
@@ -79,6 +91,7 @@ export function convertSyncScoresToLxnsPayload(
   for (const score of scores) {
     const id = mapMusicId(score.type, score.musicId, idMap);
     const levelIndex = score.type === 'utage' ? 0 : score.chartIndex;
+    const playTime = toIsoTime(score.observedAt);
     payload.push({
       id,
       level_index: levelIndex,
@@ -88,6 +101,7 @@ export function convertSyncScoresToLxnsPayload(
       dx_score: toNumber(score.dxScore),
       dx_star: 0,
       type: mapType(score.type),
+      ...(playTime ? { play_time: playTime } : {}),
     });
   }
 

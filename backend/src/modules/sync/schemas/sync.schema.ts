@@ -14,6 +14,8 @@ export type SyncScore = {
   fc: string | null;
   rating: number | null;
   isNew: boolean | null;
+  /** Real play time when available; otherwise when this best was observed. */
+  observedAt?: Date | null;
 };
 
 @Schema({ collection: 'syncs', timestamps: true })

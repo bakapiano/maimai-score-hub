@@ -26,6 +26,11 @@ type SyncEntity = {
   updatedAt: Date;
   __v: number;                   // 内部 CAS token
 };
+
+type SyncScore = {
+  // 真实游玩时间可用时使用真实值，否则为系统观察到该最佳值的时间。
+  observedAt?: Date | null;
+};
 ```
 
 索引：
@@ -105,6 +110,7 @@ scoreKey = musicId + '::' + chartIndex
 | `fs` | `null < fs < fsp < fdx < fdxp` |
 | `rating` | 使用最终 achievement 和当前 catalog 定数重新计算 |
 | `cid/type/isNew` | 使用当前 catalog 生成或刷新 |
+| `observedAt` | 缺失时在下一次观察中补齐一次；此后仅四个最佳值变化时取 `max(old, incoming)` |
 
 补充规则：
 
@@ -114,6 +120,8 @@ scoreKey = musicId + '::' + chartIndex
 - 同一 delta 内重复谱面先使用同一 join 规则归并。
 - 未映射 catalog 的记录跳过并计数，不影响 current 中的旧记录。
 - 完整来源列表缺项也不得删除 current 谱面。
+- `observedAt` 一次性补齐需要持久化、递增 `__v` 并唤醒导出，但不创建没有成绩字段
+  变化的 `score_changes` 记录。
 
 ## Rating 语义
 

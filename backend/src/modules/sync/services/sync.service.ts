@@ -125,6 +125,9 @@ const DIFFICULTY_TO_CHART_INDEX: Record<string, number> = {
 // improve a clear flag don't downgrade the user's PB.
 const FC_RANK = ['fc', 'fcp', 'ap', 'app'] as const;
 const FS_RANK = ['fs', 'fsp', 'fdx', 'fdxp'] as const;
+// China DXNet renders friend activity without an offset and has no DST.
+const CHINA_TIME_OFFSET_MS = 8 * 60 * 60 * 1000;
+
 function rankIdx(table: readonly string[], v: string | null): number {
   if (v === null) {
     return -1;
@@ -151,6 +154,73 @@ function pickHigherNumeric(a: string | null, b: string | null): string | null {
   return numScore(b) > numScore(a) ? b : a;
 }
 
+function validObservation(value: unknown): Date | null {
+  const parsed =
+    value instanceof Date
+      ? value
+      : typeof value === 'string' || typeof value === 'number'
+        ? new Date(value)
+        : null;
+  return parsed && Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+function latestObservation(
+  previous: Date | null,
+  incoming: Date | null,
+): Date | null {
+  if (!previous) {
+    return incoming;
+  }
+  if (!incoming) {
+    return previous;
+  }
+  return previous.getTime() >= incoming.getTime() ? previous : incoming;
+}
+
+function hasBestValueChange(
+  previous: ScoreSnapshot,
+  next: ScoreSnapshot,
+): boolean {
+  return (
+    previous.score !== next.score ||
+    previous.dxScore !== next.dxScore ||
+    previous.fc !== next.fc ||
+    previous.fs !== next.fs
+  );
+}
+
+function parseRecentEventTime(value: unknown): Date | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const match = /^(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})$/.exec(
+    value.trim(),
+  );
+  if (!match) {
+    return null;
+  }
+  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw] = match;
+  const [year, month, day, hour, minute] = [
+    yearRaw,
+    monthRaw,
+    dayRaw,
+    hourRaw,
+    minuteRaw,
+  ].map(Number);
+  const localEpoch = Date.UTC(year, month - 1, day, hour, minute);
+  const normalized = new Date(localEpoch);
+  if (
+    normalized.getUTCFullYear() !== year ||
+    normalized.getUTCMonth() !== month - 1 ||
+    normalized.getUTCDate() !== day ||
+    normalized.getUTCHours() !== hour ||
+    normalized.getUTCMinutes() !== minute
+  ) {
+    return null;
+  }
+  return new Date(localEpoch - CHINA_TIME_OFFSET_MS);
+}
+
 /**
  * Merge two score snapshots for the same (musicId, chartIndex), keeping
  * the better of each per-attempt field. Identity fields (musicId, cid,
@@ -162,7 +232,7 @@ function mergeScoreKeepBest(
   fresh: ScoreSnapshot,
 ): ScoreSnapshot {
   const score = pickHigherNumeric(old.score, fresh.score);
-  return {
+  const merged: ScoreSnapshot = {
     ...fresh,
     dxScore: pickHigherNumeric(old.dxScore, fresh.dxScore),
     score,
@@ -170,6 +240,20 @@ function mergeScoreKeepBest(
     fs: pickHigher(FS_RANK, old.fs, fresh.fs),
     rating: score === fresh.score ? fresh.rating : old.rating,
   };
+  const previousObservedAt = validObservation(old.observedAt);
+  const freshObservedAt = validObservation(fresh.observedAt);
+  let observedAt = previousObservedAt;
+  if (!observedAt) {
+    observedAt = freshObservedAt;
+  } else if (hasBestValueChange(old, merged)) {
+    observedAt = latestObservation(previousObservedAt, freshObservedAt);
+  }
+  if (observedAt) {
+    merged.observedAt = observedAt;
+  } else {
+    delete merged.observedAt;
+  }
+  return merged;
 }
 
 @Injectable()
@@ -319,8 +403,12 @@ export class SyncService {
         .findOne({ friendCode: input.friendCode })
         .lean<CurrentSync | null>();
       const built = await input.buildDelta(current?.scores ?? []);
-      const merged = this.mergeWithPrevious(current?.scores, built.delta);
       const observedAt = new Date();
+      const observedDelta = built.delta.map((score) => ({
+        ...score,
+        observedAt: validObservation(score.observedAt) ?? observedAt,
+      }));
+      const merged = this.mergeWithPrevious(current?.scores, observedDelta);
 
       if (!current) {
         if (!merged.length) {
@@ -376,8 +464,16 @@ export class SyncService {
         }
       }
 
-      this.assertMonotonic(current.scores ?? [], merged);
-      const changes = this.diffScores(current.scores ?? [], merged);
+      const previousScores = current.scores ?? [];
+      this.assertMonotonic(previousScores, merged);
+      const changes = this.diffScores(previousScores, merged);
+      const changedChartKeys = new Set(
+        changes.map((change) => this.scoreKey(change)),
+      );
+      for (const key of this.observationBackfillKeys(previousScores, merged)) {
+        changedChartKeys.add(key);
+      }
+      const changedChartCount = changedChartKeys.size;
       const commonSet: Record<string, unknown> = {
         jobId: input.sourceId,
         lastSourceType: input.sourceType,
@@ -388,7 +484,7 @@ export class SyncService {
         commonSet.ownerUserId = ownerUserId;
       }
 
-      if (!changes.length) {
+      if (!changedChartCount) {
         const touched = await this.syncModel
           .findOneAndUpdate(
             { _id: current._id, __v: current.__v },
@@ -442,7 +538,7 @@ export class SyncService {
       return {
         sync: updated,
         outcome: 'updated',
-        changedChartCount: changes.length,
+        changedChartCount,
         beforeScoreVersion: current.__v,
         afterScoreVersion: updated.__v,
         meta: built.meta,
@@ -477,7 +573,18 @@ export class SyncService {
     let matchedCount = 0;
     let updatedCount = 0;
 
-    for (const event of events) {
+    const orderedEvents = events
+      .map((event) => ({
+        event,
+        observedAt: parseRecentEventTime(event.time),
+      }))
+      .sort(
+        (left, right) =>
+          (left.observedAt?.getTime() ?? Number.POSITIVE_INFINITY) -
+          (right.observedAt?.getTime() ?? Number.POSITIVE_INFINITY),
+      );
+
+    for (const { event, observedAt } of orderedEvents) {
       const songName =
         typeof event.songName === 'string' ? event.songName.trim() : '';
       const difficulty =
@@ -518,7 +625,12 @@ export class SyncService {
       }
 
       updatedCount++;
-      delta.push({ ...current, fc, fs });
+      delta.push({
+        ...current,
+        fc,
+        fs,
+        observedAt,
+      });
     }
 
     return {
@@ -664,6 +776,28 @@ export class SyncService {
       });
     }
     return changes;
+  }
+
+  private observationBackfillKeys(
+    beforeScores: readonly SyncScore[],
+    afterScores: readonly SyncScore[],
+  ): Set<string> {
+    const before = new Map(
+      beforeScores.map((score) => [this.scoreKey(score), score] as const),
+    );
+    const backfilled = new Set<string>();
+    for (const after of afterScores) {
+      const key = this.scoreKey(after);
+      const previous = before.get(key);
+      if (
+        previous &&
+        !validObservation(previous.observedAt) &&
+        validObservation(after.observedAt)
+      ) {
+        backfilled.add(key);
+      }
+    }
+    return backfilled;
   }
 
   private assertMonotonic(
