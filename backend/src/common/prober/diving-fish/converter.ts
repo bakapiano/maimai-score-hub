@@ -13,6 +13,12 @@ export type DivingFishRecord = {
 
 export type MusicTitleMap = Map<string, string>;
 
+// Diving-Fish resolves imported records by (title, type), not song_id. Its
+// catalog uses this alias to distinguish the second same-named Link song.
+const EXPORT_TITLE_OVERRIDES: ReadonlyMap<string, string> = new Map([
+  ['383', 'Link(CoF)'],
+]);
+
 function mapType(type: string): 'SD' | 'DX' {
   if (type === 'dx' || type === 'utage') {
     return 'DX';
@@ -42,7 +48,8 @@ export function convertSyncScoreToDivingFishRecord(
   const achievements = normalizeAchievement(score.score);
   const dxScore = toNumber(score.dxScore);
 
-  const titleFromMap = titleMap?.get(score.musicId);
+  const titleFromMap =
+    EXPORT_TITLE_OVERRIDES.get(score.musicId) ?? titleMap?.get(score.musicId);
   const title = titleFromMap || '未知曲目';
 
   return {
