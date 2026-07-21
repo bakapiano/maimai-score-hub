@@ -420,6 +420,19 @@ export function ScoreHistoryTab() {
     return <Text c="dimmed">离线模式下无法读取成绩历史。</Text>;
   }
 
+  if (loading && items.length === 0) {
+    return (
+      <Center
+        mih={{
+          base: "calc(100dvh - 12rem)",
+          sm: "calc(100dvh - 15rem)",
+        }}
+      >
+        <Loader />
+      </Center>
+    );
+  }
+
   return (
     <Stack gap="md">
       <HistoryHeader
@@ -434,7 +447,6 @@ export function ScoreHistoryTab() {
         days={loadedDays}
         selectedDay={selectedDay}
         onChange={setSelectedDay}
-        loading={loading}
         hasEarlier={feedHasEarlier}
         loadingMore={loadingMore}
         onLoadMore={() => void loadMore()}

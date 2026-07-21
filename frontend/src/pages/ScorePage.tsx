@@ -6,7 +6,16 @@ import {
   IconRefresh,
   IconTrophy,
 } from "@tabler/icons-react";
-import { Anchor, Box, Group, Loader, Stack, Tabs, Text } from "@mantine/core";
+import {
+  Anchor,
+  Box,
+  Center,
+  Group,
+  Loader,
+  Stack,
+  Tabs,
+  Text,
+} from "@mantine/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -46,7 +55,7 @@ function cacheSyncLatestWhenIdle(data: Parameters<typeof cacheSyncLatest>[0]) {
 
 export default function ScorePage() {
   const { token, offline } = useAuth();
-  const { musics } = useMusic();
+  const { musics, loading: musicLoading } = useMusic();
   const [scores, setScores] = useState<SyncScore[]>([]);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(() => Boolean(token || offline));
@@ -194,12 +203,25 @@ export default function ScorePage() {
     };
   }, [loadScores, offline, token]);
 
-  if (loading) {
+  const initialMusicLoading = musicLoading && musics.length === 0;
+
+  if (loading || initialMusicLoading) {
     return (
-      <Stack align="center" justify="center" h={200}>
-        <Loader size="lg" />
-        <Text c="dimmed">加载中...</Text>
-      </Stack>
+      <Center
+        mih={{
+          base: "calc(100dvh - 9rem)",
+          sm: "calc(100dvh - 13rem)",
+        }}
+      >
+        <Stack align="center" gap="sm">
+          <Loader size="lg" />
+          <Text c="dimmed">
+            {initialMusicLoading && !loading
+              ? "正在加载乐曲信息..."
+              : "加载中..."}
+          </Text>
+        </Stack>
+      </Center>
     );
   }
 
