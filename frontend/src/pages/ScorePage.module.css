@@ -6,12 +6,31 @@
 .tabsList {
   flex-wrap: nowrap;
   gap: 2px;
+  margin-inline: calc(var(--mantine-spacing-md) * -1);
+  padding-inline: var(--mantine-spacing-md);
   overflow-x: auto;
   scrollbar-width: thin;
+  position: sticky;
+  top: var(--app-shell-header-offset, 3.5rem);
+  z-index: 10;
+  background-color: var(--mantine-color-body);
+}
+
+.tabsList::before {
+  inset-inline: var(--mantine-spacing-md);
 }
 
 .tabLabelShort {
   display: none;
+}
+
+@media (max-width: 48em) {
+  .tabsList {
+    background-color: var(
+      --msh-mobile-page-background,
+      var(--mantine-color-body)
+    );
+  }
 }
 
 /* Narrow score page: tighter tabs, hide icons, shorten labels */
