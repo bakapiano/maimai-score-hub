@@ -17,6 +17,7 @@ type Props = {
   days: HistoryDay[];
   selectedDay: string | null;
   onChange: (day: string) => void;
+  loading: boolean;
   hasEarlier: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
@@ -31,6 +32,7 @@ export function ScoreHistoryDateSelector({
   days,
   selectedDay,
   onChange,
+  loading,
   hasEarlier,
   loadingMore,
   onLoadMore,
@@ -52,6 +54,10 @@ export function ScoreHistoryDateSelector({
       onChange(target.day);
     }
   };
+
+  if (loading && !days.length) {
+    return null;
+  }
 
   if (!days.length) {
     return hasEarlier ? (

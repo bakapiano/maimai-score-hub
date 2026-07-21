@@ -253,7 +253,7 @@ export function ScoreHistoryTab() {
   const [items, setItems] = useState<ScoreChange[]>([]);
   const [historyStart, setHistoryStart] = useState(initialFeedWindow.start);
   const [feedHasEarlier, setFeedHasEarlier] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => Boolean(token && !offline));
   const [loadingMore, setLoadingMore] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -434,6 +434,7 @@ export function ScoreHistoryTab() {
         days={loadedDays}
         selectedDay={selectedDay}
         onChange={setSelectedDay}
+        loading={loading}
         hasEarlier={feedHasEarlier}
         loadingMore={loadingMore}
         onLoadMore={() => void loadMore()}
