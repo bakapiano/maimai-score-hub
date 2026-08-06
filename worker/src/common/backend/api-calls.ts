@@ -23,6 +23,15 @@ interface ExternalApiCallEntry {
   durationMs: number;
   bodySize: number | null;
   errorClass?: string;
+  throttleWaitMs?: number;
+  sessionQueueWaitMs?: number;
+  headersMs?: number;
+  bodyReadMs?: number;
+  headersReceived?: boolean;
+  connectionLimit?: number;
+  requestPriority?: number;
+  timeoutMs?: number;
+  attempt?: number;
 }
 
 interface ExternalApiCallMetadata {
@@ -43,6 +52,7 @@ export interface ApiCallPayload {
   workerKind: "dxnet";
   workerId: string;
   botFriendCode: string;
+  attrs?: Record<string, string | number | boolean | null>;
 }
 
 /** 每个 job 维护一个待上报的日志缓冲区 */
@@ -76,6 +86,17 @@ export function recordExternalApiCall(
     workerKind: "dxnet",
     workerId: metadata.workerId || getWorkerId(),
     botFriendCode: metadata.botFriendCode || "",
+    attrs: {
+      throttleWaitMs: entry.throttleWaitMs ?? 0,
+      sessionQueueWaitMs: entry.sessionQueueWaitMs ?? 0,
+      headersMs: entry.headersMs ?? 0,
+      bodyReadMs: entry.bodyReadMs ?? 0,
+      headersReceived: entry.headersReceived ?? false,
+      connectionLimit: entry.connectionLimit ?? 0,
+      requestPriority: entry.requestPriority ?? 0,
+      timeoutMs: entry.timeoutMs ?? 0,
+      attempt: entry.attempt ?? 0,
+    },
   });
 }
 

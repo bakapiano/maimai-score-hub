@@ -17,7 +17,10 @@ import {
 } from "./request-policy.ts";
 import config from "../../config.ts";
 import { createDxnetSession } from "./dxnet-session.ts";
-import { requestRuntime } from "./request-runtime.ts";
+import {
+  requestRuntime,
+  UNDICI_CONNECTION_LIMIT,
+} from "./request-runtime.ts";
 
 export interface ExecuteMaimaiPageRequestOptions {
   cookieJar: CookieJar;
@@ -46,24 +49,47 @@ export async function executeMaimaiPageRequest({
     let logResponseBody: string | null = null;
     let logErrorClass = "";
     let requestStartedAt = 0;
+    let throttleWaitMs = 0;
+    let sessionQueueWaitMs = 0;
+    let headersMs = 0;
+    let bodyReadMs = 0;
+    let headersReceived = false;
 
     try {
+      const throttleQueuedAt = Date.now();
       await requestRuntime.waitForSlot(requestPriority);
+      throttleWaitMs = Date.now() - throttleQueuedAt;
 
       requestStartedAt = Date.now();
-      const response = await dxnetSession.runExclusive(
-        () =>
-          dxnetSession.send(requestPlan.url, {
+      const sessionQueuedAt = Date.now();
+      const response = await dxnetSession.runExclusive(async () => {
+        const headersStartedAt = Date.now();
+        sessionQueueWaitMs = headersStartedAt - sessionQueuedAt;
+        try {
+          const result = (await dxnetSession.send(requestPlan.url, {
             ...requestPlan.init,
             signal: AbortSignal.timeout(requestPlan.timeoutMs),
-          }) as Promise<Response>,
-      );
+          })) as Response;
+          headersReceived = true;
+          return result;
+        } finally {
+          headersMs = Date.now() - headersStartedAt;
+        }
+      });
+
+      const bodyReadStartedAt = Date.now();
+      let body: string;
+      try {
+        body = await response.clone().text();
+      } finally {
+        bodyReadMs = Date.now() - bodyReadStartedAt;
+      }
 
       const page = {
         url: requestPlan.url,
         finalUrl: response.url,
         status: response.status,
-        body: await response.clone().text(),
+        body,
         response,
       };
       logStatusCode = page.status;
@@ -136,6 +162,15 @@ export async function executeMaimaiPageRequest({
                 ? Buffer.byteLength(logResponseBody)
                 : null,
             errorClass: logErrorClass,
+            throttleWaitMs,
+            sessionQueueWaitMs,
+            headersMs,
+            bodyReadMs,
+            headersReceived,
+            connectionLimit: UNDICI_CONNECTION_LIMIT,
+            requestPriority,
+            timeoutMs: requestPlan.timeoutMs,
+            attempt: i + 1,
           });
         } catch {
           // Best-effort logging; don't impact main request flow

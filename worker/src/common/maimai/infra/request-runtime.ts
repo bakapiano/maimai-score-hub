@@ -5,12 +5,14 @@ import { Agent, setGlobalDispatcher } from "undici";
 import { REQUEST_PRIORITY_BACKGROUND } from "./request-priority.ts";
 import { RequestThrottle } from "./request-throttle.ts";
 
+export const UNDICI_CONNECTION_LIMIT = 32;
+
 setGlobalDispatcher(
   new Agent({
     keepAliveTimeout: 30_000,
     keepAliveMaxTimeout: 60_000,
     pipelining: 1,
-    connections: 10,
+    connections: UNDICI_CONNECTION_LIMIT,
   }),
 );
 
@@ -21,6 +23,19 @@ export interface RequestLogEntry {
   durationMs: number;
   bodySize: number | null;
   errorClass?: string;
+  /** Time spent waiting for the priority-aware request throttle. */
+  throttleWaitMs: number;
+  /** Time spent in the per-cookie FIFO before the fetch callback started. */
+  sessionQueueWaitMs: number;
+  /** Time from fetch dispatch until response headers or a dispatch error. */
+  headersMs: number;
+  /** Time spent consuming the response body. */
+  bodyReadMs: number;
+  headersReceived: boolean;
+  connectionLimit: number;
+  requestPriority: number;
+  timeoutMs: number;
+  attempt: number;
 }
 
 export interface RequestContext {
