@@ -12,11 +12,26 @@ import {
   findHttpRequestCase,
   type ProxyHttpRequestContext,
 } from "./http/index.ts";
+import { destroySocket } from "./socket-lifecycle.ts";
 
-const proxyServer = http.createServer(handleHttpRequest);
+export const PROXY_HTTP_IDLE_TIMEOUT_MS = 60_000;
 
-attachConnectTunnelHandler(proxyServer);
-attachClientErrorHandler(proxyServer);
+export function createProxyServer(): http.Server {
+  const server = http.createServer(handleHttpRequest);
+
+  server.keepAliveTimeout = 15_000;
+  server.headersTimeout = 20_000;
+  server.requestTimeout = PROXY_HTTP_IDLE_TIMEOUT_MS;
+  server.setTimeout(PROXY_HTTP_IDLE_TIMEOUT_MS, (socket) =>
+    destroySocket(socket),
+  );
+
+  attachConnectTunnelHandler(server);
+  attachClientErrorHandler(server);
+  return server;
+}
+
+const proxyServer = createProxyServer();
 
 export { proxyServer };
 
