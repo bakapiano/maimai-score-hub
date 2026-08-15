@@ -197,6 +197,17 @@ describe('SdgbJobService idempotent enqueue recovery', () => {
     ).resolves.toMatchObject({ id: 'sdgb-recover', status: 'queued' });
     expect(interactive?.add).toHaveBeenCalledTimes(1);
     expect(recoveryModel.findOneAndUpdate).toHaveBeenNthCalledWith(
+      1,
+      {
+        idempotencyKey: {
+          $eq: 'idem-1',
+          $type: 'string',
+        },
+      },
+      expect.anything(),
+      { upsert: true, new: true },
+    );
+    expect(recoveryModel.findOneAndUpdate).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         id: 'sdgb-recover',

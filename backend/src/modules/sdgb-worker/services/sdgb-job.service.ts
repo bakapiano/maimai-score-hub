@@ -10,7 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
-import type { Model } from 'mongoose';
+import type { Model, QueryFilter } from 'mongoose';
 import { Queue, QueueEvents } from 'bullmq';
 import {
   SDGB_QUEUE_NAME_BY_LANE,
@@ -199,9 +199,12 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     if (!idempotencyKey) {
       return this.model.create(values);
     }
+    const filter: QueryFilter<SdgbJobDocument> = {
+      idempotencyKey: { $eq: idempotencyKey, $type: 'string' as const },
+    };
     try {
       return await this.model.findOneAndUpdate(
-        { idempotencyKey },
+        filter,
         { $setOnInsert: values },
         { upsert: true, new: true },
       );
@@ -209,7 +212,7 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       if (!isDuplicateKey(error)) {
         throw error;
       }
-      const existing = await this.model.findOne({ idempotencyKey });
+      const existing = await this.model.findOne(filter);
       if (!existing) {
         throw error;
       }
