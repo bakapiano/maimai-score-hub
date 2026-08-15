@@ -64,6 +64,14 @@ local Node processes. Override the images with `E2E_MONGO_IMAGE` and
   fallback;
 - active Scan/Add/Music graceful shutdown with fake music cleanup;
 - unauthorized membership and stale execution-token rejection.
+- DXNet shared-lane competition, pinned-lane delivery, generation fencing,
+  priority conversion, and idempotent worker-triggered add-rival preparation.
+
+The DXNet scenario currently uses in-test BullMQ consumers against the real
+Backend rather than spawning the production DXNet worker, because that worker
+still requires a fake Maimai HTTP upstream. Worker QueueFleet and handler
+behavior are covered separately; a full production-worker process scenario is
+still a follow-up.
 
 The mock MaintenanceHook exercises the same `hookMayRun -> execute ->
 hook-observation` contract and observation replay semantics. It does not invoke

@@ -36,12 +36,25 @@ export function getBullmqPrefix(): string {
   return `${redisPrefix.replace(/:+$/, "")}:bull`;
 }
 
-export function createBullmqWorkerOptions(): WorkerOptions {
+export function createBullmqWorkerOptions(concurrency?: number): WorkerOptions {
   return {
     connection: createBullmqConnection(),
     prefix: getBullmqPrefix(),
-    concurrency: getDxnetWorkerConcurrency(),
+    concurrency: concurrency ?? getDxnetWorkerConcurrency(),
   };
+}
+
+export function getDxnetLaneConcurrency(
+  lane: "interactive" | "user_sync" | "background",
+): number {
+  const envName =
+    lane === "interactive"
+      ? "DXNET_LANE_INTERACTIVE_CONCURRENCY"
+      : lane === "user_sync"
+        ? "DXNET_LANE_USER_SYNC_CONCURRENCY"
+        : "DXNET_LANE_BACKGROUND_CONCURRENCY";
+  const fallback = lane === "interactive" ? 8 : 16;
+  return Math.max(1, getInt(envName, fallback));
 }
 
 export function getDxnetWorkerConcurrency(): number {

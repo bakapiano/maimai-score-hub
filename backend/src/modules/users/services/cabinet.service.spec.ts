@@ -148,6 +148,7 @@ describe('CabinetService.bindByQr verification policy', () => {
       expect(identityMatcher.match).toHaveBeenCalledWith(scan, {
         tagPrefix: 'cabinet-bind',
         context: `Cabinet-bind fc=${FRIEND_CODE}`,
+        source: 'cabinet_binding',
       });
     },
   );

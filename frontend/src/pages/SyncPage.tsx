@@ -1183,6 +1183,43 @@ export default function SyncPage() {
                   <Alert color="red">{dxnetError}</Alert>
                 )}
 
+                {syncMethod === "dxnet_bot" &&
+                  (syncStatus?.cabinetFriendshipStatus === "pending" ||
+                    syncStatus?.cabinetFriendshipStatus === "running") && (
+                    <Alert color="blue" variant="light">
+                      正在准备 Bot 好友关系，完成后会自动开始更新成绩。
+                    </Alert>
+                  )}
+
+                {syncMethod === "dxnet_bot" &&
+                  syncStatus?.cabinetFriendshipStatus === "uncertain" && (
+                    <Alert color="yellow" variant="light">
+                      机台请求结果暂不确定，正在通过 DXNet 确认好友关系。
+                    </Alert>
+                  )}
+
+                {syncMethod === "dxnet_bot" &&
+                  [
+                    "cabinet_bot_unavailable",
+                    "cabinet_friendship_failed",
+                    "cabinet_friendship_unconfirmed",
+                  ].includes(syncStatus?.errorCode ?? "") && (
+                    <Alert color="orange" variant="light" title="可改用好友申请">
+                      <Stack gap="xs">
+                        <Text size="sm">
+                          自动建立好友关系未成功，可以改用传统好友申请流程。
+                        </Text>
+                        <Button
+                          size="xs"
+                          variant="light"
+                          onClick={() => void startFriendshipJob()}
+                        >
+                          发起好友申请
+                        </Button>
+                      </Stack>
+                    </Alert>
+                  )}
+
                 {syncMethod === "dxnet_bot" && syncStatus?.error && (
                   <Alert color="red" variant="light" title="错误" radius="md">
                     {syncStatus.error}

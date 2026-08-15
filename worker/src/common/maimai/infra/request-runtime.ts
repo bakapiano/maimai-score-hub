@@ -41,6 +41,7 @@ export interface RequestLogEntry {
 export interface RequestContext {
   requestPriority?: number;
   onRequestLog?: (entry: RequestLogEntry) => void;
+  signal?: AbortSignal;
 }
 
 export class RequestRuntime {
@@ -77,12 +78,15 @@ export class RequestRuntime {
     this.throttle.resetFreezeBackoff();
   }
 
-  waitForSlot(priority = REQUEST_PRIORITY_BACKGROUND): Promise<void> {
-    return this.throttle.waitForSlot(priority);
+  waitForSlot(
+    priority = REQUEST_PRIORITY_BACKGROUND,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return this.throttle.waitForSlot(priority, signal);
   }
 
-  sleep(ms: number): Promise<void> {
-    return this.throttle.sleep(ms);
+  sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return this.throttle.sleep(ms, signal);
   }
 }
 

@@ -19,6 +19,7 @@ const MIN_SCORES_FOR_SCORE_MATCH = 4;
 
 export type CabinetBindResult =
   | { ok: true; cabinetUserId: number }
+  | { ok: false; pending: true; attemptId: string }
   | {
       ok: false;
       reason: 'mismatch';
@@ -102,6 +103,7 @@ export class CabinetService {
   async bindByQr(
     friendCode: string,
     qrCode: string,
+    ownerUserId?: string,
   ): Promise<CabinetBindResult> {
     const sync = await this.syncModel
       .findOne({ friendCode })
@@ -115,9 +117,21 @@ export class CabinetService {
     );
 
     if (localScores.length < MIN_SCORES_FOR_SCORE_MATCH) {
+      if (
+        ownerUserId &&
+        (await this.identityMatcher.isClaimIdentityEnabled())
+      ) {
+        const started = await this.identityMatcher.startClaimResolution(scan, {
+          purpose: 'cabinet_binding',
+          ownerUserId,
+          expectedFriendCode: friendCode,
+        });
+        return { ok: false, pending: true, attemptId: started.attemptId };
+      }
       const identity = await this.identityMatcher.match(scan, {
         tagPrefix: 'cabinet-bind',
         context: `Cabinet-bind fc=${friendCode}`,
+        source: 'cabinet_binding',
       });
       this.logger.log(
         `bindByQr profile fc=${friendCode} resolvedFc=${identity.friendCode} cabinetUserId=${scan.cabinetUserId}`,

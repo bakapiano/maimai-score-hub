@@ -5,7 +5,6 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 
-import { BotStatusService } from '../../bots/services/bot-status.service';
 import { ConfigService } from '@nestjs/config';
 import { JobService } from '../../job/services/job.service';
 import { JwtService } from '@nestjs/jwt';
@@ -26,7 +25,6 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly users: UsersService,
     private readonly jobs: JobService,
-    private readonly botStatus: BotStatusService,
     config: ConfigService,
   ) {
     this.skipAuth = config.get<string>('SKIP_AUTH', 'false') === 'true';
@@ -57,21 +55,19 @@ export class AuthService {
     }
 
     if (method === 'user_sends_request') {
-      const selectedBot = await this.botStatus.pickAvailableBot();
-      if (!selectedBot) {
-        throw new BadRequestException('当前没有可用的 Bot');
-      }
-
       const result = await this.jobs.create({
         friendCode: normalized,
         jobType: 'accept_friend_request',
-        botUserFriendCode: selectedBot.friendCode,
       });
+      const botFriendCode = result.job.botUserFriendCode;
+      if (!botFriendCode) {
+        throw new BadRequestException('当前没有可用的 Bot');
+      }
 
       return {
         ...result,
         userId: user._id,
-        botFriendCode: selectedBot.friendCode,
+        botFriendCode,
         createdAt: result.job.createdAt,
       };
     }

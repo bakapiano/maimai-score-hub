@@ -139,6 +139,8 @@ export const SdgbJobResponseSchema = z.object({
   jobType: SdgbJobTypeSchema,
   lane: SdgbWorkerLaneSchema,
   routingVersion: z.number().int().positive(),
+  priority: z.number().int().min(0).max(4).optional(),
+  idempotencyKey: z.string().nullable().optional(),
   status: SdgbJobStatusSchema,
   stage: SdgbJobStageSchema.nullable().optional(),
   cleanupStatus: SdgbSessionCleanupStatusSchema.optional(),

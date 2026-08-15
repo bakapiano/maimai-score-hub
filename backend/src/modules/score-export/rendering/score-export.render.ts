@@ -42,7 +42,7 @@ export { renderScoreHistoryImage } from './score-history-export.renderer';
 
 export async function renderBest50Image(
   payload: {
-    total: number;
+    rating: number;
     newSum: number;
     oldSum: number;
     newCards: CompactCard[];
@@ -80,13 +80,12 @@ export async function renderBest50Image(
     drawGradientBg(ctx, width, height);
   }
 
-  const profile = payload.profile;
-  const rating =
-    profile?.rating !== null && profile?.rating !== undefined
-      ? profile.rating
-      : Math.round(payload.total);
-
-  await drawProfileHeader(ctx, profile, rating, loadRemoteImage);
+  await drawProfileHeader(
+    ctx,
+    payload.profile,
+    payload.rating,
+    loadRemoteImage,
+  );
 
   // ── Section title: 现版本 Best 15 ──
   const sdRating = payload.oldSum.toFixed(0);

@@ -20,6 +20,8 @@ import {
   SearchJobsResponseSchema,
   UpdateBotCabinetUserIdBodySchema,
   UpdateBotRemarkBodySchema,
+  DxnetRoutingControlSchema,
+  PatchDxnetRoutingControlBodySchema,
 } from "./admin.schema";
 
 const c = initContract();
@@ -135,6 +137,22 @@ export const adminContract = c.router({
     body: c.noBody(),
     responses: {
       201: c.type<{ ok: true; deletedCount: number }>(),
+    },
+  },
+  getDxnetRoutingControl: {
+    method: "GET",
+    path: "/admin/dxnet-routing-control",
+    headers: c.type<{ "x-api-secret": string }>(),
+    responses: { 200: DxnetRoutingControlSchema },
+  },
+  patchDxnetRoutingControl: {
+    method: "PATCH",
+    path: "/admin/dxnet-routing-control",
+    headers: c.type<{ "x-api-secret": string }>(),
+    body: PatchDxnetRoutingControlBodySchema,
+    responses: {
+      200: DxnetRoutingControlSchema,
+      409: z.object({ code: z.literal("routing_control_conflict") }),
     },
   },
   getObservabilityStatus: {

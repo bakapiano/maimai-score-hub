@@ -6,10 +6,13 @@ import {
   Delete,
   Get,
   HttpCode,
+  NotFoundException,
+  Param,
   Patch,
   Post,
   Put,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -25,7 +28,7 @@ import {
   type SetAccountPasswordBody,
   type UpdateProfileBody,
 } from '@maimai-score-hub/shared';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { AccountDeletionService } from '../../modules/users/services/account-deletion.service';
 import { AuthGuard } from '../../modules/auth/guards/auth.guard';
@@ -35,6 +38,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { getImportToken } from '../../common/prober/diving-fish/api';
 import { ProberExportService } from '../../modules/prober-export/services/prober-export.service';
 import type { ProberExportProvider } from '../../modules/prober-export/schemas/prober-export-job.schema';
+import { QrLoginService } from '../../modules/auth/services/qr-login.service';
 
 type AuthedRequest = Request & { userId?: string };
 
@@ -74,6 +78,7 @@ export class MeController {
     private readonly cabinet: CabinetService,
     private readonly accountDeletion: AccountDeletionService,
     private readonly proberExports: ProberExportService,
+    private readonly qrLogin: QrLoginService,
   ) {}
 
   @Get()
@@ -184,6 +189,7 @@ export class MeController {
     @Req() req: AuthedRequest,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() rawBody: unknown,
+    @Res({ passthrough: true }) response: Response,
   ) {
     const userId = extractUserId(req);
     if (!userId) {
@@ -229,10 +235,19 @@ export class MeController {
     }
     let result: Awaited<ReturnType<CabinetService['bindByQr']>>;
     try {
-      result = await this.cabinet.bindByQr(user.friendCode, qrCode);
+      result = await this.cabinet.bindByQr(user.friendCode, qrCode, userId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new BadRequestException(message);
+    }
+
+    if (!result.ok && 'pending' in result) {
+      response.status(202);
+      return {
+        ok: false as const,
+        pending: true as const,
+        attemptId: result.attemptId,
+      };
     }
 
     if (!result.ok) {
@@ -246,6 +261,26 @@ export class MeController {
 
     await this.users.update(userId, { cabinetUserId: result.cabinetUserId });
     return { ok: true as const };
+  }
+
+  @Get('cabinet/attempts/:attemptId')
+  async pollCabinetBinding(
+    @Req() req: AuthedRequest,
+    @Param('attemptId') attemptId: string,
+  ) {
+    const userId = extractUserId(req);
+    if (!userId) {
+      throw new BadRequestException('No user context');
+    }
+    try {
+      return await this.qrLogin.pollCabinetBindingAttempt(attemptId, userId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'attempt not found') {
+        throw new NotFoundException({ error: message });
+      }
+      throw new BadRequestException(message);
+    }
   }
 
   /**

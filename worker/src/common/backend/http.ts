@@ -41,6 +41,10 @@ const BACKEND_RETRY_MAX_DELAY_MS = 60_000;
 
 type BackendFetchInit = NonNullable<Parameters<typeof undiciFetch>[1]>;
 
+interface BackendRetryOptions {
+  maxAttempts?: number;
+}
+
 // ---------------------------------------------------------------------------
 // ts-rest custom fetcher: bind dispatcher + retry transient failures
 // ---------------------------------------------------------------------------
@@ -112,29 +116,36 @@ export const backendTsRestApi: NonNullable<
 export async function backendFetchWithRetry(
   path: string,
   init: BackendFetchInit = {},
+  options: BackendRetryOptions = {},
 ): Promise<Response> {
   return fetchBackendWithRetry(path, {
     ...init,
     dispatcher: backendDispatcher,
-  });
+  }, options);
 }
 
 async function fetchBackendWithRetry(
   path: string,
   init: BackendFetchInit,
+  options: BackendRetryOptions,
 ): Promise<Response> {
   let lastError: unknown = null;
+  const maxAttempts = Math.max(
+    1,
+    Math.floor(options.maxAttempts ?? BACKEND_RETRY_MAX_ATTEMPTS),
+  );
 
-  for (let attempt = 1; attempt <= BACKEND_RETRY_MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    init.signal?.throwIfAborted();
     let result: Response;
     try {
       result = (await undiciFetch(path, init)) as unknown as Response;
     } catch (err) {
       lastError = err;
-      if (attempt >= BACKEND_RETRY_MAX_ATTEMPTS) {
+      if (attempt >= maxAttempts) {
         throw err;
       }
-      await delayBackendRetry(path, attempt, err);
+      await delayBackendRetry(path, attempt, maxAttempts, err, init.signal);
       continue;
     }
 
@@ -143,12 +154,18 @@ async function fetchBackendWithRetry(
     }
 
     lastError = new Error(`Backend HTTP ${result.status}`);
-    if (attempt >= BACKEND_RETRY_MAX_ATTEMPTS) {
+    if (attempt >= maxAttempts) {
       return result;
     }
 
     await discardResponseBody(result);
-    await delayBackendRetry(path, attempt, lastError);
+    await delayBackendRetry(
+      path,
+      attempt,
+      maxAttempts,
+      lastError,
+      init.signal,
+    );
   }
 
   throw lastError instanceof Error
@@ -171,14 +188,16 @@ async function discardResponseBody(response: Response): Promise<void> {
 async function delayBackendRetry(
   path: string,
   attempt: number,
+  maxAttempts: number,
   reason: unknown,
+  signal?: AbortSignal | null,
 ): Promise<void> {
   const delayMs = getBackendRetryDelayMs(attempt);
   console.warn(
-    `[BackendHttp] Request failed, retrying in ${delayMs}ms (${attempt}/${BACKEND_RETRY_MAX_ATTEMPTS}) ${path}:`,
+    `[BackendHttp] Request failed, retrying in ${delayMs}ms (${attempt}/${maxAttempts}) ${path}:`,
     reason,
   );
-  await sleep(delayMs);
+  await sleep(delayMs, signal);
 }
 
 function getBackendRetryDelayMs(attempt: number): number {
@@ -190,6 +209,22 @@ function getBackendRetryDelayMs(attempt: number): number {
   return Math.round(baseDelay + jitter);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms));
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new Error("backend retry aborted"),
+      );
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }

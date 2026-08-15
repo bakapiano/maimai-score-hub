@@ -1,6 +1,6 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-import { JobCreateResponseSchema } from '../job/job.schema';
+import { JobCreateResponseSchema } from "../job/job.schema";
 
 export const PasswordSchema = z.string().min(8).max(72);
 
@@ -104,9 +104,32 @@ export const LoginByQrBodySchema = z.object({
   qrCode: z.string().min(1).optional(),
 });
 
-export const LoginByQrResponseSchema = z.object({
-  token: z.string(),
-  user: AuthUserSchema,
+export const LoginByQrResponseSchema = z.union([
+  z.object({
+    kind: z.literal("fast"),
+    token: z.string(),
+    user: AuthUserSchema,
+  }),
+  z.object({
+    kind: z.literal("async"),
+    attemptId: z.string(),
+  }),
+]);
+
+export const CabinetIdentityAttemptStatusSchema = z.enum([
+  "pending",
+  "adding_rival",
+  "waiting_snapshot",
+  "matched",
+  "failed",
+]);
+
+export const QrLoginPollResponseSchema = z.object({
+  attemptId: z.string(),
+  status: CabinetIdentityAttemptStatusSchema,
+  token: z.string().nullable(),
+  error: z.string().nullable(),
+  user: AuthUserSchema.optional(),
 });
 
 export type LoginByQrBody = z.infer<typeof LoginByQrBodySchema>;

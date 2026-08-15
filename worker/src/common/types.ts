@@ -3,7 +3,14 @@
  * 集中管理所有共享类型，避免重复定义
  */
 
-import type { JobPatchBody } from "@maimai-score-hub/shared";
+import type {
+  CabinetFriendshipStatus,
+  DxnetExecution,
+  DxnetExecutionRequest,
+  DxnetJobErrorCode,
+  DxnetJobRouting,
+  JobPatchBody,
+} from "@maimai-score-hub/shared";
 
 // ============================================================================
 // Game Types
@@ -67,7 +74,7 @@ export interface ScoreProgress {
 
 export interface Job {
   id: string;
-  friendCode: string;
+  friendCode: string | null;
   jobType?: JobType;
   priority?: number;
   botUserFriendCode?: string | null;
@@ -82,8 +89,12 @@ export interface Job {
   updateScoreDuration?: number | null;
   diffsToScrape?: number[] | null;
   context?: Record<string, unknown> | null;
-  removeFriendAfterComplete?: boolean;
   runAt?: Date | null;
+  deadlineAt?: Date | null;
+  cabinetFriendshipStatus?: CabinetFriendshipStatus;
+  errorCode?: DxnetJobErrorCode | null;
+  routing?: DxnetJobRouting | null;
+  execution?: DxnetExecution | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -94,10 +105,15 @@ export type JobResponse = Omit<Job, "createdAt" | "updatedAt" | "runAt"> & {
   runAt?: string | null;
 };
 
-export type JobPatch = Omit<JobPatchBody, "runAt" | "updatedAt"> & {
+export type JobPatch = Omit<
+  JobPatchBody,
+  "runAt" | "updatedAt" | "execution"
+> & {
   runAt?: Date | string | null;
   updatedAt?: Date | string;
 };
+
+export type JobExecutionIdentity = DxnetExecutionRequest;
 
 // ============================================================================
 // Friend Request Types

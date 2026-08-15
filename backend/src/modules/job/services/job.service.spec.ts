@@ -36,6 +36,9 @@ function makeService(input: {
     null as never,
     null as never,
     null as never,
+    null as never,
+    null as never,
+    null as never,
   );
 }
 
@@ -67,6 +70,228 @@ describe('JobService.getRecentStats', () => {
     await expect(service.getRecentStats()).resolves.toMatchObject({
       totalCount: 11,
       successRate: 0,
+    });
+  });
+});
+
+describe('JobService prerequisite handoff fencing', () => {
+  it('reuses an existing same-Bot prerequisite across redelivery', () => {
+    const service = makeService({
+      totalCount: 0,
+      completedCount: 0,
+      failedCount: 0,
+    });
+    const base = {
+      botUserFriendCode: 'bot-a',
+      routing: {
+        version: 2,
+        assignmentMode: 'claim',
+        deliveryMode: 'pinned',
+      },
+      cabinetFriendship: {
+        status: 'ready',
+        botFriendCode: 'bot-a',
+        sdgbJobId: 'sdgb-1',
+      },
+    };
+    const subject = service as unknown as {
+      mayReuseCabinetPrerequisite(
+        job: Record<string, unknown>,
+        botFriendCode: string,
+      ): boolean;
+    };
+
+    expect(subject.mayReuseCabinetPrerequisite(base, 'bot-a')).toBe(true);
+    expect(
+      subject.mayReuseCabinetPrerequisite(
+        {
+          ...base,
+          routing: { ...base.routing, deliveryMode: 'shared' },
+        },
+        'bot-a',
+      ),
+    ).toBe(true);
+    expect(subject.mayReuseCabinetPrerequisite(base, 'bot-b')).toBe(false);
+    expect(
+      subject.mayReuseCabinetPrerequisite(
+        {
+          ...base,
+          cabinetFriendship: {
+            ...base.cabinetFriendship,
+            status: 'pending',
+          },
+        },
+        'bot-a',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('JobService execution route fencing', () => {
+  it('pins claim continuations to the Bot already stored on the job', () => {
+    const service = makeService({
+      totalCount: 0,
+      completedCount: 0,
+      failedCount: 0,
+    });
+    const subject = service as unknown as {
+      assertV2QueueRoute(
+        job: Record<string, unknown>,
+        queueName: string,
+        botFriendCode: string,
+      ): void;
+    };
+    const job = {
+      botUserFriendCode: 'bot-a',
+      routing: {
+        version: 2,
+        assignmentMode: 'claim',
+        deliveryMode: 'pinned',
+        lane: 'background',
+      },
+    };
+
+    expect(() =>
+      subject.assertV2QueueRoute(
+        job,
+        'dxnet-worker-bot-a-background-jobs',
+        'bot-a',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      subject.assertV2QueueRoute(
+        job,
+        'dxnet-worker-bot-b-background-jobs',
+        'bot-b',
+      ),
+    ).toThrow();
+  });
+
+  it('accepts handoff only after a prepared same-generation recent-event claim', () => {
+    const service = makeService({
+      totalCount: 0,
+      completedCount: 0,
+      failedCount: 0,
+    });
+    const subject = service as unknown as {
+      applyV2Handoff(
+        job: Record<string, unknown>,
+        set: Record<string, unknown>,
+        body: Record<string, unknown>,
+        deliveryEpoch: number,
+        generation: 'new' | 'same',
+      ): void;
+    };
+    const job = {
+      jobType: 'get_user_recent_event',
+      routing: {
+        version: 2,
+        assignmentMode: 'claim',
+        deliveryMode: 'shared',
+      },
+      cabinetFriendship: { status: 'ready' },
+    };
+    const body = {
+      status: 'queued',
+      handoff: {
+        deliveryMode: 'pinned',
+        runAt: '2026-08-09T00:03:00.000Z',
+      },
+    };
+    const set: Record<string, unknown> = {};
+
+    subject.applyV2Handoff(job, set, body, 2, 'same');
+    expect(set).toMatchObject({
+      'routing.deliveryMode': 'pinned',
+      'routing.deliveryEpoch': 3,
+      status: 'queued',
+      execution: null,
+    });
+    expect(() => subject.applyV2Handoff(job, {}, body, 2, 'new')).toThrow();
+    expect(() =>
+      subject.applyV2Handoff(
+        { ...job, cabinetFriendship: { status: 'pending' } },
+        {},
+        body,
+        2,
+        'same',
+      ),
+    ).toThrow();
+  });
+});
+
+describe('JobService relationship capacity reservation', () => {
+  function capacitySubject(otherOwningJobs: number) {
+    const service = makeService({
+      totalCount: otherOwningJobs,
+      completedCount: 0,
+      failedCount: 0,
+    });
+    Object.assign(service, {
+      botStatus: {
+        getByFriendCode: jest.fn().mockResolvedValue({ friendCount: 50 }),
+      },
+    });
+    return service as unknown as {
+      assertEffectiveFriendCapacity(
+        botFriendCode: string,
+        currentJobId: string,
+      ): Promise<void>;
+    };
+  }
+
+  it('includes the prospective assignment but excludes the current job', async () => {
+    await expect(
+      capacitySubject(28).assertEffectiveFriendCapacity('bot-a', 'job-a'),
+    ).resolves.toBeUndefined();
+    await expect(
+      capacitySubject(29).assertEffectiveFriendCapacity('bot-a', 'job-a'),
+    ).rejects.toThrow('Bot friend capacity is exhausted');
+  });
+
+  it('reserves pinned cabinet fallback work before worker-side addRival', async () => {
+    const service = makeService({
+      totalCount: 0,
+      completedCount: 0,
+      failedCount: 0,
+    });
+    Object.assign(service, {
+      friendship: {
+        getTargetCabinetUserId: jest.fn().mockResolvedValue(42),
+      },
+      routingControl: {
+        isClaimFlowEnabled: jest.fn().mockReturnValue(false),
+      },
+    });
+
+    await expect(
+      (
+        service as unknown as {
+          resolveV2CabinetUpdate(input: unknown): Promise<unknown>;
+        }
+      ).resolveV2CabinetUpdate({
+        input: { friendCode: '123456789012345' },
+        source: 'user_sync',
+        definition: {
+          lane: 'user_sync',
+          priority: 2,
+          claimFlow: 'manual_update',
+        },
+        control: {},
+        healthyBots: [
+          {
+            friendCode: 'bot-a',
+            cabinetUserId: 7,
+            friendCount: 10,
+            friendsUpdatedAt: new Date().toISOString(),
+          },
+        ],
+        now: new Date(),
+      }),
+    ).resolves.toEqual({
+      assignmentMode: 'pinned',
+      botUserFriendCode: 'bot-a',
+      cabinetStatus: 'pending',
     });
   });
 });

@@ -11,6 +11,12 @@ host. The backend container reaches it through `host.docker.internal`:
 - artifact service on `3901`
 - artifacts under `/srv/maimai-observability/artifacts`
 
+The deployment also installs the Server 5 rsyslog/logrotate guards from
+`host/`. Docker output remains available in journald and through `docker logs`,
+but is not duplicated into `/var/log/messages`. ClickHouse's own system-log
+tables retain seven days (30 days for `system.error_log`); application tables
+keep the TTLs declared in `clickhouse/init/001_schema.sql`.
+
 Deploy:
 
 ```bash

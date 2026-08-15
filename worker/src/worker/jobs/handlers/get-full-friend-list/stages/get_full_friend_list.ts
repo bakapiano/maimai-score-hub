@@ -10,7 +10,8 @@ export async function getFullFriendList(
   }
 
   const friends = await ctx.client.friends.getFriendList();
-  const friendsUpdatedAt = new Date();
+  const friendsUpdatedAt =
+    botManager.friendListSnapshots.getSnapshot()?.updatedAt ?? new Date();
 
   await ctx.applyPatch({
     result: {

@@ -5,7 +5,7 @@ import { startApiServer } from "./api/server.ts";
 import { proxyServer } from "./proxy/server.ts";
 
 interface BotOAuthLifecycle {
-  stop(): void;
+  stop(): Promise<void>;
 }
 
 export function startBotOAuth(): BotOAuthLifecycle {
@@ -20,19 +20,23 @@ export function startBotOAuth(): BotOAuthLifecycle {
   );
 
   return {
-    stop: () => {
-      closeServer(apiServer, "API server");
-      closeServer(proxyServer, "proxy server");
-    },
+    stop: () =>
+      Promise.all([
+        closeServer(apiServer, "API server"),
+        closeServer(proxyServer, "proxy server"),
+      ]).then(() => undefined),
   };
 }
 
-function closeServer(server: Server, label: string): void {
-  server.close((err) => {
-    if (err) {
-      console.error(`[BotOAuth] Failed to stop ${label}:`, err);
-      return;
-    }
-    console.log(`[BotOAuth] Stopped ${label}`);
+function closeServer(server: Server, label: string): Promise<void> {
+  return new Promise((resolve) => {
+    server.close((err) => {
+      if (err) {
+        console.error(`[BotOAuth] Failed to stop ${label}:`, err);
+      } else {
+        console.log(`[BotOAuth] Stopped ${label}`);
+      }
+      resolve();
+    });
   });
 }

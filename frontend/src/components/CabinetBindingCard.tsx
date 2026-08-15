@@ -1,5 +1,6 @@
 import {
   Badge,
+  Alert,
   Box,
   Button,
   Divider,
@@ -7,6 +8,7 @@ import {
   Stack,
   Switch,
   Text,
+  Loader,
 } from "@mantine/core";
 import { IconLink, IconLinkOff } from "@tabler/icons-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
@@ -16,6 +18,17 @@ import { apiUrl } from "../api/baseUrl";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { AppCard } from "./AppCard";
 import { QrCredentialInput } from "./QrCredentialInput";
+import {
+  HttpClientError,
+  fetchForPoll,
+  pollWithBackoff,
+} from "../utils/poll";
+
+const CABINET_BINDING_STATUS: Record<string, string> = {
+  pending: "正在排队准备好友关系…",
+  adding_rival: "正在通过机台建立好友关系…",
+  waiting_snapshot: "正在确认二维码身份…",
+};
 
 /**
  * Cabinet (sdgb) binding + auto-update opt-in.
@@ -59,6 +72,7 @@ export function CabinetBindingCard({
   const [autoUpdate, setAutoUpdate] = useState<boolean>(initialAutoUpdate);
   const [qrText, setQrText] = useState("");
   const [busy, setBusy] = useState<"bind" | "toggle" | "unbind" | null>(null);
+  const [bindingProgress, setBindingProgress] = useState<string | null>(null);
 
   // Keep state in sync if parent reloads profile.
   useEffect(() => setHasCabinetUserId(initialHasCabinet), [initialHasCabinet]);
@@ -99,6 +113,44 @@ export function CabinetBindingCard({
         });
         const text = await res.text();
         const json = text ? JSON.parse(text) : null;
+        if (res.status === 202 && json?.attemptId) {
+          setBindingProgress(CABINET_BINDING_STATUS.pending);
+          await pollWithBackoff<void>(
+            async () => {
+              const { body } = await fetchForPoll(
+                apiUrl(`/me/cabinet/attempts/${String(json.attemptId)}`),
+                { headers: { Authorization: `Bearer ${token}` } },
+              );
+              const attempt = body as {
+                status?: string;
+                ok?: boolean;
+                error?: string | null;
+              } | null;
+              const status = attempt?.status ?? "pending";
+              setBindingProgress(CABINET_BINDING_STATUS[status] ?? status);
+              if (status === "matched" && attempt?.ok) {
+                return { done: true, value: undefined };
+              }
+              if (status === "failed") {
+                throw new HttpClientError(
+                  409,
+                  { message: attempt?.error },
+                  attempt?.error || "二维码身份确认失败",
+                );
+              }
+              return { done: false };
+            },
+            { intervalMs: 1_000, maxFailures: 5, timeoutMs: 5 * 60_000 },
+          );
+          notifications.show({
+            color: "green",
+            title: "绑定成功",
+            message: "二维码已绑定",
+          });
+          setQrText("");
+          await refreshFromServer();
+          return;
+        }
         if (res.status === 201 && json?.ok) {
           notifications.show({
             color: "green",
@@ -138,6 +190,7 @@ export function CabinetBindingCard({
           message: err instanceof Error ? err.message : String(err),
         });
       } finally {
+        setBindingProgress(null);
         setBusy(null);
       }
     },
@@ -238,6 +291,11 @@ export function CabinetBindingCard({
     <AppCard>
       <Stack gap="md">
         {header}
+        {bindingProgress && (
+          <Alert color="blue" variant="light" icon={<Loader size="xs" />}>
+            {bindingProgress}
+          </Alert>
+        )}
         {hasCabinetUserId ? (
           <>
             <Group justify="space-between" align="center" wrap="nowrap">

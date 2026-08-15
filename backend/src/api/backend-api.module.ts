@@ -4,6 +4,7 @@ import { AdminBotsController } from './admin/admin-bots.controller';
 import { AdminCatalogController } from './admin/admin-catalog.controller';
 import { AdminDashboardController } from './admin/admin-dashboard.controller';
 import { AdminDxnetJobsController } from './admin/admin-dxnet-jobs.controller';
+import { AdminDxnetRoutingControlController } from './admin/admin-dxnet-routing-control.controller';
 import { AdminObservabilityController } from './admin/admin-observability.controller';
 import { SharedSecretGuard } from '../common/guards/shared-secret.guard';
 import { AdminModule } from '../modules/admin/admin.module';
@@ -45,6 +46,8 @@ import { WorkerLogIngestController } from './workers/worker-logs.controller';
 import { WorkerSdgbJobsController } from './workers/worker-sdgb-jobs.controller';
 import { WorkerSdgbControlController } from './workers/worker-sdgb-control.controller';
 import { WorkerSdgbMaintenanceController } from './workers/worker-sdgb-maintenance.controller';
+import { APP_FILTER } from '@nestjs/core';
+import { DxnetBotAssignmentBusyFilter } from '../modules/job/dxnet-job.exceptions';
 
 @Module({
   imports: [
@@ -83,6 +86,7 @@ import { WorkerSdgbMaintenanceController } from './workers/worker-sdgb-maintenan
     AdminCatalogController,
     AdminDashboardController,
     AdminDxnetJobsController,
+    AdminDxnetRoutingControlController,
     AdminObservabilityController,
     AdminUsersController,
     WorkerBotStatusController,
@@ -95,6 +99,9 @@ import { WorkerSdgbMaintenanceController } from './workers/worker-sdgb-maintenan
     WorkerSdgbControlController,
     WorkerSdgbMaintenanceController,
   ],
-  providers: [SharedSecretGuard],
+  providers: [
+    SharedSecretGuard,
+    { provide: APP_FILTER, useClass: DxnetBotAssignmentBusyFilter },
+  ],
 })
 export class BackendApiModule {}

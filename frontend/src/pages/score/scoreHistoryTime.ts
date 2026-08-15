@@ -3,6 +3,7 @@ import type { ScoreChange, ScoreChangeField } from "@maimai-score-hub/shared";
 export type ScoreHistorySettings = {
   dayStartHour: number;
   mergeSameChart: boolean;
+  keyChangesOnly: boolean;
 };
 
 export type ScoreHistoryDisplayItem = {
@@ -13,6 +14,7 @@ export type ScoreHistoryDisplayItem = {
 export const DEFAULT_SCORE_HISTORY_SETTINGS: ScoreHistorySettings = {
   dayStartHour: 6,
   mergeSameChart: true,
+  keyChangesOnly: false,
 };
 
 function localDateKey(date: Date) {

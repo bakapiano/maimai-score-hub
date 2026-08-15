@@ -23,9 +23,18 @@ export interface JobExecutionContext {
   sleep(ms: number): Promise<void>;
 }
 
+export type JobPreflightResult = "continue" | "complete_delivery";
+
 export interface JobTypeHandler {
+  preflight?(ctx: JobExecutionContext): Promise<JobPreflightResult>;
   prepare?(ctx: JobExecutionContext): Promise<void>;
   execute(ctx: JobExecutionContext): Promise<void>;
+}
+
+export async function preflightJob(
+  ctx: JobExecutionContext,
+): Promise<JobPreflightResult> {
+  return (await getJobTypeHandler(ctx).preflight?.(ctx)) ?? "continue";
 }
 
 export async function prepareJob(ctx: JobExecutionContext): Promise<void> {

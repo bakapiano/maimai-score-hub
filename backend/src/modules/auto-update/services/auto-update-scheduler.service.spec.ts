@@ -8,6 +8,8 @@ function createService(overrides?: {
   botStatus?: Record<string, unknown>;
   sdgb?: Record<string, unknown>;
   activity?: Record<string, unknown>;
+  routingControl?: Record<string, unknown>;
+  redis?: Record<string, unknown>;
 }) {
   const timing = {
     mapConcurrency: 2,
@@ -47,6 +49,19 @@ function createService(overrides?: {
     recordActivitySignal: jest.fn().mockResolvedValue(undefined),
     ...(overrides?.activity ?? {}),
   };
+  const routingControl = {
+    get: jest.fn().mockResolvedValue({
+      enabledClaimFlows: [],
+      claimCanaryByFlow: {},
+    }),
+    isClaimFlowEnabled: jest.fn().mockReturnValue(false),
+    ...(overrides?.routingControl ?? {}),
+  };
+  const redis = {
+    key: jest.fn((key: string) => key),
+    incrementWithExpiry: jest.fn().mockResolvedValue(1),
+    ...(overrides?.redis ?? {}),
+  };
 
   return {
     service: new AutoUpdateSchedulerService(
@@ -62,6 +77,8 @@ function createService(overrides?: {
       timing as any,
       activity as any,
       {} as any,
+      routingControl as any,
+      redis as any,
     ),
     timing,
     stateModel,
@@ -70,10 +87,12 @@ function createService(overrides?: {
     botStatus,
     sdgb,
     activity,
+    routingControl,
+    redis,
   };
 }
 
-describe('AutoUpdateSchedulerService FC/FS production stopgap', () => {
+describe('AutoUpdateSchedulerService FC/FS production gate', () => {
   it('does not enqueue FC/FS enrichment while the path is disabled', async () => {
     const { service, stateModel, taskModel, jobs } = createService();
     const now = new Date('2026-07-05T06:00:00.000Z');
@@ -107,10 +126,8 @@ describe('AutoUpdateSchedulerService FC/FS production stopgap', () => {
     expect(jobs.create).toHaveBeenCalledWith({
       friendCode: '634142510810999',
       jobType: 'update_score',
-      priority: 1,
       diffsToScrape: null,
       cancelActiveJobs: false,
-      removeFriendAfterComplete: true,
       context: {
         source: 'auto_update_settled_full_update',
         lastActivityAt: '2026-07-05T06:15:00.000Z',
@@ -153,5 +170,57 @@ describe('AutoUpdateSchedulerService FC/FS production stopgap', () => {
         },
       },
     );
+  });
+});
+
+describe('AutoUpdateSchedulerService v2 FC/FS claim production', () => {
+  it('enqueues a claim job without preselecting a Bot or calling addRival', async () => {
+    const { service, jobs, botStatus, sdgb } = createService({
+      routingControl: {
+        get: jest.fn().mockResolvedValue({
+          enabledClaimFlows: ['auto_recent_event'],
+          claimCanaryByFlow: { auto_recent_event: null },
+        }),
+        isClaimFlowEnabled: jest.fn().mockReturnValue(true),
+      },
+    });
+    await (service as any).maybeEnqueueFcfs(
+      {
+        friendCode: '634142510810999',
+        cabinetUserId: 456,
+        nextRecentEventAt: null,
+        recentErrorCount: 0,
+      },
+      'map_delta',
+      new Date('2026-07-05T06:00:00.000Z'),
+    );
+
+    expect(jobs.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        friendCode: '634142510810999',
+        jobType: 'get_user_recent_event',
+        source: 'auto_update',
+      }),
+    );
+    expect(botStatus.pickAvailableCabinetBot).not.toHaveBeenCalled();
+    expect(sdgb.addRival).not.toHaveBeenCalled();
+  });
+
+  it('does not consume minute quota when the current burst is full', async () => {
+    const incrementWithExpiry = jest
+      .fn()
+      .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(1);
+    const { service } = createService({
+      redis: { incrementWithExpiry },
+    });
+
+    await expect(
+      (service as any).acquireFcfsProducerSlot(
+        new Date('2026-07-05T06:00:00.000Z'),
+      ),
+    ).resolves.toBe(false);
+    expect(incrementWithExpiry).toHaveBeenCalledTimes(1);
+    expect(incrementWithExpiry.mock.calls[0]?.[0]).toContain('burst:');
   });
 });

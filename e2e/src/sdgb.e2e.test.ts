@@ -8,6 +8,7 @@ import { verifyFailoverAndHandback } from "./scenarios/failover.ts";
 import { verifyGracefulUpgrade } from "./scenarios/graceful-upgrade.ts";
 import { verifyLaneRouting } from "./scenarios/lane-routing.ts";
 import { verifyStableFailoverQos } from "./scenarios/stable-qos.ts";
+import { verifyDxnetClaimRouting } from "./scenarios/dxnet-claim-routing.ts";
 
 test(
   "Backend and sdgb-worker integration",
@@ -76,6 +77,16 @@ test(
           verifyMembershipFencing(harness),
         );
       },
+      );
+    if (shouldRun("dxnet-claim-routing"))
+      await context.test(
+        "routes and fences a DXNet claim through competing BullMQ consumers",
+        { timeout: 60_000 },
+        async () => {
+          await withDiagnostics(harness, () =>
+            verifyDxnetClaimRouting(harness),
+          );
+        },
       );
   },
 );

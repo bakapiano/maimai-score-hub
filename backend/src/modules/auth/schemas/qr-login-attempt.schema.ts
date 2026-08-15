@@ -7,6 +7,7 @@ export type QrLoginStatus =
   | 'waiting_snapshot'
   | 'matched'
   | 'failed';
+export type CabinetIdentityPurpose = 'login' | 'cabinet_binding';
 
 /**
  * Tracks one QR-login attempt.
@@ -27,6 +28,20 @@ export class QrLoginAttemptEntity {
   @Prop({ required: true, type: String })
   status!: QrLoginStatus;
 
+  @Prop({
+    required: true,
+    type: String,
+    enum: ['login', 'cabinet_binding'],
+    default: 'login',
+  })
+  purpose!: CabinetIdentityPurpose;
+
+  @Prop({ type: String, default: null, index: true })
+  ownerUserId!: string | null;
+
+  @Prop({ type: String, default: null })
+  expectedFriendCode!: string | null;
+
   @Prop({ required: true, type: Number })
   cabinetUserId!: number;
 
@@ -38,6 +53,9 @@ export class QrLoginAttemptEntity {
 
   @Prop({ type: String, default: null })
   botUserFriendCode!: string | null;
+
+  @Prop({ type: String, default: null })
+  dxnetJobId!: string | null;
 
   /** Set when status becomes 'matched'. */
   @Prop({ type: String, default: null })

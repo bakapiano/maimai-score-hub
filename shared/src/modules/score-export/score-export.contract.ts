@@ -3,6 +3,11 @@ import { z } from "zod";
 
 const c = initContract();
 
+const QueryBooleanSchema = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((value) => value === 'true');
+
 export const ScoreHistoryExportQuerySchema = z
   .object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -10,6 +15,7 @@ export const ScoreHistoryExportQuerySchema = z
     end: z.coerce.number().int().min(0).max(8_640_000_000_000_000),
     timeZone: z.string().trim().min(1).max(64),
     dayStartHour: z.coerce.number().int().min(0).max(23),
+    keyChangesOnly: QueryBooleanSchema,
   })
   .strict()
   .refine((query) => query.start < query.end, {

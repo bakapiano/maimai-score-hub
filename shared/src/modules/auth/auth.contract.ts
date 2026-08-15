@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   LoginByQrBodySchema,
   LoginByQrResponseSchema,
+  QrLoginPollResponseSchema,
   LoginRequestBodySchema,
   LoginRequestResponseSchema,
   LoginRequestVerifyResponseSchema,
@@ -54,8 +55,9 @@ export const authContract = c.router({
     path: "/auth/qr-login/:attemptId",
     pathParams: c.type<{ attemptId: string }>(),
     responses: {
-      200: z.unknown(),
+      200: QrLoginPollResponseSchema,
       400: c.type<{ error: string }>(),
+      404: c.type<{ error: string }>(),
     },
   },
   passwordLogin: {

@@ -46,6 +46,15 @@ export class BotStatusEntity {
    */
   @Prop({ type: Number, default: null })
   cabinetUserId!: number | null;
+
+  @Prop({ type: String, default: null })
+  workerId!: string | null;
+
+  @Prop({ type: String, default: null })
+  revision!: string | null;
+
+  @Prop({ type: [String], default: [] })
+  consumersReady!: string[];
 }
 
 export type BotStatusDocument = HydratedDocument<BotStatusEntity>;

@@ -1,4 +1,9 @@
 import type { JobStage, JobStatus, JobType, ScoreProgress } from '../job.types';
+import type {
+  CabinetFriendshipStatus,
+  DxnetJobErrorCode,
+  DxnetJobRouting,
+} from '@maimai-score-hub/shared';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
 import type { HydratedDocument } from 'mongoose';
@@ -10,14 +15,45 @@ export class JobEntity {
   @Prop({ required: true, unique: true, index: true })
   id!: string;
 
-  @Prop({ required: true })
-  friendCode!: string;
+  @Prop({ required: false, type: String, default: null })
+  friendCode!: string | null;
 
   @Prop({ required: true, type: String, default: 'send_friend_request' })
   jobType!: JobType;
 
-  @Prop({ required: true, type: Number, default: 0 })
+  @Prop({ required: true, type: Number, min: 0, max: 4, default: 0 })
   priority!: number;
+
+  /** Required for all newly created jobs; nullable only on pre-cutover rows. */
+  @Prop({ type: MongooseSchema.Types.Mixed, default: null })
+  routing!: DxnetJobRouting | null;
+
+  @Prop({ type: MongooseSchema.Types.Mixed, default: null })
+  execution!: {
+    deliveryEpoch: number;
+    attemptsStarted: number;
+    workerId: string;
+    startedAt: Date;
+  } | null;
+
+  @Prop({ type: MongooseSchema.Types.Mixed, default: null })
+  cabinetFriendship!: {
+    status: CabinetFriendshipStatus;
+    botFriendCode: string | null;
+    deliveryEpoch: number | null;
+    attemptsStarted: number | null;
+    sdgbJobId: string | null;
+    lastError: string | null;
+  } | null;
+
+  @Prop({ type: Date, default: null })
+  deadlineAt!: Date | null;
+
+  @Prop({ type: String, default: null })
+  errorCode!: DxnetJobErrorCode | null;
+
+  @Prop({ type: Boolean, default: false })
+  completionPending!: boolean;
 
   @Prop({ type: String, default: null })
   botUserFriendCode!: string | null;
@@ -55,9 +91,6 @@ export class JobEntity {
   @Prop({ type: MongooseSchema.Types.Mixed, default: null })
   context!: Record<string, unknown> | null;
 
-  @Prop({ type: Boolean, default: false })
-  removeFriendAfterComplete!: boolean;
-
   /**
    * Next time this job may be delivered by BullMQ. Null means immediately
    * dispatchable. Used for waiting/cooldown stages so updatedAt stays a real
@@ -88,4 +121,12 @@ JobSchema.index(
 JobSchema.index(
   { status: 1, createdAt: -1 },
   { name: 'status_createdAt_desc' },
+);
+JobSchema.index(
+  { 'routing.version': 1, status: 1, deadlineAt: 1 },
+  { name: 'routing_status_deadline' },
+);
+JobSchema.index(
+  { 'routing.version': 1, 'routing.lane': 1, status: 1 },
+  { name: 'routing_lane_status' },
 );

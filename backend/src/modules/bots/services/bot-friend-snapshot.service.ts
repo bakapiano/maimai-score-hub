@@ -89,6 +89,26 @@ export class BotFriendSnapshotService {
     );
   }
 
+  async findFreshBotHavingFriend(
+    friendCode: string,
+    botFriendCodes: string[],
+    freshAfter: Date,
+  ): Promise<string | null> {
+    if (botFriendCodes.length === 0) {
+      return null;
+    }
+    const docs = await this.botStatusModel
+      .find({
+        friendCode: { $in: botFriendCodes },
+        friendsUpdatedAt: { $gte: freshAfter },
+        'friends.friendCode': friendCode,
+      })
+      .select({ friendCode: 1, _id: 0 })
+      .lean();
+    const hits = new Set(docs.map((doc) => doc.friendCode));
+    return botFriendCodes.find((code) => hits.has(code)) ?? null;
+  }
+
   /**
    * Look up a friend by (userName, rating) inside one bot's snapshot.
    * Used by QR-login to translate (cabinet displayName, computed b50)

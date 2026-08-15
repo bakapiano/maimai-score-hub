@@ -10,6 +10,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JobPatchBodySchema } from '@maimai-score-hub/shared';
+import {
+  PrepareCabinetFriendshipBodySchema,
+  type PrepareCabinetFriendshipBody,
+} from '@maimai-score-hub/shared';
 
 import { JobService } from '../../modules/job/services/job.service';
 import { QrLoginService } from '../../modules/auth/services/qr-login.service';
@@ -17,6 +21,7 @@ import { UsersService } from '../../modules/users/services/users.service';
 import { SharedSecretGuard } from '../../common/guards/shared-secret.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import type { JobPatchBody } from '../../modules/job/job.types';
+import { DxnetCabinetPreparationService } from '../../modules/job/services/dxnet-cabinet-preparation.service';
 
 @Controller('workers/dxnet')
 @UseGuards(SharedSecretGuard)
@@ -25,6 +30,7 @@ export class WorkerDxnetJobsController {
     private readonly jobs: JobService,
     private readonly users: UsersService,
     private readonly qrLogin: QrLoginService,
+    private readonly cabinetPreparation: DxnetCabinetPreparationService,
   ) {}
 
   @Get('bots/:botUserFriendCode/active-friend-codes')
@@ -41,7 +47,17 @@ export class WorkerDxnetJobsController {
 
   @Get('jobs/:jobId')
   async get(@Param('jobId') jobId: string) {
-    return this.jobs.get(jobId);
+    return this.jobs.getWorker(jobId);
+  }
+
+  @Post('jobs/:jobId/prepare-cabinet-friendship')
+  @HttpCode(200)
+  async prepareCabinetFriendship(
+    @Param('jobId') jobId: string,
+    @Body(new ZodValidationPipe(PrepareCabinetFriendshipBodySchema))
+    body: PrepareCabinetFriendshipBody,
+  ) {
+    return this.cabinetPreparation.prepare(jobId, body);
   }
 
   @Patch('jobs/:jobId')

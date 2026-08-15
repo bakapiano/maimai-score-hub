@@ -2,6 +2,13 @@ name: deploy worker
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: Worker instance to deploy
+        required: true
+        type: choice
+        default: all
+        options: [all, "1", "2", "3"]
 
 jobs:
   build:
@@ -12,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        instance: [1, 2, 3] # 添加更多实例编号
+        instance: ${{ fromJSON(inputs.target == 'all' && '[1,2,3]' || format('[{0}]', inputs.target)) }}
       fail-fast: false # 一个失败不影响其他部署
       max-parallel: 3 # 同时部署的最大数量
     concurrency:
@@ -147,6 +154,10 @@ jobs:
             upsert_env JOB_SERVICE_BASE_URL "${WORKER_JOB_SERVICE_BASE_URL:-}"
             upsert_env DXNET_WORKER_CONCURRENCY "16"
             upsert_env MAX_PROCESS_JOBS "16"
+            upsert_env DXNET_WORKER_REVISION "${{ github.sha }}"
+            upsert_env DXNET_LANE_INTERACTIVE_CONCURRENCY "8"
+            upsert_env DXNET_LANE_USER_SYNC_CONCURRENCY "16"
+            upsert_env DXNET_LANE_BACKGROUND_CONCURRENCY "16"
             printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
 
             # Worker 3 (101) has no public IP and goes through a great-firewall
@@ -161,48 +172,45 @@ jobs:
             # Cap docker build cache before build to avoid ENOSPC
             sudo docker builder prune --force --keep-storage=2GB || true
             if command -v docker-compose >/dev/null 2>&1; then
-              sudo env $EXTRA_ENV \
-                ADMIN_PASSWORD="${ADMIN_PASSWORD:-}" \
-                API_SHARED_SECRET="${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}" \
-                HTTP_PROXY_PASSWORD="${HTTP_PROXY_PASSWORD:-}" \
-                REDIS_PASSWORD="${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}" \
-                REDIS_HOST="${REDIS_HOST:-}" \
-                REDIS_PORT="6379" \
-                REDIS_DB="0" \
-                REDIS_KEY_PREFIX="maimai:" \
-                BULLMQ_PREFIX="" \
-                NODE_ENV="production" \
-                JOB_SERVICE_BASE_URL="${WORKER_JOB_SERVICE_BASE_URL:-}" \
-                DXNET_WORKER_CONCURRENCY="16" \
-                MAX_PROCESS_JOBS="16" \
-                docker-compose -f worker/docker-compose.yml up -d --build || exit 1
+              COMPOSE_CMD="docker-compose -f worker/docker-compose.yml"
             else
-              sudo env $EXTRA_ENV \
-                ADMIN_PASSWORD="${ADMIN_PASSWORD:-}" \
-                API_SHARED_SECRET="${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}" \
-                HTTP_PROXY_PASSWORD="${HTTP_PROXY_PASSWORD:-}" \
-                REDIS_PASSWORD="${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}" \
-                REDIS_HOST="${REDIS_HOST:-}" \
-                REDIS_PORT="6379" \
-                REDIS_DB="0" \
-                REDIS_KEY_PREFIX="maimai:" \
-                BULLMQ_PREFIX="" \
-                NODE_ENV="production" \
-                JOB_SERVICE_BASE_URL="${WORKER_JOB_SERVICE_BASE_URL:-}" \
-                DXNET_WORKER_CONCURRENCY="16" \
-                MAX_PROCESS_JOBS="16" \
-                docker compose -f worker/docker-compose.yml up -d --build || exit 1
+              COMPOSE_CMD="docker compose -f worker/docker-compose.yml"
             fi
+            sudo env $EXTRA_ENV \
+              ADMIN_PASSWORD="${ADMIN_PASSWORD:-}" \
+              API_SHARED_SECRET="${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}" \
+              HTTP_PROXY_PASSWORD="${HTTP_PROXY_PASSWORD:-}" \
+              REDIS_PASSWORD="${REDIS_PASSWORD:-${ADMIN_PASSWORD:-}}" \
+              REDIS_HOST="${REDIS_HOST:-}" \
+              REDIS_PORT="6379" \
+              REDIS_DB="0" \
+              REDIS_KEY_PREFIX="maimai:" \
+              BULLMQ_PREFIX="" \
+              NODE_ENV="production" \
+              JOB_SERVICE_BASE_URL="${WORKER_JOB_SERVICE_BASE_URL:-}" \
+              DXNET_WORKER_CONCURRENCY="16" \
+              MAX_PROCESS_JOBS="16" \
+              $COMPOSE_CMD up -d --build || exit 1
             sudo docker image prune -f
             # Cap docker build cache so disks don't fill up
             sudo docker builder prune --force --keep-storage=2GB || true
-            for i in 1 2 3 4 5; do
-              if curl -fsS http://localhost:3999/api/health; then
+            for i in $(seq 1 36); do
+              CONTAINER_ID="$(sudo $COMPOSE_CMD ps -q worker)"
+              RESTART_COUNT="$(sudo docker inspect --format '{{.RestartCount}}' "$CONTAINER_ID" 2>/dev/null || echo 1)"
+              if [ "$RESTART_COUNT" != "0" ]; then
+                echo "Worker RestartCount=$RESTART_COUNT; waiting for a clean container"
+                sleep 5
+                continue
+              fi
+              HEALTH_JSON="$(curl -fsS http://localhost:3999/api/health || true)"
+              BOT_FLEET_JSON="$(curl -fsS -H "X-API-Secret: ${API_SHARED_SECRET:-${ADMIN_PASSWORD:-}}" "${WORKER_JOB_SERVICE_BASE_URL%/}/api/v1/admin/bots" || true)"
+              if [ -n "$HEALTH_JSON" ] && [ -n "$BOT_FLEET_JSON" ] && HEALTH_JSON="$HEALTH_JSON" BOT_FLEET_JSON="$BOT_FLEET_JSON" EXPECTED_REVISION="${{ github.sha }}" python3 -c 'import json, os, sys; h=json.loads(os.environ["HEALTH_JSON"]); d=h.get("dxnet") or {}; fc=d.get("botFriendCode"); lanes=tuple(lane.replace(chr(95),chr(45)) for lane in ("interactive","user_sync","background")); expected=({f"dxnet-shared-{lane}-jobs" for lane in lanes} | {f"dxnet-worker-{fc}-{lane}-jobs" for lane in lanes}) if fc else set(); ready=set(d.get("consumersReady") or []); age=d.get("snapshotAgeMs"); rss=d.get("rssPercent"); revision=os.environ["EXPECTED_REVISION"]; local_ok=h.get("status")=="ok" and d.get("revision")==revision and ready==expected and isinstance(age,(int,float)) and age<=300000 and isinstance(rss,(int,float)) and rss<70; bots=json.loads(os.environ["BOT_FLEET_JSON"]); remote_ok=any(b.get("friendCode")==fc and b.get("workerId")==d.get("workerId") and b.get("revision")==revision and b.get("available") is True and set(b.get("consumersReady") or [])==expected for b in bots); sys.exit(0 if local_ok and remote_ok else 1)'; then
+                echo "$HEALTH_JSON"
                 echo "Health check passed on instance ${{ matrix.instance }}"
                 exit 0
               fi
               echo "Attempt $i failed, retrying in 5 seconds..."
               sleep 5
             done
-            echo "Health check failed after 5 attempts on instance ${{ matrix.instance }}"
+            echo "Health check failed after 36 attempts on instance ${{ matrix.instance }}"
             exit 1

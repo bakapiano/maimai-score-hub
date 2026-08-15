@@ -98,8 +98,6 @@ paths:
                     properties:
                       id:
                         type: string
-                      friendCode:
-                        type: string
                       jobType:
                         type: string
                         enum:
@@ -110,6 +108,8 @@ paths:
                           - get_full_friend_list
                       priority:
                         type: integer
+                        minimum: 0
+                        maximum: 4
                       botUserFriendCode:
                         type: string
                         nullable: true
@@ -142,6 +142,14 @@ paths:
                       error:
                         type: string
                         nullable: true
+                      errorCode:
+                        type: string
+                        enum:
+                          - cabinet_bot_unavailable
+                          - cabinet_friendship_failed
+                          - cabinet_friendship_unconfirmed
+                          - job_deadline_exceeded
+                        nullable: true
                       scoreProgress:
                         type: object
                         properties:
@@ -170,23 +178,36 @@ paths:
                         type: object
                         additionalProperties: {}
                         nullable: true
-                      removeFriendAfterComplete:
-                        type: boolean
                       runAt:
                         type: string
                         nullable: true
+                      deadlineAt:
+                        type: string
+                        nullable: true
+                      cabinetFriendshipStatus:
+                        type: string
+                        enum:
+                          - not_required
+                          - pending
+                          - running
+                          - ready
+                          - uncertain
+                          - failed
                       createdAt:
                         type: string
                       updatedAt:
                         type: string
+                      friendCode:
+                        type: string
+                        minLength: 1
                     required:
                       - id
-                      - friendCode
                       - jobType
                       - status
                       - stage
                       - createdAt
                       - updatedAt
+                      - friendCode
                 required:
                   - jobId
                 additionalProperties: true
@@ -241,8 +262,6 @@ paths:
                     properties:
                       id:
                         type: string
-                      friendCode:
-                        type: string
                       jobType:
                         type: string
                         enum:
@@ -253,6 +272,8 @@ paths:
                           - get_full_friend_list
                       priority:
                         type: integer
+                        minimum: 0
+                        maximum: 4
                       botUserFriendCode:
                         type: string
                         nullable: true
@@ -285,6 +306,14 @@ paths:
                       error:
                         type: string
                         nullable: true
+                      errorCode:
+                        type: string
+                        enum:
+                          - cabinet_bot_unavailable
+                          - cabinet_friendship_failed
+                          - cabinet_friendship_unconfirmed
+                          - job_deadline_exceeded
+                        nullable: true
                       scoreProgress:
                         type: object
                         properties:
@@ -313,23 +342,36 @@ paths:
                         type: object
                         additionalProperties: {}
                         nullable: true
-                      removeFriendAfterComplete:
-                        type: boolean
                       runAt:
                         type: string
                         nullable: true
+                      deadlineAt:
+                        type: string
+                        nullable: true
+                      cabinetFriendshipStatus:
+                        type: string
+                        enum:
+                          - not_required
+                          - pending
+                          - running
+                          - ready
+                          - uncertain
+                          - failed
                       createdAt:
                         type: string
                       updatedAt:
                         type: string
+                      friendCode:
+                        type: string
+                        minLength: 1
                     required:
                       - id
-                      - friendCode
                       - jobType
                       - status
                       - stage
                       - createdAt
                       - updatedAt
+                      - friendCode
                 required:
                   - job
   /auth/qr-login:
@@ -353,26 +395,43 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                  user:
-                    type: object
+                oneOf:
+                  - type: object
                     properties:
-                      id:
+                      kind:
                         type: string
-                      friendCode:
+                        enum:
+                          - fast
+                      token:
                         type: string
-                      username:
-                        type: string
-                        nullable: true
+                      user:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          friendCode:
+                            type: string
+                          username:
+                            type: string
+                            nullable: true
+                        required:
+                          - friendCode
+                        additionalProperties: true
                     required:
-                      - friendCode
-                    additionalProperties: true
-                required:
-                  - token
-                  - user
+                      - kind
+                      - token
+                      - user
+                  - type: object
+                    properties:
+                      kind:
+                        type: string
+                        enum:
+                          - async
+                      attemptId:
+                        type: string
+                    required:
+                      - kind
+                      - attemptId
         "400":
           description: "400"
         "404":
@@ -395,9 +454,46 @@ paths:
           content:
             application/json:
               schema:
-                nullable: true
+                type: object
+                properties:
+                  attemptId:
+                    type: string
+                  status:
+                    type: string
+                    enum:
+                      - pending
+                      - adding_rival
+                      - waiting_snapshot
+                      - matched
+                      - failed
+                  token:
+                    type: string
+                    nullable: true
+                  error:
+                    type: string
+                    nullable: true
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      friendCode:
+                        type: string
+                      username:
+                        type: string
+                        nullable: true
+                    required:
+                      - friendCode
+                    additionalProperties: true
+                required:
+                  - attemptId
+                  - status
+                  - token
+                  - error
         "400":
           description: "400"
+        "404":
+          description: "404"
   /auth/password-login:
     post:
       tags: *a2
@@ -1045,6 +1141,27 @@ paths:
                       - true
                 required:
                   - ok
+        "202":
+          description: "202"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - false
+                  pending:
+                    type: boolean
+                    enum:
+                      - true
+                  attemptId:
+                    type: string
+                required:
+                  - ok
+                  - pending
+                  - attemptId
         "400":
           description: "400"
         "409":
@@ -1094,6 +1211,44 @@ paths:
                   - ok
         "400":
           description: "400"
+  /me/cabinet/attempts/{attemptId}:
+    get:
+      tags: *a3
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: users.pollCabinetBinding
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attemptId:
+                    type: string
+                  status:
+                    type: string
+                    enum:
+                      - pending
+                      - adding_rival
+                      - waiting_snapshot
+                      - matched
+                      - failed
+                  ok:
+                    type: boolean
+                  error:
+                    type: string
+                    nullable: true
+                required:
+                  - attemptId
+                  - status
+        "404":
+          description: "404"
   /me/cabinet-score-jobs:
     post:
       tags: &a4
@@ -2567,8 +2722,6 @@ paths:
                     properties:
                       id:
                         type: string
-                      friendCode:
-                        type: string
                       jobType:
                         type: string
                         enum:
@@ -2579,6 +2732,8 @@ paths:
                           - get_full_friend_list
                       priority:
                         type: integer
+                        minimum: 0
+                        maximum: 4
                       botUserFriendCode:
                         type: string
                         nullable: true
@@ -2611,6 +2766,14 @@ paths:
                       error:
                         type: string
                         nullable: true
+                      errorCode:
+                        type: string
+                        enum:
+                          - cabinet_bot_unavailable
+                          - cabinet_friendship_failed
+                          - cabinet_friendship_unconfirmed
+                          - job_deadline_exceeded
+                        nullable: true
                       scoreProgress:
                         type: object
                         properties:
@@ -2639,23 +2802,36 @@ paths:
                         type: object
                         additionalProperties: {}
                         nullable: true
-                      removeFriendAfterComplete:
-                        type: boolean
                       runAt:
                         type: string
                         nullable: true
+                      deadlineAt:
+                        type: string
+                        nullable: true
+                      cabinetFriendshipStatus:
+                        type: string
+                        enum:
+                          - not_required
+                          - pending
+                          - running
+                          - ready
+                          - uncertain
+                          - failed
                       createdAt:
                         type: string
                       updatedAt:
                         type: string
+                      friendCode:
+                        type: string
+                        minLength: 1
                     required:
                       - id
-                      - friendCode
                       - jobType
                       - status
                       - stage
                       - createdAt
                       - updatedAt
+                      - friendCode
                 required:
                   - jobId
                   - job
@@ -2677,6 +2853,21 @@ paths:
                   recommendedBotFriendCode:
                     type: string
                     nullable: true
+        "503":
+          description: "503"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - bot_assignment_busy
+                  message:
+                    type: string
+                required:
+                  - code
   /me/dxnet-jobs/{jobId}:
     get:
       tags: *a5
@@ -2702,8 +2893,6 @@ paths:
                 properties:
                   id:
                     type: string
-                  friendCode:
-                    type: string
                   jobType:
                     type: string
                     enum:
@@ -2714,6 +2903,8 @@ paths:
                       - get_full_friend_list
                   priority:
                     type: integer
+                    minimum: 0
+                    maximum: 4
                   botUserFriendCode:
                     type: string
                     nullable: true
@@ -2746,6 +2937,14 @@ paths:
                   error:
                     type: string
                     nullable: true
+                  errorCode:
+                    type: string
+                    enum:
+                      - cabinet_bot_unavailable
+                      - cabinet_friendship_failed
+                      - cabinet_friendship_unconfirmed
+                      - job_deadline_exceeded
+                    nullable: true
                   scoreProgress:
                     type: object
                     properties:
@@ -2774,23 +2973,36 @@ paths:
                     type: object
                     additionalProperties: {}
                     nullable: true
-                  removeFriendAfterComplete:
-                    type: boolean
                   runAt:
                     type: string
                     nullable: true
+                  deadlineAt:
+                    type: string
+                    nullable: true
+                  cabinetFriendshipStatus:
+                    type: string
+                    enum:
+                      - not_required
+                      - pending
+                      - running
+                      - ready
+                      - uncertain
+                      - failed
                   createdAt:
                     type: string
                   updatedAt:
                     type: string
+                  friendCode:
+                    type: string
+                    minLength: 1
                 required:
                   - id
-                  - friendCode
                   - jobType
                   - status
                   - stage
                   - createdAt
                   - updatedAt
+                  - friendCode
   /me/dxnet-jobs/active:
     get:
       tags: *a5
@@ -2814,8 +3026,6 @@ paths:
                     properties:
                       id:
                         type: string
-                      friendCode:
-                        type: string
                       jobType:
                         type: string
                         enum:
@@ -2826,6 +3036,8 @@ paths:
                           - get_full_friend_list
                       priority:
                         type: integer
+                        minimum: 0
+                        maximum: 4
                       botUserFriendCode:
                         type: string
                         nullable: true
@@ -2858,6 +3070,14 @@ paths:
                       error:
                         type: string
                         nullable: true
+                      errorCode:
+                        type: string
+                        enum:
+                          - cabinet_bot_unavailable
+                          - cabinet_friendship_failed
+                          - cabinet_friendship_unconfirmed
+                          - job_deadline_exceeded
+                        nullable: true
                       scoreProgress:
                         type: object
                         properties:
@@ -2886,23 +3106,36 @@ paths:
                         type: object
                         additionalProperties: {}
                         nullable: true
-                      removeFriendAfterComplete:
-                        type: boolean
                       runAt:
                         type: string
                         nullable: true
+                      deadlineAt:
+                        type: string
+                        nullable: true
+                      cabinetFriendshipStatus:
+                        type: string
+                        enum:
+                          - not_required
+                          - pending
+                          - running
+                          - ready
+                          - uncertain
+                          - failed
                       createdAt:
                         type: string
                       updatedAt:
                         type: string
+                      friendCode:
+                        type: string
+                        minLength: 1
                     required:
                       - id
-                      - friendCode
                       - jobType
                       - status
                       - stage
                       - createdAt
                       - updatedAt
+                      - friendCode
                     nullable: true
                 required:
                   - job
@@ -2983,8 +3216,6 @@ paths:
                     properties:
                       id:
                         type: string
-                      friendCode:
-                        type: string
                       jobType:
                         type: string
                         enum:
@@ -2995,6 +3226,8 @@ paths:
                           - get_full_friend_list
                       priority:
                         type: integer
+                        minimum: 0
+                        maximum: 4
                       botUserFriendCode:
                         type: string
                         nullable: true
@@ -3027,6 +3260,14 @@ paths:
                       error:
                         type: string
                         nullable: true
+                      errorCode:
+                        type: string
+                        enum:
+                          - cabinet_bot_unavailable
+                          - cabinet_friendship_failed
+                          - cabinet_friendship_unconfirmed
+                          - job_deadline_exceeded
+                        nullable: true
                       scoreProgress:
                         type: object
                         properties:
@@ -3055,23 +3296,36 @@ paths:
                         type: object
                         additionalProperties: {}
                         nullable: true
-                      removeFriendAfterComplete:
-                        type: boolean
                       runAt:
                         type: string
                         nullable: true
+                      deadlineAt:
+                        type: string
+                        nullable: true
+                      cabinetFriendshipStatus:
+                        type: string
+                        enum:
+                          - not_required
+                          - pending
+                          - running
+                          - ready
+                          - uncertain
+                          - failed
                       createdAt:
                         type: string
                       updatedAt:
                         type: string
+                      friendCode:
+                        type: string
+                        minLength: 1
                     required:
                       - id
-                      - friendCode
                       - jobType
                       - status
                       - stage
                       - createdAt
                       - updatedAt
+                      - friendCode
                 required:
                   - job
   /workers/dxnet/jobs/{jobId}:
@@ -3094,8 +3348,6 @@ paths:
                 properties:
                   id:
                     type: string
-                  friendCode:
-                    type: string
                   jobType:
                     type: string
                     enum:
@@ -3106,6 +3358,8 @@ paths:
                       - get_full_friend_list
                   priority:
                     type: integer
+                    minimum: 0
+                    maximum: 4
                   botUserFriendCode:
                     type: string
                     nullable: true
@@ -3138,6 +3392,14 @@ paths:
                   error:
                     type: string
                     nullable: true
+                  errorCode:
+                    type: string
+                    enum:
+                      - cabinet_bot_unavailable
+                      - cabinet_friendship_failed
+                      - cabinet_friendship_unconfirmed
+                      - job_deadline_exceeded
+                    nullable: true
                   scoreProgress:
                     type: object
                     properties:
@@ -3166,23 +3428,104 @@ paths:
                     type: object
                     additionalProperties: {}
                     nullable: true
-                  removeFriendAfterComplete:
-                    type: boolean
                   runAt:
                     type: string
                     nullable: true
+                  deadlineAt:
+                    type: string
+                    nullable: true
+                  cabinetFriendshipStatus:
+                    type: string
+                    enum:
+                      - not_required
+                      - pending
+                      - running
+                      - ready
+                      - uncertain
+                      - failed
                   createdAt:
                     type: string
                   updatedAt:
                     type: string
+                  friendCode:
+                    type: string
+                    nullable: true
+                  result:
+                    nullable: true
+                  routing:
+                    type: object
+                    properties:
+                      version:
+                        type: number
+                        enum:
+                          - 2
+                      deliveryEpoch:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: 0
+                      source:
+                        type: string
+                        enum:
+                          - user_interaction
+                          - user_sync
+                          - qr_login
+                          - cabinet_binding
+                          - auto_update
+                          - maintenance
+                      lane:
+                        type: string
+                        enum:
+                          - interactive
+                          - user_sync
+                          - background
+                      assignmentMode:
+                        type: string
+                        enum:
+                          - claim
+                          - pinned
+                      deliveryMode:
+                        type: string
+                        enum:
+                          - shared
+                          - pinned
+                    required:
+                      - version
+                      - deliveryEpoch
+                      - source
+                      - lane
+                      - assignmentMode
+                      - deliveryMode
+                    nullable: true
+                  execution:
+                    type: object
+                    properties:
+                      deliveryEpoch:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: 0
+                      attemptsStarted:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: 0
+                      workerId:
+                        type: string
+                        minLength: 1
+                      startedAt:
+                        type: string
+                    required:
+                      - deliveryEpoch
+                      - attemptsStarted
+                      - workerId
+                      - startedAt
+                    nullable: true
                 required:
                   - id
-                  - friendCode
                   - jobType
                   - status
                   - stage
                   - createdAt
                   - updatedAt
+                  - friendCode
     patch:
       tags: *a5
       parameters:
@@ -3227,6 +3570,14 @@ paths:
                 error:
                   type: string
                   nullable: true
+                errorCode:
+                  type: string
+                  enum:
+                    - cabinet_bot_unavailable
+                    - cabinet_friendship_failed
+                    - cabinet_friendship_unconfirmed
+                    - job_deadline_exceeded
+                  nullable: true
                 friendRequestSentAt:
                   type: string
                   nullable: true
@@ -3260,6 +3611,43 @@ paths:
                 updateScoreDuration:
                   type: number
                   nullable: true
+                execution:
+                  type: object
+                  properties:
+                    deliveryEpoch:
+                      type: integer
+                      minimum: 0
+                      exclusiveMinimum: 0
+                    attemptsStarted:
+                      type: integer
+                      minimum: 0
+                      exclusiveMinimum: 0
+                    queueName:
+                      type: string
+                      minLength: 1
+                    workerId:
+                      type: string
+                      minLength: 1
+                  required:
+                    - deliveryEpoch
+                    - attemptsStarted
+                    - queueName
+                    - workerId
+                handoff:
+                  type: object
+                  properties:
+                    deliveryMode:
+                      type: string
+                      enum:
+                        - pinned
+                    runAt:
+                      type: string
+                      format: date-time
+                  required:
+                    - deliveryMode
+                    - runAt
+              required:
+                - execution
       responses:
         "200":
           description: "200"
@@ -3269,8 +3657,6 @@ paths:
                 type: object
                 properties:
                   id:
-                    type: string
-                  friendCode:
                     type: string
                   jobType:
                     type: string
@@ -3282,6 +3668,8 @@ paths:
                       - get_full_friend_list
                   priority:
                     type: integer
+                    minimum: 0
+                    maximum: 4
                   botUserFriendCode:
                     type: string
                     nullable: true
@@ -3314,6 +3702,14 @@ paths:
                   error:
                     type: string
                     nullable: true
+                  errorCode:
+                    type: string
+                    enum:
+                      - cabinet_bot_unavailable
+                      - cabinet_friendship_failed
+                      - cabinet_friendship_unconfirmed
+                      - job_deadline_exceeded
+                    nullable: true
                   scoreProgress:
                     type: object
                     properties:
@@ -3342,23 +3738,322 @@ paths:
                     type: object
                     additionalProperties: {}
                     nullable: true
-                  removeFriendAfterComplete:
-                    type: boolean
                   runAt:
                     type: string
                     nullable: true
+                  deadlineAt:
+                    type: string
+                    nullable: true
+                  cabinetFriendshipStatus:
+                    type: string
+                    enum:
+                      - not_required
+                      - pending
+                      - running
+                      - ready
+                      - uncertain
+                      - failed
                   createdAt:
                     type: string
                   updatedAt:
                     type: string
+                  friendCode:
+                    type: string
+                    nullable: true
+                  result:
+                    nullable: true
+                  routing:
+                    type: object
+                    properties:
+                      version:
+                        type: number
+                        enum:
+                          - 2
+                      deliveryEpoch:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: 0
+                      source:
+                        type: string
+                        enum:
+                          - user_interaction
+                          - user_sync
+                          - qr_login
+                          - cabinet_binding
+                          - auto_update
+                          - maintenance
+                      lane:
+                        type: string
+                        enum:
+                          - interactive
+                          - user_sync
+                          - background
+                      assignmentMode:
+                        type: string
+                        enum:
+                          - claim
+                          - pinned
+                      deliveryMode:
+                        type: string
+                        enum:
+                          - shared
+                          - pinned
+                    required:
+                      - version
+                      - deliveryEpoch
+                      - source
+                      - lane
+                      - assignmentMode
+                      - deliveryMode
+                    nullable: true
+                  execution:
+                    type: object
+                    properties:
+                      deliveryEpoch:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: 0
+                      attemptsStarted:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: 0
+                      workerId:
+                        type: string
+                        minLength: 1
+                      startedAt:
+                        type: string
+                    required:
+                      - deliveryEpoch
+                      - attemptsStarted
+                      - workerId
+                      - startedAt
+                    nullable: true
                 required:
                   - id
-                  - friendCode
                   - jobType
                   - status
                   - stage
                   - createdAt
                   - updatedAt
+                  - friendCode
+        "409":
+          description: "409"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - stale_execution
+                      - bot_ineligible
+                      - invalid_route
+                      - job_terminal
+                      - bot_assignment_busy
+                  reason:
+                    type: string
+                    enum:
+                      - heartbeat
+                      - allowlist
+                      - cabinet_binding
+                      - snapshot_stale
+                      - capacity
+                  message:
+                    type: string
+                required:
+                  - code
+        "410":
+          description: "410"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - stale_execution
+                      - bot_ineligible
+                      - invalid_route
+                      - job_terminal
+                      - bot_assignment_busy
+                  reason:
+                    type: string
+                    enum:
+                      - heartbeat
+                      - allowlist
+                      - cabinet_binding
+                      - snapshot_stale
+                      - capacity
+                  message:
+                    type: string
+                required:
+                  - code
+        "503":
+          description: "503"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - stale_execution
+                      - bot_ineligible
+                      - invalid_route
+                      - job_terminal
+                      - bot_assignment_busy
+                  reason:
+                    type: string
+                    enum:
+                      - heartbeat
+                      - allowlist
+                      - cabinet_binding
+                      - snapshot_stale
+                      - capacity
+                  message:
+                    type: string
+                required:
+                  - code
+  /workers/dxnet/jobs/{jobId}/prepare-cabinet-friendship:
+    post:
+      tags: *a5
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: job.prepareCabinetFriendship
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                execution:
+                  type: object
+                  properties:
+                    deliveryEpoch:
+                      type: integer
+                      minimum: 0
+                      exclusiveMinimum: 0
+                    attemptsStarted:
+                      type: integer
+                      minimum: 0
+                      exclusiveMinimum: 0
+                    workerId:
+                      type: string
+                      minLength: 1
+                  required:
+                    - deliveryEpoch
+                    - attemptsStarted
+                    - workerId
+              required:
+                - execution
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - not_required
+                      - pending
+                      - running
+                      - ready
+                      - uncertain
+                      - failed
+                required:
+                  - status
+        "409":
+          description: "409"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - stale_execution
+                      - bot_ineligible
+                      - invalid_route
+                      - job_terminal
+                      - bot_assignment_busy
+                  reason:
+                    type: string
+                    enum:
+                      - heartbeat
+                      - allowlist
+                      - cabinet_binding
+                      - snapshot_stale
+                      - capacity
+                  message:
+                    type: string
+                required:
+                  - code
+        "410":
+          description: "410"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - stale_execution
+                      - bot_ineligible
+                      - invalid_route
+                      - job_terminal
+                      - bot_assignment_busy
+                  reason:
+                    type: string
+                    enum:
+                      - heartbeat
+                      - allowlist
+                      - cabinet_binding
+                      - snapshot_stale
+                      - capacity
+                  message:
+                    type: string
+                required:
+                  - code
+        "503":
+          description: "503"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - stale_execution
+                      - bot_ineligible
+                      - invalid_route
+                      - job_terminal
+                      - bot_assignment_busy
+                  reason:
+                    type: string
+                    enum:
+                      - heartbeat
+                      - allowlist
+                      - cabinet_binding
+                      - snapshot_stale
+                      - capacity
+                  message:
+                    type: string
+                required:
+                  - code
   /workers/dxnet/bots/{botUserFriendCode}/active-friend-codes:
     get:
       tags: *a5
@@ -3749,9 +4444,23 @@ paths:
                       available:
                         type: boolean
                       friendCount:
-                        type: number
+                        type: integer
+                        minimum: 0
                       friendsUpdatedAt:
                         type: string
+                        format: date-time
+                      workerId:
+                        type: string
+                        minLength: 1
+                      revision:
+                        type: string
+                        minLength: 1
+                      consumersReady:
+                        type: array
+                        items:
+                          type: string
+                          minLength: 1
+                        maxItems: 6
                       friends:
                         type: array
                         items:
@@ -3816,7 +4525,8 @@ paths:
                     available:
                       type: boolean
                     friendCount:
-                      type: number
+                      type: integer
+                      minimum: 0
                       nullable: true
                     friendsUpdatedAt:
                       type: string
@@ -3829,6 +4539,16 @@ paths:
                     cabinetUserId:
                       type: integer
                       nullable: true
+                    workerId:
+                      type: string
+                      nullable: true
+                    revision:
+                      type: string
+                      nullable: true
+                    consumersReady:
+                      type: array
+                      items:
+                        type: string
                   required:
                     - friendCode
                     - available
@@ -3922,6 +4642,151 @@ paths:
       responses:
         "201":
           description: "201"
+  /admin/dxnet-routing-control:
+    get:
+      tags: *a6
+      parameters: []
+      operationId: admin.getDxnetRoutingControl
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  epoch:
+                    type: integer
+                    minimum: 0
+                  botAllowlist:
+                    type: array
+                    items:
+                      type: string
+                    nullable: true
+                  enabledClaimFlows:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                        - auto_recent_event
+                        - manual_update
+                        - qr_identity
+                  claimCanaryByFlow:
+                    default: &a7 {}
+                    type: object
+                    properties:
+                      auto_recent_event:
+                        type: array
+                        items:
+                          type: string
+                        nullable: true
+                      manual_update:
+                        type: array
+                        items:
+                          type: string
+                        nullable: true
+                required:
+                  - epoch
+                  - botAllowlist
+                  - enabledClaimFlows
+    patch:
+      tags: *a6
+      parameters: []
+      operationId: admin.patchDxnetRoutingControl
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expectedEpoch:
+                  type: integer
+                  minimum: 0
+                botAllowlist:
+                  type: array
+                  items:
+                    type: string
+                  nullable: true
+                enabledClaimFlows:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - auto_recent_event
+                      - manual_update
+                      - qr_identity
+                claimCanaryByFlow:
+                  default: *a7
+                  type: object
+                  properties:
+                    auto_recent_event:
+                      type: array
+                      items:
+                        type: string
+                      nullable: true
+                    manual_update:
+                      type: array
+                      items:
+                        type: string
+                      nullable: true
+              required:
+                - expectedEpoch
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  epoch:
+                    type: integer
+                    minimum: 0
+                  botAllowlist:
+                    type: array
+                    items:
+                      type: string
+                    nullable: true
+                  enabledClaimFlows:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                        - auto_recent_event
+                        - manual_update
+                        - qr_identity
+                  claimCanaryByFlow:
+                    default: *a7
+                    type: object
+                    properties:
+                      auto_recent_event:
+                        type: array
+                        items:
+                          type: string
+                        nullable: true
+                      manual_update:
+                        type: array
+                        items:
+                          type: string
+                        nullable: true
+                required:
+                  - epoch
+                  - botAllowlist
+                  - enabledClaimFlows
+        "409":
+          description: "409"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - routing_control_conflict
+                required:
+                  - code
   /admin/observability/status:
     get:
       tags: *a6
@@ -4221,7 +5086,7 @@ paths:
                 nullable: true
   /catalog/covers/{songId}:
     get:
-      tags: &a7
+      tags: &a8
         - cover
       parameters:
         - name: songId
@@ -4237,7 +5102,7 @@ paths:
           description: "404"
   /catalog/covers/{songId}.jpg:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: songId
           in: path
@@ -4252,7 +5117,7 @@ paths:
           description: "404"
   /admin/catalog/covers/backfill-variants:
     post:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: cover.backfillVariants
       responses:
@@ -4260,7 +5125,7 @@ paths:
           description: "201"
   /me/score-exports/best50:
     get:
-      tags: &a8
+      tags: &a9
         - scoreExport
       parameters: []
       operationId: scoreExport.best50
@@ -4269,7 +5134,7 @@ paths:
           description: "200"
   /me/score-exports/level:
     get:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: scoreExport.level
       responses:
@@ -4277,7 +5142,7 @@ paths:
           description: "200"
   /me/score-exports/version:
     get:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: scoreExport.version
       responses:
@@ -4285,7 +5150,7 @@ paths:
           description: "200"
   /me/score-exports/history:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: date
           in: query
@@ -4324,13 +5189,21 @@ paths:
             minimum: 0
             maximum: 23
             nullable: true
+        - name: keyChangesOnly
+          in: query
+          schema:
+            default: "false"
+            type: string
+            enum:
+              - "true"
+              - "false"
       operationId: scoreExport.history
       responses:
         "200":
           description: "200"
   /workers/sdgb/jobs/heartbeat:
     post:
-      tags: &a9
+      tags: &a10
         - sdgbWorker
       parameters: []
       operationId: sdgbWorker.heartbeat
@@ -4529,7 +5402,7 @@ paths:
                   - desiredLaneMemberships
   /workers/sdgb/incidents:
     post:
-      tags: *a9
+      tags: *a10
       parameters: []
       operationId: sdgbWorker.incident
       requestBody:
@@ -4612,7 +5485,7 @@ paths:
           description: "200"
   /workers/sdgb/jobs/{jobId}:
     get:
-      tags: *a9
+      tags: *a10
       parameters:
         - name: jobId
           in: path
@@ -4647,6 +5520,13 @@ paths:
                     type: integer
                     minimum: 0
                     exclusiveMinimum: 0
+                  priority:
+                    type: integer
+                    minimum: 0
+                    maximum: 4
+                  idempotencyKey:
+                    type: string
+                    nullable: true
                   status:
                     type: string
                     enum:
@@ -4776,7 +5656,7 @@ paths:
         "404":
           description: "404"
     patch:
-      tags: *a9
+      tags: *a10
       parameters:
         - name: jobId
           in: path
@@ -4906,6 +5786,13 @@ paths:
                     type: integer
                     minimum: 0
                     exclusiveMinimum: 0
+                  priority:
+                    type: integer
+                    minimum: 0
+                    maximum: 4
+                  idempotencyKey:
+                    type: string
+                    nullable: true
                   status:
                     type: string
                     enum:
@@ -5036,7 +5923,7 @@ paths:
           description: "404"
   /observability/rum:
     post:
-      tags: &a10
+      tags: &a11
         - observability
       parameters: []
       operationId: observability.ingestRum
@@ -5142,7 +6029,7 @@ paths:
                   - accepted
   /observability/events:
     post:
-      tags: *a10
+      tags: *a11
       parameters: []
       operationId: observability.ingestEvents
       requestBody:
@@ -5216,7 +6103,7 @@ paths:
                   - accepted
   /workers/logs/{kind}/batches:
     post:
-      tags: *a10
+      tags: *a11
       parameters:
         - name: kind
           in: path
@@ -5310,7 +6197,7 @@ paths:
                   - accepted
   /workers/dxnet/jobs/{jobId}/api-calls:
     post:
-      tags: *a10
+      tags: *a11
       parameters:
         - name: jobId
           in: path
@@ -5418,7 +6305,7 @@ paths:
                   - accepted
   /workers/{kind}/external-api-calls:
     post:
-      tags: *a10
+      tags: *a11
       parameters:
         - name: kind
           in: path

@@ -44,6 +44,12 @@ export interface JobPatchBody {
   result?: unknown;
   profile?: UserProfile;
   error?: string | null;
+  errorCode?:
+    | 'cabinet_bot_unavailable'
+    | 'cabinet_friendship_failed'
+    | 'cabinet_friendship_unconfirmed'
+    | 'job_deadline_exceeded'
+    | null;
   friendRequestSentAt?: string | null;
   friendRequestWaitStartedAt?: string | null;
   runAt?: string | null;
@@ -51,6 +57,16 @@ export interface JobPatchBody {
   scoreProgress?: ScoreProgress | null;
   addCompletedDiff?: number;
   updateScoreDuration?: number | null;
+  execution: {
+    deliveryEpoch: number;
+    attemptsStarted: number;
+    queueName: string;
+    workerId: string;
+  };
+  handoff?: {
+    deliveryMode: 'pinned';
+    runAt: string;
+  };
 }
 
 export interface JobResponse {
@@ -70,8 +86,34 @@ export interface JobResponse {
   updateScoreDuration?: number | null;
   diffsToScrape?: number[] | null;
   context?: Record<string, unknown> | null;
-  removeFriendAfterComplete?: boolean;
   runAt?: string | null;
+  deadlineAt?: string | null;
+  cabinetFriendshipStatus?:
+    | 'not_required'
+    | 'pending'
+    | 'running'
+    | 'ready'
+    | 'uncertain'
+    | 'failed';
+  errorCode?:
+    | 'cabinet_bot_unavailable'
+    | 'cabinet_friendship_failed'
+    | 'cabinet_friendship_unconfirmed'
+    | 'job_deadline_exceeded'
+    | null;
   createdAt: string;
   updatedAt: string;
 }
+
+export interface WorkerJobResponse extends Omit<JobResponse, 'friendCode'> {
+  friendCode: string | null;
+  result?: unknown;
+  routing?: DxnetJobRouting | null;
+  execution?: {
+    deliveryEpoch: number;
+    attemptsStarted: number;
+    workerId: string;
+    startedAt: string;
+  } | null;
+}
+import type { DxnetJobRouting } from '@maimai-score-hub/shared';

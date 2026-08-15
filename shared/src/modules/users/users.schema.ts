@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CabinetIdentityAttemptStatusSchema } from "../auth/auth.schema";
 
 import { WebAuthnJsonSchema } from "../auth/auth.schema";
 
@@ -126,6 +127,19 @@ export const BindCabinetQrBodySchema = z.object({
 
 export const BindCabinetQrResponseSchema = z.object({
   ok: z.literal(true),
+});
+
+export const BindCabinetQrAsyncResponseSchema = z.object({
+  ok: z.literal(false),
+  pending: z.literal(true),
+  attemptId: z.string(),
+});
+
+export const CabinetBindingAttemptResponseSchema = z.object({
+  attemptId: z.string(),
+  status: CabinetIdentityAttemptStatusSchema,
+  ok: z.boolean().optional(),
+  error: z.string().nullable().optional(),
 });
 
 export const BindCabinetQrMismatchSchema = z.object({

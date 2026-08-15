@@ -57,7 +57,8 @@ export async function executeMaimaiPageRequest({
 
     try {
       const throttleQueuedAt = Date.now();
-      await requestRuntime.waitForSlot(requestPriority);
+      requestContext.signal?.throwIfAborted();
+      await requestRuntime.waitForSlot(requestPriority, requestContext.signal);
       throttleWaitMs = Date.now() - throttleQueuedAt;
 
       requestStartedAt = Date.now();
@@ -68,7 +69,12 @@ export async function executeMaimaiPageRequest({
         try {
           const result = (await dxnetSession.send(requestPlan.url, {
             ...requestPlan.init,
-            signal: AbortSignal.timeout(requestPlan.timeoutMs),
+            signal: requestContext.signal
+              ? AbortSignal.any([
+                  requestContext.signal,
+                  AbortSignal.timeout(requestPlan.timeoutMs),
+                ])
+              : AbortSignal.timeout(requestPlan.timeoutMs),
           })) as Response;
           headersReceived = true;
           return result;
@@ -148,7 +154,7 @@ export async function executeMaimaiPageRequest({
       console.log(
         `Retrying in ${delay}ms (attempt ${i + 1}/${requestPlan.retryCount})...`,
       );
-      await requestRuntime.sleep(delay);
+      await requestRuntime.sleep(delay, requestContext.signal);
     } finally {
       if (requestContext.onRequestLog) {
         try {

@@ -4,6 +4,7 @@ services:
       context: ..
       dockerfile: worker/Dockerfile
     restart: unless-stopped
+    stop_grace_period: 90s
     ports:
       - "${API_PORT:-3999}:3999"
       - "${HTTP_PROXY_PORT:-2222}:2222"
@@ -28,6 +29,10 @@ services:
       - MAX_PROCESS_JOBS=${MAX_PROCESS_JOBS:-16}
       - HTTP_PROXY_PASSWORD=${HTTP_PROXY_PASSWORD:?HTTP_PROXY_PASSWORD must be set}
       - WORKER_ID=${WORKER_ID:-}
+      - DXNET_WORKER_REVISION=${DXNET_WORKER_REVISION:-dev}
+      - DXNET_LANE_INTERACTIVE_CONCURRENCY=8
+      - DXNET_LANE_USER_SYNC_CONCURRENCY=16
+      - DXNET_LANE_BACKGROUND_CONCURRENCY=16
     volumes:
       - ./debug-html:/app/worker/debug-html
       - worker-data:/app/worker/data

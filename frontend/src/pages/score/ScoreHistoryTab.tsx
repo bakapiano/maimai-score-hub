@@ -8,7 +8,10 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import type { ScoreChange } from "@maimai-score-hub/shared";
+import {
+  hasScoreHistoryKeyChange,
+  type ScoreChange,
+} from "@maimai-score-hub/shared";
 import { IconDownload } from "@tabler/icons-react";
 import {
   useEffect,
@@ -28,6 +31,11 @@ import { useAuth } from "../../providers/AuthContext";
 import { useMusic } from "../../providers/MusicContext";
 import type { MusicRow } from "../../types/music";
 import { downloadBlob } from "../../utils/downloadBlob";
+import {
+  getDxStarForScore,
+  getMaxDxScoreFromNotes,
+  parseDxScore,
+} from "../../utils/dxScore";
 import { ScoreHistoryFilterPanel } from "./ScoreHistoryFilterPanel";
 import { ScoreHistoryCards } from "./ScoreHistoryCards";
 import { ScoreHistoryDateSelector } from "./ScoreHistoryDateSelector";
@@ -68,6 +76,10 @@ function readSettings(): ScoreHistorySettings {
         typeof value?.mergeSameChart === "boolean"
           ? value.mergeSameChart
           : DEFAULT_SCORE_HISTORY_SETTINGS.mergeSameChart,
+      keyChangesOnly:
+        typeof value?.keyChangesOnly === "boolean"
+          ? value.keyChangesOnly
+          : DEFAULT_SCORE_HISTORY_SETTINGS.keyChangesOnly,
     };
   } catch {
     return DEFAULT_SCORE_HISTORY_SETTINGS;
@@ -138,6 +150,26 @@ function summarizeLoadedDays(items: ScoreChange[], dayStartHour: number) {
   return [...counts.entries()]
     .map(([day, count]) => ({ day, count }))
     .sort((a, b) => b.day.localeCompare(a.day));
+}
+
+function isKeyChange(
+  change: ScoreChange,
+  musicMap: Map<string, MusicRow>,
+) {
+  const chart = musicMap.get(change.musicId)?.charts?.[change.chartIndex];
+  const maxDxScore = getMaxDxScoreFromNotes(chart?.notes);
+  return hasScoreHistoryKeyChange({
+    before: change.before,
+    after: change.after,
+    beforeDxStar: getDxStarForScore(
+      parseDxScore(change.before.dxScore),
+      maxDxScore,
+    ),
+    afterDxStar: getDxStarForScore(
+      parseDxScore(change.after.dxScore),
+      maxDxScore,
+    ),
+  });
 }
 
 function HistoryResults({
@@ -214,7 +246,9 @@ function HistoryHeader({
   const filterActive =
     settings.dayStartHour !== 6 ||
     settings.mergeSameChart !==
-      DEFAULT_SCORE_HISTORY_SETTINGS.mergeSameChart;
+      DEFAULT_SCORE_HISTORY_SETTINGS.mergeSameChart ||
+    settings.keyChangesOnly !==
+      DEFAULT_SCORE_HISTORY_SETTINGS.keyChangesOnly;
   return (
     <Group justify="space-between" align="center">
       <Title order={4} size="h5">
@@ -345,10 +379,12 @@ export function ScoreHistoryTab() {
         : [],
     [items, selectedDay, settings.dayStartHour],
   );
-  const displayItems = useMemo(
-    () => historyDisplayItems(selectedItems, settings),
-    [selectedItems, settings],
-  );
+  const displayItems = useMemo(() => {
+    const candidates = historyDisplayItems(selectedItems, settings);
+    return settings.keyChangesOnly
+      ? candidates.filter((item) => isKeyChange(item.change, musicMap))
+      : candidates;
+  }, [musicMap, selectedItems, settings]);
   const groups = useMemo(() => {
     return groupHistoryItems(displayItems, settings.dayStartHour);
   }, [displayItems, settings.dayStartHour]);
@@ -390,6 +426,7 @@ export function ScoreHistoryTab() {
       end: String(end),
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Etc/UTC",
       dayStartHour: String(settings.dayStartHour),
+      keyChangesOnly: String(settings.keyChangesOnly),
     });
     setExporting(true);
     setError(null);
@@ -439,7 +476,7 @@ export function ScoreHistoryTab() {
         filterPanel={filterPanel}
         settings={settings}
         exporting={exporting}
-        exportDisabled={!selectedDay}
+        exportDisabled={!selectedDay || displayItems.length === 0}
         onExport={() => void exportSelectedDay()}
       />
 
