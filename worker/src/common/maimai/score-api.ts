@@ -6,9 +6,18 @@ import {
   getCachedFriendVsSongs,
   setCachedFriendVsSongs,
 } from "../backend/temp-cache.ts";
-import { MAIMAI_URLS, RETRY, TIMEOUTS } from "./constants.ts";
+import {
+  FRIEND_VS_GENRES,
+  MAIMAI_URLS,
+  RETRY,
+  TIMEOUTS,
+} from "./constants.ts";
 import type { FriendVsSong } from "../types.ts";
-import { NonRetryableError } from "./infra/errors.ts";
+import {
+  CookieExpiredError,
+  MaimaiRateLimitedError,
+  NonRetryableError,
+} from "./infra/errors.ts";
 import type { MaimaiHttpClient } from "./infra/http-client.ts";
 import { parseFriendVsSongs } from "./parsers/friend-vs-parser.ts";
 
@@ -54,23 +63,28 @@ export class MaimaiScoreApi {
     }
 
     const startTime = Date.now();
-    const url = MAIMAI_URLS.friendVS(friendCode, scoreType, diff, side);
-    const result = await this.http.requestPage({
-      url,
-      policy: {
-        timeoutMs: TIMEOUTS.friendVS,
-        retryCount: RETRY.friendVSCount,
-        assertBody: (body) => {
-          if (!body.includes('<div class="friend_vs_block">')) {
-            throw new NonRetryableError(
-              "获取 Friend VS 页面失败：页面不包含 friend_vs_block，可能是好友没有添加成功",
-            );
-          }
-        },
-      },
-    });
-    const text = result.body;
-    const songs = parseFriendVsSongs(text);
+    let songs: FriendVsSong[];
+    try {
+      songs = await this.fetchFriendVsPage(
+        friendCode,
+        scoreType,
+        diff,
+        side,
+      );
+    } catch (error) {
+      if (!shouldFallbackToGenres(error, diff)) {
+        throw error;
+      }
+      console.warn(
+        `[MaimaiClient] Friend VS full page failed; falling back to genres friendCode=${friendCode} scoreType=${scoreType} diff=${diff} side=${side ?? "all"} error=${errorMessage(error)}`,
+      );
+      songs = await this.fetchFriendVsGenres(
+        friendCode,
+        scoreType,
+        diff,
+        side,
+      );
+    }
     const cost = Date.now() - startTime;
     console.log(
       `[MaimaiClient] getFriendVS friendCode=${friendCode} scoreType=${scoreType} diff=${diff} side=${side ?? "all"} songs=${songs.length} cost=${cost}ms`,
@@ -87,6 +101,108 @@ export class MaimaiScoreApi {
 
     return songs;
   }
+
+  private async fetchFriendVsGenres(
+    friendCode: string,
+    scoreType: 1 | 2,
+    diff: number,
+    side?: "win" | "lose",
+  ): Promise<FriendVsSong[]> {
+    const songs: FriendVsSong[] = [];
+    for (const genre of FRIEND_VS_GENRES) {
+      const genreSongs = await this.fetchFriendVsPage(
+        friendCode,
+        scoreType,
+        diff,
+        side,
+        genre,
+      );
+      songs.push(...genreSongs);
+      console.log(
+        `[MaimaiClient] Friend VS genre fallback friendCode=${friendCode} scoreType=${scoreType} diff=${diff} side=${side ?? "all"} genre=${genre} songs=${genreSongs.length}`,
+      );
+    }
+    return songs;
+  }
+
+  private async fetchFriendVsPage(
+    friendCode: string,
+    scoreType: 1 | 2,
+    diff: number,
+    side?: "win" | "lose",
+    genre = 99,
+  ): Promise<FriendVsSong[]> {
+    const url = MAIMAI_URLS.friendVS(
+      friendCode,
+      scoreType,
+      diff,
+      side,
+      genre,
+    );
+    const result = await this.http.requestPage({
+      url,
+      policy: {
+        timeoutMs: TIMEOUTS.friendVS,
+        retryCount: RETRY.friendVSCount,
+        assertBody: (body) => {
+          if (!body.includes('<div class="friend_vs_block">')) {
+            throw new NonRetryableError(
+              "获取 Friend VS 页面失败：页面不包含 friend_vs_block，可能是好友没有添加成功",
+            );
+          }
+        },
+      },
+    });
+    return parseFriendVsSongs(result.body);
+  }
+}
+
+function shouldFallbackToGenres(error: unknown, diff: number): boolean {
+  if (
+    diff === 10 ||
+    error instanceof CookieExpiredError ||
+    error instanceof MaimaiRateLimitedError ||
+    error instanceof NonRetryableError
+  ) {
+    return false;
+  }
+
+  let current: unknown = error;
+  const visited = new Set<unknown>();
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    if (current instanceof Error) {
+      const message = current.message.toLowerCase();
+      if (
+        current.name === "AbortError" ||
+        current.name === "TimeoutError" ||
+        message.includes("terminated") ||
+        message.includes("econnreset") ||
+        message.includes("请求超时") ||
+        message.includes("timed out")
+      ) {
+        return true;
+      }
+    }
+    if (typeof current === "object") {
+      const record = current as { cause?: unknown; code?: unknown };
+      if (
+        record.code === "ECONNRESET" ||
+        record.code === "ETIMEDOUT" ||
+        record.code === "UND_ERR_SOCKET"
+      ) {
+        return true;
+      }
+      current = record.cause;
+      continue;
+    }
+    break;
+  }
+  return false;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function getFriendVsCacheType(
