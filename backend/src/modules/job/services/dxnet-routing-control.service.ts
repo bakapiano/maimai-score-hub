@@ -15,7 +15,9 @@ import {
 const DEFAULT_CONTROL: DxnetRoutingControl = {
   epoch: 0,
   botAllowlist: null,
-  enabledClaimFlows: ['auto_recent_event', 'manual_update', 'qr_identity'],
+  // Production stopgap: keep the automatic recent-event producer disabled.
+  // Manual score updates and QR identity claims continue to use routing v2.
+  enabledClaimFlows: ['manual_update', 'qr_identity'],
   claimCanaryByFlow: {
     auto_recent_event: null,
     manual_update: null,

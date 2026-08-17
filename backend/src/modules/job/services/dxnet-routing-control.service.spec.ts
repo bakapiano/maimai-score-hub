@@ -1,6 +1,20 @@
 import { DxnetRoutingControlService } from './dxnet-routing-control.service';
 
 describe('DxnetRoutingControlService', () => {
+  it('keeps the automatic recent-event producer disabled by default', async () => {
+    const model = {
+      findOne: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(null),
+      }),
+    };
+    const service = new DxnetRoutingControlService(model as never);
+
+    await expect(service.get()).resolves.toMatchObject({
+      epoch: 0,
+      enabledClaimFlows: ['manual_update', 'qr_identity'],
+    });
+  });
+
   it('patches one canary flow without clearing the other flow', async () => {
     const current = {
       key: 'singleton',
