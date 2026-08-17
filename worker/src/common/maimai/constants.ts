@@ -99,6 +99,8 @@ export const RETRY = {
   defaultCount: 3,
   /** Friend VS 总尝试次数（包含首次请求） */
   friendVSCount: 2,
+  /** 大型 Friend VS genre 页（102/105）总尝试次数（包含首次请求） */
+  friendVSLargeGenreCount: 3,
   baseDelayMs: 1000,
   maxDelayMs: 30_000,
   rateLimitMaxCount: 3,

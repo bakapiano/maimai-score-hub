@@ -27,9 +27,11 @@ test("uses the full Friend VS page when it succeeds", async () => {
 
 test("falls back to six sequential genre pages after a terminated request", async () => {
   const urls: string[] = [];
+  const retryCounts = new Map<number, number>();
   const api = createApi(async (request) => {
     urls.push(request.url);
     const genre = genreFromUrl(request.url);
+    retryCounts.set(genre, request.policy?.retryCount ?? 0);
     if (genre === 99) {
       throw new TypeError("terminated", {
         cause: Object.assign(new Error("socket closed"), {
@@ -48,6 +50,12 @@ test("falls back to six sequential genre pages after a terminated request", asyn
     [101, 102, 103, 104, 105, 106].map((genre) => `genre-${genre}`),
   );
   assert.ok(urls.every((url) => url.includes("loseOnly=on")));
+  assert.deepEqual(
+    [99, 101, 102, 103, 104, 105, 106].map((genre) =>
+      retryCounts.get(genre),
+    ),
+    [2, 2, 3, 2, 2, 3, 2],
+  );
 });
 
 test("falls back after the worker timeout error", async () => {

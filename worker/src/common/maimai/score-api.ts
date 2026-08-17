@@ -143,7 +143,10 @@ export class MaimaiScoreApi {
       url,
       policy: {
         timeoutMs: TIMEOUTS.friendVS,
-        retryCount: RETRY.friendVSCount,
+        retryCount:
+          genre === 102 || genre === 105
+            ? RETRY.friendVSLargeGenreCount
+            : RETRY.friendVSCount,
         assertBody: (body) => {
           if (!body.includes('<div class="friend_vs_block">')) {
             throw new NonRetryableError(
