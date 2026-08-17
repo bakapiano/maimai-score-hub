@@ -16,6 +16,9 @@ interface ThrottleQueueEntry {
   sequence: number;
   batch?: BatchContext;
   resolve: () => void;
+  reject: (error: Error) => void;
+  signal?: AbortSignal;
+  onAbort?: () => void;
 }
 
 interface ThrottleClock {
@@ -94,21 +97,53 @@ export class RequestThrottle {
     this.nextFreezeDurationMs = this.freezeDurationMs;
   }
 
-  waitForSlot(priority = REQUEST_PRIORITY_BACKGROUND): Promise<void> {
+  waitForSlot(
+    priority = REQUEST_PRIORITY_BACKGROUND,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (signal?.aborted) return Promise.reject(abortError(signal));
     const batch = this.batchStorage.getStore();
-    return new Promise<void>((resolve) => {
-      this.throttleQueue.push({
+    return new Promise<void>((resolve, reject) => {
+      const entry: ThrottleQueueEntry = {
         priority,
         sequence: this.throttleSequence++,
         batch,
         resolve,
-      });
+        reject,
+        signal,
+      };
+      entry.onAbort = () => {
+        const index = this.throttleQueue.indexOf(entry);
+        if (index >= 0) {
+          this.throttleQueue.splice(index, 1);
+          reject(abortError(signal));
+        }
+      };
+      signal?.addEventListener("abort", entry.onAbort, { once: true });
+      this.throttleQueue.push(entry);
       this.pumpThrottleQueue();
     });
   }
 
-  sleep(ms: number): Promise<void> {
-    return this.clock.sleep(ms);
+  sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    if (!signal) return this.clock.sleep(ms);
+    if (signal.aborted) return Promise.reject(abortError(signal));
+    return new Promise((resolve, reject) => {
+      const onAbort = () => {
+        reject(abortError(signal));
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      void this.clock.sleep(ms).then(
+        () => {
+          signal.removeEventListener("abort", onAbort);
+          resolve();
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        },
+      );
+    });
   }
 
   private pumpThrottleQueue(): void {
@@ -146,6 +181,7 @@ export class RequestThrottle {
         }
 
         const [entry] = this.throttleQueue.splice(nextIndex, 1);
+        entry.signal?.removeEventListener("abort", entry.onAbort!);
         if (entry.batch) {
           entry.batch.count++;
           entry.resolve();
@@ -183,6 +219,12 @@ export class RequestThrottle {
     }
     return bestIndex;
   }
+}
+
+function abortError(signal?: AbortSignal): Error {
+  return signal?.reason instanceof Error
+    ? signal.reason
+    : new Error("request aborted");
 }
 
 function sleep(ms: number): Promise<void> {

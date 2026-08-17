@@ -3,6 +3,11 @@ import type * as http from "http";
 import type * as net from "net";
 
 import config from "../../common/config.ts";
+import {
+  destroySocket,
+  endHttpResponseAndDestroy,
+  endSocketAndDestroy,
+} from "./socket-lifecycle.ts";
 
 const PROXY_AUTH_REALM = 'Basic realm="maimai-worker-proxy"';
 
@@ -50,21 +55,28 @@ export function writeHttpProxyAuthRequired(
       "Content-Type": "text/plain",
       Connection: "close",
     });
-    clientRes.end("407 Proxy Authentication Required\r\n");
+    endHttpResponseAndDestroy(
+      clientRes,
+      "407 Proxy Authentication Required\r\n",
+    );
   } catch (err) {
     console.log("[Proxy] Failed to send 407:", err);
+    destroySocket(clientRes.socket);
   }
 }
 
 export function writeConnectProxyAuthRequired(clientSocket: net.Socket): void {
   try {
-    clientSocket.end(
+    endSocketAndDestroy(
+      clientSocket,
       "HTTP/1.1 407 Proxy Authentication Required\r\n" +
         `Proxy-Authenticate: ${PROXY_AUTH_REALM}\r\n` +
+        "Content-Length: 0\r\n" +
         "Connection: close\r\n" +
         "\r\n",
     );
   } catch (err) {
     console.log("[Proxy] Failed to send 407 on CONNECT:", err);
+    destroySocket(clientSocket);
   }
 }

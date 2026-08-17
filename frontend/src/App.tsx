@@ -22,7 +22,7 @@ const AboutPage = lazy(() => import("./pages/AboutPage"));
 
 function PageLoader() {
   return (
-    <Center h="100vh">
+    <Center h="100dvh">
       <Loader size="lg" type="bars" />
     </Center>
   );

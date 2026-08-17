@@ -8,11 +8,14 @@ export const BotStatusItemSchema = z
   .object({
     friendCode: z.string(),
     available: z.boolean(),
-    friendCount: z.number().nullable().optional(),
+    friendCount: z.number().int().nonnegative().nullable().optional(),
     friendsUpdatedAt: z.string().nullable().optional(),
     lastReportedAt: z.string().optional(),
     remark: z.string().nullable().optional(),
     cabinetUserId: z.number().int().nullable().optional(),
+    workerId: z.string().nullable().optional(),
+    revision: z.string().nullable().optional(),
+    consumersReady: z.array(z.string()).optional(),
   })
   .passthrough();
 
@@ -21,8 +24,11 @@ export const ReportBotStatusBodySchema = z.object({
     z.object({
       friendCode: z.string(),
       available: z.boolean(),
-      friendCount: z.number().optional(),
-      friendsUpdatedAt: z.string().optional(),
+      friendCount: z.number().int().nonnegative().optional(),
+      friendsUpdatedAt: z.string().datetime().optional(),
+      workerId: z.string().min(1).optional(),
+      revision: z.string().min(1).optional(),
+      consumersReady: z.array(z.string().min(1)).max(6).optional(),
       /**
        * Optional rich friend list for the QR-login reverse-mapping
        * feature. Workers populate this on every status tick when the bot
@@ -58,6 +64,33 @@ export const UpdateBotRemarkBodySchema = z.object({
 
 export const UpdateBotCabinetUserIdBodySchema = z.object({
   cabinetUserId: z.number().int().positive().nullable(),
+});
+
+export const DxnetClaimFlowSchema = z.enum([
+  "auto_recent_event",
+  "manual_update",
+  "qr_identity",
+]);
+
+const DxnetClaimCanaryByFlowSchema = z
+  .object({
+    auto_recent_event: z.array(z.string()).nullable().optional(),
+    manual_update: z.array(z.string()).nullable().optional(),
+  })
+  .default({});
+
+export const DxnetRoutingControlSchema = z.object({
+  epoch: z.number().int().nonnegative(),
+  botAllowlist: z.array(z.string()).nullable(),
+  enabledClaimFlows: z.array(DxnetClaimFlowSchema),
+  claimCanaryByFlow: DxnetClaimCanaryByFlowSchema,
+});
+
+export const PatchDxnetRoutingControlBodySchema = z.object({
+  expectedEpoch: z.number().int().nonnegative(),
+  botAllowlist: z.array(z.string()).nullable().optional(),
+  enabledClaimFlows: z.array(DxnetClaimFlowSchema).optional(),
+  claimCanaryByFlow: DxnetClaimCanaryByFlowSchema.optional(),
 });
 
 export const AdminStatsSchema = z
@@ -102,3 +135,7 @@ export type UpdateBotCabinetUserIdBody = z.infer<
   typeof UpdateBotCabinetUserIdBodySchema
 >;
 export type SearchJobsQuery = z.infer<typeof SearchJobsQuerySchema>;
+export type DxnetRoutingControl = z.infer<typeof DxnetRoutingControlSchema>;
+export type PatchDxnetRoutingControlBody = z.infer<
+  typeof PatchDxnetRoutingControlBodySchema
+>;

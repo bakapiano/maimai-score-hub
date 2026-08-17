@@ -5,7 +5,6 @@
 - [] 铺面详细 / 游玩人数 / 铺面评论 / rank
 - [] 中二支持
 - [] 离线模式 - 仅使用前端 cache 在服务器挂了的时候
-- [] 保护 job upsert 相关 API
 - [] 后台直接 upsert TODO list
 - [] fix lynx 数据源（线上 version 没法正确map， why？）(落雪的 dx 谱 id 和水鱼的有出入)
 - [] add "https://dxrating.net/search" as source
@@ -67,3 +66,17 @@ get_user_recent event 很容易用 add rival 把好友数量撑爆到100
 [] OCR 封面 / 曲名
 [] 二维码更新成绩
 [] 别名搜索
+[] recovry 信号触发 or 监测是否留在网页
+[] 二维码可以直接创建账号 不再要求绑死 freidn code / 后续可通过额外触发 job 再次绑定 freidn code
+
+07/17
+[] 主键稳定到 user id，而不是 friend code（fuck 为啥以前用这个当主键）
+[] 避免不合法 friend code 创建更多 user item
+[] auto update -> full update, 考虑找到更新的铺面（rival change 、 fc change，然后只更新对应难度）减少 dx net api call
+
+07/18
+[] 用户画像 - 比如用户是 绿 / 黄 铺面玩家，自动更新触发 绿黄，红紫白类似
+
+07/20
+[] clean up docker 镜像 定期
+[] TODO 重构 铺面详细

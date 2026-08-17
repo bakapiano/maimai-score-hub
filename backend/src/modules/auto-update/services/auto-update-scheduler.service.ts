@@ -29,10 +29,11 @@ import {
   countRivalDetails,
 } from './auto-update-scheduler-timing.service';
 import { AutoUpdateActivityService } from './auto-update-activity.service';
+import { DxnetRoutingControlService } from '../../job/services/dxnet-routing-control.service';
+import { RedisService } from '../../../common/redis/redis.service';
 
 const SCHEDULER_VERSION = 'rival-first-v1';
 const SETTLED_FULL_UPDATE_SOURCE = 'auto_update_settled_full_update';
-const SETTLED_FULL_UPDATE_PRIORITY = 1;
 const FCFS_REASONS: AutoUpdateFcfsReason[] = [
   'rival_hash_changed',
   'map_delta',
@@ -89,6 +90,8 @@ export class AutoUpdateSchedulerService
     private readonly timing: AutoUpdateSchedulerTimingService,
     private readonly activity: AutoUpdateActivityService,
     private readonly leases: RedisLeaseService,
+    private readonly routingControl: DxnetRoutingControlService,
+    private readonly redis: RedisService,
   ) {}
 
   onModuleInit() {
@@ -528,10 +531,8 @@ export class AutoUpdateSchedulerService
       await this.jobs.create({
         friendCode: state.friendCode,
         jobType: 'update_score',
-        priority: SETTLED_FULL_UPDATE_PRIORITY,
         diffsToScrape: null,
         cancelActiveJobs: false,
-        removeFriendAfterComplete: true,
         context: {
           source: SETTLED_FULL_UPDATE_SOURCE,
           lastActivityAt: state.lastAutoUpdateActivityAt?.toISOString() ?? null,
@@ -956,24 +957,32 @@ export class AutoUpdateSchedulerService
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
+  // The success/failure branches intentionally update both scheduler state and
+  // its audit task together.
+
   private async maybeEnqueueFcfs(
     state: AutoUpdateProbeStateEntity,
     reason: AutoUpdateFcfsReason,
-    _now: Date,
+    now: Date,
   ): Promise<void> {
-    void _now;
-    this.logger.warn(
-      `FCFS enrichment disabled temporarily; skip addRival/get_user_recent_event fc=${state.friendCode} reason=${reason}`,
-    );
-    return;
-
-    /*
-     * Temporarily disabled as a production stopgap: this path uses sdgb
-     * addRival before enqueueing get_user_recent_event and can rapidly fill
-     * bot friend lists when many users are due.
-     *
+    const control = await this.routingControl.get();
+    if (
+      !this.routingControl.isClaimFlowEnabled(
+        control,
+        'auto_recent_event',
+        state.friendCode,
+      )
+    ) {
+      this.logger.debug(
+        `skip FCFS claim producer fc=${state.friendCode}: flow disabled`,
+      );
+      return;
+    }
     if (state.nextRecentEventAt && state.nextRecentEventAt > now) {
+      await this.deferFcfsUntilCooldown(state, reason, now);
+      return;
+    }
+    if (!(await this.acquireFcfsProducerSlot(now))) {
       await this.deferFcfsUntilCooldown(state, reason, now);
       return;
     }
@@ -993,24 +1002,10 @@ export class AutoUpdateSchedulerService
     });
 
     try {
-      const bot = await this.botStatus.pickAvailableCabinetBot();
-      if (!bot) {
-        throw new Error('no available cabinet bot for fcfs enrichment');
-      }
-
-      const addRival = await this.sdgb.addRival(
-        {
-          botCabinetUserId: bot.cabinetUserId,
-          targetCabinetUserId: state.cabinetUserId,
-        },
-        { tag: `auto-fcfs-add:${state.friendCode}`, timeoutMs: 120_000 },
-      );
       const { jobId } = await this.jobs.create({
         friendCode: state.friendCode,
         jobType: 'get_user_recent_event',
-        botUserFriendCode: bot.friendCode,
-        runAt: new Date(now.getTime() + this.timing.recentEventDelayMs),
-        removeFriendAfterComplete: true,
+        source: 'auto_update',
         cancelActiveJobs: false,
         context: {
           autoUpdateFcfs: true,
@@ -1044,8 +1039,6 @@ export class AutoUpdateSchedulerService
               metrics: {
                 reason,
                 dxnetJobId: jobId,
-                botFriendCode: bot.friendCode,
-                addRival,
               },
             },
           },
@@ -1087,7 +1080,21 @@ export class AutoUpdateSchedulerService
       ]);
       throw err;
     }
-    */
+  }
+
+  private async acquireFcfsProducerSlot(now: Date): Promise<boolean> {
+    const minuteKey = this.redis.key(
+      `dxnet:auto-recent:minute:${now.toISOString().slice(0, 16)}`,
+    );
+    const burstKey = this.redis.key(
+      `dxnet:auto-recent:burst:${Math.floor(now.getTime() / 5_000)}`,
+    );
+    const burst = await this.redis.incrementWithExpiry(burstKey, 10);
+    if (burst > 6) {
+      return false;
+    }
+    const minute = await this.redis.incrementWithExpiry(minuteKey, 120);
+    return minute <= 12;
   }
 
   private async deferFcfsUntilCooldown(

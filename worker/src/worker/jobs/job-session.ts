@@ -1,4 +1,9 @@
-import type { Job, JobPatch, JobStage } from "../../common/types.ts";
+import type {
+  Job,
+  JobExecutionIdentity,
+  JobPatch,
+  JobStage,
+} from "../../common/types.ts";
 
 import type { MaimaiClient } from "../../common/maimai/client.ts";
 import type { JobExecutionContext } from "./handlers/index.ts";
@@ -11,8 +16,17 @@ const TRANSIENT_PATCH_ERROR =
 export class JobSession {
   readonly ctx: JobExecutionContext;
   private aborted = false;
+  private readonly execution: JobExecutionIdentity;
+  private readonly abortController: AbortController;
 
-  constructor(job: Job, client: MaimaiClient) {
+  constructor(
+    job: Job,
+    client: MaimaiClient,
+    execution: JobExecutionIdentity,
+    abortController: AbortController,
+  ) {
+    this.execution = execution;
+    this.abortController = abortController;
     this.ctx = {
       job,
       client,
@@ -30,11 +44,18 @@ export class JobSession {
   }
 
   get isAborted(): boolean {
-    return this.aborted;
+    return this.aborted || this.abortController.signal.aborted;
   }
 
-  abort(): void {
+  get signal(): AbortSignal {
+    return this.abortController.signal;
+  }
+
+  abort(reason = new Error("job aborted")): void {
     this.aborted = true;
+    if (!this.abortController.signal.aborted) {
+      this.abortController.abort(reason);
+    }
   }
 
   async completeJob(): Promise<void> {
@@ -86,7 +107,12 @@ export class JobSession {
       }
 
       try {
-        this.ctx.job = await updateJob(this.ctx.job.id, patch);
+        this.ctx.job = await updateJob(
+          this.ctx.job.id,
+          patch,
+          this.signal,
+          this.execution,
+        );
         return this.ctx.job;
       } catch (err) {
         lastErr = err;
@@ -94,9 +120,11 @@ export class JobSession {
         if (!TRANSIENT_PATCH_ERROR.test(msg)) {
           throw err;
         }
-        console.warn(
-          `[JobHandler] Job ${this.ctx.job.id} applyPatch attempt ${attempt + 1}/${PATCH_BACKOFF_MS.length} failed: ${msg}; will retry`,
-        );
+        if (attempt + 1 < PATCH_BACKOFF_MS.length) {
+          console.warn(
+            `[JobHandler] Job ${this.ctx.job.id} applyPatch attempt ${attempt + 1}/${PATCH_BACKOFF_MS.length} failed: ${msg}; will retry`,
+          );
+        }
       }
     }
 
@@ -108,15 +136,39 @@ export class JobSession {
   }
 
   async forceFail(error: string): Promise<void> {
-    this.ctx.job = await updateJob(this.ctx.job.id, {
-      status: "failed",
-      error,
-      runAt: null,
-      updatedAt: new Date(),
-    });
+    this.ctx.job = await updateJob(
+      this.ctx.job.id,
+      {
+        status: "failed",
+        error,
+        runAt: null,
+        updatedAt: new Date(),
+      },
+      undefined,
+      this.execution,
+    );
   }
 
   sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    if (this.signal.aborted) {
+      return Promise.reject(abortError(this.signal));
+    }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.signal.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(abortError(this.signal));
+      };
+      this.signal.addEventListener("abort", onAbort, { once: true });
+    });
   }
+}
+
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new Error("job aborted");
 }

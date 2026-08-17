@@ -245,6 +245,28 @@ export class UsersService {
     return updated.toObject();
   }
 
+  async bindCabinetUserIdIfUnbound(
+    id: string,
+    cabinetUserId: number,
+  ): Promise<boolean> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('User not found');
+    }
+    const updated = await this.userModel.findOneAndUpdate(
+      { _id: id, cabinetUserId: null },
+      { $set: { cabinetUserId } },
+      { new: true },
+    );
+    if (updated) {
+      return true;
+    }
+    const current = await this.userModel.findById(id).select('cabinetUserId');
+    if (!current) {
+      throw new NotFoundException('User not found');
+    }
+    return current.cabinetUserId === cabinetUserId;
+  }
+
   async clearProberImportToken(
     friendCode: string,
     provider: 'divingFish' | 'lxns',

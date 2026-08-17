@@ -21,6 +21,8 @@ export interface SdgbJobView {
   jobType: SdgbJobType;
   lane: StoredSdgbWorkerLane;
   routingVersion: number;
+  priority: number;
+  idempotencyKey: string | null;
   status: SdgbJobStatus;
   stage: SdgbJobStage | null;
   cleanupStatus: SdgbSessionCleanupStatus;
@@ -103,6 +105,8 @@ export function toSdgbJobView(
     jobType: doc.jobType,
     lane: doc.lane ?? getSdgbWorkerLaneForJobType(doc.jobType),
     routingVersion: doc.routingVersion ?? 1,
+    priority: doc.priority ?? 0,
+    idempotencyKey: doc.idempotencyKey ?? null,
     status: doc.status,
     stage: doc.stage ?? null,
     ...cleanupView(doc),

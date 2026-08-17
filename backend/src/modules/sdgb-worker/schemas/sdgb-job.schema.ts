@@ -52,6 +52,12 @@ export class SdgbJobEntity {
   @Prop({ required: true, type: Number, default: 1 })
   routingVersion!: number;
 
+  @Prop({ required: true, type: Number, min: 0, max: 4, default: 0 })
+  priority!: number;
+
+  @Prop({ type: String, default: null })
+  idempotencyKey!: string | null;
+
   @Prop({ required: true, type: String, index: true })
   status!: SdgbJobStatus;
 
@@ -167,6 +173,14 @@ SdgbJobSchema.index({ status: 1, jobType: 1 }, { name: 'status_type' });
 SdgbJobSchema.index(
   { status: 1, lane: 1, retryAt: 1, createdAt: 1 },
   { name: 'status_lane_retry' },
+);
+SdgbJobSchema.index(
+  { idempotencyKey: 1 },
+  {
+    name: 'idempotency_key_unique',
+    unique: true,
+    partialFilterExpression: { idempotencyKey: { $type: 'string' } },
+  },
 );
 SdgbJobSchema.index(
   { executionWorkerId: 1, status: 1 },

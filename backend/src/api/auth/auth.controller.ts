@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   Post,
+  NotFoundException,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -130,6 +131,9 @@ export class AuthController {
       return await this.qrLogin.pollAttempt(attemptId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (message === 'attempt not found') {
+        throw new NotFoundException({ error: message });
+      }
       throw new BadRequestException(message);
     }
   }

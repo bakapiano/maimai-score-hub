@@ -4,6 +4,7 @@ import type { FriendInfo } from "../../types.ts";
 import type { PeriodicTask } from "./index.ts";
 import { WORKER_DEFAULTS } from "../../config.ts";
 import { postBotStatus } from "../../backend/bots.ts";
+import { getDxnetWorkerRuntimeHealth } from "../../../worker/runtime/health-registry.ts";
 
 type BotStatusFriend = Omit<FriendInfo, "isFavorite">;
 
@@ -13,6 +14,9 @@ interface BotStatusPayload {
   friendCount?: number;
   friends?: BotStatusFriend[];
   friendsUpdatedAt?: string;
+  workerId?: string;
+  revision?: string;
+  consumersReady?: string[];
 }
 
 const FRIEND_LIST_RECENT_MS = Number(
@@ -88,7 +92,11 @@ export async function reportBotHeartbeat(manager: BotManager): Promise<void> {
   if (!bot) return;
 
   if (bot.expired) {
-    if (await postStatus({ friendCode: bot.friendCode, available: false })) {
+    if (
+      await postStatus(
+        withWorkerMetadata({ friendCode: bot.friendCode, available: false }),
+      )
+    ) {
       lastReportedSnapshotKeys.set(manager, null);
     }
     return;
@@ -96,9 +104,11 @@ export async function reportBotHeartbeat(manager: BotManager): Promise<void> {
 
   const snapshot = getFriendListSnapshot(manager);
   await postStatus(
-    snapshot
-      ? buildHeartbeatFromSnapshot(bot, snapshot)
-      : { friendCode: bot.friendCode, available: true },
+    withWorkerMetadata(
+      snapshot
+        ? buildHeartbeatFromSnapshot(bot, snapshot)
+        : { friendCode: bot.friendCode, available: true },
+    ),
   );
 }
 
@@ -157,7 +167,9 @@ async function postSnapshotStatus(
   ) {
     return;
   }
-  if (await postStatus(buildStatusFromSnapshot(bot, snapshot))) {
+  if (
+    await postStatus(withWorkerMetadata(buildStatusFromSnapshot(bot, snapshot)))
+  ) {
     lastReportedSnapshotKeys.set(manager, snapshotKey);
   }
 }
@@ -191,6 +203,19 @@ function buildStatusFromSnapshot(
     friendCount: list.length,
     friendsUpdatedAt: snapshot.updatedAt.toISOString(),
     friends: list.map(toBotStatusFriend),
+  };
+}
+
+function withWorkerMetadata(bot: BotStatusPayload): BotStatusPayload {
+  const health = getDxnetWorkerRuntimeHealth();
+  return {
+    ...bot,
+    workerId:
+      process.env.WORKER_ID ||
+      `dxnet-worker-${process.env.HOSTNAME || "unknown"}`,
+    revision:
+      process.env.DXNET_WORKER_REVISION || process.env.DEPLOY_REVISION || "dev",
+    consumersReady: health?.consumersReady ?? [],
   };
 }
 

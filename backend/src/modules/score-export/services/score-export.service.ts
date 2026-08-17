@@ -8,7 +8,10 @@ import type { Model } from 'mongoose';
 import { loadImage } from '@napi-rs/canvas';
 import { join } from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
-import type { ScoreHistoryExportQuery } from '@maimai-score-hub/shared';
+import {
+  hasScoreHistoryKeyChange,
+  type ScoreHistoryExportQuery,
+} from '@maimai-score-hub/shared';
 
 import { CoverService } from '../../cover/services/cover.service';
 import { MusicEntity } from '../../music/schemas/music.schema';
@@ -111,7 +114,7 @@ export class ScoreExportService {
 
     return renderBest50Image(
       {
-        total: summary.totalSum,
+        rating: Math.round(summary.totalSum),
         newSum: summary.newSum,
         oldSum: summary.oldSum,
         newCards,
@@ -147,7 +150,7 @@ export class ScoreExportService {
       // Profile is optional, continue without it
     }
 
-    const rating = profile?.rating ?? 0;
+    const rating = this.calculateCurrentRating(scores);
 
     return renderLevelScoresImage(
       current,
@@ -179,7 +182,7 @@ export class ScoreExportService {
     current = this.filterRemasterForVersion(current, versionKey);
     const profile = await this.loadOptionalProfile(friendCode);
 
-    const rating = profile?.rating ?? 0;
+    const rating = this.calculateCurrentRating(scores);
 
     return renderVersionScoresImage(
       current,
@@ -214,8 +217,26 @@ export class ScoreExportService {
 
     const musics = (await this.musicModel.find().lean()) as MusicRow[];
     const musicMap = new Map(musics.map((music) => [music.id, music]));
-    const cards = this.mergeHistoryCards(rows, musicMap);
-    const profile = await this.loadOptionalProfile(friendCode);
+    const mergedCards = this.mergeHistoryCards(rows, musicMap);
+    const cards = query.keyChangesOnly
+      ? mergedCards.filter((card) =>
+          hasScoreHistoryKeyChange({
+            before: card.before,
+            after: card.after,
+            beforeDxStar: card.beforeDxStar,
+            afterDxStar: card.afterDxStar,
+          }),
+        )
+      : mergedCards;
+    if (!cards.length) {
+      throw new NotFoundException(
+        'No score history matches the selected filters',
+      );
+    }
+    const [profile, { scores }] = await Promise.all([
+      this.loadOptionalProfile(friendCode),
+      this.loadData(friendCode, false),
+    ]);
 
     return renderScoreHistoryImage(
       {
@@ -224,6 +245,7 @@ export class ScoreExportService {
         timeZone: query.timeZone,
         cards,
         profile,
+        rating: this.calculateCurrentRating(scores),
       },
       (musicId) => this.loadCoverImage(musicId),
       (url) => this.loadRemoteImage(url),
@@ -462,6 +484,10 @@ export class ScoreExportService {
     } catch {
       return null;
     }
+  }
+
+  private calculateCurrentRating(scores: SyncScore[]): number {
+    return Math.round(buildRatingSummary(scores)?.totalSum ?? 0);
   }
 
   async generateImagesForFriendCode(

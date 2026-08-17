@@ -10,11 +10,13 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
-import type { Model } from 'mongoose';
+import type { Model, QueryFilter } from 'mongoose';
 import { Queue, QueueEvents } from 'bullmq';
 import {
   SDGB_QUEUE_NAME_BY_LANE,
+  DXNET_PRIORITY,
   getSdgbWorkerLaneForJobType,
+  toDxnetBullmqPriority,
   type SdgbJobPatchBody,
   type SdgbWorkerJobData,
   type SdgbWorkerLane,
@@ -121,15 +123,26 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     requesterTag?: string | null;
     ownerUserId?: string | null;
     ownerFriendCode?: string | null;
+    priority?: number;
+    idempotencyKey?: string | null;
   }): Promise<SdgbJobView> {
     const id = randomUUID();
     const now = new Date();
     const lane = getSdgbWorkerLaneForJobType(input.jobType);
-    const doc = await this.model.create({
+    const priority =
+      input.priority ??
+      (input.jobType === 'scan_qr' || input.jobType === 'get_music_score'
+        ? DXNET_PRIORITY.immediate
+        : input.jobType === 'add_rival'
+          ? DXNET_PRIORITY.background
+          : DXNET_PRIORITY.maintenance);
+    const values = {
       id,
       jobType: input.jobType,
       lane,
       routingVersion: 1,
+      priority,
+      idempotencyKey: input.idempotencyKey ?? null,
       status: 'queued',
       stage: input.jobType === 'get_music_score' ? 'queued' : null,
       cleanupStatus: 'not_required',
@@ -157,29 +170,13 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       requesterTag: input.requesterTag ?? null,
       ownerUserId: input.ownerUserId ?? null,
       ownerFriendCode: input.ownerFriendCode ?? null,
-      createdAt: now,
-      updatedAt: now,
-    });
-    try {
-      await this.addBullmqJob(id, input.jobType, 0);
-    } catch (err) {
-      const message = `failed to enqueue sdgb BullMQ job: ${errorMessage(err)}`;
-      await this.model.updateOne(
-        { id, status: 'queued' },
-        {
-          $set: {
-            status: 'failed',
-            error: message,
-            errorCode: 'QUEUE_ENQUEUE_FAILED',
-            updatedAt: new Date(),
-          },
-          ...(input.jobType === 'get_music_score'
-            ? { $unset: { 'payload.qrCode': 1 } }
-            : {}),
-        },
-      );
-      throw err;
+    };
+    let doc = await this.createOrReuseJob(values, input.idempotencyKey ?? null);
+    if (doc.id !== id) {
+      doc = await this.recoverQueueEnqueueFailure(doc);
+      return toView(doc.toObject() as SdgbJobEntity);
     }
+    await this.enqueueBullmqDelivery(doc);
     this.observability.recordJobTimelineEvent({
       ts: now,
       jobId: id,
@@ -189,9 +186,100 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       toStatus: 'queued',
       attrs: {
         requesterTag: input.requesterTag ?? '',
+        priority,
       },
     });
     return toView(doc.toObject() as SdgbJobEntity);
+  }
+
+  private async createOrReuseJob(
+    values: Record<string, unknown>,
+    idempotencyKey: string | null,
+  ): Promise<SdgbJobDocument> {
+    if (!idempotencyKey) {
+      return this.model.create(values);
+    }
+    const filter: QueryFilter<SdgbJobDocument> = {
+      idempotencyKey: { $eq: idempotencyKey, $type: 'string' as const },
+    };
+    try {
+      return await this.model.findOneAndUpdate(
+        filter,
+        { $setOnInsert: values },
+        { upsert: true, new: true },
+      );
+    } catch (error) {
+      if (!isDuplicateKey(error)) {
+        throw error;
+      }
+      const existing = await this.model.findOne(filter);
+      if (!existing) {
+        throw error;
+      }
+      return existing;
+    }
+  }
+
+  private async recoverQueueEnqueueFailure(
+    doc: SdgbJobDocument,
+  ): Promise<SdgbJobDocument> {
+    if (
+      doc.status !== 'failed' ||
+      doc.errorCode !== 'QUEUE_ENQUEUE_FAILED' ||
+      doc.outcomeUnknown
+    ) {
+      return doc;
+    }
+    const recovered = await this.model.findOneAndUpdate(
+      {
+        id: doc.id,
+        status: 'failed',
+        errorCode: 'QUEUE_ENQUEUE_FAILED',
+        outcomeUnknown: { $ne: true },
+      },
+      {
+        $set: {
+          status: 'queued',
+          error: null,
+          errorCode: null,
+          updatedAt: new Date(),
+        },
+      },
+      { new: true },
+    );
+    if (!recovered) {
+      return (await this.model.findOne({ id: doc.id })) ?? doc;
+    }
+    await this.enqueueBullmqDelivery(recovered);
+    return recovered;
+  }
+
+  private async enqueueBullmqDelivery(doc: SdgbJobDocument): Promise<void> {
+    try {
+      await this.addBullmqJob(
+        doc.id,
+        doc.jobType,
+        doc.attempt ?? 0,
+        0,
+        doc.priority,
+      );
+    } catch (error) {
+      await this.model.updateOne(
+        { id: doc.id, status: 'queued' },
+        {
+          $set: {
+            status: 'failed',
+            error: `failed to enqueue sdgb BullMQ job: ${errorMessage(error)}`,
+            errorCode: 'QUEUE_ENQUEUE_FAILED',
+            updatedAt: new Date(),
+          },
+          ...(doc.jobType === 'get_music_score'
+            ? { $unset: { 'payload.qrCode': 1 } }
+            : {}),
+        },
+      );
+      throw error;
+    }
   }
 
   async getEntity(jobId: string): Promise<SdgbJobEntity> {
@@ -385,6 +473,7 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
         updated.jobType,
         updated.attempt,
         Math.max(0, retryAt.getTime() - Date.now()),
+        updated.priority,
       ).catch((error: unknown) => {
         this.logger.warn(
           'Failed to enqueue sdgb retry job=' +
@@ -557,11 +646,29 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     throw new Error(`sdgb job ${jobId} timed out after ${timeoutMs}ms`);
   }
 
+  async waitForTerminal(
+    jobId: string,
+    opts: { timeoutMs?: number; pollIntervalMs?: number } = {},
+  ): Promise<SdgbJobView> {
+    const timeoutMs = opts.timeoutMs ?? 90_000;
+    const pollIntervalMs = opts.pollIntervalMs ?? 500;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const job = await this.get(jobId);
+      if (job.status === 'completed' || job.status === 'failed') {
+        return job;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+    throw new Error(`sdgb job ${jobId} timed out after ${timeoutMs}ms`);
+  }
+
   private async addBullmqJob(
     jobId: string,
     jobType: SdgbJobType,
     attempt: number,
     delay = 0,
+    priority?: number,
   ): Promise<void> {
     const lane = getSdgbWorkerLaneForJobType(jobType);
     await this.sdgbQueues[lane].add(
@@ -569,7 +676,7 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       { jobId, attempt },
       {
         jobId: this.deliveryJobId(jobId, attempt),
-        priority: this.bullmqPriority(jobType),
+        priority: this.bullmqPriority(jobType, priority),
         ...(delay > 0 ? { delay } : {}),
       },
     );
@@ -610,14 +717,16 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private bullmqPriority(jobType: SdgbJobType): number {
-    if (jobType === 'scan_qr' || jobType === 'get_music_score') {
-      return 1;
+  private bullmqPriority(jobType: SdgbJobType, priority?: number): number {
+    if (getSdgbWorkerLaneForJobType(jobType) === 'probe') {
+      return 10;
     }
-    if (jobType === 'add_rival') {
-      return 5;
-    }
-    return 10;
+    return toDxnetBullmqPriority(
+      priority ??
+        (jobType === 'scan_qr' || jobType === 'get_music_score'
+          ? DXNET_PRIORITY.immediate
+          : DXNET_PRIORITY.background),
+    );
   }
 
   private async markBullmqJobFailed(
@@ -706,6 +815,7 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
           job.jobType,
           job.attempt ?? 0,
           Math.max(0, (job.retryAt?.getTime() ?? Date.now()) - Date.now()),
+          job.priority,
         );
         repaired += 1;
       } catch (err) {
@@ -723,4 +833,13 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       );
     }
   }
+}
+
+function isDuplicateKey(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: number }).code === 11000
+  );
 }

@@ -5,6 +5,7 @@ import { runMaintenanceWithLease } from '../../../common/redis/redis-lease.defau
 import { RedisLeaseService } from '../../../common/redis/redis-lease.service';
 import { JobEntity } from '../../job/schemas/job.schema';
 import { BotStatusEntity } from '../schemas/bot-status.schema';
+import { getDxnetWorkerQueueNames } from '@maimai-score-hub/shared';
 
 export interface BotStatus {
   friendCode: string;
@@ -14,12 +15,16 @@ export interface BotStatus {
   friendsUpdatedAt: string | null;
   remark: string | null;
   cabinetUserId: number | null;
+  workerId: string | null;
+  revision: string | null;
+  consumersReady: string[];
 }
 
 const DXNET_BOT_FRIEND_LIMIT = (() => {
   const parsed = Number(process.env.DXNET_BOT_FRIEND_LIMIT ?? 80);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 90;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 80;
 })();
+const DXNET_BOT_SOFT_FRIEND_LIMIT = 50;
 
 /**
  * Bot 状态管理服务
@@ -64,6 +69,9 @@ export class BotStatusService implements OnModuleDestroy {
       available: boolean;
       friendCount?: number;
       friendsUpdatedAt?: string;
+      workerId?: string;
+      revision?: string;
+      consumersReady?: string[];
     }[],
   ): Promise<void> {
     const now = new Date();
@@ -91,6 +99,9 @@ export class BotStatusService implements OnModuleDestroy {
               friendCount: bot.friendCount ?? prev?.friendCount ?? null,
               friendsUpdatedAt:
                 friendsUpdatedAt ?? prev?.friendsUpdatedAt ?? null,
+              workerId: bot.workerId ?? null,
+              revision: bot.revision ?? null,
+              consumersReady: bot.consumersReady ?? [],
             },
           },
           upsert: true,
@@ -126,6 +137,9 @@ export class BotStatusService implements OnModuleDestroy {
           : null,
         remark: doc.remark ?? null,
         cabinetUserId: doc.cabinetUserId ?? null,
+        workerId: doc.workerId ?? null,
+        revision: doc.revision ?? null,
+        consumersReady: doc.consumersReady ?? [],
       };
     });
   }
@@ -138,21 +152,25 @@ export class BotStatusService implements OnModuleDestroy {
     return doc?.friendCount ?? null;
   }
 
-  /**
-   * Pick an available DXNet bot with friend capacity. Active job count is the
-   * primary load signal; friendCount is a capacity gate and tie-breaker.
-   */
-  async pickAvailableBot(): Promise<{ friendCode: string } | null> {
-    const all = await this.getAll();
-    const candidates = all.filter(
-      (b) => b.available && this.hasFriendCapacity(b),
-    );
-    if (candidates.length === 0) {
-      return null;
-    }
+  async getByFriendCode(friendCode: string): Promise<BotStatus | null> {
+    const rows = await this.getAll();
+    return rows.find((row) => row.friendCode === friendCode) ?? null;
+  }
 
-    const [pick] = await this.sortByPickPriority(candidates);
-    return { friendCode: pick.friendCode };
+  async getHealthyBots(
+    allowlist: string[] | null,
+    options: { cabinetRequired?: boolean } = {},
+  ): Promise<BotStatus[]> {
+    const cutoff = Date.now() - 90_000;
+    return (await this.getAll()).filter(
+      (bot) =>
+        bot.available &&
+        !!bot.workerId &&
+        this.hasExpectedConsumers(bot) &&
+        new Date(bot.lastReportedAt).getTime() >= cutoff &&
+        (allowlist === null || allowlist.includes(bot.friendCode)) &&
+        (!options.cabinetRequired || bot.cabinetUserId !== null),
+    );
   }
 
   /**
@@ -200,10 +218,14 @@ export class BotStatusService implements OnModuleDestroy {
    * Convenience: pick an available bot whose cabinetUserId is set, with
    * the lowest current friend-list load. Returns null if none qualifies.
    *
-   * Only filters on `available` (worker is reporting in regularly) +
-   * `cabinetUserId` (admin has configured the sdgb id).
+   * Requires a fresh routing heartbeat, the exact six consumers, a cabinet
+   * binding, and a fresh friend snapshot below the soft capacity limit.
    */
-  async pickAvailableCabinetBot(): Promise<{
+  async pickAvailableCabinetBot(
+    options: {
+      allowlist?: string[] | null;
+    } = {},
+  ): Promise<{
     friendCode: string;
     cabinetUserId: number;
   } | null> {
@@ -211,9 +233,10 @@ export class BotStatusService implements OnModuleDestroy {
     const candidates = all.filter(
       (b) =>
         b.available &&
+        this.matchesRoutingSelection(b, options) &&
         b.cabinetUserId !== null &&
         b.cabinetUserId !== undefined &&
-        this.hasFriendCapacity(b),
+        this.hasFreshFriendCapacity(b),
     );
     if (candidates.length === 0) {
       return null;
@@ -223,11 +246,41 @@ export class BotStatusService implements OnModuleDestroy {
     return { friendCode: pick.friendCode, cabinetUserId: pick.cabinetUserId! };
   }
 
-  private hasFriendCapacity(bot: { friendCount: number | null }): boolean {
+  hasExpectedConsumers(
+    bot: Pick<BotStatus, 'friendCode' | 'consumersReady'>,
+  ): boolean {
+    const expected = getDxnetWorkerQueueNames(bot.friendCode);
+    const actual = new Set(bot.consumersReady);
     return (
-      bot.friendCount === null ||
-      bot.friendCount === undefined ||
-      bot.friendCount < DXNET_BOT_FRIEND_LIMIT
+      actual.size === expected.length &&
+      expected.every((queueName) => actual.has(queueName))
+    );
+  }
+
+  private hasFreshFriendCapacity(
+    bot: Pick<BotStatus, 'friendCount' | 'friendsUpdatedAt'>,
+  ): boolean {
+    return (
+      bot.friendCount !== null &&
+      bot.friendCount < DXNET_BOT_SOFT_FRIEND_LIMIT &&
+      !!bot.friendsUpdatedAt &&
+      Date.now() - new Date(bot.friendsUpdatedAt).getTime() <= 5 * 60_000
+    );
+  }
+
+  private matchesRoutingSelection(
+    bot: BotStatus,
+    options: {
+      allowlist?: string[] | null;
+    },
+  ): boolean {
+    return (
+      !!bot.workerId &&
+      this.hasExpectedConsumers(bot) &&
+      Date.now() - new Date(bot.lastReportedAt).getTime() <= 90_000 &&
+      (options.allowlist === undefined ||
+        options.allowlist === null ||
+        options.allowlist.includes(bot.friendCode))
     );
   }
 
@@ -310,23 +363,36 @@ export class BotStatusService implements OnModuleDestroy {
     }
 
     signal?.throwIfAborted();
-    const result = await this.jobModel.updateMany(
+    const claimResult = await this.jobModel.updateMany(
       {
         botUserFriendCode: { $in: unavailableBots },
         status: { $in: ['queued', 'processing'] },
+        completionPending: { $ne: true },
+        'routing.version': 2,
+        'routing.assignmentMode': 'claim',
       },
       {
         $set: {
-          status: 'failed',
-          error: 'Bot Cookie 已过期或不可用',
+          status: 'queued',
+          botUserFriendCode: null,
+          'routing.deliveryMode': 'shared',
+          execution: null,
+          'cabinetFriendship.status': 'pending',
+          'cabinetFriendship.botFriendCode': null,
+          'cabinetFriendship.deliveryEpoch': null,
+          'cabinetFriendship.attemptsStarted': null,
+          'cabinetFriendship.sdgbJobId': null,
+          'cabinetFriendship.lastError': null,
+          runAt: null,
           updatedAt: new Date(),
         },
+        $inc: { 'routing.deliveryEpoch': 1 },
       },
     );
 
-    if (result.modifiedCount > 0) {
+    if (claimResult.modifiedCount > 0) {
       this.logger.warn(
-        `Cleaned up ${result.modifiedCount} jobs assigned to unavailable bots: ${unavailableBots.join(', ')}`,
+        `Requeued ${claimResult.modifiedCount} claim jobs from unavailable bots: ${unavailableBots.join(', ')}`,
       );
     }
   }

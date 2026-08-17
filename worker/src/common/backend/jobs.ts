@@ -5,9 +5,9 @@
 
 import * as sharedContract from "@maimai-score-hub/shared";
 
-import type { Job, JobPatch, JobResponse } from "../types.ts";
+import type { Job, JobExecutionIdentity, JobPatch } from "../types.ts";
 
-import type { JobPatchBody } from "@maimai-score-hub/shared";
+import type { JobPatchBody, WorkerJobResponse } from "@maimai-score-hub/shared";
 import { backendTsRestApi } from "./http.ts";
 import config from "../config.ts";
 import { initClient } from "@ts-rest/core";
@@ -32,16 +32,17 @@ const client = initClient(jobContract, {
   api: backendTsRestApi,
 });
 
-function deserializeJob(payload: JobResponse): Job {
+function deserializeJob(payload: WorkerJobResponse): Job {
   return {
     ...payload,
     createdAt: new Date(payload.createdAt),
     updatedAt: new Date(payload.updatedAt),
     runAt: payload.runAt ? new Date(payload.runAt) : null,
-  };
+    deadlineAt: payload.deadlineAt ? new Date(payload.deadlineAt) : null,
+  } as unknown as Job;
 }
 
-function serializePatch(patch: JobPatch): JobPatchBody {
+function serializePatch(patch: JobPatch): Omit<JobPatchBody, "execution"> {
   const { runAt, updatedAt, ...body } = patch;
 
   return {
@@ -77,7 +78,7 @@ export async function getJob(jobId: string): Promise<Job> {
     throw new Error(`Failed to fetch job ${jobId}. Status: ${response.status}`);
   }
 
-  return deserializeJob(response.body as unknown as JobResponse);
+  return deserializeJob(response.body as unknown as WorkerJobResponse);
 }
 
 /**
@@ -86,21 +87,75 @@ export async function getJob(jobId: string): Promise<Job> {
 export async function updateJob(
   jobId: string,
   patch: JobPatch,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  execution: JobExecutionIdentity,
 ): Promise<Job> {
   const response = await client.patch({
     params: { jobId },
-    body: serializePatch(patch),
+    body: {
+      ...serializePatch(patch),
+      execution,
+    },
     fetchOptions: { signal },
   });
 
-  if (response.status !== 200) {
-    throw new Error(
-      `Failed to update job ${jobId}. Status: ${response.status}`,
-    );
+  if (response.status !== 200) throw DxnetWorkerApiError.fromResponse(response);
+
+  return deserializeJob(response.body as unknown as WorkerJobResponse);
+}
+
+export async function prepareCabinetFriendship(
+  jobId: string,
+  execution: JobExecutionIdentity,
+  signal?: AbortSignal,
+): Promise<{ status: Job["cabinetFriendshipStatus"] }> {
+  const response = await client.prepareCabinetFriendship({
+    params: { jobId },
+    body: {
+      execution: {
+        deliveryEpoch: execution.deliveryEpoch,
+        attemptsStarted: execution.attemptsStarted,
+        workerId: execution.workerId,
+      },
+    },
+    fetchOptions: { signal },
+  });
+  if (response.status !== 200) throw DxnetWorkerApiError.fromResponse(response);
+  return response.body;
+}
+
+export class DxnetWorkerApiError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly reason?: string;
+
+  constructor(status: number, code: string, reason?: string, message?: string) {
+    super(message ?? `${code} (${status})`);
+    this.name = "DxnetWorkerApiError";
+    this.status = status;
+    this.code = code;
+    this.reason = reason;
   }
 
-  return deserializeJob(response.body as unknown as JobResponse);
+  static fromResponse(response: {
+    status: number;
+    body?: unknown;
+  }): DxnetWorkerApiError {
+    const body =
+      response.body && typeof response.body === "object"
+        ? (response.body as Record<string, unknown>)
+        : {};
+    const nested =
+      body.message && typeof body.message === "object"
+        ? (body.message as Record<string, unknown>)
+        : body;
+    return new DxnetWorkerApiError(
+      response.status,
+      typeof nested.code === "string" ? nested.code : "worker_api_error",
+      typeof nested.reason === "string" ? nested.reason : undefined,
+      typeof nested.message === "string" ? nested.message : undefined,
+    );
+  }
 }
 
 /**
@@ -139,9 +194,7 @@ export async function getRunningQrLoginRivalNames(): Promise<string[]> {
 /**
  * 批量查询用户活跃度
  */
-export async function getUsersActivity(
-  friendCodes: string[],
-): Promise<
+export async function getUsersActivity(friendCodes: string[]): Promise<
   {
     friendCode: string;
     lastActiveAt: string | null;

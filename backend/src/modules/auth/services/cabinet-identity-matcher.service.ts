@@ -2,7 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 
-import type { SdgbWorkerMusicEntry } from '@maimai-score-hub/shared';
+import {
+  DXNET_PRIORITY,
+  type SdgbWorkerMusicEntry,
+} from '@maimai-score-hub/shared';
 
 import { getRating } from '../../../common/rating';
 import { BotFriendSnapshotService } from '../../bots/services/bot-friend-snapshot.service';
@@ -14,6 +17,13 @@ import type {
   MusicDocument,
 } from '../../music/schemas/music.schema';
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
+import { DxnetRoutingControlService } from '../../job/services/dxnet-routing-control.service';
+import {
+  QrLoginAttemptEntity,
+  type QrLoginAttemptDocument,
+  type QrLoginAttemptEntity as QrIdentityAttempt,
+} from '../schemas/qr-login-attempt.schema';
+import { randomUUID } from 'node:crypto';
 
 export type CabinetIdentityScan = Awaited<
   ReturnType<SdgbJobDispatcher['scanQr']>
@@ -31,9 +41,12 @@ export interface PreparedCabinetIdentity {
   };
 }
 
+export type PreparedCabinetIdentityCore = Omit<PreparedCabinetIdentity, 'bot'>;
+
 interface ResolveOptions {
   tagPrefix: string;
   context: string;
+  source?: 'qr_login' | 'cabinet_binding';
   onStage?: (stage: CabinetIdentityMatchStage) => void | Promise<void>;
 }
 
@@ -49,21 +62,132 @@ export class CabinetIdentityMatcherService {
     private readonly jobs: JobService,
     @InjectModel(MusicEntity.name)
     private readonly musicModel: Model<MusicDocument>,
+    @InjectModel(QrLoginAttemptEntity.name)
+    private readonly attemptModel: Model<QrLoginAttemptDocument>,
+    private readonly routingControl: DxnetRoutingControlService,
   ) {}
 
-  async prepare(scan: CabinetIdentityScan): Promise<PreparedCabinetIdentity> {
+  async isClaimIdentityEnabled(): Promise<boolean> {
+    const control = await this.routingControl.get();
+    return this.routingControl.isClaimFlowEnabled(control, 'qr_identity', null);
+  }
+
+  async prepareIdentity(
+    scan: CabinetIdentityScan,
+  ): Promise<PreparedCabinetIdentityCore> {
     if (!scan.rivalName) {
       throw new Error('cabinet did not return rival name; cannot match');
     }
-
     const rating = await this.computeB50(scan.music);
     if (rating === null) {
       throw new Error(
         '无法从机台成绩计算 rating（可能 music 表未同步），请稍后重试',
       );
     }
+    return {
+      cabinetUserId: scan.cabinetUserId,
+      rivalName: scan.rivalName,
+      rating,
+    };
+  }
 
-    const pickedBot = await this.botStatus.pickAvailableCabinetBot();
+  async startClaimResolution(
+    scan: CabinetIdentityScan,
+    input: {
+      purpose: 'login' | 'cabinet_binding';
+      ownerUserId?: string | null;
+      expectedFriendCode?: string | null;
+    },
+  ): Promise<{ attemptId: string; identity: PreparedCabinetIdentityCore }> {
+    const identity = await this.prepareIdentity(scan);
+    const attemptId = randomUUID();
+    const dxnetJobId = randomUUID();
+    await this.attemptModel.create({
+      id: attemptId,
+      purpose: input.purpose,
+      ownerUserId: input.ownerUserId ?? null,
+      expectedFriendCode: input.expectedFriendCode ?? null,
+      status: 'pending',
+      cabinetUserId: identity.cabinetUserId,
+      rivalName: identity.rivalName,
+      computedRating: identity.rating,
+      botUserFriendCode: null,
+      dxnetJobId,
+      resolvedFriendCode: null,
+      token: null,
+      error: null,
+    });
+    try {
+      const job = await this.jobs.createIdentityResolution({
+        jobId: dxnetJobId,
+        attemptId,
+        source: input.purpose === 'login' ? 'qr_login' : 'cabinet_binding',
+      });
+      if (job.jobId !== dxnetJobId) {
+        throw new Error('DXNet identity job id mismatch');
+      }
+    } catch (error) {
+      await this.attemptModel.updateOne(
+        { id: attemptId },
+        {
+          $set: {
+            status: 'failed',
+            error: error instanceof Error ? error.message : String(error),
+          },
+        },
+      );
+      throw error;
+    }
+    return { attemptId, identity };
+  }
+
+  async resolveAttemptSnapshot(
+    attempt: QrIdentityAttempt,
+    freshAfter: Date,
+  ): Promise<
+    | { kind: 'waiting' }
+    | { kind: 'found'; friendCode: string; botFriendCode: string }
+    | { kind: 'failed'; error: string }
+  > {
+    if (
+      !attempt.botUserFriendCode ||
+      !attempt.rivalName ||
+      attempt.computedRating === null
+    ) {
+      return { kind: 'waiting' };
+    }
+    const snapshot = await this.snapshot.get(attempt.botUserFriendCode);
+    if (
+      !snapshot?.updatedAt ||
+      snapshot.updatedAt.getTime() < freshAfter.getTime()
+    ) {
+      return { kind: 'waiting' };
+    }
+    try {
+      return {
+        kind: 'found',
+        friendCode: this.findUniqueFriendCode(
+          snapshot.friends,
+          attempt.rivalName,
+          attempt.computedRating,
+        ),
+        botFriendCode: attempt.botUserFriendCode,
+      };
+    } catch (error) {
+      return {
+        kind: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async prepare(scan: CabinetIdentityScan): Promise<PreparedCabinetIdentity> {
+    const identity = await this.prepareIdentity(scan);
+
+    const control = await this.routingControl.get();
+    const pickedBot = await this.botStatus.pickAvailableCabinetBot({
+      allowlist: control.botAllowlist,
+    });
     if (!pickedBot || pickedBot.cabinetUserId === null) {
       throw new Error(
         '当前没有可用的、配置了 cabinetUserId 的 bot，请稍后重试或使用 friendCode 登录',
@@ -71,9 +195,7 @@ export class CabinetIdentityMatcherService {
     }
 
     return {
-      cabinetUserId: scan.cabinetUserId,
-      rivalName: scan.rivalName,
-      rating,
+      ...identity,
       bot: {
         friendCode: pickedBot.friendCode,
         cabinetUserId: pickedBot.cabinetUserId,
@@ -103,6 +225,7 @@ export class CabinetIdentityMatcherService {
       {
         tag: `${options.tagPrefix}-add:${identity.cabinetUserId}`,
         timeoutMs: 60_000,
+        priority: DXNET_PRIORITY.immediate,
       },
     );
     this.logger.log(
@@ -114,6 +237,7 @@ export class CabinetIdentityMatcherService {
     const refreshJob = await this.jobs.create({
       friendCode: identity.bot.friendCode,
       jobType: 'get_full_friend_list',
+      source: options.source ?? 'qr_login',
       botUserFriendCode: identity.bot.friendCode,
       cancelActiveJobs: false,
     });

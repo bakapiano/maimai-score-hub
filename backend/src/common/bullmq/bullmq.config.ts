@@ -2,10 +2,6 @@ import type { ConfigService } from '@nestjs/config';
 import type { ConnectionOptions, JobsOptions, QueueOptions } from 'bullmq';
 export const PROBER_EXPORT_QUEUE_NAME = 'prober-export-jobs';
 
-export interface DxnetWorkerJobData {
-  jobId: string;
-}
-
 export type ProberExportJobData =
   | { kind: 'auto'; friendCode: string }
   | { kind: 'manual'; jobId: string; friendCode: string }

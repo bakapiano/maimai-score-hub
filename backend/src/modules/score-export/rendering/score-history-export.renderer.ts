@@ -78,6 +78,7 @@ type Payload = {
   timeZone: string;
   cards: HistoryExportCard[];
   profile: UserNetProfile | null;
+  rating: number;
 };
 
 export async function renderScoreHistoryImage(
@@ -115,7 +116,7 @@ export async function renderScoreHistoryImage(
   await drawProfileHeader(
     ctx,
     payload.profile,
-    payload.profile?.rating ?? 0,
+    payload.rating,
     loadRemoteImage,
   );
   drawSectionTitle(

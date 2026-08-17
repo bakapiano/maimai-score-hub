@@ -9,6 +9,10 @@ import {
   JobFriendshipStatusResponseSchema,
   JobPatchBodySchema,
   JobResponseSchema,
+  WorkerJobResponseSchema,
+  DxnetWorkerMutationErrorSchema,
+  PrepareCabinetFriendshipBodySchema,
+  PrepareCabinetFriendshipResponseSchema,
   JobVerifyResponseSchema,
 } from "./job.schema";
 
@@ -29,6 +33,10 @@ export const jobContract = c.router({
         code: z.string().optional(),
         message: z.union([z.string(), z.array(z.string())]).optional(),
         recommendedBotFriendCode: z.string().nullable().optional(),
+      }),
+      503: z.object({
+        code: z.literal("bot_assignment_busy"),
+        message: z.string().optional(),
       }),
     },
   },
@@ -72,7 +80,19 @@ export const jobContract = c.router({
     path: "/workers/dxnet/jobs/:jobId",
     pathParams: z.object({ jobId: z.string() }),
     responses: {
-      200: JobResponseSchema,
+      200: WorkerJobResponseSchema,
+    },
+  },
+  prepareCabinetFriendship: {
+    method: "POST",
+    path: "/workers/dxnet/jobs/:jobId/prepare-cabinet-friendship",
+    pathParams: z.object({ jobId: z.string() }),
+    body: PrepareCabinetFriendshipBodySchema,
+    responses: {
+      200: PrepareCabinetFriendshipResponseSchema,
+      409: DxnetWorkerMutationErrorSchema,
+      410: DxnetWorkerMutationErrorSchema,
+      503: DxnetWorkerMutationErrorSchema,
     },
   },
   patch: {
@@ -81,7 +101,10 @@ export const jobContract = c.router({
     pathParams: z.object({ jobId: z.string() }),
     body: JobPatchBodySchema,
     responses: {
-      200: JobResponseSchema,
+      200: WorkerJobResponseSchema,
+      409: DxnetWorkerMutationErrorSchema,
+      410: DxnetWorkerMutationErrorSchema,
+      503: DxnetWorkerMutationErrorSchema,
     },
   },
   getActiveByBot: {

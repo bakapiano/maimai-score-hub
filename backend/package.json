@@ -24,7 +24,8 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:e2e:score-updates": "jest --config ./test/jest-e2e.json --runInBand test/score-updates.e2e-spec.ts",
-    "test:e2e:passkey": "node test/passkey.dev-e2e.mjs"
+    "test:e2e:passkey": "node test/passkey.dev-e2e.mjs",
+    "migrate:dxnet-routing-indexes": "node dist/scripts/migrate-dxnet-routing-indexes.js"
   },
   "dependencies": {
     "@maimai-score-hub/shared": "file:../shared",
@@ -43,6 +44,7 @@
     "cron": "^3.1.7",
     "jsqr": "^1.4.0",
     "mongoose": "^9.1.0",
+    "mongodb": "^7.0.0",
     "redis": "^6.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",

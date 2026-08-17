@@ -64,9 +64,19 @@ jobs:
               cp -a .env "$RUNTIME_DIR/.env"
             fi
 
-            rm -rf artifact-service clickhouse docker-compose.yml README.md .env.example
+            rm -rf artifact-service clickhouse host docker-compose.yml README.md .env.example
             tar -xzf "$SOURCE_ARCHIVE" -C "$DEPLOY_PATH"
             rm -f "$SOURCE_ARCHIVE"
+
+            # Server 5 uses Docker's journald driver. Avoid duplicating all
+            # container output into /var/log/messages, and ensure the remaining
+            # host logs have a bounded retention policy.
+            sudo install -m 0644 host/30-drop-docker-journal-duplicates.conf \
+              /etc/rsyslog.d/30-drop-docker-journal-duplicates.conf
+            sudo install -m 0644 host/maimai-system-logs \
+              /etc/logrotate.d/maimai-system-logs
+            sudo rsyslogd -N1
+            sudo systemctl restart rsyslog
 
             if [ -f "$RUNTIME_DIR/.env" ]; then
               cp -a "$RUNTIME_DIR/.env" .env

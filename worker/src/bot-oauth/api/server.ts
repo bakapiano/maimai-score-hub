@@ -7,6 +7,7 @@ import { botManager } from "../../common/bots/bot-manager.ts";
 import { getAuthUrl } from "../../common/maimai/infra/auth.ts";
 import { GameType } from "../../common/types.ts";
 import { runtimeState } from "../common/runtime-state.ts";
+import { getDxnetWorkerRuntimeHealth } from "../../worker/runtime/health-registry.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,7 +17,7 @@ const app = express();
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
+  res.json({ status: "ok", dxnet: getDxnetWorkerRuntimeHealth() });
 });
 
 app.get("/", (_req, res) => {

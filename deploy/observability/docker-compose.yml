@@ -14,6 +14,7 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./clickhouse/config.d/observability-retention.xml:/etc/clickhouse-server/config.d/observability-retention.xml:ro
     ulimits:
       nofile:
         soft: 262144

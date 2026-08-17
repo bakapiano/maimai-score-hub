@@ -133,7 +133,7 @@ let cleanupRunning = false;
 /**
  * 运行一次清理任务。调度周期由 worker 入口统一管理。
  */
-async function runCleanup(manager: BotManager): Promise<void> {
+export async function runCleanup(manager: BotManager): Promise<void> {
   if (cleanupRunning) {
     console.log("[CleanupService] Cleanup already in progress, skipping");
     return;

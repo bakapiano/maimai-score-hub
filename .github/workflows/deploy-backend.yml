@@ -2,6 +2,12 @@ name: deploy backend
 
 on:
   workflow_dispatch:
+    inputs:
+      confirm_dxnet_v2_cutover:
+        description: Confirm all DXNet workers are stopped for the one-time routing-v2 cutover
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-backend
@@ -208,6 +214,12 @@ jobs:
               exit 1
             fi
 
+            # Build v2 routing/idempotency indexes before any new backend
+            # replica can produce routing-v2 jobs. The migration is idempotent.
+            sudo $COMPOSE_CMD run --rm --no-deps \
+              -e DXNET_V2_CUTOVER_CONFIRMED="${{ inputs.confirm_dxnet_v2_cutover }}" backend \
+              npm run migrate:dxnet-routing-indexes
+
             wait_until_all_healthy() {
               local target_n="$1"
               for i in $(seq 1 30); do
@@ -272,6 +284,14 @@ jobs:
 
             roll_one_replica
             roll_one_replica
+
+            # Old replicas can still create pre-v2 jobs while the rolling
+            # replacement is in progress. Once both are gone, sweep that
+            # cutover window before DXNet workers are started again.
+            sudo $COMPOSE_CMD run --rm --no-deps \
+              -e DXNET_V2_CUTOVER_CONFIRMED="${{ inputs.confirm_dxnet_v2_cutover }}" backend \
+              npm run migrate:dxnet-routing-indexes
+
             sudo $COMPOSE_CMD up -d nginx
 
             # Final state check via nginx (the public path users hit)

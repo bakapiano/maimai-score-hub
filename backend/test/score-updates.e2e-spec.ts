@@ -531,6 +531,66 @@ describe('score update concurrency and export ownership (local e2e)', () => {
     expect(newBadgePixelCount).toBeGreaterThan(200);
   });
 
+  it('applies the key-change filter to history exports', async () => {
+    const owner = await userModel.create({ friendCode });
+    const start = Date.parse('2026-03-02T00:00:00.000Z');
+    const quietRow = {
+      ...scoreHistoryRow({
+        id: 'history-export-no-key-change',
+        rowFriendCode: friendCode,
+        ownerUserId: owner._id,
+        observedAt: new Date(start + 1000).toISOString(),
+      }),
+      after: { score: '99.4000%' },
+      achievementDelta: 0.4,
+    };
+    await scoreChangeModel.create(quietRow);
+    const { token } = await moduleA
+      .get(AuthService)
+      .issueTokenForUser({ _id: owner._id, friendCode: owner.friendCode });
+    const query = {
+      date: '2026-03-02',
+      start,
+      end: start + 24 * 60 * 60 * 1000,
+      timeZone: 'Asia/Shanghai',
+      dayStartHour: 6,
+    };
+
+    await request(appA.getHttpServer())
+      .get('/me/score-exports/history')
+      .set('Authorization', `Bearer ${token}`)
+      .query({ ...query, keyChangesOnly: 'false' })
+      .expect(200);
+    await request(appA.getHttpServer())
+      .get('/me/score-exports/history')
+      .set('Authorization', `Bearer ${token}`)
+      .query({ ...query, keyChangesOnly: 'true' })
+      .expect(404);
+
+    const fcRow = {
+      ...scoreHistoryRow({
+        id: 'history-export-fc-change',
+        rowFriendCode: friendCode,
+        ownerUserId: owner._id,
+        observedAt: new Date(start + 2000).toISOString(),
+        musicId: '18',
+      }),
+      before: { score: '99.0000%', fc: null },
+      after: { score: '99.4000%', fc: 'fc' },
+      changedFields: ['score', 'fc'] as ScoreChangeEntity['changedFields'],
+      achievementDelta: 0.4,
+      fcRankDelta: 1,
+    };
+    await scoreChangeModel.create(fcRow);
+
+    await request(appA.getHttpServer())
+      .get('/me/score-exports/history')
+      .set('Authorization', `Bearer ${token}`)
+      .query({ ...query, keyChangesOnly: 'true' })
+      .expect(200)
+      .expect('Content-Type', /image\/png/);
+  });
+
   it('filters history by time and groups business days in the browser zone', async () => {
     const owner = await userModel.create({ friendCode });
     const other = await userModel.create({ friendCode: '700000000000096' });

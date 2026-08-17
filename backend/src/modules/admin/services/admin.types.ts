@@ -65,7 +65,7 @@ export interface JobErrorStats {
 
 export interface ActiveJob {
   id: string;
-  friendCode: string;
+  friendCode: string | null;
   jobType: string;
   botUserFriendCode: string | null;
   status: string;
@@ -84,7 +84,7 @@ export interface ActiveJobsStats {
 
 export interface SearchJobResult {
   id: string;
-  friendCode: string;
+  friendCode: string | null;
   jobType: string;
   botUserFriendCode: string | null;
   status: string;

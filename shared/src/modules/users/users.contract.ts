@@ -4,6 +4,8 @@ import {
   BindCabinetQrBodySchema,
   BindCabinetQrMismatchSchema,
   BindCabinetQrResponseSchema,
+  BindCabinetQrAsyncResponseSchema,
+  CabinetBindingAttemptResponseSchema,
   DivingFishTokenBodySchema,
   DivingFishTokenResponseSchema,
   DeletePasskeyBodySchema,
@@ -122,8 +124,19 @@ export const usersContract = c.router({
     body: BindCabinetQrBodySchema,
     responses: {
       201: BindCabinetQrResponseSchema,
+      202: BindCabinetQrAsyncResponseSchema,
       409: BindCabinetQrMismatchSchema,
       400: c.type<{ error: string }>(),
+    },
+  },
+  pollCabinetBinding: {
+    method: "GET",
+    path: "/me/cabinet/attempts/:attemptId",
+    pathParams: c.type<{ attemptId: string }>(),
+    headers: c.type<{ authorization: string }>(),
+    responses: {
+      200: CabinetBindingAttemptResponseSchema,
+      404: c.type<{ error: string }>(),
     },
   },
   unbindCabinet: {
