@@ -70,10 +70,12 @@ export class TargetedScoreFetcher {
 
     const missing = state.missingPairs();
     if (missing.length) {
-      throw new Error(
-        `Targeted Friend VS pages missed charts: ${missing
-          .map(({ musicId, scoreType }) => `${musicId}/type${scoreType}`)
-          .join(", ")}`,
+      const message = `Targeted Friend VS pages missed charts: ${missing
+        .map(({ musicId, scoreType }) => `${musicId}/type${scoreType}`)
+        .join(", ")}`;
+      if (!options.fcfsOnly) throw new Error(message);
+      console.warn(
+        `[TargetedScoreFetcher] ${message}; returning covered FC/FS charts`,
       );
     }
     return { targetedScores: state.entries() };
@@ -187,7 +189,12 @@ class TargetResultState {
   }
 
   entries(): TargetedScoreEntry[] {
-    return this.targets.map((target) => this.result.get(target.musicId)!);
+    const observed = new Set(
+      [...this.seen.values()].flatMap((musicIds) => [...musicIds]),
+    );
+    return this.targets
+      .filter((target) => observed.has(target.musicId))
+      .map((target) => this.result.get(target.musicId)!);
   }
 }
 
