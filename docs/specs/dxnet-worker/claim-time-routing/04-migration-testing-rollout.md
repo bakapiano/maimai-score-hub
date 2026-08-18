@@ -54,10 +54,10 @@ Mongo singleton `dxnet_routing_control` 只保留运行期放量配置：
   epoch: number;
   botAllowlist: string[] | null; // null = 全部健康 worker
   enabledClaimFlows: Array<
-    "auto_recent_event" | "manual_update" | "qr_identity"
+    "manual_update" | "qr_identity"
   >;
   claimCanaryByFlow: Partial<Record<
-    "auto_recent_event" | "manual_update",
+    "manual_update",
     string[] | null
   >>;
 }

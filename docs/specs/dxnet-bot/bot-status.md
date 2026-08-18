@@ -136,7 +136,7 @@ X-API-Secret: <API_SHARED_SECRET>
 | `JobService.create()` cabinet fast-path | 如果用户已有 `cabinetUserId`，会用指定 Bot 的 `cabinetUserId` 或 `pickAvailableCabinetBot()` 调 sdgb `addRival`；成功后可直接进入 `update_score`。 |
 | `BotStatusService.pickAvailableCabinetBot()` | 只挑 `available=true && cabinetUserId != null` 的 Bot，并按 `friendCount + 当前 queued/processing in-flight job 数` 最小排序。 |
 | `QrLoginService` slow path | 先 `pickAvailableCabinetBot()`，用 sdgb `addRival`，再创建 `get_full_friend_list` job 刷新同一个 Bot 的 snapshot，最后用 `(userName, rating)` 在新 snapshot 中反查 friendCode。 |
-| `AutoUpdateSchedulerService.maybeEnqueueFcfs()` | FC/FS enrichment 需要 `pickAvailableCabinetBot()`，随后 sdgb `addRival` 并创建 `get_user_recent_event` DXNet job。 |
+| `AutoUpdateFcfsWindowService` | 半小时聚合变化谱面 CID，创建 background targeted `update_score`；需要好友关系时由 claim-time cabinet prerequisite 建立。 |
 | `Worker get_full_friend_list` job | 主动抓完整好友列表，通过 `getFriendList()` full-overwrite BotManager 内存快照；快照变化后由统一监听器触发 bot status report，刷新 `bot_statuses`。 |
 | `BotStatusService.cleanupStaleJobs()` | 定期根据不可用/超时 Bot fail 掉已分配给这些 Bot 的 queued/processing job。 |
 | `AdminAutoUpdateMetricsService.getAutoUpdateMetrics()` | 直接统计 `bot_statuses` 中 `available=true && cabinetUserId != null` 的 Bot 数，用于自动更新容量估算。 |

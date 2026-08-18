@@ -14,7 +14,6 @@ export const JobStageSchema = z.enum([
   "wait_user_request",
   "accept_request",
   "update_score",
-  "get_user_recent_event",
   "get_full_friend_list",
 ]);
 
@@ -22,9 +21,19 @@ export const JobTypeSchema = z.enum([
   "send_friend_request",
   "accept_friend_request",
   "update_score",
-  "get_user_recent_event",
   "get_full_friend_list",
 ]);
+
+export const ScoreFetchTargetSchema = z.object({
+  /** Chart-specific catalog id (`MusicEntity.charts[].cid`). */
+  musicId: z.string().min(1),
+  title: z.string(),
+  type: z.enum(["standard", "dx", "utage"]),
+  category: z.string(),
+  diff: z.number().int().min(0).max(10),
+  genre: z.number().int().nullable(),
+  level: z.number().int().min(1).max(23).nullable(),
+});
 
 export const DxnetJobSourceSchema = z.enum([
   "user_interaction",
@@ -102,6 +111,9 @@ const JobResponseBaseSchema = z.object({
   scoreProgress: ScoreProgressSchema.nullable().optional(),
   updateScoreDuration: z.number().nullable().optional(),
   diffsToScrape: z.array(z.number().int()).nullable().optional(),
+  musicIds: z.array(z.string()).nullable().optional(),
+  scoreFetchTargets: z.array(ScoreFetchTargetSchema).nullable().optional(),
+  fcfsOnly: z.boolean().optional(),
   context: z.record(z.unknown()).nullable().optional(),
   runAt: z.string().nullable().optional(),
   deadlineAt: z.string().nullable().optional(),
@@ -137,6 +149,10 @@ export const JobCreateBodySchema = z.object({
    * snapshot heartbeat lands.
    */
   friendshipJobId: z.string().optional(),
+  /** Chart-specific ids such as `100_3`; present means targeted fetching. */
+  musicIds: z.array(z.string().min(1)).min(1).max(6000).optional(),
+  /** Fetch one Friend VS score type and merge only FC/FS fields. */
+  fcfsOnly: z.boolean().optional(),
 });
 
 export const JobCreateResponseSchema = z.object({
@@ -178,13 +194,6 @@ export const JobPatchBodySchema = z.object({
   addCompletedDiff: z.number().int().min(0).optional(),
   updateScoreDuration: z.number().nullable().optional(),
   execution: DxnetExecutionRequestSchema,
-  /** Atomic shared-to-pinned continuation; backend increments deliveryEpoch. */
-  handoff: z
-    .object({
-      deliveryMode: z.literal("pinned"),
-      runAt: z.string().datetime(),
-    })
-    .optional(),
 });
 
 export const PrepareCabinetFriendshipBodySchema = z.object({
@@ -238,6 +247,7 @@ export type CabinetFriendshipStatus = z.infer<
 >;
 export type DxnetJobErrorCode = z.infer<typeof DxnetJobErrorCodeSchema>;
 export type ScoreProgress = z.infer<typeof ScoreProgressSchema>;
+export type ScoreFetchTarget = z.infer<typeof ScoreFetchTargetSchema>;
 export type JobResponse = z.infer<typeof JobResponseSchema>;
 export type PublicJobResponse = z.infer<typeof PublicJobResponseSchema>;
 export type WorkerJobResponse = z.infer<typeof WorkerJobResponseSchema>;

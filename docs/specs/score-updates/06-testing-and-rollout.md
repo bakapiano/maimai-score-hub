@@ -24,7 +24,7 @@
 
 1. DXNet 与二维码同时完成。
 2. DXNet 与 Rival 同时完成。
-3. Rival 与 Recent Event 同时完成。
+3. Rival 与 targeted FC/FS 同时完成。
 4. 同一 source completed 重复到达。
 5. 首次 sync 两个来源同时 create。
 6. 两个 Backend replica 同时处理。
@@ -36,7 +36,7 @@
 ## Finalizer 测试
 
 - DXNet job 在 commit 成功前不可 completed。
-- Recent Event job 在 commit/no-op 前不可 completed。
+- Targeted FC/FS job 在 commit/no-op 前不可 completed。
 - Rival task 在 commit 前不可前移成功 hash/state。
 - QR cleanup 未成功时不进入 commit。
 - QR owner/绑定不一致时不进入 commit。
@@ -98,7 +98,7 @@ CI 使用静态规则、架构测试或明确 allowlist 防止未来新增旁路
 2. 部署兼容字段和 `friendCode` 唯一索引。
 3. 实现统一 merge/CAS，但保持 DXNet/二维码互斥。
 4. 将四条写入路径全部切到统一入口。
-5. 修改 DXNet/Recent Event 为 commit-first finalization。
+5. 修改全部 DXNet `update_score` 为 commit-first finalization。
 6. 部署 `prober_export_states`、版本 reconciliation、queue wake、Redis 用户 lease 和
    Mongo 原子 claim/fencing；保持旧自动导出路径兼容。
 7. 运行并发、重复请求和故障注入测试。

@@ -125,12 +125,12 @@ Commit 必须先于业务完成态：
 | 来源 | 顺序 |
 | --- | --- |
 | DXNet `update_score` | completed payload 校验 → sync commit → job completed |
-| Recent Event | events 校验 → sync commit/no-op → job completed |
+| Targeted FC/FS | CID 结果校验 → sync commit/no-op → job completed |
 | Rival 自动更新 | sync commit → probe task completed/state hash 前移 |
 | 二维码 | execution/owner/cleanup 校验 → sync commit → sdgb job completed |
 
 当前 `JobService.patch()` 是先把 DXNet job 更新为 completed，再调用 SyncService。实现时必须
-把 `update_score` 和 `get_user_recent_event` 改成 commit-first finalization。
+所有 `update_score`（全量、定向、FC/FS-only）均使用 commit-first finalization。
 
 若进程在 sync commit 后、来源终态前崩溃，来源重试同一个 completed 请求。重复 delta
 经 merge 后成为 no-op，然后安全完成来源任务。

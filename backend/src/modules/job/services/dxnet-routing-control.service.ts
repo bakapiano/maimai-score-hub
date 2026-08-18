@@ -15,11 +15,8 @@ import {
 const DEFAULT_CONTROL: DxnetRoutingControl = {
   epoch: 0,
   botAllowlist: null,
-  // Production stopgap: keep the automatic recent-event producer disabled.
-  // Manual score updates and QR identity claims continue to use routing v2.
   enabledClaimFlows: ['manual_update', 'qr_identity'],
   claimCanaryByFlow: {
-    auto_recent_event: null,
     manual_update: null,
   },
 };
@@ -109,13 +106,6 @@ export class DxnetRoutingControlService {
           : unique(body.enabledClaimFlows),
       claimCanaryByFlow: {
         ...DEFAULT_CONTROL.claimCanaryByFlow,
-        ...(body.claimCanaryByFlow?.auto_recent_event !== undefined
-          ? {
-              auto_recent_event: uniqueOrNull(
-                body.claimCanaryByFlow.auto_recent_event,
-              ),
-            }
-          : {}),
         ...(body.claimCanaryByFlow?.manual_update !== undefined
           ? {
               manual_update: uniqueOrNull(body.claimCanaryByFlow.manual_update),
@@ -133,13 +123,6 @@ export class DxnetRoutingControlService {
       ...(body.enabledClaimFlows !== undefined
         ? { enabledClaimFlows: unique(body.enabledClaimFlows) }
         : {}),
-      ...(body.claimCanaryByFlow?.auto_recent_event !== undefined
-        ? {
-            'claimCanaryByFlow.auto_recent_event': uniqueOrNull(
-              body.claimCanaryByFlow.auto_recent_event,
-            ),
-          }
-        : {}),
       ...(body.claimCanaryByFlow?.manual_update !== undefined
         ? {
             'claimCanaryByFlow.manual_update': uniqueOrNull(
@@ -154,11 +137,10 @@ export class DxnetRoutingControlService {
     return {
       epoch: row.epoch ?? 0,
       botAllowlist: row.botAllowlist ? [...row.botAllowlist] : null,
-      enabledClaimFlows: [
-        ...(row.enabledClaimFlows ?? DEFAULT_CONTROL.enabledClaimFlows),
-      ],
+      enabledClaimFlows: (
+        row.enabledClaimFlows ?? DEFAULT_CONTROL.enabledClaimFlows
+      ).filter(isClaimFlow),
       claimCanaryByFlow: {
-        auto_recent_event: row.claimCanaryByFlow?.auto_recent_event ?? null,
         manual_update: row.claimCanaryByFlow?.manual_update ?? null,
       },
     };
@@ -184,4 +166,8 @@ function isDuplicateKey(error: unknown): boolean {
     'code' in error &&
     (error as { code?: number }).code === 11000
   );
+}
+
+function isClaimFlow(value: string): value is DxnetClaimFlow {
+  return value === 'manual_update' || value === 'qr_identity';
 }

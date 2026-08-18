@@ -25,6 +25,13 @@ export type PeriodicTask = {
 export function startBotBackgroundTasks(manager: BotManager): StopTask[] {
   loadPersistedBot(manager);
 
+  if (process.env.BOT_BACKGROUND_TASKS_DISABLED === "true") {
+    console.log(
+      "[BotBackgroundTasks] Periodic health, status, snapshot and cleanup tasks disabled",
+    );
+    return [bindBotSaveScheduler(manager)];
+  }
+
   const periodicTasks = [
     createBotPeriodicSaveTask(manager),
     createHealthCheckTask(manager),

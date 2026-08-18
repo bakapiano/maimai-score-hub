@@ -111,7 +111,7 @@ available === true
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `update_score` cabinet fast-path | 用户有 `cabinetUserId` 且调用方未指定 bot 时，先 pick cabinet bot，再用 sdgb `addRival` 建立 cabinet 侧好友关系 |
 | QR login slow path               | 先 pick cabinet bot，执行 sdgb `addRival`，再创建绑定同一 bot 的 `get_full_friend_list` job 刷新好友快照        |
-| 自动更新 FC/FS enrichment        | 先 pick cabinet bot，执行 sdgb `addRival`，再创建绑定同一 bot 的 `get_user_recent_event` job                    |
+| 自动更新 FC/FS enrichment        | 创建 background targeted `update_score`；claim worker 在执行前按需完成 cabinet friendship prerequisite          |
 
 如果没有候选 bot，相关流程会失败并提示当前没有可用、配置了 cabinet userId 的 bot。
 
@@ -147,7 +147,6 @@ available === true
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `send_friend_request`   | 未传 bot 时调用 `pickAvailableBot()`；创建后进入该 bot named queue                                                |
 | `accept_friend_request` | 登录入口先调用 `pickAvailableBot()` 并传入 bot；`JobService.create()` 也有同样兜底                                |
-| `get_user_recent_event` | 必须由调用方传 bot；当前主要来自自动更新 FC/FS enrichment                                                         |
 | `get_full_friend_list`  | 通常调用方传 bot；未传时 `JobService.create()` 用 `friendCode` 作为 bot code，适用于“刷新某个 bot 自己的好友列表” |
 
 ## 用户侧 friendship 与 cabinet fast-path
@@ -210,12 +209,5 @@ worker 不会再改写 `botUserFriendCode`。如果某个 job 缺失 `botUserFri
 
 ## 自动更新后的好友清理
 
-自动更新 FC/FS enrichment 会先 `addRival`，再创建绑定同一 bot 的 `get_user_recent_event` DXNet job。为了避免这类临时好友持续占用 100 人好友容量，自动更新创建的 DXNet job 会设置：
-
-```ts
-removeFriendAfterComplete: true;
-```
-
-worker 只在 job 成功 `completed` 后 fire-and-forget 删除目标好友，不等待删除请求完成，也不影响 BullMQ job 完成。
-
-特殊情况：`get_user_recent_event` 完成后如果触发 fallback `update_score`，后端会把原 recent-event job 的清理标记改回 `false`，并让 fallback `update_score` 带 `removeFriendAfterComplete=true`。这样好友关系会保留到 fallback 抓分完成后再删除。
+自动更新 FC/FS 与普通 `update_score` 共用好友关系所有权。Worker 的周期
+CleanupService 依据 active job、用户活跃时间和好友容量统一回收临时关系。

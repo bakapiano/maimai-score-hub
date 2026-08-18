@@ -15,7 +15,6 @@ describe('DXNet routing policy', () => {
     ['qr_login', 'get_full_friend_list', 'interactive', 4, 'claim'],
     ['cabinet_binding', 'get_full_friend_list', 'interactive', 4, 'claim'],
     ['user_sync', 'update_score', 'user_sync', 2, 'claim'],
-    ['auto_update', 'get_user_recent_event', 'background', 1, 'claim'],
     ['auto_update', 'update_score', 'background', 1, 'claim'],
     ['maintenance', 'get_full_friend_list', 'background', 0, 'pinned'],
   ] as const)(

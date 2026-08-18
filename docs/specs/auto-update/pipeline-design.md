@@ -17,7 +17,7 @@
    - 与用户当前成绩合并，保留更高 achievement、dxScore、FC、FS。
    - 更新 `lastRivalHash`、`lastScoreChangedAt`。
    - 将用户升为 hot。
-   - 请求一次 FC/FS enrichment；如果 recent event cooldown 未到，则记录 pending，到期后补跑一次。
+   - 变化谱面 CID 进入下一个半小时 FC/FS enrichment 窗口。
 5. 如果 hash 未变化：
    - 更新 `lastRivalProbeAt`。
    - 不写 sync。
@@ -48,7 +48,7 @@
 3. 如果 fingerprint 变化：
    - 更新 `lastMapDeltaAt`。
    - 将用户升为 hot 或延长 hot session。
-   - 请求一次 FC/FS enrichment；如果 recent event cooldown 未到，则记录 pending，到期后补跑一次。
+   - score/dxScore 变化会在半小时窗口中生成 targeted FC/FS pending。
    - 如果距离上次 rival probe 已超过 tier 间隔，enqueue rival score probe。
 4. 如果 fingerprint 未变化：
    - 更新 `lastMapProbeAt`。
@@ -72,25 +72,19 @@ FC/FS Enrichment 是 **change-driven**，不是 **tier-driven**：
 
 执行：
 
-1. 检查单用户 cooldown，例如 30 分钟内最多执行一次。
-2. 如果 cooldown 未到，不丢弃触发信号；在 `auto_update_probe_states` 记录 pending FC/FS enrichment，并把多次触发合并为一次到期执行。
-3. 如果 cooldown 已到，选择可用 Bot。
-4. 通过 sdgb `addRival` 确保 Bot 与目标用户有 rival/好友关系；如果目标用户后续被 DXNet cleanup 从 Bot 好友列表移除，下次 enrichment 会再次通过 addRival 恢复。
-5. 创建 DXNet `get_user_recent_event` job，并默认延迟 3 分钟执行，等待 DXNet recent event 页面稳定。
-6. DXNet worker 请求好友详情 recent event 页面。
-7. 解析最近事件中的 FC/AP/FS/FDX，得到本次 recent event 返回的 FC/FS list。
-8. 不使用 `recentEventSince` 过滤；每次 recent event 返回的 list 都可参与合并。
-9. 不需要和上一次 recent event 结果做 diff；直接把本次 list 与用户当前成绩合并。
-10. 合并时按 rank 升级，不覆盖已有更高 FC/FS。
-11. 如果某条 recent event 的 `songName + difficulty` 在用户当前成绩里匹配到 0 个或多个 score，直接跳过；FC/FS enrichment 不负责 musicId 消歧，也不触发 `update_score` fallback。
-12. 计算 recent event fingerprint；如果 fingerprint 变化，记录一次 activity signal，延后稳定后全量 `update_score`。
+1. 每半小时聚合该窗口 `score_changes` 中 `score/dxScore` 变化的谱面 CID。
+2. 单用户 cooldown 或 producer 配额占用期间，把 CID 合并进 `pendingFcfsMusicIds`。
+3. 到期后创建 background `update_score(musicIds, fcfsOnly=true)`。
+4. Worker 根据 CID 元数据选择最小扫描量的具体 genre/level 页面组合。
+5. Level 页缺失目标时补抓对应的具体 `diff+genre` 页。
+6. Backend 按 CID 直接映射，并通过 rank-only CAS 合并 FC/FS。
 
 输出：
 
 - 最近 FC/FS 增量。
-- `lastRecentEventAt`。
+- `lastFcfsUpdateAt` / `nextFcfsUpdateAt`。
 - pending FC/FS enrichment 状态（cooldown 未到或执行失败时）。
-- recent event fingerprint 变化触发的稳定后全量更新预约（如有）。
+- 本窗口聚合的谱面 CID 数与页面规划结果。
 
 ## 解耦要求
 

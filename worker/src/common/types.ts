@@ -10,6 +10,7 @@ import type {
   DxnetJobErrorCode,
   DxnetJobRouting,
   JobPatchBody,
+  ScoreFetchTarget,
 } from "@maimai-score-hub/shared";
 
 // ============================================================================
@@ -46,11 +47,7 @@ export interface UserProfile {
 // ============================================================================
 
 export type JobStatus =
-  | "queued"
-  | "processing"
-  | "completed"
-  | "failed"
-  | "canceled";
+  "queued" | "processing" | "completed" | "failed" | "canceled";
 
 export type JobStage =
   | "send_request"
@@ -58,13 +55,11 @@ export type JobStage =
   | "wait_user_request"
   | "accept_request"
   | "update_score"
-  | "get_user_recent_event"
   | "get_full_friend_list";
 export type JobType =
   | "send_friend_request"
   | "accept_friend_request"
   | "update_score"
-  | "get_user_recent_event"
   | "get_full_friend_list";
 
 export interface ScoreProgress {
@@ -82,12 +77,15 @@ export interface Job {
   friendRequestWaitStartedAt?: string | null;
   status: JobStatus;
   stage: JobStage;
-  result?: AggregatedScoreResult;
+  result?: UpdateScoreResult;
   profile?: UserProfile;
   error?: string | null;
   scoreProgress?: ScoreProgress | null;
   updateScoreDuration?: number | null;
   diffsToScrape?: number[] | null;
+  musicIds?: string[] | null;
+  scoreFetchTargets?: ScoreFetchTarget[] | null;
+  fcfsOnly?: boolean;
   context?: Record<string, unknown> | null;
   runAt?: Date | null;
   deadlineAt?: Date | null;
@@ -143,26 +141,6 @@ export interface FriendInfo {
   awakeningCount?: number | null;
 }
 
-export type FriendRecentEventDifficulty =
-  | "basic"
-  | "advanced"
-  | "expert"
-  | "master"
-  | "remaster"
-  | "utage";
-
-export type FriendRecentEventFc = "fc" | "fcp" | "ap" | "app";
-export type FriendRecentEventFs = "fs" | "fsp" | "fdx" | "fdxp";
-
-export interface FriendRecentEvent {
-  time: string;
-  songName: string;
-  fc: FriendRecentEventFc | null;
-  fs: FriendRecentEventFs | null;
-  difficulty: FriendRecentEventDifficulty | null;
-  difficultyImageUrl: string | null;
-}
-
 // ============================================================================
 // Score Types
 // ============================================================================
@@ -175,6 +153,7 @@ export interface FriendVsSong {
   type: ChartType;
   fs: string | null;
   fc: string | null;
+  diff?: number;
 }
 
 export interface ScoreEntry {
@@ -189,6 +168,21 @@ export type AggregatedScoreResult = Record<
   string,
   Partial<Record<ChartType, Record<string, Record<number, ScoreEntry>>>>
 >;
+
+export interface TargetedScoreEntry {
+  /** Chart-specific catalog id (`charts[].cid`). */
+  musicId: string;
+  dxScore?: string | null;
+  score?: string | null;
+  fs?: string | null;
+  fc?: string | null;
+}
+
+export interface TargetedScoreResult {
+  targetedScores: TargetedScoreEntry[];
+}
+
+export type UpdateScoreResult = AggregatedScoreResult | TargetedScoreResult;
 
 export interface ParsedScoreResult {
   diff: number;

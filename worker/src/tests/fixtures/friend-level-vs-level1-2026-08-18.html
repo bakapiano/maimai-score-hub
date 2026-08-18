@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=yes" />
+	<script>
+		var baseW = 768;
+		var iOSW = 0;
+		var ua = navigator.userAgent.toLowerCase();
+		var isiOS = (ua.indexOf("iphone") > -1) || (ua.indexOf("ipod") > -1) || (ua.indexOf("ipad") > -1);
+		if(isiOS){
+			iOSW = document.documentElement.clientWidth;
+		}
+		window.addEventListener("resize", updateMetaViewport, false);
+		window.addEventListener("orientationchange", updateMetaViewport, false);
+		var ev = document.createEvent("UIEvent");
+		ev.initEvent("resize", true, true)
+		window.dispatchEvent(ev);
+		function updateMetaViewport(){
+			var viewportContent;
+			var w = window.outerWidth;
+			if(isiOS){
+				w = iOSW;
+			}
+			if(w < baseW){
+				viewportContent = "width=480,initial-scale=" + w/480 + ",user-scalable=yes,shrink-to-fit=no";
+			}else{
+				viewportContent = "width=device-width,initial-scale=1.0,user-scalable=yes,shrink-to-fit=no";
+			}
+			document.querySelector("meta[name='viewport']").setAttribute("content", viewportContent);
+		}
+	</script>
+	<meta name="format-detection" content="telephone=no">
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=EmulateIE8; IE=EmulateIE9" />
+	<meta name="robots" content="INDEX, FOLLOW" />
+	<meta name="author" content="(C) SEGA">
+	<meta name="copyright" content="&copy;SEGA">
+	<meta name="description" content="此网页可浏览SEGA(世嘉)音乐机台「舞萌DX」的个人游戏记录。">
+	<meta name="keywords" content="舞萌DX,maimai DX,maimai deluxe,sega" />
+	<meta name="theme-color" content="#51bcf3">
+	<meta name="mkd" content="">
+
+	<title>舞萌DX－好友VS－</title>
+	<link rel="stylesheet" href="https://maimai.wahlap.com/maimai-mobile/css/modaal.min.css" />
+	<link rel="stylesheet" href="https://maimai.wahlap.com/maimai-mobile/css/common.css?ver=1.55?202501208" />
+	<link rel="stylesheet" href="https://maimai.wahlap.com/maimai-mobile/css/unique.css?ver=1.55?20250117" />
+	<link rel="apple-touch-icon-precomposed" href="https://maimai.wahlap.com/maimai-mobile/apple-touch-icon.png">
+	<link rel="icon" type="image/png" href="https://maimai.wahlap.com/maimai-mobile/apple-touch-icon.png">
+<!--
+ここに百度統計のスクリプト追加予定
+-->
+</head>
+<body oncontextmenu="return false;">
+	<div class="wrapper t_c">
+					<div class="spmenu_toggle"></div>
+			<nav class="spmenu_navigation" style="display:none">
+				<img src="https://maimai.wahlap.com/maimai-mobile/img/menu_title.png" class="w_320 m_t_20"/>
+				<div class="container p_10 f_0">
+					<div class="p_5">
+						<div class="d_ib col2"><a href="https://maimai.wahlap.com/maimai-mobile/home/"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_home.png" class="w_112"/></a></div>
+						<div class="d_ib col2"><a href="https://maimai.wahlap.com/maimai-mobile/playerData/"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_playerdata.png" class="w_112"/></a></div>
+					</div>
+					<div class="p_5">
+						<div class="d_ib col2"><a href="https://maimai.wahlap.com/maimai-mobile/friend/"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_friend.png" class="w_112"/></a></div>
+						<div class="d_ib col2"><a href="https://maimai.wahlap.com/maimai-mobile/shop/"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_shop.png" class="w_112"/></a></div>
+					</div>
+					<div class="p_5">
+						<div class="d_ib col2"><a href="https://maimai.wahlap.com/maimai-mobile/record/"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_record.png" class="w_112"/></a></div>
+						<div class="d_ib col2"><a href="https://maimai.wahlap.com/maimai-mobile/map/"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_map.png?ver=1.55" class="w_112"/></a></div>
+					</div>
+					<div class="p_5 p_b_10">
+						<div class="d_ib col2"><a href="https://maimai.wahlap.com/maimai-mobile/collection/"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_collection.png" class="w_112"/></a></div>
+<!--
+-->
+					</div>
+				</div>
+			</nav>
+				<a href="https://maimai.wahlap.com/maimai-mobile/home/"><img src="https://maimai.wahlap.com/maimai-mobile/img/logo.png" class="logo p_5"/></a>
+					<a href="https://maimai.wahlap.com/maimai-mobile/home/userOption/" class="setting"><img src="https://maimai.wahlap.com/maimai-mobile/img/btn_setting.png" /></a>
+			</div>
+	<div class="wrapper main_wrapper t_c">
+		<header class="f_0">
+				<div class="f_0">
+	<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 480 10" preserveAspectRatio="none" style="height:10px">
+		<path d="M0,10 v-5 q5,5 10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 v5 Z" fill="#7ed3ff"></path>
+	</svg>
+	<div class="menu">
+		<a href="https://maimai.wahlap.com/maimai-mobile/home/" class="d_ib col4 p_4"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_home.png?ver=1.55" class="w_112"/></a>
+		<a href="https://maimai.wahlap.com/maimai-mobile/playerData/" class="d_ib col4 p_4"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_playerdata.png?ver=1.55" class="w_112"/></a>
+		<a href="https://maimai.wahlap.com/maimai-mobile/friend/" class="d_ib col4 p_4"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_friend_on.png?ver=1.55" class="w_112"/></a>
+		<a href="https://maimai.wahlap.com/maimai-mobile/shop/" class="d_ib col4 p_4"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_shop.png?ver=1.55" class="w_112"/></a>
+	</div>
+	<div class="menu">
+		<a href="https://maimai.wahlap.com/maimai-mobile/record/" class="d_ib col4 p_4"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_record.png?ver=1.55" class="w_112"/></a>
+		<a href="https://maimai.wahlap.com/maimai-mobile/map/" class="d_ib col4 p_4"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_map.png?ver=1.55" class="w_112"/></a>
+		<a href="https://maimai.wahlap.com/maimai-mobile/collection/" class="d_ib col4 p_4"><img src="https://maimai.wahlap.com/maimai-mobile/img/menu_collection.png?ver=1.55" class="w_112"/></a>
+	</div>
+	<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 480 10" preserveAspectRatio="none" style="height:10px">
+		<path d="M0,0 v5 q5,5 10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 v-5 Z" fill="#7ed3ff"></path>
+	</svg>
+</div>
+		</header>
+
+				<div class="m_t_5 m_b_10 p_r t_l f_0">
+	<a href="https://maimai.wahlap.com/maimai-mobile/friend/" class="p_r d_ib">
+		<img src="https://maimai.wahlap.com/maimai-mobile/img/menu_sub_friend_list.png" class="w_96">
+		<img src="https://maimai.wahlap.com/maimai-mobile/img/icon_on.png" class="submenu_selected" />	</a>
+	<a href="https://maimai.wahlap.com/maimai-mobile/friend/search/" class="p_r d_ib">
+		<img src="https://maimai.wahlap.com/maimai-mobile/img/menu_sub_friend_search.png" class="w_96">
+			</a>
+	<a href="https://maimai.wahlap.com/maimai-mobile/friend/matching/" class="p_r d_ib">
+		<img src="https://maimai.wahlap.com/maimai-mobile/img/menu_sub_friend_match.png" class="w_96">
+			</a>
+	<a href="https://maimai.wahlap.com/maimai-mobile/friend/invite/" class="p_r d_ib">
+		<img src="https://maimai.wahlap.com/maimai-mobile/img/menu_sub_friend_invite.png" class="w_96">
+			</a>
+	<a href="https://maimai.wahlap.com/maimai-mobile/friend/accept/" class="p_r d_ib">
+		<img src="https://maimai.wahlap.com/maimai-mobile/img/menu_sub_friend_accept.png" class="w_96">
+					</a>
+</div>
+
+<img src="https://maimai.wahlap.com/maimai-mobile/img/title_friend_vs.png" class="title m_10"/>
+<div class="friend_vs_block">
+	<div class="friend_vs_you_block">
+		<img src="https://maimai.wahlap.com/maimai-mobile/img/friend_vs_you.png" class="friend_vs_usertype_icon h_16" />
+		<img loading="lazy" src="https://maimai.wahlap.com/maimai-mobile/img/Icon/34f0363f4ce86d07.png" class="h_55 f_l"/>
+		<div class="p_r f_l p_3 p_r_0">
+			<img src="https://maimai.wahlap.com/maimai-mobile/img/rating_base_red.png?ver=1.55" class="h_30 f_r"/>
+			<div class="rating_block">9909</div>
+		</div>
+		<div class="p_l_5 t_l f_l f_12 f_b">ｍａｉｍａｉ</div>
+	</div>
+	<div class="friend_vs_friend_block">
+		<img src="https://maimai.wahlap.com/maimai-mobile/img/friend_vs_friend.png" class="friend_vs_usertype_icon h_16" />
+		<img loading="lazy" src="https://maimai.wahlap.com/maimai-mobile/img/Icon/8ed59c0111ca92d6.png" class="h_55 f_l"/>
+		<div class="p_r f_l p_3 p_r_0">
+			<img src="https://maimai.wahlap.com/maimai-mobile/img/rating_base_silver.png?ver=1.55" class="h_30 f_r"/>
+			<div class="rating_block">13447</div>
+		</div>
+		<div class="p_l_5 t_l f_l f_12 f_b">・</div>
+	</div>
+	<div class="clearfix"></div>
+</div>
+<div class="town_block m_15 p_10 p_t_5 f_0">
+	<div class="m_b_5 t_c">
+		<form action="https://maimai.wahlap.com/maimai-mobile/friend/friendGenreVs/" method="get" accept-charset="utf-8" class="d_ib p_3 m_5">
+			<input type="hidden" name="idx" value="000000000000000" />
+			<input type="image" src="https://maimai.wahlap.com/maimai-mobile/img/btn_music_genre.png" class="h_30"/>
+		</form>
+		<form action="https://maimai.wahlap.com/maimai-mobile/friend/friendLevelVs/" method="get" accept-charset="utf-8" class="on_area d_ib p_3 m_5">
+			<input type="hidden" name="idx" value="000000000000000" />
+			<input type="image" src="https://maimai.wahlap.com/maimai-mobile/img/btn_music_level.png" class="h_30"/>
+		</form>
+	</div>
+	<form action="https://maimai.wahlap.com/maimai-mobile/friend/friendLevelVs/battleStart/" method="get" accept-charset="utf-8">
+		<select name="scoreType" class="w_300 m_5">
+							<option value="2" selected>达成率</option>
+							<option value="1" >DX分数</option>
+					</select>
+		<select name="level" class="w_300 m_5">
+							<option value="1" selected>等级 1</option>
+							<option value="2" >等级 2</option>
+							<option value="3" >等级 3</option>
+							<option value="4" >等级 4</option>
+							<option value="5" >等级 5</option>
+							<option value="6" >等级 6</option>
+							<option value="7" >等级 7</option>
+							<option value="8" >等级 7+</option>
+							<option value="9" >等级 8</option>
+							<option value="10" >等级 8+</option>
+							<option value="11" >等级 9</option>
+							<option value="12" >等级 9+</option>
+							<option value="13" >等级 10</option>
+							<option value="14" >等级 10+</option>
+							<option value="15" >等级 11</option>
+							<option value="16" >等级 11+</option>
+							<option value="17" >等级 12</option>
+							<option value="18" >等级 12+</option>
+							<option value="19" >等级 13</option>
+							<option value="20" >等级 13+</option>
+							<option value="21" >等级 14</option>
+							<option value="22" >等级 14+</option>
+							<option value="23" >等级 15</option>
+					</select>
+		<div class="m_15 f_15">
+			<label class="p_r m_5">
+				<input type="checkbox" name="playCheck" >
+				<span>未游玩除外</span>
+			</label>
+			<label class="p_r m_5">
+				<input type="checkbox" name="winOnly" >
+				<span>只看WIN</span>
+			</label>
+			<label class="p_r m_5">
+				<input type="checkbox" name="loseOnly" >
+				<span>只看LOSE</span>
+			</label>
+		</div>
+		<input type="hidden" name="idx" value="000000000000000" />
+		<button type="submit" class="f_0"><img src="https://maimai.wahlap.com/maimai-mobile/img/btn_vs_start.png" class="w_180" /></button>
+	</form>
+</div>
+	<div class="see_through_block m_15 p_5 p_t_0">
+		<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_win.png" class="w_180"/>
+		<div class="black">合计：1胜　0负　11平</div>
+	</div>
+			<div class="screw_block m_15 f_15">等级 1</div>
+																<div class="music_basic_score_back w_450 m_15 p_3 f_0">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/diff_basic.png" class="h_20 f_l">
+											<img src="https://maimai.wahlap.com/maimai-mobile/img/music_dx.png" class="music_kind_icon f_r"/>
+										<div class="clearfix"></div>
+					<div class="music_lv_block f_r t_c f_14">1</div>
+					<div class="music_name_block t_l f_13 break">ハム太郎とっとこうた</div>
+					<table class="f_14 t_c">
+						<tr>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+							<td rowspan="2" class="see_through_block f_0 f_b">
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_draw.png" class="h_35"/>
+									<div class="f_14" style="color:#e73f76">+0.0000%</div>
+															</td>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+						</tr>
+						<tr>
+							<td class="t_l f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+															</td>
+							<td class="t_r f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+															</td>
+						</tr>
+					</table>
+				</div>
+							<div class="music_basic_score_back w_450 m_15 p_3 f_0">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/diff_basic.png" class="h_20 f_l">
+											<img src="https://maimai.wahlap.com/maimai-mobile/img/music_dx.png" class="music_kind_icon f_r"/>
+										<div class="clearfix"></div>
+					<div class="music_lv_block f_r t_c f_14">1</div>
+					<div class="music_name_block t_l f_13 break">幽霊東京</div>
+					<table class="f_14 t_c">
+						<tr>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+							<td rowspan="2" class="see_through_block f_0 f_b">
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_draw.png" class="h_35"/>
+									<div class="f_14" style="color:#e73f76">+0.0000%</div>
+															</td>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+						</tr>
+						<tr>
+							<td class="t_l f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+															</td>
+							<td class="t_r f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+															</td>
+						</tr>
+					</table>
+				</div>
+							<div class="music_basic_score_back w_450 m_15 p_3 f_0">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/diff_basic.png" class="h_20 f_l">
+											<img src="https://maimai.wahlap.com/maimai-mobile/img/music_dx.png" class="music_kind_icon f_r"/>
+										<div class="clearfix"></div>
+					<div class="music_lv_block f_r t_c f_14">1</div>
+					<div class="music_name_block t_l f_13 break">阿吽のビーツ</div>
+					<table class="f_14 t_c">
+						<tr>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+							<td rowspan="2" class="see_through_block f_0 f_b">
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_draw.png" class="h_35"/>
+									<div class="f_14" style="color:#e73f76">+0.0000%</div>
+															</td>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+						</tr>
+						<tr>
+							<td class="t_l f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+															</td>
+							<td class="t_r f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+															</td>
+						</tr>
+					</table>
+				</div>
+							<div class="music_basic_score_back w_450 m_15 p_3 f_0">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/diff_basic.png" class="h_20 f_l">
+											<img src="https://maimai.wahlap.com/maimai-mobile/img/music_dx.png" class="music_kind_icon f_r"/>
+										<div class="clearfix"></div>
+					<div class="music_lv_block f_r t_c f_14">1</div>
+					<div class="music_name_block t_l f_13 break">再会</div>
+					<table class="f_14 t_c">
+						<tr>
+							<td class="p_r basic_score_label w_120 f_b">
+																0.0000%
+							</td>
+							<td rowspan="2" class="see_through_block f_0 f_b">
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_draw.png" class="h_35"/>
+									<div class="f_14" style="color:#e73f76">+0.0000%</div>
+															</td>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+						</tr>
+						<tr>
+							<td class="t_l f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_d.png?ver=1.55" class="h_30 f_l"/>
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+															</td>
+							<td class="t_r f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+															</td>
+						</tr>
+					</table>
+				</div>
+							<div class="music_basic_score_back w_450 m_15 p_3 f_0">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/diff_basic.png" class="h_20 f_l">
+											<img src="https://maimai.wahlap.com/maimai-mobile/img/music_dx.png" class="music_kind_icon f_r"/>
+										<div class="clearfix"></div>
+					<div class="music_lv_block f_r t_c f_14">1</div>
+					<div class="music_name_block t_l f_13 break">約束</div>
+					<table class="f_14 t_c">
+						<tr>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+							<td rowspan="2" class="see_through_block f_0 f_b">
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_draw.png" class="h_35"/>
+									<div class="f_14" style="color:#e73f76">+0.0000%</div>
+															</td>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+						</tr>
+						<tr>
+							<td class="t_l f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+															</td>
+							<td class="t_r f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+															</td>
+						</tr>
+					</table>
+				</div>
+							<div class="music_basic_score_back w_450 m_15 p_3 f_0">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/diff_basic.png" class="h_20 f_l">
+											<img src="https://maimai.wahlap.com/maimai-mobile/img/music_dx.png" class="music_kind_icon f_r"/>
+										<div class="clearfix"></div>
+					<div class="music_lv_block f_r t_c f_14">1</div>
+					<div class="music_name_block t_l f_13 break">春を告げる</div>
+					<table class="f_14 t_c">
+						<tr>
+							<td class="p_r basic_score_label w_120 f_b">
+																100.5000%
+							</td>
+							<td rowspan="2" class="see_through_block f_0 f_b">
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_win.png" class="h_35"/>
+									<div class="f_14" style="color:#e73f76">+100.5000%</div>
+															</td>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+						</tr>
+						<tr>
+							<td class="t_l f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_sssp.png?ver=1.55" class="h_30 f_l"/>
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_ap.png?ver=1.55" class="h_30 f_l"/>
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_fdx.png?ver=1.55" class="h_30 f_l"/>
+																</td>
+							<td class="t_r f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+															</td>
+						</tr>
+					</table>
+				</div>
+							<div class="music_basic_score_back w_450 m_15 p_3 f_0">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/diff_basic.png" class="h_20 f_l">
+											<img src="https://maimai.wahlap.com/maimai-mobile/img/music_dx.png" class="music_kind_icon f_r"/>
+										<div class="clearfix"></div>
+					<div class="music_lv_block f_r t_c f_14">1</div>
+					<div class="music_name_block t_l f_13 break">on the rocks</div>
+					<table class="f_14 t_c">
+						<tr>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+							<td rowspan="2" class="see_through_block f_0 f_b">
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_draw.png" class="h_35"/>
+									<div class="f_14" style="color:#e73f76">+0.0000%</div>
+															</td>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+						</tr>
+						<tr>
+							<td class="t_l f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+															</td>
+							<td class="t_r f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+															</td>
+						</tr>
+					</table>
+				</div>
+							<div class="music_basic_score_back w_450 m_15 p_3 f_0">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/diff_basic.png" class="h_20 f_l">
+											<img src="https://maimai.wahlap.com/maimai-mobile/img/music_dx.png" class="music_kind_icon f_r"/>
+										<div class="clearfix"></div>
+					<div class="music_lv_block f_r t_c f_14">1</div>
+					<div class="music_name_block t_l f_13 break">群青讃歌</div>
+					<table class="f_14 t_c">
+						<tr>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+							<td rowspan="2" class="see_through_block f_0 f_b">
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_draw.png" class="h_35"/>
+									<div class="f_14" style="color:#e73f76">+0.0000%</div>
+															</td>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+						</tr>
+						<tr>
+							<td class="t_l f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+															</td>
+							<td class="t_r f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+															</td>
+						</tr>
+					</table>
+				</div>
+							<div class="music_basic_score_back w_450 m_15 p_3 f_0">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/diff_basic.png" class="h_20 f_l">
+											<img src="https://maimai.wahlap.com/maimai-mobile/img/music_dx.png" class="music_kind_icon f_r"/>
+										<div class="clearfix"></div>
+					<div class="music_lv_block f_r t_c f_14">1</div>
+					<div class="music_name_block t_l f_13 break">独りんぼエンヴィー</div>
+					<table class="f_14 t_c">
+						<tr>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+							<td rowspan="2" class="see_through_block f_0 f_b">
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_draw.png" class="h_35"/>
+									<div class="f_14" style="color:#e73f76">+0.0000%</div>
+															</td>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+						</tr>
+						<tr>
+							<td class="t_l f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+															</td>
+							<td class="t_r f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+															</td>
+						</tr>
+					</table>
+				</div>
+							<div class="music_basic_score_back w_450 m_15 p_3 f_0">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/diff_basic.png" class="h_20 f_l">
+											<img src="https://maimai.wahlap.com/maimai-mobile/img/music_dx.png" class="music_kind_icon f_r"/>
+										<div class="clearfix"></div>
+					<div class="music_lv_block f_r t_c f_14">1</div>
+					<div class="music_name_block t_l f_13 break">はんぶんこ</div>
+					<table class="f_14 t_c">
+						<tr>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+							<td rowspan="2" class="see_through_block f_0 f_b">
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_draw.png" class="h_35"/>
+									<div class="f_14" style="color:#e73f76">+0.0000%</div>
+															</td>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+						</tr>
+						<tr>
+							<td class="t_l f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+															</td>
+							<td class="t_r f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+															</td>
+						</tr>
+					</table>
+				</div>
+							<div class="music_basic_score_back w_450 m_15 p_3 f_0">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/diff_basic.png" class="h_20 f_l">
+											<img src="https://maimai.wahlap.com/maimai-mobile/img/music_dx.png" class="music_kind_icon f_r"/>
+										<div class="clearfix"></div>
+					<div class="music_lv_block f_r t_c f_14">1</div>
+					<div class="music_name_block t_l f_13 break">ツギハギスタッカート</div>
+					<table class="f_14 t_c">
+						<tr>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+							<td rowspan="2" class="see_through_block f_0 f_b">
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_draw.png" class="h_35"/>
+									<div class="f_14" style="color:#e73f76">+0.0000%</div>
+															</td>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+						</tr>
+						<tr>
+							<td class="t_l f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+															</td>
+							<td class="t_r f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+															</td>
+						</tr>
+					</table>
+				</div>
+							<div class="music_basic_score_back w_450 m_15 p_3 f_0">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/diff_basic.png" class="h_20 f_l">
+											<img src="https://maimai.wahlap.com/maimai-mobile/img/music_dx.png" class="music_kind_icon f_r"/>
+										<div class="clearfix"></div>
+					<div class="music_lv_block f_r t_c f_14">1</div>
+					<div class="music_name_block t_l f_13 break">ザムザ</div>
+					<table class="f_14 t_c">
+						<tr>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+							<td rowspan="2" class="see_through_block f_0 f_b">
+																	<img src="https://maimai.wahlap.com/maimai-mobile/img/vs_draw.png" class="h_35"/>
+									<div class="f_14" style="color:#e73f76">+0.0000%</div>
+															</td>
+							<td class="p_r basic_score_label w_120 f_b">
+																― %
+							</td>
+						</tr>
+						<tr>
+							<td class="t_l f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_l"/>
+															</td>
+							<td class="t_r f_0">
+								<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+																<img src="https://maimai.wahlap.com/maimai-mobile/img/music_icon_back.png?ver=1.55" class="h_30 f_r"/>
+															</td>
+						</tr>
+					</table>
+				</div>
+
+		<footer class="f_0">
+			<div class="footer_marquee">
+			<div class="footer w_480">
+				<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 480 50" preserveAspectRatio="none" style="height:50px">
+					<path d="M0,0 v25 q5,5 10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 t10,0 v-25 Z" fill="#7cbc29"></path>
+				</svg>
+				<div class="m_15 m_t_0 f_13">
+					<div class="m_5"><a href="https://maimai.wahlap.com/maimai-mobile/termsOfService/" target="_blank" class="white" rel="noopener">使用条款</a></div>
+					<div class="m_5"><a href="https://maimai.wahlap.com/maimai-mobile/sitePolicy/" target="_blank" class="white" rel="noopener">使用须知</a></div>
+					<div class="m_5"><a href="https://www.segafave.co.jp/en/privacy/" target="_blank" class="white" rel="noopener">私隐政策</a></div>
+				</div>
+				<img src="https://maimai.wahlap.com/maimai-mobile/img/line_02.png" class="w_430 m_b_10" />
+				<div class="f_l m_15 m_l_30 p_l_10">
+					<a href="http://sega.jp" target="_blank" rel="noopener"><img src="https://maimai.wahlap.com/maimai-mobile/img/logo_sega.png" /></a>
+					<div class="f_15 p_5">© SEGA</div>
+				</div>
+				<div class="m_15">
+					<img src="https://maimai.wahlap.com/maimai-mobile/img/logo_wahlap.png" /></a>
+					<div class="f_11 p_3"><a href="http://www.miitbeian.gov.cn" style="text-decoration:none; color: #fff" target="_blank" rel="noopener">粤ICP备05005783号</a></div>
+				</div>
+							</div>
+			</div>
+		</footer>
+	</div>
+	<img id="page-top" src="https://maimai.wahlap.com/maimai-mobile/img/btn_page_top.png" class="pointer">
+	<img id="page-bottom" src="https://maimai.wahlap.com/maimai-mobile/img/btn_page_bottom.png" class="pointer">
+	<script src="https://maimai.wahlap.com/maimai-mobile/js/jquery-3.3.1.min.js"></script>
+	<script src="https://maimai.wahlap.com/maimai-mobile/js/modaal.min.js"></script>
+	<script>
+		(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+		(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+		m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+		})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+		ga('create', 'UA-136087881-2', 'auto');
+		ga('send', 'pageview');
+
+		var scrollPoint = $('.scroll_point').length;
+		$('#page-top').click(function () {
+			if (scrollPoint > 0) {
+				var fromPos = Math.floor($(window).scrollTop());
+				var toPos   = 0;
+				$(".scroll_point").each(function() {
+					var targetPos = Math.floor($(this).offset().top);
+					if (location.pathname.split('/').pop() == "updateMusic") {
+						targetPos = targetPos - 284;
+					}
+					if (fromPos > targetPos) {
+						toPos = targetPos;
+					} else {
+						return false;
+					}
+				});
+				$('body,html').animate({scrollTop: toPos}, 500);
+			} else {
+				$('body,html').animate({scrollTop: 0}, 500);
+			}
+			return false;
+		});
+		$('#page-bottom').click(function () {
+			if (scrollPoint > 0) {
+				var fromPos = Math.floor($(window).scrollTop()) + 3;
+				var toPos   = Math.floor($(document).height());
+				$(".scroll_point").each(function() {
+					var targetPos = Math.floor($(this).offset().top);
+					if (location.pathname.split('/').pop() == "updateMusic") {
+						targetPos = targetPos - 284;
+					}
+					if (fromPos < targetPos) {
+						toPos = targetPos;
+						return false;
+					}
+				});
+				$('body,html').animate({scrollTop: toPos}, 500);
+			} else {
+				$('body,html').animate({scrollTop: $(document).height()}, 500);
+			}
+			return false;
+		});
+		function fadeOutPageBtn() {
+			$('#page-top').fadeOut(1500).animate({duration: 'slow', easing: 'linear'});
+			$('#page-bottom').fadeOut(1500).animate({duration: 'slow', easing: 'linear'});
+		}
+					var spmenu_toggle = $('.spmenu_toggle');
+			var spmenu_navigation = $('.spmenu_navigation');
+			spmenu_toggle.click(function() {
+				$(this).toggleClass('active');
+				if ($(this).hasClass('active')) {
+					spmenu_navigation.addClass('active');
+				} else {
+					spmenu_navigation.removeClass('active');
+				}
+			});
+			spmenu_navigation.click(function() {
+				spmenu_toggle.removeClass('active');
+				$(this).removeClass('active');
+			});
+				var timeLimit = 3*1000;
+		var timerId = setTimeout(fadeOutPageBtn, timeLimit);
+		$(window).scroll(function() {
+			if (!spmenu_navigation.is(':visible')) spmenu_navigation.css('display', 'block');
+			if (!$('#page-top').is(':visible')) $('#page-top').fadeIn();
+			if (!$('#page-bottom').is(':visible')) $('#page-bottom').fadeIn();
+			clearTimeout(timerId);
+			timerId = setTimeout(fadeOutPageBtn, timeLimit);
+							var visible = spmenu_toggle.is(':visible');
+				if ($(this).scrollTop() > 250) {
+					if (!visible)
+						spmenu_toggle.fadeIn().animate({'right': '5px'}, {duration: 500, queue: false});
+				} else {
+					if (visible) {
+						spmenu_toggle.fadeOut().animate({'right': '-100%'}, {duration: 500, queue: false});
+						if (spmenu_toggle.hasClass('active')) {
+							spmenu_toggle.removeClass('active');
+							spmenu_navigation.removeClass('active');
+						}
+					}
+				}
+					});
+	</script>
+	</body>
+</html>

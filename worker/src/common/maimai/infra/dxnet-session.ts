@@ -1,7 +1,9 @@
 import { CookieJar } from "tough-cookie";
 import makeFetchCookie from "fetch-cookie";
+import { ProxyAgent, type Dispatcher } from "undici";
 
 const dxnetSessionChains = new WeakMap<CookieJar, Promise<unknown>>();
+let dxnetDispatcher: Dispatcher | null | undefined;
 
 export interface DxnetSession {
   send: typeof global.fetch;
@@ -24,26 +26,38 @@ function createCookieFetch(
   realJar: CookieJar,
   options: { onCookieChanged?: () => void } = {},
 ): typeof global.fetch {
-  return makeFetchCookie(
-    global.fetch,
-    {
-      getCookieString: (currentUrl: string) =>
-        realJar.getCookieString(currentUrl),
-      setCookie: async (
-        cookieString: string,
-        currentUrl: string,
-        opts: { ignoreError: boolean },
-      ) => {
-        const cookie = await realJar.setCookie(cookieString, currentUrl, opts);
-        try {
-          options.onCookieChanged?.();
-        } catch (err) {
-          console.warn("[MaimaiClient] onCookieChanged hook failed:", err);
-        }
-        return cookie;
-      },
-    } as unknown as CookieJar,
-  );
+  const dispatcher = getDxnetDispatcher();
+  const baseFetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+    global.fetch(input, {
+      ...init,
+      ...(dispatcher ? { dispatcher } : {}),
+    } as RequestInit & { dispatcher?: Dispatcher })) as typeof global.fetch;
+  return makeFetchCookie(baseFetch, {
+    getCookieString: (currentUrl: string) =>
+      realJar.getCookieString(currentUrl),
+    setCookie: async (
+      cookieString: string,
+      currentUrl: string,
+      opts: { ignoreError: boolean },
+    ) => {
+      const cookie = await realJar.setCookie(cookieString, currentUrl, opts);
+      try {
+        options.onCookieChanged?.();
+      } catch (err) {
+        console.warn("[MaimaiClient] onCookieChanged hook failed:", err);
+      }
+      return cookie;
+    },
+  } as unknown as CookieJar);
+}
+
+function getDxnetDispatcher(): Dispatcher | null {
+  if (dxnetDispatcher !== undefined) {
+    return dxnetDispatcher;
+  }
+  const proxyUrl = process.env.DXNET_OUTBOUND_PROXY_URL?.trim();
+  dxnetDispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : null;
+  return dxnetDispatcher;
 }
 
 function runWithDxnetSessionLock<T>(

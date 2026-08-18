@@ -20,6 +20,7 @@ import { ProberExportModule } from '../prober-export/prober-export.module';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { SyncModule } from '../sync/sync.module';
 import { UsersModule } from '../users/users.module';
+import { MusicModule } from '../music/music.module';
 import {
   QrLoginAttemptEntity,
   QrLoginAttemptSchema,
@@ -42,6 +43,7 @@ import {
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
     forwardRef(() => AutoUpdateModule),
+    MusicModule,
   ],
   providers: [
     JobService,

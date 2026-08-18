@@ -113,6 +113,10 @@ ScoreChangeSchema.index({
 });
 ScoreChangeSchema.index({ ownerUserId: 1, observedAt: -1 });
 ScoreChangeSchema.index(
+  { observedAt: 1, friendCode: 1 },
+  { name: 'daily_changed_users' },
+);
+ScoreChangeSchema.index(
   { sourceType: 1, sourceId: 1, musicId: 1, chartIndex: 1 },
   { unique: true, name: 'source_chart_unique' },
 );

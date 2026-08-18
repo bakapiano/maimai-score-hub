@@ -1,7 +1,7 @@
 import { DxnetRoutingControlService } from './dxnet-routing-control.service';
 
 describe('DxnetRoutingControlService', () => {
-  it('keeps the automatic recent-event producer disabled by default', async () => {
+  it('defaults to manual update and QR identity claim flows', async () => {
     const model = {
       findOne: jest.fn().mockReturnValue({
         lean: jest.fn().mockResolvedValue(null),
@@ -15,14 +15,13 @@ describe('DxnetRoutingControlService', () => {
     });
   });
 
-  it('patches one canary flow without clearing the other flow', async () => {
+  it('patches the manual canary and filters a persisted legacy flow', async () => {
     const current = {
       key: 'singleton',
       epoch: 3,
       botAllowlist: null,
       enabledClaimFlows: ['auto_recent_event', 'manual_update'],
       claimCanaryByFlow: {
-        auto_recent_event: ['auto-user'],
         manual_update: ['manual-user'],
       },
     };
@@ -50,8 +49,8 @@ describe('DxnetRoutingControlService', () => {
       }),
     ).resolves.toMatchObject({
       epoch: 4,
+      enabledClaimFlows: ['manual_update'],
       claimCanaryByFlow: {
-        auto_recent_event: ['auto-user'],
         manual_update: ['next-user'],
       },
     });

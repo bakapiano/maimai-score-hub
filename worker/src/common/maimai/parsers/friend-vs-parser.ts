@@ -7,7 +7,7 @@ import { decodeHtmlEntities } from "@maimai-score-hub/shared";
 import type { FriendVsSong, ChartType } from "../../types.ts";
 
 const songBlockAnchor =
-  /<div class="music_(?:basic|advanced|expert|master|remaster|utage)_score_back/gi;
+  /<div class="music_(basic|advanced|expert|master|remaster|utage)_score_back/gi;
 const categoryPattern = /<div class="screw_block[^>]*>([\s\S]*?)<\/div>/g;
 const scoreCellPattern =
   /<td class="p_r (?:basic|advanced|expert|master|remaster|utage)_score_label w_120 f_b">\s*(?:<img[^>]*>\s*)*([0-9][0-9,]*(?:\.[0-9]+)?%?|―(?:\s*%)?)\s*<\/td>/gi;
@@ -22,7 +22,7 @@ export function parseFriendVsSongs(html: string): FriendVsSong[] {
   let currentCategory: string | null = null;
   const blocks = collectSongBlocks(html);
 
-  blocks.forEach(({ start, content }) => {
+  blocks.forEach(({ start, content, diff }) => {
     const songStart = start;
     while (
       categoryIndex + 1 < categories.length &&
@@ -33,7 +33,7 @@ export function parseFriendVsSongs(html: string): FriendVsSong[] {
     }
 
     const levelMatch = /<div class="music_lv_block[^>]*>([\s\S]*?)<\/div>/.exec(
-      content
+      content,
     );
     const nameMatch =
       /<div class="music_name_block[^>]*>([\s\S]*?)<\/div>/.exec(content);
@@ -48,8 +48,8 @@ export function parseFriendVsSongs(html: string): FriendVsSong[] {
     const type: ChartType = /music_utage\.png/i.test(content)
       ? "utage"
       : /music_dx\.png/i.test(content)
-      ? "dx"
-      : "standard";
+        ? "dx"
+        : "standard";
     const { fs, fc } = extractFsFcBadges(content);
     // First score cell is the player's value; second is the opponent's.
     const opponentScore = normalizeScore(scoreMatches[1][1]);
@@ -62,6 +62,7 @@ export function parseFriendVsSongs(html: string): FriendVsSong[] {
       type,
       fs,
       fc,
+      diff,
     });
   });
 
@@ -104,38 +105,57 @@ function extractFsFcBadges(content: string): {
 
 // Records where each category banner appears so subsequent songs inherit it until the next banner.
 function collectCategories(
-  html: string
+  html: string,
 ): Array<{ start: number; name: string }> {
   const categories: { start: number; name: string }[] = [];
   let match: RegExpExecArray | null;
   const categoryRegex = cloneRegex(categoryPattern);
   while ((match = categoryRegex.exec(html)) !== null) {
+    const name = normalizeCategoryText(match[1]);
+    if (/^等级\s/.test(name)) {
+      continue;
+    }
     categories.push({
       start: match.index ?? 0,
-      name: normalizeCategoryText(match[1]),
+      name,
     });
   }
   return categories;
 }
 
 function collectSongBlocks(
-  html: string
-): Array<{ start: number; content: string }> {
-  const blocks: Array<{ start: number; content: string }> = [];
+  html: string,
+): Array<{ start: number; content: string; diff: number }> {
+  const blocks: Array<{ start: number; content: string; diff: number }> = [];
   const anchorRegex = cloneRegex(songBlockAnchor);
-  const indices: number[] = [];
+  const anchors: Array<{ start: number; diff: number }> = [];
   let match: RegExpExecArray | null;
   while ((match = anchorRegex.exec(html)) !== null) {
-    indices.push(match.index ?? 0);
+    anchors.push({
+      start: match.index ?? 0,
+      diff: difficultyClassToIndex(match[1]),
+    });
   }
 
-  for (let i = 0; i < indices.length; i++) {
-    const start = indices[i];
-    const end = i + 1 < indices.length ? indices[i + 1] : html.length;
-    blocks.push({ start, content: html.slice(start, end) });
+  for (let i = 0; i < anchors.length; i++) {
+    const { start, diff } = anchors[i];
+    const end = i + 1 < anchors.length ? anchors[i + 1].start : html.length;
+    blocks.push({ start, content: html.slice(start, end), diff });
   }
 
   return blocks;
+}
+
+function difficultyClassToIndex(value: string): number {
+  const indices: Record<string, number> = {
+    basic: 0,
+    advanced: 1,
+    expert: 2,
+    master: 3,
+    remaster: 4,
+    utage: 10,
+  };
+  return indices[value.toLowerCase()] ?? -1;
 }
 
 function cloneRegex(regex: RegExp): RegExp {
@@ -148,7 +168,7 @@ function normalizeText(value: string): string {
 
 function normalizeCategoryText(value: string): string {
   // Replace all whitespace (including full-width spaces) with a single half-width space
-  const trimmed = value.replace(/\s+/g, ' ').trim();
+  const trimmed = value.replace(/\s+/g, " ").trim();
   return decodeHtmlEntities(trimmed);
 }
 

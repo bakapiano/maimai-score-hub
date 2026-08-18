@@ -55,12 +55,11 @@ S(next) = S(latest) ⊔ Delta(source)
 | --- | --- | --- | --- | --- |
 | `dxnet_update_score` | DXNet worker | `SyncService.createFromJob()` | achievement、DX Score、FC、FS | 部分难度抓取仍视为 delta |
 | `auto_update_rival` | Rival-first scheduler | `SyncService.createFromRivalMusic()` | achievement、DX Score | `fc/fs=null` 表示未提供 |
-| `auto_update_fcfs` | DXNet Recent Event | `SyncService.mergeRecentEvents()` | FC、FS | 只更新 current 中唯一命中的谱面 |
+| `auto_update_fcfs` | targeted `update_score` | `SyncService.createFromJob()` | FC、FS | 按谱面 CID 更新并保留 score/dxScore |
 | `cabinet_qr_update` | sdgb `get_music_score` finalizer | `SyncService.createFromUserMusic()` | achievement、DX Score、FC、FS | cleanup 和身份校验成功后才提交 |
 
-每条 current score 还保存可选的 `observedAt`。Recent Event 将北京时间、分钟精度的
-`YYYY/MM/DD HH:mm` 转为 UTC；其余三个来源没有单谱面游玩时间，使用 winning CAS
-attempt 的当前时间。Recent Event 时间缺失或无效时也回退到该当前时间。只有
+每条 current score 还保存可选的 `observedAt`。所有来源使用 winning CAS attempt
+的当前时间。只有
 achievement、DX Score、FC、FS 的最终最佳值变化才更新，并取 `max(old, incoming)`。
 旧 score 缺少有效 `observedAt` 时是唯一例外：该谱面下一次被任一来源观察到便一次性
 补齐，推进 score version 并唤醒导出；之后的 no-op 不再刷新。

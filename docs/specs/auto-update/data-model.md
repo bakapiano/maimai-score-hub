@@ -21,17 +21,17 @@
 | `lastMapProbeAt`                | 最近一次 map auxiliary 时间                                |
 | `lastMapDeltaAt`                | 最近一次 map 变化时间                                      |
 | `nextMapProbeAt`                | 下一次允许 map auxiliary 的时间                            |
-| `lastRecentEventAt`             | 最近一次 FC/FS recent event 补全时间                       |
-| `nextRecentEventAt`             | 下一次允许 recent event 的时间                             |
-| `lastAutoUpdateActivityAt`      | 最近一次通过 rival/map/recent event 观测到活动信号的时间   |
+| `lastAutoUpdateActivityAt`      | 最近一次通过 rival/map 观测到活动信号的时间                |
 | `pendingFullUpdateAt`           | 稳定后全量 `update_score` 的预约执行时间                   |
-| `lastRecentEventFingerprint`    | 最近一次 FC/FS enrichment 返回的 recent event fingerprint  |
-| `pendingRecentEventReason`      | cooldown / retry 期间挂起的一次 FC/FS enrichment 原因      |
-| `pendingRecentEventRequestedAt` | 最近一次 pending FC/FS enrichment 触发时间                 |
-| `pendingRecentEventCount`       | cooldown 期间合并过的 FC/FS enrichment 触发次数            |
+| `lastFcfsUpdateAt`              | 最近一次定向 FC/FS job 创建时间                            |
+| `nextFcfsUpdateAt`              | 下一次允许定向 FC/FS job 的时间                            |
+| `pendingFcfsMusicIds`           | cooldown / producer 限流期间合并的谱面 CID                 |
+| `pendingFcfsWindowStart/End`    | pending CID 最近对应的半小时窗口                           |
+| `pendingFcfsRequestedAt`        | 最近一次 pending 合并时间                                  |
+| `pendingFcfsCount`              | 已合并的半小时窗口数                                       |
+| `fcfsErrorCount`                | 定向 FC/FS job 创建连续错误数                              |
 | `rivalErrorCount`               | rival score probe 连续错误数                               |
 | `mapErrorCount`                 | map auxiliary 连续错误数                                   |
-| `recentErrorCount`              | recent event 连续错误数                                    |
 | `backoffUntil`                  | 当前主链路退避到期时间                                     |
 | `habitMultiplier`               | Phase 2 预留，用户习惯画像给出的调度倍率；Phase 1 固定为 1 |
 | `loadMultiplier`                | 全局负载给出的调度倍率；可选                               |
@@ -45,8 +45,7 @@
 { cabinetUserId: 1 }
 { enabled: 1, nextRivalProbeAt: 1, tier: 1 }
 { enabled: 1, nextMapProbeAt: 1, tier: 1 }
-{ nextRecentEventAt: 1 }
-{ enabled: 1, pendingRecentEventReason: 1, nextRecentEventAt: 1 }
+{ enabled: 1, nextFcfsUpdateAt: 1, "pendingFcfsMusicIds.0": 1 }
 { enabled: 1, pendingFullUpdateAt: 1 }
 ```
 
@@ -76,17 +75,18 @@ Phase 2 示例：
 
 ## `auto_update_tasks`
 
-用于短期任务日志。当前 Phase 1 直接创建 `processing` 任务并在完成后改为 `completed` / `failed`；`queued` / `runAt` 是后续扩展预留，当前不会作为真正队列使用。
+用于短期任务日志。Rival/Map/FCFS 任务直接进入 `processing`；每日收尾全量更新使用
+`daily_full_update` 作为持久化 staging queue，并通过 `queued/runAt` 分批投递。
 
 | 字段            | 含义                                                                |
 | --------------- | ------------------------------------------------------------------- |
 | `id`            | 任务 ID                                                             |
-| `type`          | `rival_score_probe` / `map_auxiliary_probe` / `fcfs_enrichment`     |
+| `type`          | `rival_score_probe` / `map_auxiliary_probe` / `fcfs_enrichment` / `daily_full_update` |
 | `friendCode`    | 用户好友码                                                          |
 | `cabinetUserId` | 机台用户 ID                                                         |
-| `status`        | `processing` / `completed` / `failed`；`queued` / `canceled` 为预留 |
+| `status`        | `queued` / `processing` / `completed` / `failed` / `canceled`       |
 | `priority`      | 任务优先级                                                          |
-| `runAt`         | 预留字段；当前任务创建时即 processing                               |
+| `runAt`         | 每日任务首次投递或失败重试时间                                      |
 | `attempts`      | 尝试次数                                                            |
 | `lastError`     | 最近错误                                                            |
 | `metrics`       | 任务耗时、命中数量、返回条数、触发原因等轻量元信息                  |
@@ -108,13 +108,10 @@ achievement / dxScore：
 
 FC/FS：
 
-- 来自 FC/FS enrichment。
-- `get_user_recent_event` 每次返回的 FC/FS list 直接与用户当前成绩合并。
-- 不使用 `recentEventSince` 过滤，也不保存 recent event 历史 diff；每次返回的 recent event list 都可参与本次合并。
-- 如果 rival hash / map delta 在 recent event cooldown 内触发 FC/FS enrichment，不丢弃信号；写入 pending 状态，并在 `nextRecentEventAt` 到期后补跑一次。pending 等待期间不推进 `lastRecentEventAt`。
-- 只按 rank 升级，不降级；如果本次 list 没有某首歌，不代表要清空现有 FC/FS。
-- 如果 `songName + difficulty` 在当前成绩里匹配到 0 个或多个 score，则跳过该条 event，不做 musicId 消歧，也不触发 `update_score` fallback。
-- recent event fingerprint 变化会记录 activity signal，并把稳定后全量 `update_score` 延后到 activity 后 45 分钟。
+- 半小时窗口从 score history 选出 achievement/DX Score 变化的谱面 CID。
+- Worker 使用 CID 对应的 genre/level 最优页面组合，并在结果中回传同一 CID。
+- `fcfsOnly=true` 只请求一个 scoreType，结果只含 FC/FS；CAS merge 保留既有 achievement、DX Score 与 rating。
+- 只按 rank 升级；目标页面返回空旗标时保留 current 值。
 
 Rank：
 
@@ -214,7 +211,7 @@ Rival probe 不是每次都写 sync，只有 hash 变化才合并写入。当前
 
 ### FC/FS enrichment 写入压力
 
-Recent event 设计为 change-driven，不对 hot 用户定时全量扫。按 2 bot：
+Targeted FC/FS 设计为半小时 change window，并使用全局 12 jobs/min、burst 6/5s：
 
 | 限流   |             调用量 |
 | ------ | -----------------: |
@@ -223,14 +220,14 @@ Recent event 设计为 change-driven，不对 hot 用户定时全量扫。按 2 
 
 实际会低于上限，因为有单用户 30min cooldown，且只由 rival hash change、map score-silent change、手动触发产生。cooldown 内的多次触发会合并为 `auto_update_probe_states` 上的一次 pending FC/FS enrichment，到期后补跑一次。
 
-FC/FS 写入只合并当前成绩，不保存 recent event 历史 diff。建议 task 文档只保存：
+FC/FS 写入只合并当前成绩；变化事实来自 `score_changes`。task 文档只保存：
 
 - 命中数量。
 - 更新数量。
 - 耗时。
 - 错误码。
 
-不要保存完整 recent event HTML。
+原始页面按现有 observability artifact 采样策略保存。
 
 ### DB 设计结论
 

@@ -118,7 +118,7 @@ claim job 完成 addRival 后需要长 settle
 现有 public `status` 可以继续使用 `queued/processing/completed/failed/canceled`；execution 和
 prerequisite 细节通过新增字段和 timeline event 表达，不必立即增加 public status enum。
 
-`update_score/get_user_recent_event` 的终态副作用采用内部 `completionPending=true`：先持久化
+`update_score` 的终态副作用采用内部 `completionPending=true`：先持久化
 result 和 completion intent，并把 deadline 至少延长 5 分钟，再执行成绩合并/活动记录，最后 CAS
 为 completed 并清除标记。completion pending 期间 BullMQ failed mirror 和旧 Job cancellation 不得
 抢先改写；若进程崩溃，worker 可用同一 execution 重试，grace 到期后 deadline sweep 才终结。

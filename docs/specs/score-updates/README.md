@@ -6,7 +6,7 @@
 
 ## 核心结论
 
-本规范支持 DX Net、二维码、Rival 自动更新和 Recent Event FC/FS enrichment 并发产生
+本规范支持 DX Net、二维码、Rival 自动更新和 targeted FC/FS enrichment 并发产生
 结果，但所有来源必须通过同一个增量提交入口修改用户唯一的 current sync。
 
 ```text
@@ -43,7 +43,7 @@ Phase 1 保持一用户一份 sync，以 `friendCode` 唯一索引定位，使�
 | --- | --- |
 | DXNet `update_score` | `SyncService.createFromJob()` |
 | Rival 自动更新 | `SyncService.createFromRivalMusic()` |
-| Recent Event FC/FS | `SyncService.mergeRecentEvents()` |
+| Targeted FC/FS `update_score` | `SyncService.createFromJob()` |
 | 二维码 `get_music_score` | `SyncService.createFromUserMusic()` |
 
 四条路径必须全部收口到 `SyncService.commitScoreDelta()`。未来新增来源不得直接写
@@ -69,7 +69,7 @@ Phase 1 保持一用户一份 sync，以 `friendCode` 唯一索引定位，使�
 - 任意已有谱面和更高字段都不会被普通同步删除或降低。
 - 首次创建竞争和更新冲突都会重读最新状态后重试。
 - 重复 completed 请求幂等。
-- DXNet、二维码、Rival、Recent Event 四条路径均无旁路写入。
+- DXNet、二维码、Rival、Targeted FC/FS 四条路径均无旁路写入。
 - 自动导出不会用旧 current 覆盖新 current。
 - Frontend 能独立恢复、轮询和展示两个手动任务。
 - 登录用户能在成绩详情按当前歌曲/谱面查看一条 diff 一行的变化历史，且接口不能越权

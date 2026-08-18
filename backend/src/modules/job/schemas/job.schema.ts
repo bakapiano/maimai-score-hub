@@ -3,6 +3,7 @@ import type {
   CabinetFriendshipStatus,
   DxnetJobErrorCode,
   DxnetJobRouting,
+  ScoreFetchTarget,
 } from '@maimai-score-hub/shared';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
@@ -88,6 +89,15 @@ export class JobEntity {
   @Prop({ type: [Number], default: null })
   diffsToScrape!: number[] | null;
 
+  @Prop({ type: [String], default: null })
+  musicIds!: string[] | null;
+
+  @Prop({ type: MongooseSchema.Types.Mixed, default: null })
+  scoreFetchTargets!: ScoreFetchTarget[] | null;
+
+  @Prop({ type: Boolean, default: false })
+  fcfsOnly!: boolean;
+
   @Prop({ type: MongooseSchema.Types.Mixed, default: null })
   context!: Record<string, unknown> | null;
 
@@ -121,6 +131,10 @@ JobSchema.index(
 JobSchema.index(
   { status: 1, createdAt: -1 },
   { name: 'status_createdAt_desc' },
+);
+JobSchema.index(
+  { 'context.source': 1, 'context.dailyTaskId': 1, createdAt: -1 },
+  { name: 'daily_full_update_lookup' },
 );
 JobSchema.index(
   { 'routing.version': 1, status: 1, deadlineAt: 1 },

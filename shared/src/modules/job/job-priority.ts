@@ -9,7 +9,6 @@ export const DXNET_PRIORITY = {
 } as const;
 
 export const JOB_PRIORITY = {
-  recentEvent: DXNET_PRIORITY.background,
   updateScore: DXNET_PRIORITY.userSync,
   userAuthRequest: DXNET_PRIORITY.interactive,
 } as const;
@@ -41,8 +40,6 @@ export function getJobTypePriority(jobType?: JobType | null): number {
       return JOB_PRIORITY.userAuthRequest;
     case "update_score":
       return JOB_PRIORITY.updateScore;
-    case "get_user_recent_event":
-      return JOB_PRIORITY.recentEvent;
     default:
       return 0;
   }

@@ -16,6 +16,7 @@ export const FriendVsSongSchema = z.object({
   type: ChartTypeSchema,
   fs: z.string().nullable(),
   fc: z.string().nullable(),
+  diff: z.number().int().min(0).max(10).optional(),
 });
 
 export const TempCacheBodySchema = z.object({

@@ -3,6 +3,8 @@ import { getJobTypePriority } from '@maimai-score-hub/shared';
 import type { JobResponse, WorkerJobResponse } from '../job.types';
 import type { JobEntity } from '../schemas/job.schema';
 
+// Nullish defaults are field serialization, not control-flow branches.
+// eslint-disable-next-line complexity
 export function toJobResponse(job: JobEntity): JobResponse {
   if (!job.friendCode) {
     throw new Error(`Internal DXNet job ${job.id} has no public friendCode`);
@@ -21,6 +23,9 @@ export function toJobResponse(job: JobEntity): JobResponse {
     scoreProgress: job.scoreProgress ?? null,
     updateScoreDuration: job.updateScoreDuration ?? null,
     diffsToScrape: job.diffsToScrape ?? null,
+    musicIds: job.musicIds ?? null,
+    scoreFetchTargets: job.scoreFetchTargets ?? null,
+    fcfsOnly: job.fcfsOnly ?? false,
     context: job.context ?? null,
     runAt: job.runAt?.toISOString() ?? null,
     deadlineAt: job.deadlineAt?.toISOString() ?? null,
@@ -50,6 +55,9 @@ export function toWorkerJobResponse(job: JobEntity): WorkerJobResponse {
     scoreProgress: job.scoreProgress ?? null,
     updateScoreDuration: job.updateScoreDuration ?? null,
     diffsToScrape: job.diffsToScrape ?? null,
+    musicIds: job.musicIds ?? null,
+    scoreFetchTargets: job.scoreFetchTargets ?? null,
+    fcfsOnly: job.fcfsOnly ?? false,
     context: job.context ?? null,
     runAt: job.runAt?.toISOString() ?? null,
     deadlineAt: job.deadlineAt?.toISOString() ?? null,

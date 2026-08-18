@@ -6,12 +6,7 @@ import {
   getCachedFriendVsSongs,
   setCachedFriendVsSongs,
 } from "../backend/temp-cache.ts";
-import {
-  FRIEND_VS_GENRES,
-  MAIMAI_URLS,
-  RETRY,
-  TIMEOUTS,
-} from "./constants.ts";
+import { FRIEND_VS_GENRES, MAIMAI_URLS, RETRY, TIMEOUTS } from "./constants.ts";
 import type { FriendVsSong } from "../types.ts";
 import {
   CookieExpiredError,
@@ -65,12 +60,7 @@ export class MaimaiScoreApi {
     const startTime = Date.now();
     let songs: FriendVsSong[];
     try {
-      songs = await this.fetchFriendVsPage(
-        friendCode,
-        scoreType,
-        diff,
-        side,
-      );
+      songs = await this.fetchFriendVsPage(friendCode, scoreType, diff, side);
     } catch (error) {
       if (!shouldFallbackToGenres(error, diff)) {
         throw error;
@@ -78,12 +68,7 @@ export class MaimaiScoreApi {
       console.warn(
         `[MaimaiClient] Friend VS full page failed; falling back to genres friendCode=${friendCode} scoreType=${scoreType} diff=${diff} side=${side ?? "all"} error=${errorMessage(error)}`,
       );
-      songs = await this.fetchFriendVsGenres(
-        friendCode,
-        scoreType,
-        diff,
-        side,
-      );
+      songs = await this.fetchFriendVsGenres(friendCode, scoreType, diff, side);
     }
     const cost = Date.now() - startTime;
     console.log(
@@ -91,14 +76,71 @@ export class MaimaiScoreApi {
     );
 
     if (options.jobId) {
+      await setCachedFriendVsSongs(options.jobId, diff, cacheType, songs);
+    }
+
+    return songs;
+  }
+
+  async getFriendVsGenre(
+    friendCode: string,
+    scoreType: 1 | 2,
+    diff: number,
+    genre: number,
+    options: FriendVsOptions = {},
+  ): Promise<FriendVsSong[]> {
+    return this.getPlannedPage(
+      MAIMAI_URLS.friendVS(friendCode, scoreType, diff, undefined, genre),
+      scoreType,
+      100_000 + diff * 1_000 + genre,
+      `genre diff=${diff} genre=${genre}`,
+      options,
+    );
+  }
+
+  async getFriendVsLevel(
+    friendCode: string,
+    scoreType: 1 | 2,
+    level: number,
+    options: FriendVsOptions = {},
+  ): Promise<FriendVsSong[]> {
+    return this.getPlannedPage(
+      MAIMAI_URLS.friendLevelVS(friendCode, scoreType, level),
+      scoreType,
+      200_000 + level,
+      `level=${level}`,
+      options,
+    );
+  }
+
+  private async getPlannedPage(
+    url: string,
+    scoreType: 1 | 2,
+    cachePageId: number,
+    description: string,
+    options: FriendVsOptions,
+  ): Promise<FriendVsSong[]> {
+    if (options.jobId) {
+      const cached = await getCachedFriendVsSongs(
+        options.jobId,
+        cachePageId,
+        scoreType,
+      );
+      if (cached) return cached;
+    }
+    const startedAt = Date.now();
+    const songs = await this.fetchFriendVsUrl(url);
+    console.log(
+      `[MaimaiClient] targeted Friend VS ${description} scoreType=${scoreType} songs=${songs.length} cost=${Date.now() - startedAt}ms`,
+    );
+    if (options.jobId) {
       await setCachedFriendVsSongs(
         options.jobId,
-        diff,
-        cacheType,
+        cachePageId,
+        scoreType,
         songs,
       );
     }
-
     return songs;
   }
 
@@ -132,21 +174,16 @@ export class MaimaiScoreApi {
     side?: "win" | "lose",
     genre = 99,
   ): Promise<FriendVsSong[]> {
-    const url = MAIMAI_URLS.friendVS(
-      friendCode,
-      scoreType,
-      diff,
-      side,
-      genre,
-    );
+    const url = MAIMAI_URLS.friendVS(friendCode, scoreType, diff, side, genre);
+    return this.fetchFriendVsUrl(url);
+  }
+
+  private async fetchFriendVsUrl(url: string): Promise<FriendVsSong[]> {
     const result = await this.http.requestPage({
       url,
       policy: {
         timeoutMs: TIMEOUTS.friendVS,
-        retryCount:
-          genre === 102 || genre === 105
-            ? RETRY.friendVSLargeGenreCount
-            : RETRY.friendVSCount,
+        retryCount: RETRY.friendVSCount,
         assertBody: (body) => {
           if (!body.includes('<div class="friend_vs_block">')) {
             throw new NonRetryableError(
@@ -208,10 +245,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function getFriendVsCacheType(
-  scoreType: 1 | 2,
-  side?: "win" | "lose",
-): number {
+function getFriendVsCacheType(scoreType: 1 | 2, side?: "win" | "lose"): number {
   if (!side) {
     return scoreType;
   }

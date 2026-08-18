@@ -8,16 +8,11 @@ function createService(overrides?: {
   botStatus?: Record<string, unknown>;
   sdgb?: Record<string, unknown>;
   activity?: Record<string, unknown>;
-  routingControl?: Record<string, unknown>;
-  redis?: Record<string, unknown>;
 }) {
   const timing = {
     mapConcurrency: 2,
     mapBatchLimit: 120,
-    recentEventCooldownMs: 30 * 60 * 1000,
-    recentEventDelayMs: 3 * 60 * 1000,
     settledFullUpdateRetryMs: 10 * 60 * 1000,
-    recentEventRetryDelayMs: jest.fn((count: number) => count * 30 * 60 * 1000),
     priorityForTier: jest.fn(() => 30),
   };
   const stateModel = {
@@ -49,18 +44,25 @@ function createService(overrides?: {
     recordActivitySignal: jest.fn().mockResolvedValue(undefined),
     ...(overrides?.activity ?? {}),
   };
-  const routingControl = {
-    get: jest.fn().mockResolvedValue({
-      enabledClaimFlows: [],
-      claimCanaryByFlow: {},
+  const fcfsWindow = {
+    run: jest.fn().mockResolvedValue({
+      windowKey: '2026-07-05T06:00',
+      changedUsers: 0,
+      due: 0,
+      dispatched: 0,
+      deferred: 0,
+      failed: 0,
     }),
-    isClaimFlowEnabled: jest.fn().mockReturnValue(false),
-    ...(overrides?.routingControl ?? {}),
   };
-  const redis = {
-    key: jest.fn((key: string) => key),
-    incrementWithExpiry: jest.fn().mockResolvedValue(1),
-    ...(overrides?.redis ?? {}),
+  const dailyFullUpdate = {
+    run: jest.fn().mockResolvedValue({
+      businessDate: null,
+      staged: 0,
+      reconciled: 0,
+      dispatched: 0,
+      activeUpdateScores: 0,
+      dispatchLimit: 0,
+    }),
   };
 
   return {
@@ -76,9 +78,9 @@ function createService(overrides?: {
       {} as any,
       timing as any,
       activity as any,
+      fcfsWindow as any,
+      dailyFullUpdate as any,
       {} as any,
-      routingControl as any,
-      redis as any,
     ),
     timing,
     stateModel,
@@ -87,31 +89,11 @@ function createService(overrides?: {
     botStatus,
     sdgb,
     activity,
-    routingControl,
-    redis,
+    fcfsWindow,
   };
 }
 
-describe('AutoUpdateSchedulerService FC/FS production gate', () => {
-  it('does not enqueue FC/FS enrichment while the path is disabled', async () => {
-    const { service, stateModel, taskModel, jobs } = createService();
-    const now = new Date('2026-07-05T06:00:00.000Z');
-    const state = {
-      friendCode: '634142510810999',
-      cabinetUserId: 456,
-      nextRecentEventAt: new Date('2026-07-05T06:20:00.000Z'),
-      pendingRecentEventReason: null,
-      pendingRecentEventRequestedAt: null,
-      pendingRecentEventCount: 0,
-    };
-
-    await (service as any).maybeEnqueueFcfs(state, 'map_delta', now);
-
-    expect(taskModel.create).not.toHaveBeenCalled();
-    expect(jobs.create).not.toHaveBeenCalled();
-    expect(stateModel.updateOne).not.toHaveBeenCalled();
-  });
-
+describe('AutoUpdateSchedulerService settled full updates', () => {
   it('creates a full update_score job for due pending settled updates', async () => {
     const { service, stateModel, jobs } = createService();
     const now = new Date('2026-07-05T07:00:00.000Z');
@@ -170,57 +152,5 @@ describe('AutoUpdateSchedulerService FC/FS production gate', () => {
         },
       },
     );
-  });
-});
-
-describe('AutoUpdateSchedulerService v2 FC/FS claim production', () => {
-  it('enqueues a claim job without preselecting a Bot or calling addRival', async () => {
-    const { service, jobs, botStatus, sdgb } = createService({
-      routingControl: {
-        get: jest.fn().mockResolvedValue({
-          enabledClaimFlows: ['auto_recent_event'],
-          claimCanaryByFlow: { auto_recent_event: null },
-        }),
-        isClaimFlowEnabled: jest.fn().mockReturnValue(true),
-      },
-    });
-    await (service as any).maybeEnqueueFcfs(
-      {
-        friendCode: '634142510810999',
-        cabinetUserId: 456,
-        nextRecentEventAt: null,
-        recentErrorCount: 0,
-      },
-      'map_delta',
-      new Date('2026-07-05T06:00:00.000Z'),
-    );
-
-    expect(jobs.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        friendCode: '634142510810999',
-        jobType: 'get_user_recent_event',
-        source: 'auto_update',
-      }),
-    );
-    expect(botStatus.pickAvailableCabinetBot).not.toHaveBeenCalled();
-    expect(sdgb.addRival).not.toHaveBeenCalled();
-  });
-
-  it('does not consume minute quota when the current burst is full', async () => {
-    const incrementWithExpiry = jest
-      .fn()
-      .mockResolvedValueOnce(7)
-      .mockResolvedValueOnce(1);
-    const { service } = createService({
-      redis: { incrementWithExpiry },
-    });
-
-    await expect(
-      (service as any).acquireFcfsProducerSlot(
-        new Date('2026-07-05T06:00:00.000Z'),
-      ),
-    ).resolves.toBe(false);
-    expect(incrementWithExpiry).toHaveBeenCalledTimes(1);
-    expect(incrementWithExpiry.mock.calls[0]?.[0]).toContain('burst:');
   });
 });

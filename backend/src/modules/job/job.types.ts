@@ -10,13 +10,11 @@ export type JobStage =
   | 'wait_user_request'
   | 'accept_request'
   | 'update_score'
-  | 'get_user_recent_event'
   | 'get_full_friend_list';
 export type JobType =
   | 'send_friend_request'
   | 'accept_friend_request'
   | 'update_score'
-  | 'get_user_recent_event'
   | 'get_full_friend_list';
 
 /**
@@ -63,10 +61,6 @@ export interface JobPatchBody {
     queueName: string;
     workerId: string;
   };
-  handoff?: {
-    deliveryMode: 'pinned';
-    runAt: string;
-  };
 }
 
 export interface JobResponse {
@@ -85,6 +79,9 @@ export interface JobResponse {
   scoreProgress?: ScoreProgress | null;
   updateScoreDuration?: number | null;
   diffsToScrape?: number[] | null;
+  musicIds?: string[] | null;
+  scoreFetchTargets?: ScoreFetchTarget[] | null;
+  fcfsOnly?: boolean;
   context?: Record<string, unknown> | null;
   runAt?: string | null;
   deadlineAt?: string | null;
@@ -116,4 +113,7 @@ export interface WorkerJobResponse extends Omit<JobResponse, 'friendCode'> {
     startedAt: string;
   } | null;
 }
-import type { DxnetJobRouting } from '@maimai-score-hub/shared';
+import type {
+  DxnetJobRouting,
+  ScoreFetchTarget,
+} from '@maimai-score-hub/shared';

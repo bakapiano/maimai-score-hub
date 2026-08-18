@@ -89,7 +89,7 @@ type ScoreCommitResult = {
 `mappedDelta` 与 `buildDelta` 必须且只能提供一个：
 
 - DXNet、Rival、二维码映射通常不依赖 current，可提前生成 `mappedDelta`。
-- Recent Event 的匹配依赖 current，必须使用 `buildDelta`，且每次 CAS 重试都重新匹配。
+- Targeted FC/FS 通过谱面 CID 构建 delta，并在每次 CAS 重试时与最新 current 合并。
 - 映射不得把“来源未提供”转换成会覆盖旧值的 0/null。
 
 ## 谱面身份

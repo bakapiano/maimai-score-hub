@@ -5,7 +5,8 @@ import { Schema as MongooseSchema } from 'mongoose';
 export type AutoUpdateTaskType =
   | 'rival_score_probe'
   | 'map_auxiliary_probe'
-  | 'fcfs_enrichment';
+  | 'fcfs_enrichment'
+  | 'daily_full_update';
 
 export type AutoUpdateTaskStatus =
   | 'queued'

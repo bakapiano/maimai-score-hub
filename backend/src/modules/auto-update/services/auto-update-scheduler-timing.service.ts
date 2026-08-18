@@ -19,6 +19,22 @@ function getPositiveInt(config: ConfigService, key: string, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
+function getHour(config: ConfigService, key: string, fallback: number): number {
+  const raw = config.get<string | number>(key);
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 23
+    ? parsed
+    : fallback;
+}
+
+function getBoolean(config: ConfigService, key: string, fallback: boolean) {
+  const raw = config.get<string | boolean>(key);
+  if (raw === undefined || raw === null || raw === '') {
+    return fallback;
+  }
+  return raw === true || raw === 'true';
+}
+
 function getSettledFullUpdateLimits(config: ConfigService) {
   return {
     batchLimit: getPositiveInt(
@@ -30,6 +46,37 @@ function getSettledFullUpdateLimits(config: ConfigService) {
       config,
       'AUTO_UPDATE_SETTLED_FULL_UPDATE_MAX_ACTIVE',
       12,
+    ),
+  };
+}
+
+function getDailyFullUpdateConfig(config: ConfigService) {
+  return {
+    hour: getHour(config, 'AUTO_UPDATE_DAILY_FULL_UPDATE_HOUR', 2),
+    batchLimit: getPositiveInt(
+      config,
+      'AUTO_UPDATE_DAILY_FULL_UPDATE_BATCH_LIMIT',
+      4,
+    ),
+    maxActive: getPositiveInt(
+      config,
+      'AUTO_UPDATE_DAILY_FULL_UPDATE_MAX_ACTIVE',
+      8,
+    ),
+    retryMs: getPositiveInt(
+      config,
+      'AUTO_UPDATE_DAILY_FULL_UPDATE_RETRY_MS',
+      10 * MINUTE,
+    ),
+    maxAttempts: getPositiveInt(
+      config,
+      'AUTO_UPDATE_DAILY_FULL_UPDATE_MAX_ATTEMPTS',
+      3,
+    ),
+    claimTimeoutMs: getPositiveInt(
+      config,
+      'AUTO_UPDATE_DAILY_FULL_UPDATE_CLAIM_TIMEOUT_MS',
+      5 * MINUTE,
     ),
   };
 }
@@ -73,10 +120,16 @@ export class AutoUpdateSchedulerTimingService {
   readonly mapConcurrency: number;
   readonly rivalTimeoutMs: number;
   readonly mapTimeoutMs: number;
-  readonly recentEventCooldownMs: number;
-  readonly recentEventDelayMs: number;
+  readonly fcfsCooldownMs: number;
+  readonly fcfsEnabled: boolean;
   readonly settledFullUpdateDelayMs: number;
   readonly settledFullUpdateRetryMs: number;
+  readonly dailyFullUpdateHour: number;
+  readonly dailyFullUpdateBatchLimit: number;
+  readonly dailyFullUpdateMaxActive: number;
+  readonly dailyFullUpdateRetryMs: number;
+  readonly dailyFullUpdateMaxAttempts: number;
+  readonly dailyFullUpdateClaimTimeoutMs: number;
   readonly mapHotIntervalMs: number;
   readonly mapWarmIntervalMs: number;
   readonly mapColdIntervalMs: number;
@@ -85,6 +138,7 @@ export class AutoUpdateSchedulerTimingService {
   readonly sweepHardTimeoutMs: number;
   readonly sweepAbortGraceMs: number;
 
+  // eslint-disable-next-line max-lines-per-function
   constructor(config: ConfigService) {
     this.cronExpr = config.get<string>('AUTO_UPDATE_CRON', '*/1 * * * *');
     this.hotIntervalMs = getPositiveInt(
@@ -145,15 +199,15 @@ export class AutoUpdateSchedulerTimingService {
       'AUTO_UPDATE_MAP_TIMEOUT_MS',
       60_000,
     );
-    this.recentEventCooldownMs = getPositiveInt(
+    this.fcfsEnabled = getBoolean(
       config,
-      'AUTO_UPDATE_RECENT_EVENT_COOLDOWN_MS',
-      30 * MINUTE,
+      'AUTO_UPDATE_TARGETED_FCFS_ENABLED',
+      false,
     );
-    this.recentEventDelayMs = getPositiveInt(
+    this.fcfsCooldownMs = getPositiveInt(
       config,
-      'AUTO_UPDATE_RECENT_EVENT_DELAY_MS',
-      3 * MINUTE,
+      'AUTO_UPDATE_FCFS_COOLDOWN_MS',
+      30 * MINUTE,
     );
     this.settledFullUpdateDelayMs = getPositiveInt(
       config,
@@ -165,6 +219,13 @@ export class AutoUpdateSchedulerTimingService {
       'AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS',
       10 * MINUTE,
     );
+    const dailyFullUpdate = getDailyFullUpdateConfig(config);
+    this.dailyFullUpdateHour = dailyFullUpdate.hour;
+    this.dailyFullUpdateBatchLimit = dailyFullUpdate.batchLimit;
+    this.dailyFullUpdateMaxActive = dailyFullUpdate.maxActive;
+    this.dailyFullUpdateRetryMs = dailyFullUpdate.retryMs;
+    this.dailyFullUpdateMaxAttempts = dailyFullUpdate.maxAttempts;
+    this.dailyFullUpdateClaimTimeoutMs = dailyFullUpdate.claimTimeoutMs;
     this.mapHotIntervalMs = getPositiveInt(
       config,
       'AUTO_UPDATE_MAP_HOT_INTERVAL_MS',
@@ -209,6 +270,16 @@ export class AutoUpdateSchedulerTimingService {
     return Math.min(
       this.settledFullUpdateBatchLimit,
       Math.max(0, this.settledFullUpdateMaxActive - active),
+    );
+  }
+
+  dailyFullUpdateDispatchLimit(activeCount: number): number {
+    const active = Number.isFinite(activeCount)
+      ? Math.max(0, Math.floor(activeCount))
+      : this.dailyFullUpdateMaxActive;
+    return Math.min(
+      this.dailyFullUpdateBatchLimit,
+      Math.max(0, this.dailyFullUpdateMaxActive - active),
     );
   }
 
@@ -346,7 +417,7 @@ export class AutoUpdateSchedulerTimingService {
     return Math.min(HOUR, 5 * MINUTE * failureCount);
   }
 
-  recentEventRetryDelayMs(failureCount: number): number {
+  fcfsRetryDelayMs(failureCount: number): number {
     return Math.min(6 * HOUR, 30 * MINUTE * failureCount);
   }
 }

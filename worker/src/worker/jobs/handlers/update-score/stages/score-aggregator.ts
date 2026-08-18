@@ -6,10 +6,13 @@
 import type {
   AggregatedScoreResult,
   ParsedScoreResult,
+  UpdateScoreResult,
 } from "../../../../../common/types.ts";
+import type { ScoreFetchTarget } from "@maimai-score-hub/shared";
 import { DIFFICULTIES } from "../../../../../common/maimai/constants.ts";
 import { WORKER_DEFAULTS } from "../../../../../common/config.ts";
 import { MaimaiClient } from "../../../../../common/maimai/client.ts";
+import { TargetedScoreFetcher } from "./targeted-score-fetcher.ts";
 
 interface ScoreFetchOptions {
   /** Job ID（用于缓存恢复） */
@@ -18,6 +21,10 @@ interface ScoreFetchOptions {
   concurrency?: number;
   /** 指定要抓取的难度；为空则抓取默认全部难度 */
   difficulties?: readonly number[];
+  /** Chart-specific targets. Present switches to genre/level planning. */
+  targets?: readonly ScoreFetchTarget[];
+  /** Merge FC/FS from one score type while omitting score fields. */
+  fcfsOnly?: boolean;
   /** 难度完成回调（每完成一个难度的两种类型时调用） */
   onDiffCompleted?: (diff: number) => Promise<void>;
 }
@@ -38,13 +45,23 @@ export class ScoreAggregator {
   async fetchAndAggregate(
     friendCode: string,
     options: ScoreFetchOptions = {},
-  ): Promise<AggregatedScoreResult> {
+  ): Promise<UpdateScoreResult> {
     const {
       jobId,
       concurrency = WORKER_DEFAULTS.friendVSConcurrency,
       difficulties = DIFFICULTIES,
+      targets = [],
+      fcfsOnly = false,
       onDiffCompleted,
     } = options;
+
+    if (targets.length) {
+      return new TargetedScoreFetcher(this.client).fetch(friendCode, targets, {
+        jobId,
+        concurrency,
+        fcfsOnly,
+      });
+    }
 
     const notifyDiffCompleted = async (diff: number) => {
       if (onDiffCompleted) {
@@ -69,13 +86,14 @@ export class ScoreAggregator {
         return parsed;
       };
 
+    const scoreTypes: Array<1 | 2> = fcfsOnly ? [2] : [1, 2];
     for (const diff of difficulties) {
-      tasks.push(buildTask(1, diff));
-      tasks.push(buildTask(2, diff));
+      for (const scoreType of scoreTypes)
+        tasks.push(buildTask(scoreType, diff));
     }
 
     const scores = await runWithConcurrency(tasks, concurrency);
-    return this.aggregateResults(scores);
+    return this.aggregateResults(scores, fcfsOnly);
   }
 
   /**
@@ -83,6 +101,7 @@ export class ScoreAggregator {
    */
   private aggregateResults(
     results: ParsedScoreResult[],
+    fcfsOnly: boolean,
   ): AggregatedScoreResult {
     const aggregated: AggregatedScoreResult = {};
 
@@ -112,9 +131,9 @@ export class ScoreAggregator {
         }
 
         const entry = songsByType[song.name][result.diff];
-        if (result.type === 1) {
+        if (!fcfsOnly && result.type === 1) {
           entry.dxScore = song.score ?? null;
-        } else if (result.type === 2) {
+        } else if (!fcfsOnly && result.type === 2) {
           entry.score = song.score ?? null;
         }
 

@@ -5,7 +5,6 @@
 import { MAIMAI_URLS } from "./constants.ts";
 import type {
   AcceptFriendRequest,
-  FriendRecentEvent,
   FriendInfo,
   SentFriendRequest,
 } from "../types.ts";
@@ -13,7 +12,6 @@ import {
   parseFriendCount,
   parseFriendList,
 } from "./parsers/friend-list-parser.ts";
-import { parseFriendRecentEvents } from "./parsers/friend-recent-event-parser.ts";
 import {
   parseAcceptRequests,
   parseHasReceivedFriendRequest,
@@ -25,10 +23,7 @@ import type { MaimaiHttpClient } from "./infra/http-client.ts";
 
 export interface MaimaiFriendApiOptions {
   onFriendListFetched?: (friends: FriendInfo[]) => void;
-  onFriendRelationChecked?: (
-    friendCode: string,
-    isFriend: boolean,
-  ) => void;
+  onFriendRelationChecked?: (friendCode: string, isFriend: boolean) => void;
   onFriendListRefreshRequested?: () => void;
 }
 
@@ -38,10 +33,7 @@ export class MaimaiFriendApi {
   private readonly http: MaimaiHttpClient;
   private readonly options: MaimaiFriendApiOptions;
 
-  constructor(
-    http: MaimaiHttpClient,
-    options: MaimaiFriendApiOptions = {},
-  ) {
+  constructor(http: MaimaiHttpClient, options: MaimaiFriendApiOptions = {}) {
     this.http = http;
     this.options = options;
   }
@@ -112,10 +104,7 @@ export class MaimaiFriendApi {
     }
   }
 
-  private recordFriendRelation(
-    friendCode: string,
-    isFriend: boolean,
-  ): void {
+  private recordFriendRelation(friendCode: string, isFriend: boolean): void {
     try {
       this.options.onFriendRelationChecked?.(friendCode, isFriend);
     } catch (err) {
@@ -127,7 +116,10 @@ export class MaimaiFriendApi {
     try {
       this.options.onFriendListRefreshRequested?.();
     } catch (err) {
-      console.warn("[MaimaiClient] Failed to request friend list refresh:", err);
+      console.warn(
+        "[MaimaiClient] Failed to request friend list refresh:",
+        err,
+      );
     }
   }
 
@@ -311,21 +303,6 @@ export class MaimaiFriendApi {
 
   async isFriend(friendCode: string): Promise<boolean> {
     return this.isFriendBySearchPage(friendCode);
-  }
-
-  async getFriendRecentEvents(friendCode: string): Promise<FriendRecentEvent[]> {
-    console.log(
-      `[MaimaiClient] Start get friend recent events, friend code ${friendCode}`,
-    );
-    const result = await this.http.requestPage({
-      url: MAIMAI_URLS.friendDetailPage(friendCode),
-    });
-    const text = result.body;
-    const events = parseFriendRecentEvents(text);
-    console.log(
-      `[MaimaiClient] Done get friend recent events, friend code ${friendCode}, count=${events.length}`,
-    );
-    return events;
   }
 
   private async doCleanUpFriend(friendCode: string): Promise<void> {

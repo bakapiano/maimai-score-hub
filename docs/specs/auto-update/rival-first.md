@@ -38,7 +38,7 @@ GetUserRivalMusicApi
 
 - RivalMusic 没有 FC/FS。
 - Rival hash 不变时，用户仍可能正在游玩，或只提升了 FC/FS。
-- 因此需要 Map auxiliary 和 recent event enrichment。
+- 因此需要 Map auxiliary 和 targeted FC/FS enrichment。
 
 ## 实测对比
 
@@ -95,7 +95,7 @@ Map 变化但 rival hash 未变时：
 
 1. 延长或升为 hot。
 2. 不写 achievement / dxScore。
-3. 请求一次 FC/FS enrichment；如果 recent event cooldown 未到，则记录 pending，到期后补跑一次。
+3. 半小时窗口把变化谱面 CID 合并进 FC/FS pending；cooldown 到期后定向补跑。
 
 ## 当前执行控制与目标 QPS
 
