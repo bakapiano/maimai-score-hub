@@ -8,7 +8,6 @@ import type {
 import { MaimaiClient } from "../../../../../common/maimai/client.ts";
 import {
   planScoreFetchPages,
-  scoreFetchCandidatePages,
   type ScoreFetchPage,
 } from "./score-fetch-planner.ts";
 
@@ -49,24 +48,9 @@ export class TargetedScoreFetcher {
     );
     const results = await runWithConcurrency(tasks, options.concurrency);
     const state = new TargetResultState(targets, scoreTypes, options.fcfsOnly);
-    const fetched = new Set<string>();
     for (const result of results) {
       state.ingest(result);
-      fetched.add(fetchKey(result.page, result.scoreType));
     }
-
-    const fallbackTasks = this.alternateFallbackTasks(
-      friendCode,
-      state,
-      scoreTypes,
-      fetched,
-      options.jobId,
-    );
-    const fallbacks = await runWithConcurrency(
-      fallbackTasks,
-      options.concurrency,
-    );
-    for (const result of fallbacks) state.ingest(result);
 
     const missing = state.missingPairs();
     if (missing.length) {
@@ -79,27 +63,6 @@ export class TargetedScoreFetcher {
       );
     }
     return { targetedScores: state.entries() };
-  }
-
-  private alternateFallbackTasks(
-    friendCode: string,
-    state: TargetResultState,
-    scoreTypes: readonly (1 | 2)[],
-    fetched: ReadonlySet<string>,
-    jobId?: string,
-  ): Array<() => Promise<PageResult>> {
-    const pages = new Map<string, { page: ScoreFetchPage; scoreType: 1 | 2 }>();
-    for (const { target, scoreType } of state.missingTargets(scoreTypes)) {
-      for (const page of scoreFetchCandidatePages(target)) {
-        const key = fetchKey(page, scoreType);
-        if (!fetched.has(key)) pages.set(key, { page, scoreType });
-      }
-    }
-    return [...pages.values()].map(
-      ({ page, scoreType }) =>
-        () =>
-          this.fetchPage(friendCode, page, scoreType, jobId),
-    );
   }
 
   private async fetchPage(
@@ -179,15 +142,6 @@ class TargetResultState {
     );
   }
 
-  missingTargets(scoreTypes: readonly (1 | 2)[]) {
-    return scoreTypes.flatMap((scoreType) => {
-      const ids = this.seen.get(scoreType) ?? new Set<string>();
-      return this.targets
-        .filter((target) => !ids.has(target.musicId))
-        .map((target) => ({ target, scoreType }));
-    });
-  }
-
   entries(): TargetedScoreEntry[] {
     const observed = new Set(
       [...this.seen.values()].flatMap((musicIds) => [...musicIds]),
@@ -200,12 +154,6 @@ class TargetResultState {
 
 function targetKey(title: string, type: string, diff: number): string {
   return `${title}\u0000${type}\u0000${diff}`;
-}
-
-function fetchKey(page: ScoreFetchPage, scoreType: 1 | 2): string {
-  return page.kind === "genre"
-    ? `genre:${page.diff}:${page.genre}:type${scoreType}`
-    : `level:${page.level}:type${scoreType}`;
 }
 
 function higherRank(

@@ -53,7 +53,7 @@ export function planScoreFetchPages(
   const pages = new Map<string, ScoreFetchPage>();
   const candidates = new Map<string, string[]>();
   for (const target of uniqueTargets) {
-    const targetPages = scoreFetchCandidatePages(target);
+    const targetPages = candidatePages(target);
     if (!targetPages.length) {
       throw new Error(`No Friend VS page covers chart ${target.musicId}`);
     }
@@ -76,9 +76,7 @@ export function planScoreFetchPages(
   return [...selected].map((key) => pages.get(key)!).sort(comparePages);
 }
 
-export function scoreFetchCandidatePages(
-  target: ScoreFetchTarget,
-): ScoreFetchPage[] {
+function candidatePages(target: ScoreFetchTarget): ScoreFetchPage[] {
   const result: ScoreFetchPage[] = [];
   if (target.genre !== null) {
     const estimatedSongs = GENRE_ROWS[target.diff]?.[target.genre];
