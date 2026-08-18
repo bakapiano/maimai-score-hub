@@ -3,25 +3,7 @@ import test from "node:test";
 
 import type { Job, JobPatch } from "../common/types.ts";
 import type { JobExecutionContext } from "../worker/jobs/handlers/index.ts";
-import { getUserRecentEventJobHandler } from "../worker/jobs/handlers/get-user-recent-event/index.ts";
 import { updateScoreJobHandler } from "../worker/jobs/handlers/update-score/index.ts";
-
-test("recent-event shared claim hands off to the pinned delivery", async () => {
-  const harness = createHarness({
-    jobType: "get_user_recent_event",
-    deliveryMode: "shared",
-  });
-
-  assert.equal(
-    await getUserRecentEventJobHandler.preflight?.(harness.ctx),
-    "complete_delivery",
-  );
-  assert.equal(harness.patches[0]?.handoff?.deliveryMode, "pinned");
-  assert.equal(harness.patches[0]?.status, "queued");
-  assert.equal(harness.ctx.job.routing?.deliveryMode, "pinned");
-  assert.equal(harness.ctx.job.routing?.deliveryEpoch, 2);
-  assert.equal(harness.friendChecks, 0);
-});
 
 test("update-score claim verifies friendship before scraping", async () => {
   const harness = createHarness({
@@ -78,27 +60,8 @@ test("pinned cabinet fallback also verifies the prepared friendship", async () =
   );
 });
 
-test("recent-event pinned claim rejects an unconfirmed friendship", async () => {
-  const harness = createHarness({
-    jobType: "get_user_recent_event",
-    deliveryMode: "pinned",
-    isFriend: false,
-  });
-
-  assert.equal(
-    await getUserRecentEventJobHandler.preflight?.(harness.ctx),
-    "complete_delivery",
-  );
-  assert.equal(harness.friendChecks, 1);
-  assert.equal(
-    harness.patches.at(-1)?.errorCode,
-    "cabinet_friendship_unconfirmed",
-  );
-  assert.equal(harness.ctx.job.status, "failed");
-});
-
 function createHarness(input: {
-  jobType: "update_score" | "get_user_recent_event";
+  jobType: "update_score";
   deliveryMode: "shared" | "pinned";
   assignmentMode?: "claim" | "pinned";
   cabinetFriendshipStatus?: Job["cabinetFriendshipStatus"];
@@ -116,8 +79,8 @@ function createHarness(input: {
     routing: {
       version: 2,
       deliveryEpoch: 1,
-      source: input.jobType === "update_score" ? "user_sync" : "auto_update",
-      lane: input.jobType === "update_score" ? "user_sync" : "background",
+      source: "user_sync",
+      lane: "user_sync",
       assignmentMode: input.assignmentMode ?? "claim",
       deliveryMode: input.deliveryMode,
     },
@@ -126,17 +89,7 @@ function createHarness(input: {
 
   const applyPatch = async (patch: JobPatch): Promise<Job> => {
     patches.push(patch);
-    const { handoff, ...fields } = patch;
-    Object.assign(job, fields);
-    if (handoff && job.routing) {
-      job.routing = {
-        ...job.routing,
-        deliveryMode: handoff.deliveryMode,
-        deliveryEpoch: job.routing.deliveryEpoch + 1,
-      };
-      job.status = "queued";
-      job.runAt = new Date(handoff.runAt);
-    }
+    Object.assign(job, patch);
     return job;
   };
   const ctx = {

@@ -15,11 +15,9 @@
 - sdgb-worker 已支持 `get_user_map` jobType，对应 `GetUserMapApi`。
 - sdgb-worker 已改为 role-aware BullMQ consumer；Rival/Map 消费 Probe lane `sdgb-worker-jobs`，交互任务消费 `sdgb-worker-interactive-jobs`，不再调用 `/workers/sdgb/jobs/next` 拉取。
 - sdgb-worker 已实现 global + per-API token bucket，并支持按 job type 并发上限。
-- FC/FS enrichment 已接入自动调度：由 rival hash 变化或 map delta 请求触发；如果 recent event cooldown 未到，会在 `auto_update_probe_states` 记录 pending 并到期补跑；实际执行时先 `addRival`，再创建 DXNet `get_user_recent_event` job。
-- Worker `get_user_recent_event` handler 已实现，会请求好友详情 recent event 页面并把解析出的 events PATCH 回后端。
-- `JobService.patch()` 会在 `get_user_recent_event` 完成后调用 `SyncService.mergeRecentEvents()`，把本次 FC/FS list 直接与用户当前成绩按 rank 合并。
-- FC/FS enrichment 不使用 `recentEventSince` 过滤；如果 recent event 的 `songName + difficulty` 在当前成绩里无法唯一定位 score，会跳过该条 event，不触发 fallback。
-- recent event fingerprint 变化会记录 activity signal，并把稳定后全量 `update_score` 预约到 activity 后 45 分钟。
+- FC/FS enrichment 每半小时聚合 `score_changes` 中 achievement/DX Score 变化的谱面 CID，并在 cooldown/限流期间持久化合并 pending。
+- Worker 的 targeted `update_score` 使用具体 genre/level 页面规划；`fcfsOnly=true` 只请求一个 scoreType。
+- `JobService.patch()` 通过统一 `update_score` commit-first finalization，把 CID 结果按 FC/FS rank 合并。
 - `update_score` 支持 `diffsToScrape` 字段；稳定后全量更新传 `diffsToScrape=null`，走 worker 默认全难度。
 - music 表在 `SyncService` 内做 5 分钟缓存，避免每个用户 probe 都全表查询。
 - 初次迁移到新状态表时，会按 friendCode 做 deterministic offset，把首次 probe 分散到 cold interval 内，避免 cutover 后所有用户同时到期。
@@ -39,9 +37,9 @@
 | `backend/src/modules/auto-update/schemas/auto-update-probe-state.schema.ts` | 自动更新用户状态                                            |
 | `backend/src/modules/auto-update/schemas/auto-update-task.schema.ts`        | 自动更新短期任务日志                                        |
 | `backend/src/modules/sdgb-worker/**`                                        | `get_user_map` / `get_rival_hash` / `add_rival` 后端 job    |
-| `backend/src/modules/sync/services/sync.service.ts`                         | 直接合并 rival music list 和 recent event FC/FS list        |
-| `backend/src/modules/job/services/job.service.ts`                           | recent event job 完成后触发 FC/FS 合并                      |
-| `worker/src/worker/jobs/handlers/get-user-recent-event/**`                  | DXNet recent event 抓取                                     |
+| `backend/src/modules/sync/services/sync.service.ts`                         | 合并 rival music 与 CID-addressed targeted FC/FS delta      |
+| `backend/src/modules/job/services/job.service.ts`                           | 解析谱面 CID 并统一 finalization `update_score`             |
+| `worker/src/worker/jobs/handlers/update-score/**`                           | 全量或 targeted genre/level Friend VS 抓取                  |
 | `sdgb-worker/src/**`                                                        | BullMQ consumer、token bucket、sdgb `get_user_map` 执行逻辑 |
 | `backend/src/modules/auto-update/auto-update.module.ts`                     | 注册新状态 / 任务 schema                                    |
 
@@ -128,14 +126,11 @@ due map auxiliary probe
        nextMapProbeAt=now+mapInterval(tier)
 
 FC/FS enrichment
-  -> if cooldown not due: record pendingRecentEventReason / pendingRecentEventRequestedAt
-  -> when pending is due: execute once and clear pending on success
-  -> sdgb.addRival(botCabinetUserId, cabinetUserId)
-  -> create DXNet get_user_recent_event job
-  -> worker fetches recent events
-  -> JobService merges returned FC/FS list into current sync
-  -> if recent event fingerprint changed:
-       record activity signal and delay pending full update_score by 45min
+  -> aggregate changed chart CIDs for the closed half-hour window
+  -> if cooldown/quota active: merge pendingFcfsMusicIds
+  -> create background update_score(musicIds, fcfsOnly=true)
+  -> worker plans concrete genre/level pages
+  -> JobService merges CID-addressed FC/FS into current sync
 
 Settled full update
   -> any rival/map/recent activity signal sets pendingFullUpdateAt=now+45min

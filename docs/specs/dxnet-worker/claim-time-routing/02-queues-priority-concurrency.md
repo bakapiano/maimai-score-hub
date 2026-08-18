@@ -16,7 +16,7 @@ queue 内排序；跨 queue 的 DXNet request 仍由共享 request scheduler 按
 | --- | --- | --- | ---: |
 | `interactive` | 登录、好友关系、QR 等短交互 | 用户登录、QR login、好友申请 | 8 |
 | `user_sync` | 用户主动发起的长查分 | 手动 `update_score` | 16 |
-| `background` | 可排队、可退避的后台任务 | 自动 recent event、自动 full update、维护刷新 | 16 |
+| `background` | 可排队、可退避的后台任务 | targeted FC/FS、自动 full update、维护刷新 | 16 |
 
 `8/16/16` 是 **每个 BullMQ queue consumer 各自的 concurrency**。同一 lane 的 shared 与
 pinned consumer 不合并计数；二者同时满载时可以分别执行到该值。一个 v2 Bot 进程六个 queue
@@ -155,7 +155,7 @@ type DxnetJobSource =
 | `qr_login/get_full_friend_list` | interactive | 4 | claim + cabinet prerequisite |
 | `cabinet_binding/get_full_friend_list` | interactive | 4 | profile fallback only；claim + prerequisite |
 | `user_sync/update_score` | user_sync | 2 | existing friend 时 pinned，否则 claim |
-| `auto_update/get_user_recent_event` | background | 1 | claim + cabinet prerequisite |
+| `auto_update/update_score`（targeted FC/FS） | background | 1 | claim + cabinet prerequisite |
 | `auto_update/update_score` | background | 1 | existing friend 时 pinned，否则 claim |
 | `maintenance/get_full_friend_list` | background | 0 | pinned |
 
@@ -171,7 +171,7 @@ type DxnetJobSource =
 | 4 | immediate | `qr_login_resolution`；OAuth request 也使用同一 request priority |
 | 3 | interactive | send/accept friend request |
 | 2 | user_sync | 用户手动 update_score |
-| 1 | background | auto recent event、auto update_score |
+| 1 | background | targeted FC/FS、auto update_score |
 | 0 | maintenance | periodic snapshot |
 
 这些值只在 `shared` 定义一次：

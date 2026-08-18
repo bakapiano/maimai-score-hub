@@ -51,10 +51,8 @@ test("falls back to six sequential genre pages after a terminated request", asyn
   );
   assert.ok(urls.every((url) => url.includes("loseOnly=on")));
   assert.deepEqual(
-    [99, 101, 102, 103, 104, 105, 106].map((genre) =>
-      retryCounts.get(genre),
-    ),
-    [2, 2, 3, 2, 2, 3, 2],
+    [99, 101, 102, 103, 104, 105, 106].map((genre) => retryCounts.get(genre)),
+    [2, 2, 2, 2, 2, 2, 2],
   );
 });
 
@@ -95,7 +93,10 @@ test("preserves permanent, auth, and UTAGE failures", async (t) => {
         throw input.error;
       });
 
-      await assert.rejects(() => api.getFriendVS("123", 2, input.diff), input.error);
+      await assert.rejects(
+        () => api.getFriendVS("123", 2, input.diff),
+        input.error,
+      );
       assert.equal(calls, 1);
     });
   }

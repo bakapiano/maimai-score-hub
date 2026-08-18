@@ -18,6 +18,10 @@ import {
 
 type ScoreChangeRow = ScoreChangeEntity & { _id: Types.ObjectId };
 type HistoryCursor = { observedAt: Date; objectId: Types.ObjectId };
+export type ChangedScoreChartsByFriend = {
+  friendCode: string;
+  musicIds: string[];
+};
 
 @Injectable()
 export class ScoreChangeHistoryService {
@@ -25,6 +29,52 @@ export class ScoreChangeHistoryService {
     @InjectModel(ScoreChangeEntity.name)
     private readonly scoreChanges: Model<ScoreChangeDocument>,
   ) {}
+
+  async distinctFriendCodesObservedBetween(
+    start: Date,
+    end: Date,
+  ): Promise<string[]> {
+    return this.scoreChanges.distinct('friendCode', {
+      observedAt: { $gte: start, $lt: end },
+    });
+  }
+
+  async changedScoreChartsByFriendBetween(
+    start: Date,
+    end: Date,
+  ): Promise<ChangedScoreChartsByFriend[]> {
+    const rows = await this.scoreChanges.aggregate<{
+      _id: { friendCode: string; musicId: string; chartIndex: number };
+    }>([
+      {
+        $match: {
+          observedAt: { $gte: start, $lt: end },
+          changedFields: { $in: ['score', 'dxScore'] },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            friendCode: '$friendCode',
+            musicId: '$musicId',
+            chartIndex: '$chartIndex',
+          },
+        },
+      },
+      { $sort: { '_id.friendCode': 1, '_id.musicId': 1, '_id.chartIndex': 1 } },
+    ]);
+    const grouped = new Map<string, string[]>();
+    for (const row of rows) {
+      const { friendCode, musicId, chartIndex } = row._id;
+      const ids = grouped.get(friendCode) ?? [];
+      ids.push(`${musicId}_${chartIndex === 10 ? 0 : chartIndex}`);
+      grouped.set(friendCode, ids);
+    }
+    return [...grouped].map(([friendCode, musicIds]) => ({
+      friendCode,
+      musicIds,
+    }));
+  }
 
   async listForUser(
     friendCode: string,

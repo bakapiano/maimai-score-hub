@@ -39,8 +39,6 @@ export const MAIMAI_URLS = {
   friendAcceptAllow: `${MAIMAI_BASE_URL}/friend/accept/allow/`,
   friendAcceptBlock: `${MAIMAI_BASE_URL}/friend/accept/block/`,
   friendInviteCancel: `${MAIMAI_BASE_URL}/friend/invite/cancel/`,
-  friendDetailPage: (code: string) =>
-    `${MAIMAI_BASE_URL}/friend/friendDetail/?idx=${encodeURIComponent(code)}`,
   friendDetail: `${MAIMAI_BASE_URL}/friend/friendDetail/drop/`,
   friendSearch: (code: string) =>
     `${MAIMAI_BASE_URL}/friend/search/searchUser/?friendCode=${encodeURIComponent(
@@ -58,6 +56,8 @@ export const MAIMAI_URLS = {
       side === "win" ? "&winOnly=on" : side === "lose" ? "&loseOnly=on" : "";
     return `${MAIMAI_BASE_URL}/friend/friendGenreVs/battleStart/?scoreType=${scoreType}&genre=${genre}&diff=${diff}${sideQuery}&idx=${code}`;
   },
+  friendLevelVS: (code: string, scoreType: number, level: number) =>
+    `${MAIMAI_BASE_URL}/friend/friendLevelVs/battleStart/?scoreType=${scoreType}&level=${level}&idx=${code}`,
   userFriendCode: `${MAIMAI_BASE_URL}/friend/userFriendCode/`,
   error: `${MAIMAI_BASE_URL}/error/`,
   logout: `${MAIMAI_BASE_URL}/logout/`,
@@ -99,8 +99,6 @@ export const RETRY = {
   defaultCount: 3,
   /** Friend VS 总尝试次数（包含首次请求） */
   friendVSCount: 2,
-  /** 大型 Friend VS genre 页（102/105）总尝试次数（包含首次请求） */
-  friendVSLargeGenreCount: 3,
   baseDelayMs: 1000,
   maxDelayMs: 30_000,
   rateLimitMaxCount: 3,

@@ -17,7 +17,10 @@ export async function updateScore(ctx: JobExecutionContext): Promise<void> {
   console.log(`[JobHandler] Job ${ctx.job.id}: Updating scores...`);
   const updateScoreStartTime = Date.now();
 
-  const difficulties = getDifficulties(ctx);
+  const targets = ctx.job.scoreFetchTargets ?? [];
+  const difficulties = targets.length
+    ? [...new Set(targets.map((target) => target.diff))].sort((a, b) => a - b)
+    : getDifficulties(ctx);
   const totalDiffs = difficulties.length;
   let completedCount = 0;
 
@@ -27,7 +30,7 @@ export async function updateScore(ctx: JobExecutionContext): Promise<void> {
   });
 
   console.log(
-    `[JobHandler] Job ${ctx.job.id}: Fetching scores for diffs [${difficulties.join(",")}]...`,
+    `[JobHandler] Job ${ctx.job.id}: Fetching scores for diffs [${difficulties.join(",")}] targets=${targets.length} fcfsOnly=${ctx.job.fcfsOnly === true}...`,
   );
   const scoreAggregator = new ScoreAggregator(ctx.client);
   const aggregated = await scoreAggregator.fetchAndAggregate(
@@ -35,18 +38,30 @@ export async function updateScore(ctx: JobExecutionContext): Promise<void> {
     {
       jobId: ctx.job.id,
       difficulties,
-      onDiffCompleted: async (diff: number) => {
-        completedCount++;
-        console.log(
-          `[JobHandler] Job ${ctx.job.id}: Diff ${diff} completed (${completedCount}/${totalDiffs})`,
-        );
-        await ctx.applyPatch({
-          addCompletedDiff: diff,
-          updatedAt: new Date(),
-        });
-      },
+      targets,
+      fcfsOnly: ctx.job.fcfsOnly === true,
+      ...(targets.length
+        ? {}
+        : {
+            onDiffCompleted: async (diff: number) => {
+              completedCount++;
+              console.log(
+                `[JobHandler] Job ${ctx.job.id}: Diff ${diff} completed (${completedCount}/${totalDiffs})`,
+              );
+              await ctx.applyPatch({
+                addCompletedDiff: diff,
+                updatedAt: new Date(),
+              });
+            },
+          }),
     },
   );
+
+  if (targets.length) {
+    for (const diff of difficulties) {
+      await ctx.applyPatch({ addCompletedDiff: diff, updatedAt: new Date() });
+    }
+  }
 
   const updateScoreDuration = Date.now() - updateScoreStartTime;
   await ctx.applyPatch({

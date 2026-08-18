@@ -60,10 +60,11 @@
 - 定时同步开启 `autoUpdate` 且已绑定 `cabinetUserId` 的用户到 `auto_update_probe_states`。
 - Rival-first 主链路通过 `SdgbJobDispatcher.getRivalHash()` 拉取 RivalMusic；hash 变化时直接调用 `SyncService.createFromRivalMusic()` 合并写入 sync，不再创建自动 `update_score`。
 - Map auxiliary 通过 `SdgbJobDispatcher.getUserMap()` 计算 map fingerprint，用于识别 score-silent 活跃并延长 hot session。
-- FC/FS enrichment 由 rival hash 变化或 map delta 请求触发：cooldown 内先挂 pending，到期后先 sdgb `addRival`，再创建 DXNet `get_user_recent_event` job。
-- Rival/map/recent event 任一活动信号都会把稳定后全量 `update_score` 预约到 activity 后 45 分钟；如果 due 时已有 active `update_score`，直接视为覆盖并清 pending。
+- FC/FS enrichment 每半小时聚合该窗口 `score_changes` 中 achievement/DX Score 发生变化的谱面 CID；pending 按用户合并，到期创建 `musicIds + fcfsOnly=true` 的 background `update_score`。
+- Rival/map 活动信号会把稳定后全量 `update_score` 预约到 activity 后 45 分钟；due 时已有 active `update_score` 会覆盖本次收尾需求。
+- 每日北京时间 02:00 汇总前一自然日 `score_changes` 中有实际变化、且仍开启自动更新的用户，生成幂等 `daily_full_update` staging task；scheduler 按全局 active `update_score` 水位逐批创建全量 job，并跟踪终态与有限重试。
 - 持有 `auto_update_runs`、`auto_update_probe_states`、`auto_update_tasks`，记录每轮执行摘要、用户状态和短期任务日志。
-- 处理 rival/map/recent 失败退避；用户习惯画像尚未实现，仅预留 multiplier 字段。
+- 处理 rival/map/定向 FC/FS 失败退避；用户习惯画像尚未实现，仅预留 multiplier 字段。
 
 ### `CabinetScoreSyncModule`
 
@@ -92,13 +93,13 @@
 
 ### `JobModule`
 
-- 管理 DXNet worker 任务，任务类型包括 `send_friend_request`、`accept_friend_request`、`update_score`、`get_user_recent_event` 和 `get_full_friend_list`。
+- 管理 DXNet worker 任务，任务类型包括 `send_friend_request`、`accept_friend_request`、`update_score` 和 `get_full_friend_list`。
 - 创建 job 时默认会取消同一好友码的旧活跃 job，并按任务类型设置初始 stage；`get_full_friend_list` 这类内部刷新任务可跳过取消旧 job。
 - 创建和唤醒 job 时写入 BullMQ；worker 直接消费队列，处理 `runAt` 延迟、释放 stale execution、超时失败由后台 sweep 兜底。
 - 处理 worker PATCH 回写的状态、stage、进度、profile、result、error 和执行标记。
 - `update_score` 通过 commit-first finalization 写入 current sync；version 实际增加后只
   best-effort 唤醒 per-user 自动导出，不创建来源级导出 job。
-- `get_user_recent_event` 成功完成后会触发 `SyncService.mergeRecentEvents()` 合并唯一命中的 FC/FS；重名或缺失匹配会跳过，不再创建 ambiguous fallback。recent event fingerprint 变化会记录 activity signal。
+- 定向 `update_score` 通过谱面 CID 精确映射结果；`fcfsOnly` 结果只参与 FC/FS rank 合并并保留既有 achievement、DX Score 与 rating。
 - 支持机台绑定用户的 cabinet fast path：通过 sdgb 加 rival 先建立好友关系，再创建普通 `update_score` job。
 - `JobTempCacheService` 用 Redis 临时缓存 `update_score` 中间 FriendVS 解析结果。
 - job timeline、worker 外部 API metadata 和相关 structured logs 写入 ClickHouse，由 admin Job Debug 组合查询。
@@ -147,12 +148,12 @@
 
 ### `SyncModule`
 
-- 将 DXNet job result、sdgb RivalMusic、Recent Event 或已登录用户的 `UserMusicDetail[]`
+- 将 DXNet job result、sdgb RivalMusic 或已登录用户的 `UserMusicDetail[]`
   转成标准 delta，并统一提交到每用户唯一 current sync。
 - 使用 `friendCode + __v` CAS；冲突时必须重新读取最新 current 后 merge，不再
   `deleteMany + create`。
 - 合并策略保留更高的 achievement、dxScore、FC 和 FS，元数据来自最新曲库。
-- `mergeRecentEvents()` 把 recent event FC/FS list 与当前成绩按 rank 合并；只处理能唯一定位到当前 score 的 event。
+- 定向 FC/FS `update_score` 按谱面 CID 映射，并通过统一 rank merge 更新 current。
 - 对外提供当前用户最新同步成绩查询、按歌曲/难度/谱面类型过滤的
   `/me/score-changes`，以及全部谱面的 `/me/score-history` 时间窗 feed；历史 service
   始终附加 JWT `friendCode` 所有权条件。

@@ -40,7 +40,7 @@ job 增加显式 `assignmentMode`：
 
 | assignmentMode | 创建时 `botUserFriendCode` | 投递位置 | 使用场景 |
 | --- | --- | --- | --- |
-| `claim` | `null` | shared lane queue | cabinet-assisted update、自动 recent event、可由任一 Bot 执行的工作 |
+| `claim` | `null` | shared lane queue | cabinet-assisted update、targeted FC/FS、可由任一 Bot 执行的工作 |
 | `pinned` | 必填 | 对应 Bot queue | 已知好友关系、用户必须看到指定 Bot、刷新指定 Bot 自己的好友列表 |
 
 这里的 `claim` 表示由 BullMQ shared queue 竞争取得 active delivery，不表示 backend 还要执行
@@ -60,7 +60,7 @@ job 增加显式 `assignmentMode`：
 固定使用 claim 的场景：
 
 - 用户已绑定 `cabinetUserId`，但当前没有 5 分钟内完整好友 snapshot 的手动 `update_score`。
-- 后续恢复的自动更新 `get_user_recent_event`。
+- 自动更新 targeted FC/FS `update_score`。
 - QR login slow path 中“选择任一可用 cabinet Bot、addRival、刷新该 Bot snapshot”的组合任务。
 
 ## 3. 创建阶段
@@ -276,28 +276,19 @@ POST /me/dxnet-jobs
   好友返回 `cabinet_friendship_unconfirmed`；没有合格 Bot 直到 deadline 返回
   `cabinet_bot_unavailable`。三者都允许 frontend 引导传统 pinned 好友申请流程。
 
-### 6.2 自动更新 get_user_recent_event
+### 6.2 自动更新 targeted FC/FS
 
-自动 scheduler 只创建 background claim job，不选 Bot、不调用 `addRival`。background worker
-取得 slot 后才执行：
+Scheduler 创建带 `musicIds`、`fcfsOnly=true` 的 background `update_score` claim job。
+Worker 取得 slot 后按标准 cabinet prerequisite 建立或确认好友关系，随后根据目标 CID
+规划具体 genre/level 页面并完成同一次 execution：
 
 ```text
-shared active -> PATCH 绑定 Bot -> addRival
-  -> handoff 到当前 Bot pinned background queue，delay 3min
-  -> pinned active -> verify -> get_user_recent_event -> cleanup
+shared active -> PATCH 绑定 Bot -> addRival（按需）
+  -> verify friendship -> targeted update_score -> commit-first finalization
 ```
 
-handoff PATCH 在同一个 Mongo CAS 中保留 `botUserFriendCode`、设置 `deliveryMode=pinned`、递增
-`deliveryEpoch`、写入 `status=queued, runAt=now+3min`，随后 enqueue 新 epoch 到该 Bot 的 pinned background
-queue；当前 shared delivery 才结束。这样 settle 不占 recent-event execution slot，也不会被另一
-Bot 抢走后重复 addRival。若该 Bot 在 continuation 前失效，backend 将 claim job 的
-`deliveryMode` 改回 shared、清 Bot、再次递增 epoch；现有 CleanupService 处理旧关系。
-
-recent-event 触发 fallback `update_score` 时沿用当前所有权转移：child 创建为同 Bot 的 pinned
-background job；parent 和 child 都退出 active 列表后，再由周期 cleanup 清理关系。
-
-这样后台 backlog 不会提前制造大量好友关系。单用户 cooldown、coalesce 和 backoff 仍在
-scheduler 层保留。
+单用户 cooldown、CID coalesce、producer token bucket 和失败 backoff 保留在 scheduler 层；
+周期 CleanupService 在 job 退出 active 集合后回收临时好友关系。
 
 ### 6.3 QR identity slow paths
 

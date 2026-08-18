@@ -95,7 +95,7 @@ Map 变化后：
 ```text
 map distance changed
   -> promote/extend hot
-  -> request fcfs_enrichment; if recent event cooldown is active, record pending
+  -> changed chart CIDs enter the closed half-hour FC/FS window
 ```
 
 如果 map 变化且距离上次 rival probe 已超过 tier 间隔，也可以立即触发 rival probe。

@@ -1,39 +1,37 @@
 # 稳定后全量更新代码事实
 
-当前代码把 FC/FS enrichment 从“消歧 + 触发局部 update_score”的职责里拆出来，只让它做最近 FC/FS 补充；另建一条“用户停止游玩一段时间后执行全量 `update_score`”的收尾链路。
+当前代码包含两条互补链路：半小时变化谱面的定向 FC/FS 补全，以及“用户停止游玩一段时间后执行全量 `update_score`”的收尾链路。
 
 ## 背景
 
-历史逻辑里 recent event 水位线和 ambiguous fallback 曾经混在一起：
-
-- 曾用 `recentEventSince` 过滤两次 enrichment 之间的 recent event。
-- 如果 recent event 的 `songName + difficulty` 在当前成绩里命中多个 musicId，曾创建 `diffsToScrape` 的 `update_score` fallback。
-- 为了避免 fallback 被同一批 recent event 反复触发，水位线曾承担“去重 / 防重复触发”的作用。
-
-当前代码已移除这层耦合：
-
-- FC/FS enrichment 不再创建 fallback `update_score`。
-- FC/FS enrichment 不再依赖 `recentEventSince` 过滤窗口。
-- recent event 只作为“能补则补”的增量 FC/FS 来源。
-- 全量 `update_score` 由新的稳定后 debounce 机制负责。
+RivalMusic 能直接更新 achievement 与 DX Score，页面结果缺少 FC/FS。Scheduler
+因此每半小时聚合一次 `score_changes`：只选择 `changedFields` 含 `score` 或
+`dxScore` 的记录，并把 `(musicId, chartIndex)` 转成谱面 CID。
 
 ## 边界
 
-- 不在 FC/FS enrichment 中解决重名曲目的 musicId 消歧。
-- 不让 FC/FS enrichment 触发指定难度 fallback。
-- 不按 hot 用户定时全量抓分。
-- 不替代 rival score probe；rival 仍是 achievement / dxScore 的主更新链路。
+- Rival 继续负责 achievement / DX Score 主更新。
+- 定向 FC/FS 结果通过谱面 CID 映射，避免标题消歧。
+- 稳定后 full update 继续负责全量收尾。
 
-## FC/FS Enrichment 新语义
+## 定向 FC/FS 语义
 
-执行 `get_user_recent_event` 后：
+每个用户在窗口内变化的 CID 合并到 `pendingFcfsMusicIds`。单用户 cooldown
+到期且 producer 配额可用时，创建：
 
-1. 解析 recent event 中的 FC/AP/FS/FDX。
-2. 对每条 event 使用 `songName + difficulty` 找曲库候选。
-3. 只在当前 sync 中唯一命中一个 `(musicId, chartIndex)` 时合并 FC/FS。
-4. 如果当前 sync 中命中 0 个或多个 score，跳过该 event。
-5. 不返回 ambiguous difficulty。
-6. 不创建 fallback `update_score`。
+```ts
+JobService.create({
+  jobType: "update_score",
+  source: "auto_update",
+  musicIds: pendingFcfsMusicIds,
+  fcfsOnly: true,
+  context: { source: "auto_update_fcfs_score_window", autoUpdateFcfs: true },
+});
+```
+
+Worker 根据 CID 元数据选择最小扫描量的具体 genre/level 页面组合，只请求
+`scoreType=2`，并返回 `{ musicId: cid, fc, fs }`。Backend 通过 CID 直接定位
+current score，保留 achievement、DX Score 与 rating，只升级 FC/FS rank。
 
 合并仍保持 rank-only：
 
@@ -42,19 +40,13 @@ FC: null < fc < fcp < ap < app
 FS: null < fs < fsp < fdx < fdxp
 ```
 
-已删除内容：
+执行控制沿用原链路水位：单用户 30 分钟 cooldown、全局 12 jobs/min、
+5 秒 burst 6。Job 使用 background lane、priority 1。
 
-- 删除 `recentEventSince` 过滤。
-- 删除之前为 DXNet 延迟可见加的 lookback 包容逻辑。
-- 删除 `scheduleAmbiguousFcfsFallback()` 及相关 job context。
-- 删除 recent-event ambiguous fallback 文档和测试。
-
-保留内容：
-
-- FC/FS enrichment per-user cooldown。
-- cooldown 内 pending FC/FS enrichment 合并，到期补跑一次。
-- `addRival + get_user_recent_event` 执行方式。
-- `get_user_recent_event` job 默认延迟 3 分钟执行，等待 DXNet recent event 页面稳定。
+每个窗口由 `auto-update-sweep` 外层 lease、
+`fcfs-score-window-trigger:<windowEnd>` 日志 lease，以及唯一
+`auto_update_runs.bucketKey=fcfs-score-window:<windowEnd>` 三层 fence 保证多实例只
+stage 一次。用户级 pending 使用 `$addToSet` 合并 CID，producer 配额在 Redis 全局计数。
 
 ## 稳定后全量更新
 
@@ -62,28 +54,10 @@ FS: null < fs < fsp < fdx < fdxp
 
 ### 活动信号
 
-以下任一事件都表示用户成绩或游玩状态可能发生变化：
+以下事件表示用户成绩或游玩状态可能发生变化：
 
 1. Rival score probe 检测到 `rival hash changed`。
 2. Map auxiliary probe 检测到 `map fingerprint changed`。
-3. FC/FS enrichment 检测到 recent event 列表发生变化。
-
-第 3 点不能依赖 `recentEventSince`。保存 recent event 的轻量 fingerprint：
-
-```text
-recentEventFingerprint = sha256(
-  sorted/events-in-page-order of:
-  time | songName | difficulty | fc | fs
-)
-```
-
-当本次 fingerprint 与 `lastRecentEventFingerprint` 不同时：
-
-- 更新 `lastRecentEventFingerprint`。
-- 视为活动信号。
-- 合并能唯一定位的 FC/FS。
-
-如果 recent event 页面为空，也应把 fingerprint 记为稳定值，避免反复把空结果当变化。
 
 ### Debounce 行为
 
@@ -195,15 +169,64 @@ due 时如果用户已有 active `update_score`：
 
 原因：active job 可能是手动同步，也可能是上一次自动 full update。无论来源如何，它都会抓全量成绩并写最新 sync；自动更新不应打断手动同步，也不需要再排一个重复 full update。
 
+## 每日收尾全量更新
+
+稳定后 debounce 之外，scheduler 每日北京时间 02:00 为前一 UTC+8 自然日建立一次
+`daily_full_update` 批次。业务日期 `D` 的统计窗口固定为：
+
+```text
+[D 00:00:00 Asia/Shanghai, D+1 00:00:00 Asia/Shanghai)
+```
+
+候选集来自该窗口内 `score_changes.observedAt` 的 distinct `friendCode`，随后与
+`auto_update_probe_states.enabled=true` 相交，因此任务覆盖仍开启自动更新并已绑定
+cabinet userId 的实际变化用户。
+
+### 多实例唯一触发
+
+每日批次使用三层 fence：
+
+1. 外层 `auto-update-sweep` Redis lease 选出本轮 scheduler owner。
+2. `auto-update-daily-full-update-trigger:<businessDate>` Redis lease 选出该业务日的 trigger owner。
+3. `auto_update_runs.bucketKey=daily-full-update:<businessDate>` 唯一索引保存一次性完成标记。
+
+trigger owner 以确定性 id
+`daily-full-update:<businessDate>:<friendCode>` upsert staging task。进程在 staging 中途退出时，
+下一位 lease owner 会从 `status=running` 的日记录恢复；确定性 task id 保证重复 staging 收敛
+到同一行。日记录的 `completed` 表示候选 staging 已完成，具体 DXNet job 终态由 task 跟踪。
+
+### 分批投递和恢复
+
+默认参数：
+
+```text
+AUTO_UPDATE_DAILY_FULL_UPDATE_HOUR = 2
+AUTO_UPDATE_DAILY_FULL_UPDATE_BATCH_LIMIT = 4
+AUTO_UPDATE_DAILY_FULL_UPDATE_MAX_ACTIVE = 8
+AUTO_UPDATE_DAILY_FULL_UPDATE_RETRY_MS = 10min
+AUTO_UPDATE_DAILY_FULL_UPDATE_MAX_ATTEMPTS = 3
+AUTO_UPDATE_DAILY_FULL_UPDATE_CLAIM_TIMEOUT_MS = 5min
+```
+
+每轮 scheduler 先统计所有来源中处于 `queued/processing` 的 `update_score`：
+
+```text
+dispatchLimit = min(batchLimit, maxActive - activeUpdateScores)
+```
+
+Mongo staging task 按 `runAt/createdAt` 从旧到新原子 claim，随后创建
+`context.source=auto_update_daily_full_update` 的 background 全量 job。已有同用户 active
+`update_score` 时，task 绑定该 job 并跟踪其终态。Job 完成后 task 进入 `completed`；Job
+失败、取消或 stale claim 恢复后按 10 分钟退避重新排队，达到 3 次尝试后进入 `failed`。
+
 ## 数据模型
 
 `auto_update_probe_states` 字段：
 
 | 字段                         | 含义                                                      |
 | ---------------------------- | --------------------------------------------------------- |
-| `lastAutoUpdateActivityAt`   | 最近一次通过 rival/map/recent event 观测到活动信号的时间  |
+| `lastAutoUpdateActivityAt`   | 最近一次通过 rival/map 观测到活动信号的时间               |
 | `pendingFullUpdateAt`        | 稳定后全量 `update_score` 的预约执行时间                  |
-| `lastRecentEventFingerprint` | 最近一次 FC/FS enrichment 返回的 recent event fingerprint |
 
 索引：
 
@@ -215,22 +238,17 @@ due 时如果用户已有 active `update_score`：
 
 ### SyncService
 
-- `mergeRecentEvents()` 不接收 `since`。
-- 不存在 `filterRecentEventsSince()`。
-- 不存在 recent event lookback 常量。
-- 遇到 `matches.length !== 1` 时直接跳过。
-- 返回值不包含 `ambiguousDiffs`。
+- `createFromJob()` 识别 `targetedScores` 并按 CID 映射。
+- `context.autoUpdateFcfs=true` 记录 `sourceType=auto_update_fcfs`。
+- FC/FS-only delta 通过统一 CAS 与 rank merge 写入 current。
 
 ### JobService
 
-- `handleCompletedRecentEvent()` 不解析 `context.recentEventSince`。
-- 不存在 `scheduleAmbiguousFcfsFallback()`。
-- recent event 完成后：
-  - 合并 FC/FS。
-  - 计算 recent event fingerprint。
-  - 如果 fingerprint 变化，通知 auto-update scheduler 预约 settled full update。
+- `musicIds` 解析为 `scoreFetchTargets` 后持久化到 Job。
+- `fcfsOnly` 独立持久化并透传 Worker。
+- 所有 `update_score` 都使用 commit-first finalization。
 
-实现使用 `AutoUpdateActivityService`，把 activity scheduling 抽成独立 service，避免 `JobService` 直接依赖整个 scheduler。该 service 提供：
+`AutoUpdateActivityService` 继续负责 settled activity scheduling：
 
 ```ts
 recordActivitySignal({
@@ -238,11 +256,6 @@ recordActivitySignal({
   at,
 });
 
-recordRecentEventFingerprint({
-  friendCode,
-  fingerprint,
-  at,
-});
 ```
 
 ### AutoUpdateSchedulerService
@@ -268,14 +281,15 @@ score version。如需排查成绩来源，看 DXNet job context 的
 ## 失败与退避
 
 - Rival / map 失败沿用现有 backoff。
-- FC/FS enrichment 失败沿用 `nextRecentEventAt` retry，并保留 pending FC/FS enrichment。
+- FC/FS job 创建失败沿用 `nextFcfsUpdateAt` retry，并保留 `pendingFcfsMusicIds`。
 - Settled full update 创建失败使用独立短 retry，不应阻塞 rival/map 主探测。
 - Full update job 自身失败后，不自动无限重试；下一次 activity signal 会重新预约。
 - Continuous play 不设置强制最大延迟上限；只要 activity signal 持续出现，就持续延后，始终等待 quiet window。
 
 ## 部署兼容
 
-旧 `auto_update_probe_states` 文档缺少新增字段时等价于 null。代码部署后，新的 activity signal 会开始写 `pendingFullUpdateAt`，recent event fingerprint 会写入 `lastRecentEventFingerprint`。
+旧 `auto_update_probe_states` 文档缺少新增 FC/FS 字段时使用 schema 默认值；
+新窗口会开始写 `pendingFcfsMusicIds/nextFcfsUpdateAt`。
 
 ## 已确认决策
 

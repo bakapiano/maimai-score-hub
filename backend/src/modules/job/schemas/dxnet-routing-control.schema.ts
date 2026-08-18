@@ -22,7 +22,6 @@ export class DxnetRoutingControlEntity implements DxnetRoutingControl {
 
   @Prop({ type: Object, default: {} })
   claimCanaryByFlow!: {
-    auto_recent_event?: string[] | null;
     manual_update?: string[] | null;
   };
 }

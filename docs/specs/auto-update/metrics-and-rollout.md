@@ -18,7 +18,7 @@
 | `map_delta_count`                     | 探测到 score-silent 活跃的次数     |
 | `map_delta_with_rival_hash_unchanged` | map 变化但 rival hash 未变的比例   |
 | `recent_event_job_count`              | FC/FS 补全压力                     |
-| `recent_event_hit_count`              | recent event 命中 FC/FS 的比例     |
+| `targeted_fcfs_hit_count`             | 目标 CID 命中 FC/FS 的比例         |
 | `recent_event_merge_count`            | FC/FS list 与当前成绩合并次数      |
 | `queue_lag_seconds`                   | 各队列排队延迟                     |
 | `tier_user_count`                     | hot / warm / cold 用户分布         |
@@ -31,8 +31,8 @@
 2. 8 qps rival probe 是否足以覆盖 10k 主峰，队列 lag 是否可接受。
 3. RivalMusic list 直接合并当前成绩后，成绩写入量、Mongo 压力是否稳定。
 4. Map auxiliary 能发现多少 score-silent 活跃。
-5. Recent event 对 FC/FS 的命中率是否足够高。
-6. 2 个 Bot 下 30/min recent event 是否会触发 DXNet 567 / 空响应。
+5. Targeted genre/level 页面对 FC/FS 的命中率是否足够高。
+6. 12 jobs/min producer 上限下是否出现 DXNet 567 / 空响应。
 
 ## 上线阶段
 
@@ -40,7 +40,7 @@
 
 - 对 `GetUserRivalMusicApi` 做 sustained load test：8 qps / 10 qps / 12 qps，各跑 30-60 分钟。
 - 对 `GetUserMapApi` 做辅助压测：2-3 qps，确认 p95 和错误率。
-- 对 recent event 做 2 Bot 压测：30/min 起步，观察 DXNet 567 / 空响应。
+- 对 targeted FC/FS 做页面组合压测，观察 DXNet 567 / 空响应。
 - 建立新状态表和任务表。
 - 初始化 `auto_update_probe_states`：
   - 已开启自动更新且绑定 cabinet userId 的用户进入新状态表。
@@ -52,7 +52,7 @@
 - 新 scheduler 成为唯一自动更新任务生产者。
 - Rival score probe 开始写入成绩。
 - Map auxiliary probe 开始运行，用于识别 score-silent 活跃。
-- FC/FS enrichment 开始运行并写入；写入规则是本次 recent event list 直接与当前成绩按 rank 合并。
+- FC/FS enrichment 开始运行并按谱面 CID 与当前成绩做 rank 合并。
 - Phase 1 已实现的执行控制：
 
 ```text
@@ -73,7 +73,7 @@ AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS = 10min
 ```text
 target rival probe = 8 qps sustained / 10-12 qps burst
 target map auxiliary = 2-3 qps
-target recent event = 30/min
+targeted FC/FS producer = 12 jobs/min, burst 6/5s
 ```
 
 ### Phase 2: 用户习惯调度
@@ -102,7 +102,7 @@ base tier interval
 
 ### Phase 3: 参数收敛
 
-- 根据 7-14 天数据复盘 tier 分布、queue lag、错误率、recent event 命中率。
+- 根据 7-14 天数据复盘 tier 分布、queue lag、错误率、targeted FC/FS 命中率。
 - 调整 hot / warm / cold interval。
 - 调整 rival probe sustained / burst 上限。
 - 决定是否扩大 Map auxiliary 覆盖面，或只保留在 hot score-silent 场景。
@@ -118,4 +118,4 @@ base tier interval
 | FC/FS enrichment 延迟      | p95 < 60 min              |
 | rival probe 错误率         | < 2%                      |
 | map auxiliary 错误率       | < 1%                      |
-| recent event 错误率        | < 5%                      |
+| targeted FC/FS 错误率      | < 5%                      |

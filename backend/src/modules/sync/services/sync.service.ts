@@ -40,6 +40,7 @@ type JobLike = {
   friendCode: string;
   jobType?: string;
   result?: any;
+  context?: Record<string, unknown> | null;
 };
 
 type MusicRow = MusicEntity & {
@@ -87,7 +88,10 @@ type MusicCache = {
   rows: MusicRow[];
   byId: Map<string, MusicRow>;
   byTitleKey: Map<string, MusicRow>;
-  byTitle: Map<string, MusicRow[]>;
+  byCid: Map<
+    string,
+    { music: MusicRow; chart: ChartPayload; chartIndex: number }
+  >;
 };
 type VsScorePayload = {
   dxScore?: string | null;
@@ -102,22 +106,12 @@ type VsScoreRow = {
   chartIndex: number;
   payload: VsScorePayload;
 };
-
-export type RecentFcFsEvent = {
-  time?: unknown;
-  songName?: unknown;
-  difficulty?: unknown;
-  fc?: unknown;
+type TargetedVsScore = {
+  musicId?: unknown;
+  dxScore?: unknown;
+  score?: unknown;
   fs?: unknown;
-};
-
-const DIFFICULTY_TO_CHART_INDEX: Record<string, number> = {
-  basic: 0,
-  advanced: 1,
-  expert: 2,
-  master: 3,
-  remaster: 4,
-  utage: 10,
+  fc?: unknown;
 };
 
 // Rank tables for FC / FS — higher index = better. null is below
@@ -125,8 +119,6 @@ const DIFFICULTY_TO_CHART_INDEX: Record<string, number> = {
 // improve a clear flag don't downgrade the user's PB.
 const FC_RANK = ['fc', 'fcp', 'ap', 'app'] as const;
 const FS_RANK = ['fs', 'fsp', 'fdx', 'fdxp'] as const;
-// China DXNet renders friend activity without an offset and has no DST.
-const CHINA_TIME_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 function rankIdx(table: readonly string[], v: string | null): number {
   if (v === null) {
@@ -187,38 +179,6 @@ function hasBestValueChange(
     previous.fc !== next.fc ||
     previous.fs !== next.fs
   );
-}
-
-function parseRecentEventTime(value: unknown): Date | null {
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const match = /^(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})$/.exec(
-    value.trim(),
-  );
-  if (!match) {
-    return null;
-  }
-  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw] = match;
-  const [year, month, day, hour, minute] = [
-    yearRaw,
-    monthRaw,
-    dayRaw,
-    hourRaw,
-    minuteRaw,
-  ].map(Number);
-  const localEpoch = Date.UTC(year, month - 1, day, hour, minute);
-  const normalized = new Date(localEpoch);
-  if (
-    normalized.getUTCFullYear() !== year ||
-    normalized.getUTCMonth() !== month - 1 ||
-    normalized.getUTCDate() !== day ||
-    normalized.getUTCHours() !== hour ||
-    normalized.getUTCMinutes() !== minute
-  ) {
-    return null;
-  }
-  return new Date(localEpoch - CHINA_TIME_OFFSET_MS);
 }
 
 /**
@@ -289,7 +249,10 @@ export class SyncService {
 
     const committed = await this.commitScoreDelta({
       friendCode: job.friendCode,
-      sourceType: 'dxnet_update_score',
+      sourceType:
+        job.context?.autoUpdateFcfs === true
+          ? 'auto_update_fcfs'
+          : 'dxnet_update_score',
       sourceId: job.id,
       buildDelta: () => ({ delta, meta: null }),
     });
@@ -358,30 +321,6 @@ export class SyncService {
           changedChartCount: committed.changedChartCount,
         }
       : null;
-  }
-
-  async mergeRecentEvents(input: {
-    friendCode: string;
-    sourceId: string;
-    events: RecentFcFsEvent[];
-  }): Promise<{
-    eventCount: number;
-    matchedCount: number;
-    updatedCount: number;
-    syncId: string | null;
-  }> {
-    const committed = await this.commitScoreDelta({
-      friendCode: input.friendCode,
-      sourceType: 'auto_update_fcfs',
-      sourceId: input.sourceId,
-      buildDelta: (currentScores) =>
-        this.buildRecentEventDelta(currentScores, input.events),
-    });
-
-    return {
-      ...committed.meta,
-      syncId: committed.sync?.id ?? null,
-    };
   }
 
   // Keep the read/build/CAS/retry sequence contiguous; splitting it makes it
@@ -549,94 +488,6 @@ export class SyncService {
       code: 'SYNC_COMMIT_CONTENTION',
       message: '成绩正在被其他任务更新，请稍后重试',
     });
-  }
-
-  private async buildRecentEventDelta(
-    currentScores: readonly SyncScore[],
-    events: RecentFcFsEvent[],
-  ): Promise<
-    ScoreCommitBuild<{
-      eventCount: number;
-      matchedCount: number;
-      updatedCount: number;
-    }>
-  > {
-    if (!currentScores.length) {
-      return {
-        delta: [],
-        meta: { eventCount: events.length, matchedCount: 0, updatedCount: 0 },
-      };
-    }
-
-    const { byTitle } = await this.getMusicCache();
-    const delta: ScoreSnapshot[] = [];
-    let matchedCount = 0;
-    let updatedCount = 0;
-
-    const orderedEvents = events
-      .map((event) => ({
-        event,
-        observedAt: parseRecentEventTime(event.time),
-      }))
-      .sort(
-        (left, right) =>
-          (left.observedAt?.getTime() ?? Number.POSITIVE_INFINITY) -
-          (right.observedAt?.getTime() ?? Number.POSITIVE_INFINITY),
-      );
-
-    for (const { event, observedAt } of orderedEvents) {
-      const songName =
-        typeof event.songName === 'string' ? event.songName.trim() : '';
-      const difficulty =
-        typeof event.difficulty === 'string'
-          ? event.difficulty.toLowerCase()
-          : '';
-      const chartIndex = DIFFICULTY_TO_CHART_INDEX[difficulty];
-      if (!songName || chartIndex === undefined) {
-        continue;
-      }
-
-      const candidates = byTitle.get(songName) ?? [];
-      const candidateIds = new Set(candidates.map((music) => music.id));
-      if (!candidateIds.size) {
-        continue;
-      }
-
-      const matches = currentScores.filter(
-        (score) =>
-          score.chartIndex === chartIndex && candidateIds.has(score.musicId),
-      );
-      if (matches.length !== 1) {
-        continue;
-      }
-
-      const current = matches[0];
-      matchedCount++;
-      const fc =
-        typeof event.fc === 'string'
-          ? pickHigher(FC_RANK, current.fc, event.fc)
-          : current.fc;
-      const fs =
-        typeof event.fs === 'string'
-          ? pickHigher(FS_RANK, current.fs, event.fs)
-          : current.fs;
-      if (fc === current.fc && fs === current.fs) {
-        continue;
-      }
-
-      updatedCount++;
-      delta.push({
-        ...current,
-        fc,
-        fs,
-        observedAt,
-      });
-    }
-
-    return {
-      delta,
-      meta: { eventCount: events.length, matchedCount, updatedCount },
-    };
   }
 
   async getLatestWithScores(friendCode: string) {
@@ -973,17 +824,28 @@ export class SyncService {
     const rows = (await this.musicModel.find().lean()) as MusicRow[];
     const byId = new Map<string, MusicRow>();
     const byTitleKey = new Map<string, MusicRow>();
-    const byTitle = new Map<string, MusicRow[]>();
+    const byCid = new Map<
+      string,
+      { music: MusicRow; chart: ChartPayload; chartIndex: number }
+    >();
     for (const m of rows) {
       byId.set(String(m.id), m);
       const categoryKey = m.category ?? '';
       byTitleKey.set(`${categoryKey}::${m.title}::${m.type}`, m);
-      const titleRows = byTitle.get(m.title) ?? [];
-      titleRows.push(m);
-      byTitle.set(m.title, titleRows);
+      if (Array.isArray(m.charts)) {
+        m.charts.forEach((chart, index) => {
+          if (chart?.cid) {
+            byCid.set(chart.cid, {
+              music: m,
+              chart,
+              chartIndex: m.type === 'utage' ? 10 : index,
+            });
+          }
+        });
+      }
     }
 
-    this.musicCache = { at: now, rows, byId, byTitleKey, byTitle };
+    this.musicCache = { at: now, rows, byId, byTitleKey, byCid };
     return this.musicCache;
   }
 
@@ -992,7 +854,15 @@ export class SyncService {
       return [];
     }
 
-    const { byTitleKey: musicMap } = await this.getMusicCache();
+    const cache = await this.getMusicCache();
+    const targeted = (result as { targetedScores?: unknown }).targetedScores;
+    if (Array.isArray(targeted)) {
+      return targeted.flatMap((row) => {
+        const score = this.mapTargetedVsScore(row, cache.byCid);
+        return score ? [score] : [];
+      });
+    }
+    const { byTitleKey: musicMap } = cache;
     const scores: ScoreSnapshot[] = [];
     for (const row of this.iterVsScoreRows(result)) {
       const score = this.mapVsScoreRow(row, musicMap);
@@ -1053,7 +923,12 @@ export class SyncService {
   ): ScoreSnapshot | null {
     const dxScoreFromVS = row.payload.dxScore ?? null;
     const scoreFromVS = row.payload.score ?? null;
-    if (dxScoreFromVS === null && scoreFromVS === null) {
+    if (
+      dxScoreFromVS === null &&
+      scoreFromVS === null &&
+      (row.payload.fc === null || row.payload.fc === undefined) &&
+      (row.payload.fs === null || row.payload.fs === undefined)
+    ) {
       return null;
     }
     const resolvedTitle = row.title.length === 0 ? '\u3000' : row.title;
@@ -1080,6 +955,51 @@ export class SyncService {
       dxScoreFromVS,
       scoreFromVS,
     );
+  }
+
+  private mapTargetedVsScore(
+    input: unknown,
+    byCid: ReadonlyMap<
+      string,
+      { music: MusicRow; chart: ChartPayload; chartIndex: number }
+    >,
+  ): ScoreSnapshot | null {
+    if (!input || typeof input !== 'object') {
+      return null;
+    }
+    const row = input as TargetedVsScore;
+    if (typeof row.musicId !== 'string') {
+      return null;
+    }
+    const reference = byCid.get(row.musicId);
+    if (!reference) {
+      this.logger.warn(`No chart found for targeted score: ${row.musicId}`);
+      return null;
+    }
+    const dxScore = typeof row.dxScore === 'string' ? row.dxScore : null;
+    const score = typeof row.score === 'string' ? row.score : null;
+    const fc = typeof row.fc === 'string' ? row.fc : null;
+    const fs = typeof row.fs === 'string' ? row.fs : null;
+    if (dxScore === null && score === null && fc === null && fs === null) {
+      return null;
+    }
+    const achievement = normalizeAchievement(score);
+    const detailLevel = reference.chart.detailLevel ?? null;
+    return {
+      musicId: reference.music.id,
+      cid: row.musicId,
+      chartIndex: reference.chartIndex,
+      type: reference.music.type,
+      dxScore,
+      score,
+      fc,
+      fs,
+      rating:
+        detailLevel !== null && achievement !== null
+          ? getRating(detailLevel, achievement)
+          : null,
+      isNew: reference.music.isNew ?? null,
+    };
   }
 
   private resolveChartForIndex(

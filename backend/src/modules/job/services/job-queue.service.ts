@@ -106,6 +106,7 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
+    await this.retireRemovedJobTypes();
     for (const lane of DXNET_EXECUTION_LANES) {
       this.ensureQueueEvents(getDxnetSharedQueueName(lane));
     }
@@ -134,6 +135,29 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
       () => void this.runDeadlineSweep(),
       this.deadlineSweepIntervalMs,
     );
+  }
+
+  private async retireRemovedJobTypes(): Promise<void> {
+    const result = await this.jobModel.updateMany(
+      {
+        jobType: 'get_user_recent_event',
+        status: { $nin: TERMINAL_STATUSES },
+      },
+      {
+        $set: {
+          status: 'canceled',
+          runAt: null,
+          completionPending: false,
+          error: 'job type removed; replaced by targeted update_score',
+          updatedAt: new Date(),
+        },
+      },
+    );
+    if (result.modifiedCount) {
+      this.logger.warn(
+        `retired ${result.modifiedCount} legacy recent-event jobs`,
+      );
+    }
   }
 
   async onModuleDestroy(): Promise<void> {

@@ -2,17 +2,17 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import type { HydratedDocument } from 'mongoose';
 
 /**
- * One row per auto-update sweep tick. The unique `bucketKey` index
- * (e.g. "2026-05-09T14:15") is what guarantees only one backend instance
- * actually runs the sweep at each cron tick — losers see a duplicate-key
- * conflict on upsert and bail out.
+ * One row per auto-update sweep tick or daily batch. The unique `bucketKey`
+ * index (for example "2026-05-09T14:15",
+ * "fcfs-score-window:2026-05-09T14:30", or
+ * "daily-full-update:2026-05-09") is the durable once-only fence.
  *
  * Modeled after the former nightly-update log, so
  * an admin reading the two collections side by side gets the same shape.
  */
 @Schema({ collection: 'auto_update_runs' })
 export class AutoUpdateRunEntity {
-  /** "YYYY-MM-DDTHH:MM" rounded down to the cron interval. */
+  /** Cron minute bucket or a prefixed business-date batch key. */
   @Prop({ required: true, unique: true, index: true })
   bucketKey!: string;
 

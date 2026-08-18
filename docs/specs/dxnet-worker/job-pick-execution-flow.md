@@ -44,7 +44,6 @@
 | `send_friend_request`   | `pickAvailableBot()`：选择 `available=true` 且 `friendCount + queued/processing in-flight` 最小的 bot |
 | `accept_friend_request` | 登录入口预选 bot；未传时 `JobService.create()` 兜底调用 `pickAvailableBot()`                          |
 | `update_score`          | 使用已有好友关系 bot、`friendshipJobId` 的 bot，或 cabinet fast-path 选中的 bot                       |
-| `get_user_recent_event` | 调用方必须传 bot；自动更新 FC/FS enrichment 先用 `pickAvailableCabinetBot()`                          |
 | `get_full_friend_list`  | 通常绑定到目标 bot 自己；未传时兜底使用 `friendCode` 作为 bot code                                    |
 
 `pickAvailableCabinetBot()` 只选择 `available=true && cabinetUserId != null` 的 bot，并同样按 `friendCount + queued/processing in-flight` 最小排序。
@@ -131,7 +130,6 @@ bot cookie 不存在或已过期时，worker 不启动 named queue consumer；co
    - `send_friend_request`
    - `accept_friend_request`
    - `update_score`
-   - `get_user_recent_event`
    - `get_full_friend_list`
 4. 如果 handler 抛普通错误，worker PATCH `status=failed` 和 `error`。
 5. 如果遇到 `CookieExpiredError`，不直接 fail 业务 job，只打印日志；bot 会被标记 expired，named queue consumer 会被 graceful close，不再 pick 新 job。当前 active job 会继续跑完 handler，并用当前 BullMQ token `moveToWait()` 回到同一个 bot queue；如果进程在这之前被强杀，BullMQ lock 过期后按 stalled 机制重投递。
@@ -147,12 +145,12 @@ bot cookie 不存在或已过期时，worker 不启动 named queue consumer；co
 | `accept_friend_request` | `wait_user_request`     | 等待用户主动发请求；没等到则 `runAt=now+30s`                                  |
 | `accept_friend_request` | `accept_request`        | 接受好友请求后 `completed`                                                    |
 | `update_score`          | `update_score`          | 抓 Friend VS 成绩，按难度更新进度，完成后 PATCH `result` 和 `completed`       |
-| `get_user_recent_event` | `get_user_recent_event` | 抓最近游玩事件，完成后 PATCH `completed`                                      |
 | `get_full_friend_list`  | `get_full_friend_list`  | 抓完整好友列表并刷新 bot snapshot，完成后 PATCH `completed`                   |
 
 `ctx.delay(ms)` 只更新业务 job 的 `runAt` 和 `updatedAt`；handler 返回后，worker 会把 BullMQ job delay 到这个 `runAt`。因此等待类 stage 不会长时间占用 worker 并发。
 
-自动更新触发的 DXNet job 会设置 `removeFriendAfterComplete=true`，避免 sdgb `addRival` 持续撑高 bot 好友数。`get_user_recent_event` 如果发现 FC/FS recent event 无法唯一定位难度，会创建 fallback `update_score`；这种情况下原 recent-event job 会取消自己的清理标记，由 fallback `update_score` 完成后再删好友，避免提前删除导致 fallback 抓分失败。
+自动更新 FC/FS 使用带 `musicIds` 和 `fcfsOnly=true` 的 background `update_score`；
+cabinet prerequisite、执行 fence 与周期好友清理由标准 `update_score` 路径统一处理。
 
 ## Worker 死亡与重新 pick
 

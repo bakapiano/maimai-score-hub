@@ -172,6 +172,9 @@ function classifyDxnetUrl(url: string): { apiGroup: string; urlGroup: string } {
   if (pathname.includes("friendGenreVs")) {
     return { apiGroup: "maimai.friend", urlGroup: "maimai.friend.genre_vs" };
   }
+  if (pathname.includes("friendLevelVs")) {
+    return { apiGroup: "maimai.friend", urlGroup: "maimai.friend.level_vs" };
+  }
   if (pathname.includes("friendDetail")) {
     return { apiGroup: "maimai.friend", urlGroup: "maimai.friend.detail" };
   }

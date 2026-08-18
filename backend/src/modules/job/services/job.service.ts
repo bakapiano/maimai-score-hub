@@ -9,11 +9,9 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 
 import { SyncService } from '../../sync/services/sync.service';
-import type { RecentFcFsEvent } from '../../sync/services/sync.service';
-import { AutoUpdateActivityService } from '../../auto-update/services/auto-update-activity.service';
 import { JobTempCacheService } from '../cache/temp-cache.service';
 import { ProberExportService } from '../../prober-export/services/prober-export.service';
 import type {
@@ -48,6 +46,8 @@ import { DxnetRoutingControlService } from './dxnet-routing-control.service';
 import { DxnetAssignmentMutexService } from './dxnet-assignment-mutex.service';
 import { DxnetBotAssignmentBusyException } from '../dxnet-job.exceptions';
 import type { BotStatus } from '../../bots/services/bot-status.service';
+import { MusicService } from '../../music/services/music.service';
+import type { ScoreFetchTarget } from '@maimai-score-hub/shared';
 
 export interface CreateDxnetJobInput {
   friendCode: string;
@@ -56,6 +56,9 @@ export interface CreateDxnetJobInput {
   friendshipJobId?: string;
   botUserFriendCode?: string | null;
   diffsToScrape?: number[] | null;
+  musicIds?: string[] | null;
+  scoreFetchTargets?: ScoreFetchTarget[] | null;
+  fcfsOnly?: boolean;
   context?: Record<string, unknown> | null;
   cancelActiveJobs?: boolean;
   runAt?: Date | string | null;
@@ -127,15 +130,70 @@ export class JobService {
     private readonly jobQueue: JobQueueService,
     private readonly friendship: JobFriendshipService,
     private readonly observability: ObservabilityIngestService,
-    private readonly autoUpdateActivity: AutoUpdateActivityService,
     private readonly botStatus: BotStatusService,
     private readonly routingControl: DxnetRoutingControlService,
     private readonly assignmentMutex: DxnetAssignmentMutexService,
+    private readonly music: MusicService,
   ) {}
 
   async create(input: CreateDxnetJobInput) {
     const control = await this.routingControl.get();
-    return this.createV2({ ...input }, control);
+    const prepared = await this.prepareScoreFetchInput(input);
+    return this.createV2(prepared, control);
+  }
+
+  private async prepareScoreFetchInput(
+    input: CreateDxnetJobInput,
+  ): Promise<CreateDxnetJobInput> {
+    const jobType = input.jobType ?? 'send_friend_request';
+    const musicIds = input.musicIds
+      ? [...new Set(input.musicIds.map((id) => id.trim()).filter(Boolean))]
+      : [];
+    if (jobType !== 'update_score') {
+      if (musicIds.length || input.fcfsOnly === true) {
+        throw new BadRequestException(
+          'musicIds and fcfsOnly require update_score',
+        );
+      }
+      return {
+        ...input,
+        musicIds: null,
+        scoreFetchTargets: null,
+        fcfsOnly: false,
+      };
+    }
+    if (!musicIds.length) {
+      return {
+        ...input,
+        musicIds: null,
+        scoreFetchTargets: null,
+        fcfsOnly: input.fcfsOnly ?? false,
+      };
+    }
+    const resolved = await this.music.resolveScoreFetchTargets(musicIds);
+    if (resolved.missing.length) {
+      throw new BadRequestException({
+        code: 'unknown_music_ids',
+        message: `Unknown chart musicIds: ${resolved.missing.join(', ')}`,
+      });
+    }
+    const unplannable = resolved.targets.filter(
+      (target) => target.genre === null && target.level === null,
+    );
+    if (unplannable.length) {
+      throw new BadRequestException({
+        code: 'unplannable_music_ids',
+        message: `Charts have neither genre nor level page: ${unplannable
+          .map((target) => target.musicId)
+          .join(', ')}`,
+      });
+    }
+    return {
+      ...input,
+      musicIds,
+      scoreFetchTargets: resolved.targets,
+      fcfsOnly: input.fcfsOnly ?? false,
+    };
   }
 
   async createIdentityResolution(input: {
@@ -289,9 +347,6 @@ export class JobService {
     if (input.jobType === 'update_score') {
       return this.resolveV2UpdateScore(input);
     }
-    if (input.jobType === 'get_user_recent_event') {
-      return this.resolveV2RecentEvent(input);
-    }
     if (
       input.jobType === 'send_friend_request' ||
       input.jobType === 'accept_friend_request'
@@ -422,47 +477,6 @@ export class JobService {
     return candidate.friendCode;
   }
 
-  private async resolveV2RecentEvent(input: {
-    input: CreateDxnetJobInput;
-    definition: DxnetRouteDefinition;
-    control: DxnetRoutingControl;
-    healthyBots: BotStatus[];
-  }): Promise<V2Assignment> {
-    const claimEnabled = this.routingControl.isClaimFlowEnabled(
-      input.control,
-      input.definition.claimFlow,
-      input.input.friendCode,
-    );
-    if (claimEnabled) {
-      if (
-        (await this.friendship.getTargetCabinetUserId(
-          input.input.friendCode,
-        )) === null
-      ) {
-        throw new BadRequestException('cabinetUserId is required');
-      }
-      return {
-        assignmentMode: 'claim',
-        botUserFriendCode: null,
-        cabinetStatus: 'pending',
-      };
-    }
-    const bot = input.input.botUserFriendCode ?? null;
-    if (
-      !bot ||
-      !input.healthyBots.some((candidate) => candidate.friendCode === bot)
-    ) {
-      throw new BadRequestException(
-        'get_user_recent_event requires a healthy v2 pinned bot while claim flow is disabled',
-      );
-    }
-    return {
-      assignmentMode: 'pinned',
-      botUserFriendCode: bot,
-      cabinetStatus: 'not_required',
-    };
-  }
-
   private resolveV2FriendInteraction(
     input: CreateDxnetJobInput,
     healthyBots: BotStatus[],
@@ -578,6 +592,9 @@ export class JobService {
       error: null,
       result: undefined,
       diffsToScrape: input.input.diffsToScrape ?? null,
+      musicIds: input.input.musicIds ?? null,
+      scoreFetchTargets: input.input.scoreFetchTargets ?? null,
+      fcfsOnly: input.input.fcfsOnly ?? false,
       context: input.input.context ?? null,
       runAt,
       createdAt: input.now,
@@ -673,6 +690,30 @@ export class JobService {
     const job = await this.jobModel.findOne({ id: jobId });
     if (!job || !job.friendCode) {
       throw new NotFoundException('Job not found');
+    }
+    return toJobResponse(job.toObject() as JobEntity);
+  }
+
+  async findById(jobId: string): Promise<JobResponse | null> {
+    const job = await this.jobModel.findOne({ id: jobId });
+    if (!job?.friendCode) {
+      return null;
+    }
+    return toJobResponse(job.toObject() as JobEntity);
+  }
+
+  async findLatestDailyFullUpdate(
+    dailyTaskId: string,
+  ): Promise<JobResponse | null> {
+    const job = await this.jobModel
+      .findOne({
+        jobType: 'update_score',
+        'context.source': 'auto_update_daily_full_update',
+        'context.dailyTaskId': dailyTaskId,
+      })
+      .sort({ createdAt: -1 });
+    if (!job?.friendCode) {
+      return null;
     }
     return toJobResponse(job.toObject() as JobEntity);
   }
@@ -933,8 +974,7 @@ export class JobService {
     );
     const set = updateOps.$set as Record<string, unknown>;
     const stagedDataCompletion =
-      body.status === 'completed' &&
-      ['update_score', 'get_user_recent_event'].includes(existing.jobType);
+      body.status === 'completed' && existing.jobType === 'update_score';
     if (stagedDataCompletion) {
       set.status = 'processing';
       set.completionPending = true;
@@ -966,13 +1006,6 @@ export class JobService {
       generation,
       execution,
       botFriendCode,
-    );
-    this.applyV2Handoff(
-      existing,
-      set,
-      body,
-      execution.deliveryEpoch,
-      generation,
     );
 
     const filter: Record<string, unknown> = {
@@ -1009,12 +1042,8 @@ export class JobService {
     this.cleanupFinalJobCache(existing.id, entity.status, finalStatuses);
     if (!stagedDataCompletion) {
       await this.handleCompletedUpdateScore(entity, existing.id);
-      await this.handleCompletedRecentEvent(entity, existing.id);
     }
     this.recordPatchTimeline(existing, entity, body);
-    if (body.handoff) {
-      await this.jobQueue.enqueueWorkerJob(entity);
-    }
     return toWorkerJobResponse(entity);
   }
 
@@ -1029,7 +1058,6 @@ export class JobService {
       runAt: null,
     };
     await this.handleCompletedUpdateScore(completionCandidate, jobId);
-    await this.handleCompletedRecentEvent(completionCandidate, jobId);
     const finalized = await this.jobModel.findOneAndUpdate(
       {
         id: jobId,
@@ -1080,33 +1108,6 @@ export class JobService {
       set['cabinetFriendship.sdgbJobId'] = null;
       set['cabinetFriendship.lastError'] = null;
     }
-  }
-
-  private applyV2Handoff(
-    existing: JobEntity,
-    set: Record<string, unknown>,
-    body: JobPatchBody,
-    deliveryEpoch: number,
-    generation: 'new' | 'same',
-  ): void {
-    if (!body.handoff) {
-      return;
-    }
-    if (
-      generation !== 'same' ||
-      existing.jobType !== 'get_user_recent_event' ||
-      existing.routing?.assignmentMode !== 'claim' ||
-      existing.routing.deliveryMode !== 'shared' ||
-      body.status !== 'queued' ||
-      !['ready', 'uncertain'].includes(existing.cabinetFriendship?.status ?? '')
-    ) {
-      throw new ConflictException({ code: 'invalid_route' });
-    }
-    set['routing.deliveryMode'] = 'pinned';
-    set['routing.deliveryEpoch'] = deliveryEpoch + 1;
-    set.status = 'queued';
-    set.runAt = this.parseIsoDate(body.handoff.runAt, 'handoff.runAt');
-    set.execution = null;
   }
 
   private mayReuseCabinetPrerequisite(
@@ -1378,6 +1379,7 @@ export class JobService {
       friendCode: updated.friendCode,
       jobType: updated.jobType,
       result: updated.result as unknown,
+      context: updated.context,
     });
     if (!sync?.id) {
       return;
@@ -1392,79 +1394,6 @@ export class JobService {
           `Failed to enqueue auto-export for job ${jobId}: ${err?.message}`,
         );
       });
-  }
-
-  private async handleCompletedRecentEvent(
-    updated: JobEntity,
-    jobId: string,
-  ): Promise<void> {
-    if (
-      updated.status !== 'completed' ||
-      updated.jobType !== 'get_user_recent_event' ||
-      !updated.friendCode ||
-      !updated.result
-    ) {
-      return;
-    }
-    const events = (updated.result as { events?: unknown }).events;
-    if (!Array.isArray(events)) {
-      return;
-    }
-    const context = updated.context ?? null;
-    const mergeResult = await this.syncService.mergeRecentEvents({
-      friendCode: updated.friendCode,
-      sourceId: jobId,
-      events: events as RecentFcFsEvent[],
-    });
-    this.enqueueFcfsAutoExport(updated, mergeResult);
-    if (context?.autoUpdateFcfs === true) {
-      await this.autoUpdateActivity.recordRecentEventFingerprint({
-        friendCode: updated.friendCode,
-        fingerprint: this.recentEventFingerprint(events),
-        at: updated.updatedAt,
-      });
-    }
-  }
-
-  private enqueueFcfsAutoExport(
-    updated: JobEntity,
-    mergeResult: {
-      updatedCount: number;
-      syncId: string | null;
-    },
-  ): void {
-    if (
-      updated.context?.autoUpdateFcfs !== true ||
-      !updated.friendCode ||
-      mergeResult.updatedCount <= 0 ||
-      !mergeResult.syncId
-    ) {
-      return;
-    }
-    this.proberExports
-      .ensureAutoExportWake(updated.friendCode)
-      .catch((err: Error) => {
-        this.logger.warn(
-          `failed to enqueue fcfs auto-export job=${updated.id}: ${err?.message}`,
-        );
-      });
-  }
-
-  private recentEventFingerprint(events: unknown[]): string {
-    const rows = events.map((event) => {
-      if (!event || typeof event !== 'object') {
-        return ['', '', '', '', ''];
-      }
-      const row = event as Record<string, unknown>;
-      return [
-        typeof row.time === 'string' ? row.time : '',
-        typeof row.songName === 'string' ? row.songName : '',
-        typeof row.difficulty === 'string' ? row.difficulty : '',
-        typeof row.fc === 'string' ? row.fc : '',
-        typeof row.fs === 'string' ? row.fs : '',
-      ];
-    });
-    return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
   }
 
   async getActiveFriendCodesByBot(
@@ -1525,6 +1454,13 @@ export class JobService {
       jobType: 'update_score',
       status: { $in: ['queued', 'processing'] },
       'context.source': source,
+    });
+  }
+
+  async countActiveUpdateScores(): Promise<number> {
+    return this.jobModel.countDocuments({
+      jobType: 'update_score',
+      status: { $in: ['queued', 'processing'] },
     });
   }
 

@@ -66,15 +66,10 @@ export const UpdateBotCabinetUserIdBodySchema = z.object({
   cabinetUserId: z.number().int().positive().nullable(),
 });
 
-export const DxnetClaimFlowSchema = z.enum([
-  "auto_recent_event",
-  "manual_update",
-  "qr_identity",
-]);
+export const DxnetClaimFlowSchema = z.enum(["manual_update", "qr_identity"]);
 
 const DxnetClaimCanaryByFlowSchema = z
   .object({
-    auto_recent_event: z.array(z.string()).nullable().optional(),
     manual_update: z.array(z.string()).nullable().optional(),
   })
   .default({});

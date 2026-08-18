@@ -146,7 +146,7 @@ current sync 的正确性，也不承诺回填功能上线前的历史。
 | `friendCode` | `string` | Phase 1 用户归属键；用户查询从 JWT 获取，不接受客户端传入 |
 | `ownerUserId` | `ObjectId \| null` | 可选用户引用 |
 | `observedAt` | `Date` | 后端观察并提交变化的时间 |
-| `sourceType/sourceId` | `string` | DXNet、Rival、Recent Event 或二维码来源及其幂等 id |
+| `sourceType/sourceId` | `string` | DXNet、Rival、定向 FC/FS 或二维码来源及其幂等 id |
 | `syncId` | `string` | 稳定 current sync id |
 | `beforeScoreVersion/afterScoreVersion` | `number \| null` / `number` | winning CAS 前后版本 |
 | `musicId/chartIndex/type` | `string` / `number` / `string` | 谱面身份 |
@@ -163,6 +163,7 @@ current sync 的正确性，也不承诺回填功能上线前的历史。
 - `{ friendCode: 1, musicId: 1, chartIndex: 1, type: 1, observedAt: -1, _id: -1 }`
   支持当前用户单谱面游标时间线；
 - `{ ownerUserId: 1, observedAt: -1 }`；
+- `{ observedAt: 1, friendCode: 1 }`，名称 `daily_changed_users`，支持 UTC+8 每日变化用户汇总；
 - `{ sourceType: 1, sourceId: 1, musicId: 1, chartIndex: 1 }` unique，保证重复投递幂等。
 
 ## Prober Export States 与 Jobs
@@ -317,8 +318,10 @@ interface SongMetadata {
 | `scoreProgress`              | `ScoreProgress \| null` | `Mixed`, default `null`                 | 成绩更新进度                             |
 | `updateScoreDuration`        | `number \| null`        | default `null`                          | `update_score` 耗时                      |
 | `diffsToScrape`              | `number[] \| null`      | default `null`                          | 指定 `update_score` 只抓取的难度列表     |
+| `musicIds`                   | `string[] \| null`      | default `null`                          | 定向抓取的谱面 CID，例如 `100_3`         |
+| `scoreFetchTargets`          | `ScoreFetchTarget[] \| null` | `Mixed`, default `null`             | 后端从曲库解析出的标题/type/diff/genre/level 元数据 |
+| `fcfsOnly`                   | `boolean`               | default `false`                         | 单页面类型抓取并只合并 FC/FS             |
 | `context`                    | `JobContext \| null`    | `Mixed`, default `null`                 | 内部链路上下文，见下方 `JobContext`      |
-| `removeFriendAfterComplete`  | `boolean`               | default `false`                         | job 成功完成后由 worker 异步删除目标好友 |
 | `runAt`                      | `Date \| null`          | default `null`                          | 下次允许 BullMQ 投递的时间               |
 | `createdAt`                  | `Date`                  | required                                | 创建时间                                 |
 | `updatedAt`                  | `Date`                  | required                                | 更新时间                                 |
@@ -334,14 +337,12 @@ type JobStage =
   | "wait_user_request"
   | "accept_request"
   | "update_score"
-  | "get_user_recent_event"
   | "get_full_friend_list";
 
 type JobType =
   | "send_friend_request"
   | "accept_friend_request"
   | "update_score"
-  | "get_user_recent_event"
   | "get_full_friend_list";
 
 interface ScoreProgress {
@@ -352,10 +353,12 @@ interface ScoreProgress {
 type JobContext =
   | null
   | {
-      // AutoUpdateSchedulerService.maybeEnqueueFcfs() 创建的
-      // get_user_recent_event job，用于补最近 FC/FS。
+      // 半小时 score/dxScore 变化窗口创建的定向 update_score。
+      source: "auto_update_fcfs_score_window";
       autoUpdateFcfs: true;
-      reason: "rival_hash_changed" | "map_delta" | "manual";
+      fcfsTaskId: string;
+      windowStart: string;
+      windowEnd: string;
     }
   | {
       // 用户活动稳定后自动创建的全量 update_score。
@@ -371,8 +374,9 @@ type JobContext =
 | `send_friend_request`   | 登录 / 建好友关系                      | `null`                                                    |
 | `accept_friend_request` | 用户主动加 Bot 登录                    | `null`                                                    |
 | `update_score`          | 用户手动同步 / 普通成绩更新            | `null`                                                    |
+| `update_score`          | 半小时变化谱面 FC/FS 补全              | `{ source, autoUpdateFcfs, fcfsTaskId, windowStart, windowEnd }` |
 | `update_score`          | 稳定后全量自动更新                     | `{ source, lastActivityAt }`                              |
-| `get_user_recent_event` | 自动更新 FC/FS enrichment              | `{ autoUpdateFcfs: true, reason }`；通常 `runAt=now+3min` |
+| `update_score`          | 每日收尾全量自动更新                   | `{ source, dailyTaskId, businessDate, windowStart, windowEnd }` |
 | `get_full_friend_list`  | QR-login slow path 主动刷新 Bot 好友表 | `null`                                                    |
 
 索引：
@@ -382,6 +386,7 @@ type JobContext =
 - `{ botUserFriendCode: 1, status: 1 }`，名称 `bot_status`。
 - `{ jobType: 1, friendCode: 1, createdAt: -1 }`，名称 `latest_by_type_friend`。
 - `{ status: 1, createdAt: -1 }`，名称 `status_createdAt_desc`。
+- `{ context.source: 1, context.dailyTaskId: 1, createdAt: -1 }`，名称 `daily_full_update_lookup`。
 
 ## Auth
 
@@ -454,7 +459,7 @@ type BotFriendRow = {
 
 | 字段              | 类型                       | 约束 / 默认值           | 说明                                     |
 | ----------------- | -------------------------- | ----------------------- | ---------------------------------------- |
-| `bucketKey`       | `string`                   | required, unique, index | cron bucket，格式类似 `YYYY-MM-DDTHH:MM` |
+| `bucketKey`       | `string`                   | required, unique, index | cron minute、`fcfs-score-window:<end>` 或 `daily-full-update:<date>` |
 | `triggeredAt`     | `Date`                     | required                | 触发时间                                 |
 | `ranOn`           | `string`                   | default `unknown`       | 赢得本轮 sweep 的实例                    |
 | `status`          | `'running' \| 'completed'` | default `running`       | 执行状态                                 |
@@ -485,17 +490,17 @@ type BotFriendRow = {
 | `lastMapProbeAt`                | `Date \| null`              | default `null`           | 最近 Map auxiliary 时间              |
 | `lastMapDeltaAt`                | `Date \| null`              | default `null`           | 最近 Map 变化时间                    |
 | `nextMapProbeAt`                | `Date \| null`              | default `null`, index    | 下一次 Map auxiliary 时间            |
-| `lastRecentEventAt`             | `Date \| null`              | default `null`           | 最近 FC/FS enrichment 时间           |
-| `nextRecentEventAt`             | `Date \| null`              | default `null`, index    | 下一次允许 recent event 时间         |
 | `lastAutoUpdateActivityAt`      | `Date \| null`              | default `null`           | 最近自动更新活动信号时间             |
 | `pendingFullUpdateAt`           | `Date \| null`              | default `null`, index    | 稳定后全量 update_score 预约时间     |
-| `lastRecentEventFingerprint`    | `string \| null`            | default `null`           | 最近 recent event 轻量 fingerprint   |
-| `pendingRecentEventReason`      | `string \| null`            | default `null`, index    | cooldown/retry 期间挂起的 FC/FS 原因 |
-| `pendingRecentEventRequestedAt` | `Date \| null`              | default `null`           | 最近 pending FC/FS 触发时间          |
-| `pendingRecentEventCount`       | `number`                    | default `0`              | pending FC/FS 合并触发次数           |
+| `lastFcfsUpdateAt`              | `Date \| null`              | default `null`           | 最近定向 FC/FS job 创建时间          |
+| `nextFcfsUpdateAt`              | `Date \| null`              | default `null`, index    | 下一次允许定向 FC/FS job 的时间      |
+| `pendingFcfsMusicIds`           | `string[]`                  | default `[]`             | cooldown/限流期间合并的谱面 CID      |
+| `pendingFcfsWindowStart/End`    | `Date \| null`              | default `null`           | pending CID 对应的半小时窗口         |
+| `pendingFcfsRequestedAt`        | `Date \| null`              | default `null`           | 最近 pending 合并时间                |
+| `pendingFcfsCount`              | `number`                    | default `0`              | 已合并窗口数                         |
+| `fcfsErrorCount`                | `number`                    | default `0`              | 定向 FC/FS 创建连续失败数            |
 | `rivalErrorCount`               | `number`                    | default `0`              | Rival probe 连续错误数               |
 | `mapErrorCount`                 | `number`                    | default `0`              | Map auxiliary 连续错误数             |
-| `recentErrorCount`              | `number`                    | default `0`              | Recent event 连续错误数              |
 | `backoffUntil`                  | `Date \| null`              | default `null`, index    | 主链路退避截止时间                   |
 | `habitMultiplier`               | `number`                    | default `1`              | Phase 2 用户习惯倍率预留             |
 | `loadMultiplier`                | `number`                    | default `1`              | 负载倍率预留                         |
@@ -508,7 +513,7 @@ type BotFriendRow = {
 - `cabinetUserId`：单字段索引。
 - `{ enabled: 1, nextRivalProbeAt: 1, tier: 1 }`，名称 `due_rival_probe`。
 - `{ enabled: 1, nextMapProbeAt: 1, tier: 1 }`，名称 `due_map_probe`。
-- `{ enabled: 1, pendingRecentEventReason: 1, nextRecentEventAt: 1 }`，名称 `due_pending_fcfs`。
+- `{ enabled: 1, nextFcfsUpdateAt: 1, pendingFcfsMusicIds.0: 1 }`，名称 `due_pending_fcfs_score_update`。
 - `{ enabled: 1, pendingFullUpdateAt: 1 }`，名称 `due_pending_full_update`。
 
 ### `AutoUpdateTaskEntity`
@@ -516,7 +521,7 @@ type BotFriendRow = {
 | 字段                      | 类型                                                          | 约束 / 默认值           | 说明                                                    |
 | ------------------------- | ------------------------------------------------------------- | ----------------------- | ------------------------------------------------------- |
 | `id`                      | `string`                                                      | required, unique, index | task id                                                 |
-| `type`                    | `rival_score_probe \| map_auxiliary_probe \| fcfs_enrichment` | required, index         | 任务类型                                                |
+| `type`                    | `rival_score_probe \| map_auxiliary_probe \| fcfs_enrichment \| daily_full_update` | required, index         | 任务类型                                                |
 | `friendCode`              | `string`                                                      | required, index         | 用户好友码                                              |
 | `cabinetUserId`           | `number`                                                      | required, index         | 机台用户 ID                                             |
 | `status`                  | `queued \| processing \| completed \| failed \| canceled`     | required, index         | 状态；当前 Phase 1 主要使用 processing/completed/failed |

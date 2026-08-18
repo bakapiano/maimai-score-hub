@@ -22,7 +22,6 @@ export const VALID_STAGE: readonly JobStage[] = [
   'wait_user_request',
   'accept_request',
   'update_score',
-  'get_user_recent_event',
   'get_full_friend_list',
 ] as const;
 
@@ -30,7 +29,6 @@ export const JOB_STAGE_MAP: Record<JobType, readonly JobStage[]> = {
   send_friend_request: ['send_request', 'wait_acceptance'],
   accept_friend_request: ['wait_user_request', 'accept_request'],
   update_score: ['update_score'],
-  get_user_recent_event: ['get_user_recent_event'],
   get_full_friend_list: ['get_full_friend_list'],
 };
 
@@ -40,9 +38,6 @@ export function initialStageForJobType(jobType: JobType): JobStage {
   }
   if (jobType === 'accept_friend_request') {
     return 'wait_user_request';
-  }
-  if (jobType === 'get_user_recent_event') {
-    return 'get_user_recent_event';
   }
   if (jobType === 'get_full_friend_list') {
     return 'get_full_friend_list';

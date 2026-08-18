@@ -313,6 +313,94 @@ describe('SyncService initial score commit', () => {
   });
 });
 
+describe('SyncService targeted FC/FS update_score results', () => {
+  it('maps chart ids directly and preserves achievement and DX score', async () => {
+    const harness = createHarness({
+      current: {
+        scores: [
+          {
+            musicId: '17',
+            cid: '17_3',
+            chartIndex: 3,
+            type: 'standard',
+            dxScore: '1019',
+            score: '100.7833%',
+            fs: null,
+            fc: null,
+            rating: 292,
+            isNew: false,
+          },
+        ],
+      },
+    });
+
+    const result = await harness.service.createFromJob({
+      id: 'targeted-fcfs-job',
+      friendCode: '634142510810999',
+      jobType: 'update_score',
+      context: { autoUpdateFcfs: true },
+      result: {
+        targetedScores: [{ musicId: '17_3', fc: 'ap', fs: 'fdx' }],
+      },
+    });
+
+    expect(result?.changedChartCount).toBe(1);
+    expect(harness.current()?.scores[0]).toMatchObject({
+      cid: '17_3',
+      dxScore: '1019',
+      score: '100.7833%',
+      fc: 'ap',
+      fs: 'fdx',
+    });
+    const change =
+      scoreChangeCalls(harness)[0][0][0].updateOne.update.$setOnInsert;
+    expect(change.sourceType).toBe('auto_update_fcfs');
+    expect(change.changedFields).toEqual(['fc', 'fs']);
+  });
+
+  it('accepts a full fcfsOnly aggregate without score fields', async () => {
+    const harness = createHarness({
+      current: {
+        scores: [
+          {
+            musicId: '17',
+            cid: '17_3',
+            chartIndex: 3,
+            type: 'standard',
+            dxScore: '1019',
+            score: '100.7833%',
+            fs: null,
+            fc: null,
+            rating: 292,
+            isNew: false,
+          },
+        ],
+      },
+    });
+
+    await harness.service.createFromJob({
+      id: 'full-fcfs-only-job',
+      friendCode: '634142510810999',
+      jobType: 'update_score',
+      result: {
+        舞萌: {
+          standard: {
+            'test-17': { 3: { level: '13', fc: 'ap', fs: 'fdx' } },
+          },
+        },
+      },
+    });
+
+    expect(harness.current()?.scores[0]).toMatchObject({
+      dxScore: '1019',
+      score: '100.7833%',
+      rating: 292,
+      fc: 'ap',
+      fs: 'fdx',
+    });
+  });
+});
+
 describe('SyncService CAS conflict handling', () => {
   it('re-reads latest and preserves both concurrent deltas after CAS conflict', async () => {
     const harness = createHarness({
@@ -599,188 +687,5 @@ describe('SyncService best-effort score change delivery', () => {
       { ordered: false },
       { ordered: false },
     ]);
-  });
-});
-
-// The cases share full score fixtures so each timestamp path stays explicit.
-// eslint-disable-next-line max-lines-per-function
-describe('SyncService.mergeRecentEvents', () => {
-  it('merges a uniquely matched FC/FS event through the same CAS path', async () => {
-    const harness = createHarness({
-      current: {
-        scores: [
-          {
-            musicId: '17',
-            cid: '17_3',
-            chartIndex: 3,
-            type: 'standard',
-            dxScore: '1019',
-            score: '100.7833%',
-            fs: null,
-            fc: null,
-            rating: 292,
-            isNew: false,
-            observedAt: new Date('2026-06-18T00:00:00.000Z'),
-          },
-        ],
-      },
-    });
-    const result = await harness.service.mergeRecentEvents({
-      friendCode: '634142510810999',
-      sourceId: 'recent-event-job',
-      events: [
-        {
-          time: '2026/06/19 12:38',
-          songName: 'test-17',
-          difficulty: 'master',
-          fs: 'fsp',
-        },
-      ],
-    });
-
-    expect(result).toMatchObject({
-      eventCount: 1,
-      matchedCount: 1,
-      updatedCount: 1,
-      syncId: 'stable-sync',
-    });
-    expect(harness.current()?.scores[0].fs).toBe('fsp');
-    expect(harness.current()?.scores[0].observedAt?.toISOString()).toBe(
-      '2026-06-19T04:38:00.000Z',
-    );
-  });
-
-  it('does not move observedAt backwards for an older real event', async () => {
-    const previousObservedAt = new Date('2026-06-20T00:00:00.000Z');
-    const harness = createHarness({
-      current: {
-        scores: [
-          {
-            musicId: '17',
-            cid: '17_3',
-            chartIndex: 3,
-            type: 'standard',
-            dxScore: '1019',
-            score: '100.7833%',
-            fs: null,
-            fc: null,
-            rating: 292,
-            isNew: false,
-            observedAt: previousObservedAt,
-          },
-        ],
-      },
-    });
-
-    await harness.service.mergeRecentEvents({
-      friendCode: '634142510810999',
-      sourceId: 'recent-event-older-than-current',
-      events: [
-        {
-          time: '2026/06/19 12:38',
-          songName: 'test-17',
-          difficulty: 'master',
-          fs: 'fsp',
-        },
-      ],
-    });
-
-    expect(harness.current()?.scores[0].fs).toBe('fsp');
-    expect(harness.current()?.scores[0].observedAt).toEqual(previousObservedAt);
-  });
-
-  it('falls back to commit time when an event time is invalid', async () => {
-    jest.useFakeTimers();
-    const fallbackNow = new Date('2026-07-20T05:06:07.000Z');
-    jest.setSystemTime(fallbackNow);
-    try {
-      const harness = createHarness({
-        current: {
-          scores: [
-            {
-              musicId: '17',
-              cid: '17_3',
-              chartIndex: 3,
-              type: 'standard',
-              dxScore: '1019',
-              score: '100.7833%',
-              fs: null,
-              fc: null,
-              rating: 292,
-              isNew: false,
-              observedAt: new Date('2026-06-20T00:00:00.000Z'),
-            },
-          ],
-        },
-      });
-
-      await harness.service.mergeRecentEvents({
-        friendCode: '634142510810999',
-        sourceId: 'recent-event-invalid-time',
-        events: [
-          {
-            time: 'not-a-time',
-            songName: 'test-17',
-            difficulty: 'master',
-            fc: 'ap',
-          },
-        ],
-      });
-
-      expect(harness.current()?.scores[0].observedAt).toEqual(fallbackNow);
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it('skips an ambiguous title without changing the score version', async () => {
-    const harness = createHarness({
-      current: {
-        scores: [
-          {
-            musicId: '30',
-            cid: '30_3',
-            chartIndex: 3,
-            type: 'standard',
-            dxScore: '1000',
-            score: '100.0000%',
-            fs: null,
-            fc: null,
-            rating: 100,
-            isNew: false,
-          },
-          {
-            musicId: '10030',
-            cid: '10030_3',
-            chartIndex: 3,
-            type: 'dx',
-            dxScore: '1000',
-            score: '100.0000%',
-            fs: null,
-            fc: null,
-            rating: 100,
-            isNew: true,
-          },
-        ],
-      },
-    });
-    const result = await harness.service.mergeRecentEvents({
-      friendCode: '634142510810999',
-      sourceId: 'ambiguous-event',
-      events: [
-        {
-          songName: 'duplicate-title',
-          difficulty: 'master',
-          fc: 'ap',
-        },
-      ],
-    });
-
-    expect(result).toMatchObject({
-      matchedCount: 0,
-      updatedCount: 0,
-      syncId: 'stable-sync',
-    });
-    expect(harness.current()?.__v).toBe(0);
   });
 });

@@ -123,7 +123,7 @@ Catalog 定数修正可能使派生 `ratingDelta` 为负，不代表成绩回退
 
 1. `createFromJob()`：DXNet `update_score`；
 2. `createFromRivalMusic()`：Rival score change；
-3. `mergeRecentEvents()`：Recent Event FC/FS；
+3. `createFromJob()`：targeted FC/FS；
 4. `createFromUserMusic()`：二维码 `get_music_score`。
 
 ```text

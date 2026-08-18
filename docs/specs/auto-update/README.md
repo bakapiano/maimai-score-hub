@@ -9,10 +9,10 @@
 - **Rival-first**：主探测就是 `GetUserRivalMusicApi`，不再先 map 再 rival。
 - **Diff 只用于探测，不用于写入**：rival hash / map fingerprint 只决定是否触发后续流程；实际写入始终用本次返回 list 与用户当前成绩按规则合并。
 - **Map 辅助，不做主链路**：`GetUserMapApi` 只用于 score-silent 活跃、冷启动校验和上线观测。
-- **FC/FS 独立补全**：`GetUserRivalMusicApi` 没有 FC/FS，使用 `addRival + get recent event` 低频补最近 FC/AP/FS/FDX。
+- **FC/FS 独立补全**：每半小时从 `score_changes` 找出 achievement/DX Score 变化的谱面 CID，定向抓 Friend VS 并只合并 FC/FS。
 - **三条链路解耦**：rival score probe、map auxiliary probe、FC/FS enrichment 独立记录任务和失败状态。
 - **Phase 1 执行控制**：backend 用 batch limit、concurrency、cooldown 和 backoff 控制生产节奏；sdgb-worker 用 BullMQ 并发消费和 global/per-API token bucket 控制实际 QPS。
-- **数据驱动调参**：用新链路指标记录 rival hash delta、map delta、recent event 命中率，再调分层和限流。
+- **数据驱动调参**：记录 rival hash delta、map delta、定向页面覆盖率与 FC/FS 命中率，再调分层和限流。
 
 ## 实测依据
 
@@ -34,8 +34,9 @@
 | 链路                | 输入                                                 | 输出                                                                | 频率                   |
 | ------------------- | ---------------------------------------------------- | ------------------------------------------------------------------- | ---------------------- |
 | Rival Score Probe   | 开启自动更新且绑定 cabinet userId 的用户             | achievement / dxScore / rating / lastRivalHash / 活跃档位           | 主链路，15m / 30m / 1h |
-| Map Auxiliary Probe | 需要识别 score-silent 活跃的用户                     | map distance fingerprint、是否延长 hot session、是否触发 FC/FS 补全 | 辅助链路，低频         |
-| FC/FS Enrichment    | rival score 变化或 map score-silent 活跃后的候选用户 | 最近 FC/AP/FS/FDX 合并结果                                          | 低频、按用户节流       |
+| Map Auxiliary Probe | 需要识别 score-silent 活跃的用户                     | map distance fingerprint、是否延长 hot session                      | 辅助链路，低频         |
+| FC/FS Enrichment    | 前一半小时 score/dxScore 发生变化的谱面 CID          | 目标谱面的 FC/AP/FS/FDX                                             | 30 分钟窗口、按用户节流 |
+| Daily Full Update   | UTC+8 前一自然日产生 `score_changes` 的自动更新用户  | 全难度 DXNet `update_score`                                         | 每日 02:00 分批收尾    |
 
 ## Phase 1 当前参数
 
@@ -46,12 +47,12 @@
 | warm rival score probe       | 30 分钟                                                                                                         |
 | cold rival score probe       | 1 小时                                                                                                          |
 | map auxiliary probe          | hot 30 分钟；warm/cold 1 小时                                                                                   |
-| recent event 单用户 cooldown | 30 分钟                                                                                                         |
-| recent event 执行延迟        | 3 分钟                                                                                                          |
+| targeted FC/FS 单用户 cooldown | 30 分钟                                                                                                       |
 | stable full update debounce  | 45 分钟                                                                                                         |
+| daily full update            | 北京时间 02:00；单轮 4 个；全局 active `update_score` 水位 8                                                   |
 | rival score probe 执行控制   | 每轮最多 480 个 due state，scheduler 并发 4                                                                     |
 | map auxiliary 执行控制       | 每轮最多 120 个 due state，scheduler 并发 2                                                                     |
-| FC/FS enrichment 执行控制    | 单用户 cooldown；cooldown 内合并为 pending，到期生成 DXNet `get_user_recent_event` job；无全局 qps token bucket |
+| FC/FS enrichment 执行控制    | 半小时窗口；pending CID 合并；全局 12 jobs/min、6 jobs/5s burst；background priority                              |
 | sdgb 执行模型                | Rival/Map enqueue Probe lane `sdgb-worker-jobs`；交互任务进入独立 lane；worker 多并发消费并按 API token bucket 限流 |
 
 ## 10k 用户主链路 QPS 估算
@@ -79,7 +80,7 @@ hot / 900 + warm / 1800 + cold / 3600
 | `rival-first.md`         | Rival-first 主方案、实测对比、10k QPS 估算                                      |
 | `activity-tiering.md`    | hot / warm / cold 分层与状态流转                                                |
 | `pipeline-design.md`     | rival score probe / map auxiliary / FCFS enrichment 三链路设计                  |
-| `rate-limits.md`         | 当前执行控制、sdgb-worker token bucket 和仍未实现的 DXNet recent event 全局限流 |
+| `rate-limits.md`         | 当前执行控制、sdgb-worker token bucket 和定向 FC/FS producer 限流              |
 | `data-model.md`          | 当前状态表、任务日志表、关键字段                                                |
 | `settled-full-update.md` | 稳定后全量 `update_score` 的 debounce 代码事实                                  |
 | `metrics-and-rollout.md` | 压测、指标、breaking cutover 和参数收敛                                         |

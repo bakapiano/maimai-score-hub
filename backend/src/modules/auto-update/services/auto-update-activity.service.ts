@@ -31,33 +31,6 @@ export class AutoUpdateActivityService {
     );
   }
 
-  async recordRecentEventFingerprint(input: {
-    friendCode: string;
-    fingerprint: string;
-    at: Date;
-  }): Promise<boolean> {
-    const updated = await this.stateModel.updateOne(
-      {
-        friendCode: input.friendCode,
-        enabled: true,
-        $or: [
-          { lastRecentEventFingerprint: { $exists: false } },
-          { lastRecentEventFingerprint: null },
-          { lastRecentEventFingerprint: { $ne: input.fingerprint } },
-        ],
-      },
-      {
-        $set: {
-          lastRecentEventFingerprint: input.fingerprint,
-          lastAutoUpdateActivityAt: input.at,
-          pendingFullUpdateAt: this.nextSettledFullUpdateAt(input.at),
-          schedulerVersion: SCHEDULER_VERSION,
-        },
-      },
-    );
-    return (updated.modifiedCount ?? 0) > 0;
-  }
-
   private nextSettledFullUpdateAt(at: Date): Date {
     return new Date(at.getTime() + this.timing.settledFullUpdateDelayMs);
   }

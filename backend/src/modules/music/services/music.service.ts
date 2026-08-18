@@ -12,6 +12,7 @@ import { request as httpRequest } from 'node:http';
 import { URL } from 'node:url';
 import type { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { ScoreFetchTarget } from '@maimai-score-hub/shared';
 
 import { MusicEntity } from '../schemas/music.schema';
 import {
@@ -22,6 +23,41 @@ import {
 import { observeFetch } from '../../../common/observability/external-call-recorder';
 
 const MUSIC_DATA_SOURCE = 'diving-fish';
+const CATEGORY_GENRE: Record<string, number> = {
+  '流行&动漫': 101,
+  'niconico＆VOCALOID™': 102,
+  东方Project: 103,
+  其他游戏: 104,
+  舞萌: 105,
+  '音击/中二节奏': 106,
+};
+const LEVEL_PARAMETER = new Map(
+  [
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    '7+',
+    '8',
+    '8+',
+    '9',
+    '9+',
+    '10',
+    '10+',
+    '11',
+    '11+',
+    '12',
+    '12+',
+    '13',
+    '13+',
+    '14',
+    '14+',
+    '15',
+  ].map((level, index) => [level, index + 1] as const),
+);
 
 @Injectable()
 export class MusicService {
@@ -105,6 +141,52 @@ export class MusicService {
     this.logger.log(`Fetched ${result.length} music records.`);
     await this.cache.set(cacheKey, result, 1000 * 60 * 60);
     return result;
+  }
+
+  async resolveScoreFetchTargets(musicIds: string[]): Promise<{
+    targets: ScoreFetchTarget[];
+    missing: string[];
+  }> {
+    const requested = [...new Set(musicIds)];
+    const requestedSet = new Set(requested);
+    if (!requested.length) {
+      return { targets: [], missing: [] };
+    }
+    const rows = await this.musicModel
+      .find({ 'charts.cid': { $in: requested } })
+      .select('id title type category charts')
+      .lean<MusicEntity[]>();
+    const resolved = new Map<string, ScoreFetchTarget>();
+    for (const music of rows) {
+      if (!Array.isArray(music.charts)) {
+        continue;
+      }
+      music.charts.forEach((chart, chartIndex) => {
+        const musicId = chart?.cid;
+        if (!musicId || !requestedSet.has(musicId)) {
+          return;
+        }
+        const utage = music.type === 'utage';
+        resolved.set(musicId, {
+          musicId,
+          title: music.title,
+          type: utage ? 'utage' : music.type === 'dx' ? 'dx' : 'standard',
+          category: music.category ?? '',
+          diff: utage ? 10 : chartIndex,
+          genre: utage ? 99 : (CATEGORY_GENRE[music.category ?? ''] ?? null),
+          level: utage
+            ? null
+            : (LEVEL_PARAMETER.get(chart.level ?? '') ?? null),
+        });
+      });
+    }
+    return {
+      targets: requested.flatMap((musicId) => {
+        const target = resolved.get(musicId);
+        return target ? [target] : [];
+      }),
+      missing: requested.filter((musicId) => !resolved.has(musicId)),
+    };
   }
 
   async syncMusicData(signal?: AbortSignal) {

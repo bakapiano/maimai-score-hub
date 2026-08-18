@@ -14,10 +14,7 @@ export const DXNET_DEADLINE_MS: Record<DxnetExecutionLane, number> = {
   background: 6 * 60 * 60_000,
 };
 
-export type DxnetClaimFlow =
-  | "auto_recent_event"
-  | "manual_update"
-  | "qr_identity";
+export type DxnetClaimFlow = "manual_update" | "qr_identity";
 
 export interface DxnetRouteDefinition {
   lane: DxnetExecutionLane;
@@ -64,16 +61,12 @@ export function getDxnetRouteDefinition(
     };
   }
 
-  if (
-    source === "auto_update" &&
-    (jobType === "get_user_recent_event" || jobType === "update_score")
-  ) {
+  if (source === "auto_update" && jobType === "update_score") {
     return {
       lane: "background",
       priority: DXNET_PRIORITY.background,
       defaultAssignmentMode: "claim",
-      claimFlow:
-        jobType === "get_user_recent_event" ? "auto_recent_event" : null,
+      claimFlow: null,
     };
   }
 
@@ -119,6 +112,5 @@ export function inferDxnetJobSource(
   ) {
     return "auto_update";
   }
-  if (jobType === "get_user_recent_event") return "auto_update";
   return "user_sync";
 }

@@ -2,10 +2,6 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import type { HydratedDocument } from 'mongoose';
 
 export type AutoUpdateTier = 'hot' | 'warm' | 'cold';
-export type AutoUpdateFcfsReason =
-  | 'rival_hash_changed'
-  | 'map_delta'
-  | 'manual';
 
 @Schema({ collection: 'auto_update_probe_states', timestamps: true })
 export class AutoUpdateProbeStateEntity {
@@ -49,28 +45,10 @@ export class AutoUpdateProbeStateEntity {
   nextMapProbeAt!: Date | null;
 
   @Prop({ type: Date, default: null })
-  lastRecentEventAt!: Date | null;
-
-  @Prop({ type: Date, default: null, index: true })
-  nextRecentEventAt!: Date | null;
-
-  @Prop({ type: Date, default: null })
   lastAutoUpdateActivityAt!: Date | null;
 
   @Prop({ type: Date, default: null, index: true })
   pendingFullUpdateAt!: Date | null;
-
-  @Prop({ type: String, default: null })
-  lastRecentEventFingerprint!: string | null;
-
-  @Prop({ type: String, default: null, index: true })
-  pendingRecentEventReason!: AutoUpdateFcfsReason | null;
-
-  @Prop({ type: Date, default: null })
-  pendingRecentEventRequestedAt!: Date | null;
-
-  @Prop({ type: Number, default: 0 })
-  pendingRecentEventCount!: number;
 
   @Prop({ type: Number, default: 0 })
   rivalErrorCount!: number;
@@ -78,8 +56,29 @@ export class AutoUpdateProbeStateEntity {
   @Prop({ type: Number, default: 0 })
   mapErrorCount!: number;
 
+  @Prop({ type: Date, default: null })
+  lastFcfsUpdateAt!: Date | null;
+
+  @Prop({ type: Date, default: null, index: true })
+  nextFcfsUpdateAt!: Date | null;
+
+  @Prop({ type: [String], default: [] })
+  pendingFcfsMusicIds!: string[];
+
+  @Prop({ type: Date, default: null })
+  pendingFcfsWindowStart!: Date | null;
+
+  @Prop({ type: Date, default: null })
+  pendingFcfsWindowEnd!: Date | null;
+
+  @Prop({ type: Date, default: null })
+  pendingFcfsRequestedAt!: Date | null;
+
   @Prop({ type: Number, default: 0 })
-  recentErrorCount!: number;
+  pendingFcfsCount!: number;
+
+  @Prop({ type: Number, default: 0 })
+  fcfsErrorCount!: number;
 
   @Prop({ type: Date, default: null, index: true })
   backoffUntil!: Date | null;
@@ -108,12 +107,12 @@ AutoUpdateProbeStateSchema.index(
   { name: 'due_rival_probe' },
 );
 AutoUpdateProbeStateSchema.index(
-  { enabled: 1, nextMapProbeAt: 1, tier: 1 },
-  { name: 'due_map_probe' },
+  { enabled: 1, nextFcfsUpdateAt: 1, 'pendingFcfsMusicIds.0': 1 },
+  { name: 'due_pending_fcfs_score_update' },
 );
 AutoUpdateProbeStateSchema.index(
-  { enabled: 1, pendingRecentEventReason: 1, nextRecentEventAt: 1 },
-  { name: 'due_pending_fcfs' },
+  { enabled: 1, nextMapProbeAt: 1, tier: 1 },
+  { name: 'due_map_probe' },
 );
 AutoUpdateProbeStateSchema.index(
   { enabled: 1, pendingFullUpdateAt: 1 },

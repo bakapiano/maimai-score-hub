@@ -74,7 +74,7 @@ describe('JobService.getRecentStats', () => {
   });
 });
 
-describe('JobService prerequisite handoff fencing', () => {
+describe('JobService prerequisite reuse', () => {
   it('reuses an existing same-Bot prerequisite across redelivery', () => {
     const service = makeService({
       totalCount: 0,
@@ -166,57 +166,50 @@ describe('JobService execution route fencing', () => {
       ),
     ).toThrow();
   });
+});
 
-  it('accepts handoff only after a prepared same-generation recent-event claim', () => {
+describe('JobService targeted score input', () => {
+  it('resolves chart ids while keeping fcfsOnly independent', async () => {
     const service = makeService({
       totalCount: 0,
       completedCount: 0,
       failedCount: 0,
     });
-    const subject = service as unknown as {
-      applyV2Handoff(
-        job: Record<string, unknown>,
-        set: Record<string, unknown>,
-        body: Record<string, unknown>,
-        deliveryEpoch: number,
-        generation: 'new' | 'same',
-      ): void;
-    };
-    const job = {
-      jobType: 'get_user_recent_event',
-      routing: {
-        version: 2,
-        assignmentMode: 'claim',
-        deliveryMode: 'shared',
+    const targets = [
+      {
+        musicId: '100_3',
+        title: 'Tell Your World',
+        type: 'standard',
+        category: 'niconico＆VOCALOID™',
+        diff: 3,
+        genre: 102,
+        level: 19,
       },
-      cabinetFriendship: { status: 'ready' },
-    };
-    const body = {
-      status: 'queued',
-      handoff: {
-        deliveryMode: 'pinned',
-        runAt: '2026-08-09T00:03:00.000Z',
+    ];
+    Object.assign(service, {
+      music: {
+        resolveScoreFetchTargets: jest
+          .fn()
+          .mockResolvedValue({ targets, missing: [] }),
       },
-    };
-    const set: Record<string, unknown> = {};
-
-    subject.applyV2Handoff(job, set, body, 2, 'same');
-    expect(set).toMatchObject({
-      'routing.deliveryMode': 'pinned',
-      'routing.deliveryEpoch': 3,
-      status: 'queued',
-      execution: null,
     });
-    expect(() => subject.applyV2Handoff(job, {}, body, 2, 'new')).toThrow();
-    expect(() =>
-      subject.applyV2Handoff(
-        { ...job, cabinetFriendship: { status: 'pending' } },
-        {},
-        body,
-        2,
-        'same',
-      ),
-    ).toThrow();
+
+    await expect(
+      (
+        service as unknown as {
+          prepareScoreFetchInput(input: unknown): Promise<unknown>;
+        }
+      ).prepareScoreFetchInput({
+        friendCode: '123456789012345',
+        jobType: 'update_score',
+        musicIds: ['100_3', '100_3'],
+        fcfsOnly: true,
+      }),
+    ).resolves.toMatchObject({
+      musicIds: ['100_3'],
+      scoreFetchTargets: targets,
+      fcfsOnly: true,
+    });
   });
 });
 
