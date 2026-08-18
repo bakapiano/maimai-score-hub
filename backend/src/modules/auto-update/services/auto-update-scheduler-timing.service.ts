@@ -121,9 +121,11 @@ export class AutoUpdateSchedulerTimingService {
   readonly rivalTimeoutMs: number;
   readonly mapTimeoutMs: number;
   readonly fcfsCooldownMs: number;
+  readonly fcfsClaimTimeoutMs: number;
   readonly fcfsEnabled: boolean;
   readonly settledFullUpdateDelayMs: number;
   readonly settledFullUpdateRetryMs: number;
+  readonly settledFullUpdateClaimTimeoutMs: number;
   readonly dailyFullUpdateHour: number;
   readonly dailyFullUpdateBatchLimit: number;
   readonly dailyFullUpdateMaxActive: number;
@@ -209,6 +211,11 @@ export class AutoUpdateSchedulerTimingService {
       'AUTO_UPDATE_FCFS_COOLDOWN_MS',
       30 * MINUTE,
     );
+    this.fcfsClaimTimeoutMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_FCFS_CLAIM_TIMEOUT_MS',
+      5 * MINUTE,
+    );
     this.settledFullUpdateDelayMs = getPositiveInt(
       config,
       'AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS',
@@ -218,6 +225,11 @@ export class AutoUpdateSchedulerTimingService {
       config,
       'AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS',
       10 * MINUTE,
+    );
+    this.settledFullUpdateClaimTimeoutMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_SETTLED_FULL_UPDATE_CLAIM_TIMEOUT_MS',
+      5 * MINUTE,
     );
     const dailyFullUpdate = getDailyFullUpdateConfig(config);
     this.dailyFullUpdateHour = dailyFullUpdate.hour;

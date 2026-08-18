@@ -5,6 +5,7 @@ import type { Model } from 'mongoose';
 
 import { RedisLeaseService } from '../../../common/redis/redis-lease.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import type { JobResponse } from '../../job/job.types';
 import { JobService } from '../../job/services/job.service';
 import { ScoreChangeHistoryService } from '../../sync/services/score-change-history.service';
 import { AutoUpdateProbeStateEntity } from '../schemas/auto-update-probe-state.schema';
@@ -17,11 +18,14 @@ const WINDOW_RUN_PREFIX = 'fcfs-score-window';
 const PRODUCER_LIMIT_PER_MINUTE = 12;
 const PRODUCER_BURST_PER_FIVE_SECONDS = 6;
 const STAGE_CHUNK_SIZE = 500;
+const FCFS_TASK_TYPE = 'fcfs_enrichment' as const;
+const FCFS_JOB_SOURCE = 'auto_update_fcfs_score_window';
 
 export type FcfsScoreWindow = { start: Date; end: Date; key: string };
 export type FcfsWindowSummary = {
   windowKey: string;
   changedUsers: number;
+  reconciled: number;
   due: number;
   dispatched: number;
   deferred: number;
@@ -58,10 +62,12 @@ export class AutoUpdateFcfsWindowService {
 
   async run(now: Date, signal?: AbortSignal): Promise<FcfsWindowSummary> {
     const window = latestClosedFcfsWindow(now);
+    const reconciled = await this.reconcileProcessingTasks(now, signal);
     if (!this.timing.fcfsEnabled) {
       return {
         windowKey: window.key,
         changedUsers: 0,
+        reconciled,
         due: 0,
         dispatched: 0,
         deferred: 0,
@@ -94,6 +100,7 @@ export class AutoUpdateFcfsWindowService {
     return {
       windowKey: window.key,
       changedUsers,
+      reconciled,
       due: states.length,
       dispatched: results.filter((result) => result === 'dispatched').length,
       deferred: results.filter((result) => result === 'deferred').length,
@@ -212,6 +219,172 @@ export class AutoUpdateFcfsWindowService {
     return results;
   }
 
+  private async reconcileProcessingTasks(
+    now: Date,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    const tasks = await this.taskModel
+      .find({ type: FCFS_TASK_TYPE, status: 'processing' })
+      .sort({ updatedAt: 1 })
+      .limit(100)
+      .lean<AutoUpdateTaskEntity[]>()
+      .exec();
+    let reconciled = 0;
+    for (const task of tasks) {
+      signal?.throwIfAborted();
+      if (await this.reconcileTask(task, now)) {
+        reconciled++;
+      }
+    }
+    return reconciled;
+  }
+
+  private async reconcileTask(
+    task: AutoUpdateTaskEntity,
+    now: Date,
+  ): Promise<boolean> {
+    const trackedJobId = this.metricString(task, 'dxnetJobId');
+    const tracked = trackedJobId
+      ? await this.jobs.findById(trackedJobId)
+      : null;
+    const job = tracked ?? (await this.jobs.findLatestFcfsUpdate(task.id));
+    if (job) {
+      return this.reconcileTrackedJob(task, job, now);
+    }
+    const updatedAt = new Date(task.updatedAt ?? task.createdAt ?? now);
+    if (now.getTime() - updatedAt.getTime() < this.timing.fcfsClaimTimeoutMs) {
+      return false;
+    }
+    await this.requeueTask(task, now, 'stale FC/FS dispatch claim');
+    return true;
+  }
+
+  private async reconcileTrackedJob(
+    task: AutoUpdateTaskEntity,
+    job: JobResponse,
+    now: Date,
+  ): Promise<boolean> {
+    if (job.status === 'completed') {
+      await this.markTaskCompleted(task, job.id, now);
+      return true;
+    }
+    if (job.status === 'failed' || job.status === 'canceled') {
+      await this.requeueTask(
+        task,
+        now,
+        job.error ?? `tracked job ${job.status}`,
+        job.id,
+      );
+      return true;
+    }
+    if (this.metricString(task, 'dxnetJobId') !== job.id) {
+      await this.trackJob(task, job.id, 'recovered');
+      return true;
+    }
+    return false;
+  }
+
+  private async markTaskCompleted(
+    task: AutoUpdateTaskEntity,
+    jobId: string,
+    now: Date,
+  ): Promise<void> {
+    await Promise.all([
+      this.stateModel.updateOne(
+        { friendCode: task.friendCode },
+        {
+          $set: {
+            lastFcfsUpdateAt: now,
+            nextFcfsUpdateAt: new Date(
+              now.getTime() + this.timing.fcfsCooldownMs,
+            ),
+            fcfsErrorCount: 0,
+          },
+        },
+      ),
+      this.taskModel.updateOne(
+        { id: task.id, status: 'processing' },
+        {
+          $set: {
+            status: 'completed',
+            runAt: null,
+            lastError: null,
+            metrics: {
+              ...(task.metrics ?? {}),
+              dxnetJobId: jobId,
+              outcome: 'completed',
+            },
+          },
+        },
+      ),
+    ]);
+  }
+
+  private async requeueTask(
+    task: AutoUpdateTaskEntity,
+    now: Date,
+    error: string,
+    previousJobId?: string,
+  ): Promise<void> {
+    const musicIds = this.metricStringArray(task, 'musicIds');
+    const failureCount = (this.metricNumber(task, 'failureCount') ?? 0) + 1;
+    const retryAt = new Date(
+      now.getTime() + this.timing.fcfsRetryDelayMs(failureCount),
+    );
+    const stateUpdate: Record<string, unknown> = {
+      $set: {
+        nextFcfsUpdateAt: retryAt,
+        pendingFcfsRequestedAt: now,
+        fcfsErrorCount: failureCount,
+      },
+      $inc: { pendingFcfsCount: 1 },
+    };
+    if (musicIds.length) {
+      stateUpdate.$addToSet = {
+        pendingFcfsMusicIds: { $each: musicIds },
+      };
+    }
+    await Promise.all([
+      this.stateModel.updateOne({ friendCode: task.friendCode }, stateUpdate),
+      this.taskModel.updateOne(
+        { id: task.id, status: 'processing' },
+        {
+          $set: {
+            status: 'failed',
+            runAt: null,
+            lastError: error,
+            metrics: {
+              ...(task.metrics ?? {}),
+              dxnetJobId: null,
+              ...(previousJobId ? { previousJobId } : {}),
+              outcome: 'retry_scheduled',
+            },
+          },
+        },
+      ),
+    ]);
+  }
+
+  private async trackJob(
+    task: AutoUpdateTaskEntity,
+    jobId: string,
+    outcome: string,
+  ): Promise<void> {
+    await this.taskModel.updateOne(
+      { id: task.id, status: 'processing' },
+      {
+        $set: {
+          metrics: {
+            ...(task.metrics ?? {}),
+            dxnetJobId: jobId,
+            outcome,
+          },
+          lastError: null,
+        },
+      },
+    );
+  }
+
   private async dispatchState(
     state: AutoUpdateProbeStateEntity,
     now: Date,
@@ -228,9 +401,17 @@ export class AutoUpdateFcfsWindowService {
     }
 
     const taskId = randomUUID();
-    await this.taskModel.create({
+    const taskMetrics = {
+      source: 'score_change_window',
+      musicIds,
+      windowStart: state.pendingFcfsWindowStart?.toISOString() ?? null,
+      windowEnd: state.pendingFcfsWindowEnd?.toISOString() ?? null,
+      failureCount: state.fcfsErrorCount ?? 0,
+      outcome: 'claiming',
+    };
+    const taskSnapshot = {
       id: taskId,
-      type: 'fcfs_enrichment',
+      type: FCFS_TASK_TYPE,
       friendCode: state.friendCode,
       cabinetUserId: state.cabinetUserId,
       status: 'processing',
@@ -238,13 +419,22 @@ export class AutoUpdateFcfsWindowService {
       runAt: now,
       attempts: 1,
       lastError: null,
-      metrics: {
-        source: 'score_change_window',
-        musicIds,
-        windowStart: state.pendingFcfsWindowStart?.toISOString() ?? null,
-        windowEnd: state.pendingFcfsWindowEnd?.toISOString() ?? null,
+      metrics: taskMetrics,
+      createdAt: now,
+      updatedAt: now,
+    } as AutoUpdateTaskEntity;
+    await this.taskModel.create(taskSnapshot);
+    await this.stateModel.updateOne(
+      { friendCode: state.friendCode },
+      {
+        $pullAll: { pendingFcfsMusicIds: musicIds },
+        $set: {
+          nextFcfsUpdateAt: new Date(
+            now.getTime() + this.timing.fcfsCooldownMs,
+          ),
+        },
       },
-    });
+    );
     try {
       const created = await this.jobs.create({
         friendCode: state.friendCode,
@@ -254,66 +444,23 @@ export class AutoUpdateFcfsWindowService {
         fcfsOnly: true,
         cancelActiveJobs: false,
         context: {
-          source: 'auto_update_fcfs_score_window',
+          source: FCFS_JOB_SOURCE,
           autoUpdateFcfs: true,
           fcfsTaskId: taskId,
           windowStart: state.pendingFcfsWindowStart?.toISOString() ?? null,
           windowEnd: state.pendingFcfsWindowEnd?.toISOString() ?? null,
         },
       });
-      await Promise.all([
-        this.stateModel.updateOne(
-          { friendCode: state.friendCode },
-          {
-            $set: {
-              lastFcfsUpdateAt: now,
-              nextFcfsUpdateAt: new Date(
-                now.getTime() + this.timing.fcfsCooldownMs,
-              ),
-              pendingFcfsMusicIds: [],
-              pendingFcfsWindowStart: null,
-              pendingFcfsWindowEnd: null,
-              pendingFcfsRequestedAt: null,
-              pendingFcfsCount: 0,
-              fcfsErrorCount: 0,
-            },
-          },
-        ),
-        this.taskModel.updateOne(
-          { id: taskId },
-          {
-            $set: {
-              status: 'completed',
-              metrics: {
-                source: 'score_change_window',
-                musicIds,
-                dxnetJobId: created.jobId,
-              },
-            },
-          },
-        ),
-      ]);
+      await this.trackJob(taskSnapshot, created.jobId, 'dispatched').catch(
+        (error) =>
+          this.logger.warn(
+            `failed to track targeted FC/FS job ${created.jobId}: ${this.errorMessage(error)}`,
+          ),
+      );
       return 'dispatched';
     } catch (error) {
-      const failureCount = (state.fcfsErrorCount ?? 0) + 1;
       const message = this.errorMessage(error);
-      await Promise.all([
-        this.stateModel.updateOne(
-          { friendCode: state.friendCode },
-          {
-            $set: {
-              fcfsErrorCount: failureCount,
-              nextFcfsUpdateAt: new Date(
-                now.getTime() + this.timing.fcfsRetryDelayMs(failureCount),
-              ),
-            },
-          },
-        ),
-        this.taskModel.updateOne(
-          { id: taskId },
-          { $set: { status: 'failed', lastError: message } },
-        ),
-      ]);
+      await this.requeueTask(taskSnapshot, now, message);
       this.logger.warn(
         `failed to dispatch targeted FC/FS update fc=${state.friendCode}: ${message}`,
       );
@@ -342,6 +489,23 @@ export class AutoUpdateFcfsWindowService {
     for (const signal of signals) {
       signal?.throwIfAborted();
     }
+  }
+
+  private metricString(task: AutoUpdateTaskEntity, key: string): string | null {
+    const value = task.metrics?.[key];
+    return typeof value === 'string' ? value : null;
+  }
+
+  private metricNumber(task: AutoUpdateTaskEntity, key: string): number | null {
+    const value = task.metrics?.[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  }
+
+  private metricStringArray(task: AutoUpdateTaskEntity, key: string): string[] {
+    const value = task.metrics?.[key];
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string')
+      : [];
   }
 
   private errorMessage(error: unknown): string {

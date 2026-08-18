@@ -60,5 +60,6 @@ lane、priority 3–4。Mongo `auto_update_tasks.priority` 只记录 scheduler �
 | -------------------------------------------------------- | -------: | ------: |
 | rival score probe                                        |   15 min | 4 hours |
 | map auxiliary probe                                      |    5 min |  1 hour |
-| Targeted FC/FS job 创建                                  |   30 min | 6 hours |
+| Targeted FC/FS job 创建或执行失败                         |   30 min | 6 hours |
+| Settled full update job 创建或执行失败                    |   10 min | 10 min |
 | Daily full update job                                    |   10 min | 3 次尝试 |

@@ -43,6 +43,11 @@ FS: null < fs < fsp < fdx < fdxp
 执行控制沿用原链路水位：单用户 30 分钟 cooldown、全局 12 jobs/min、
 5 秒 burst 6。Job 使用 background lane、priority 1。
 
+`fcfs_enrichment` task 在 DXNet job 创建后保持 `processing` 并记录 job id。
+只有 job 进入 `completed` 才更新 `lastFcfsUpdateAt` 并完成 task；job
+`failed/canceled` 时，原 musicIds 合并回 `pendingFcfsMusicIds`，按照 FC/FS
+backoff 重新预约。Backend 重启造成的未完成 dispatch claim 在 5 分钟后自动恢复。
+
 每个窗口由 `auto-update-sweep` 外层 lease、
 `fcfs-score-window-trigger:<windowEnd>` 日志 lease，以及唯一
 `auto_update_runs.bucketKey=fcfs-score-window:<windowEnd>` 三层 fence 保证多实例只
@@ -139,13 +144,14 @@ JobService.create({
 
 代码沿用 worker 现有默认范围，包含 utage。
 
-成功创建 job 后清理 pending：
+成功创建 job 后按原 `pendingFullUpdateAt` 条件清理 pending，并创建
+`settled_full_update` processing task 跟踪 job 终态：
 
 ```text
 pendingFullUpdateAt = null
 ```
 
-如果创建失败：
+如果创建失败，或已创建 job 最终 `failed/canceled`：
 
 ```text
 pendingFullUpdateAt = now + AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS
@@ -164,10 +170,12 @@ pendingFullUpdateAt = now + AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS
 due 时如果用户已有 active `update_score`：
 
 - 不取消已有任务。
-- 不再创建第二个 full update。
-- 直接清理 pending full update，认为已有 active `update_score` 已经覆盖本次“稳定后全量更新”需求。
+- active job 是全量更新时，跟踪其终态并复用结果。
+- active job 是 targeted 更新时，保留 pending 并延后本轮 dispatch。
 
-原因：active job 可能是手动同步，也可能是上一次自动 full update。无论来源如何，它都会抓全量成绩并写最新 sync；自动更新不应打断手动同步，也不需要再排一个重复 full update。
+全量 job 完成后 task 才进入 `completed`；失败时恢复
+`pendingFullUpdateAt`。新 activity signal 写入了更新预约时间时，旧 job 的成功
+reconciliation 保留该新预约。
 
 ## 每日收尾全量更新
 
@@ -281,9 +289,9 @@ score version。如需排查成绩来源，看 DXNet job context 的
 ## 失败与退避
 
 - Rival / map 失败沿用现有 backoff。
-- FC/FS job 创建失败沿用 `nextFcfsUpdateAt` retry，并保留 `pendingFcfsMusicIds`。
-- Settled full update 创建失败使用独立短 retry，不应阻塞 rival/map 主探测。
-- Full update job 自身失败后，不自动无限重试；下一次 activity signal 会重新预约。
+- FC/FS job 创建或执行失败沿用 `nextFcfsUpdateAt` retry，并把原 musicIds 合并回 `pendingFcfsMusicIds`。
+- Settled full update 创建或执行失败使用独立短 retry，并恢复 `pendingFullUpdateAt`。
+- reconciliation 通过 task job id 和 job context 双路径恢复，Backend 重启不会丢失终态。
 - Continuous play 不设置强制最大延迟上限；只要 activity signal 持续出现，就持续延后，始终等待 quiet window。
 
 ## 部署兼容
@@ -296,7 +304,7 @@ score version。如需排查成绩来源，看 DXNet job context 的
 1. `AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS` 固定为 45 分钟，不按 tier 变化。
 2. Full update 使用 worker 默认难度范围 `[0,1,2,3,4,10]`，包含 utage。
 3. Continuous play 不设置最大延迟上限，始终等待 quiet window。
-4. Due 时已有 active `update_score` 则直接清 pending，认为该 job 已覆盖本次收尾。
+4. Due 时只有 active 全量 `update_score` 能覆盖本次收尾，并持续跟踪到终态。
 5. 不创建来源级导出 trigger；score version 增加后走统一 per-user wake 与版本 reconciliation。
 6. Settled full update 使用独立的 12 个 batch/active 水位，不再复用 Map batch。
 7. 自动 full update 使用 priority 1；手动 update_score 保持 priority 2。

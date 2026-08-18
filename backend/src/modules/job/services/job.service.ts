@@ -718,6 +718,42 @@ export class JobService {
     return toJobResponse(job.toObject() as JobEntity);
   }
 
+  async findLatestFcfsUpdate(fcfsTaskId: string): Promise<JobResponse | null> {
+    return this.findLatestTaskUpdateScore(
+      'auto_update_fcfs_score_window',
+      'fcfsTaskId',
+      fcfsTaskId,
+    );
+  }
+
+  async findLatestSettledFullUpdate(
+    settledTaskId: string,
+  ): Promise<JobResponse | null> {
+    return this.findLatestTaskUpdateScore(
+      'auto_update_settled_full_update',
+      'settledTaskId',
+      settledTaskId,
+    );
+  }
+
+  private async findLatestTaskUpdateScore(
+    source: string,
+    taskKey: string,
+    taskId: string,
+  ): Promise<JobResponse | null> {
+    const job = await this.jobModel
+      .findOne({
+        jobType: 'update_score',
+        'context.source': source,
+        [`context.${taskKey}`]: taskId,
+      })
+      .sort({ createdAt: -1 });
+    if (!job?.friendCode) {
+      return null;
+    }
+    return toJobResponse(job.toObject() as JobEntity);
+  }
+
   async getWorker(jobId: string) {
     const job = await this.jobModel.findOne({ id: jobId });
     if (!job) {
@@ -1446,6 +1482,27 @@ export class JobService {
       return null;
     }
 
+    return toJobResponse(job.toObject() as JobEntity);
+  }
+
+  async getActiveFullUpdateScoreByFriendCode(
+    friendCode: string,
+  ): Promise<JobResponse | null> {
+    const job = await this.jobModel
+      .findOne({
+        friendCode,
+        jobType: 'update_score',
+        status: { $in: ['queued', 'processing'] },
+        $or: [
+          { musicIds: null },
+          { musicIds: { $exists: false } },
+          { musicIds: { $size: 0 } },
+        ],
+      })
+      .sort({ createdAt: -1 });
+    if (!job) {
+      return null;
+    }
     return toJobResponse(job.toObject() as JobEntity);
   }
 

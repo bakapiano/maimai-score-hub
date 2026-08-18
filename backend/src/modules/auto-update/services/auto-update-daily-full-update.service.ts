@@ -353,7 +353,7 @@ export class AutoUpdateDailyFullUpdateService {
         await this.trackOrComplete(task, recovered, 'recovered');
         return;
       }
-      const active = await this.jobs.getActiveUpdateScoreByFriendCode(
+      const active = await this.jobs.getActiveFullUpdateScoreByFriendCode(
         task.friendCode,
       );
       if (active) {

@@ -387,6 +387,8 @@ type JobContext =
 - `{ jobType: 1, friendCode: 1, createdAt: -1 }`，名称 `latest_by_type_friend`。
 - `{ status: 1, createdAt: -1 }`，名称 `status_createdAt_desc`。
 - `{ context.source: 1, context.dailyTaskId: 1, createdAt: -1 }`，名称 `daily_full_update_lookup`。
+- `{ context.source: 1, context.fcfsTaskId: 1, createdAt: -1 }`，名称 `fcfs_update_lookup`。
+- `{ context.source: 1, context.settledTaskId: 1, createdAt: -1 }`，名称 `settled_full_update_lookup`。
 
 ## Auth
 
@@ -521,7 +523,7 @@ type BotFriendRow = {
 | 字段                      | 类型                                                          | 约束 / 默认值           | 说明                                                    |
 | ------------------------- | ------------------------------------------------------------- | ----------------------- | ------------------------------------------------------- |
 | `id`                      | `string`                                                      | required, unique, index | task id                                                 |
-| `type`                    | `rival_score_probe \| map_auxiliary_probe \| fcfs_enrichment \| daily_full_update` | required, index         | 任务类型                                                |
+| `type`                    | `rival_score_probe \| map_auxiliary_probe \| fcfs_enrichment \| settled_full_update \| daily_full_update` | required, index         | 任务类型                                                |
 | `friendCode`              | `string`                                                      | required, index         | 用户好友码                                              |
 | `cabinetUserId`           | `number`                                                      | required, index         | 机台用户 ID                                             |
 | `status`                  | `queued \| processing \| completed \| failed \| canceled`     | required, index         | 状态；当前 Phase 1 主要使用 processing/completed/failed |

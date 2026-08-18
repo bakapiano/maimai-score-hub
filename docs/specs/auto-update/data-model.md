@@ -81,7 +81,7 @@ Phase 2 示例：
 | 字段            | 含义                                                                |
 | --------------- | ------------------------------------------------------------------- |
 | `id`            | 任务 ID                                                             |
-| `type`          | `rival_score_probe` / `map_auxiliary_probe` / `fcfs_enrichment` / `daily_full_update` |
+| `type`          | `rival_score_probe` / `map_auxiliary_probe` / `fcfs_enrichment` / `settled_full_update` / `daily_full_update` |
 | `friendCode`    | 用户好友码                                                          |
 | `cabinetUserId` | 机台用户 ID                                                         |
 | `status`        | `queued` / `processing` / `completed` / `failed` / `canceled`       |
@@ -89,7 +89,7 @@ Phase 2 示例：
 | `runAt`         | 每日任务首次投递或失败重试时间                                      |
 | `attempts`      | 尝试次数                                                            |
 | `lastError`     | 最近错误                                                            |
-| `metrics`       | 任务耗时、命中数量、返回条数、触发原因等轻量元信息                  |
+| `metrics`       | 任务耗时、job id、musicIds、返回条数、触发原因与 reconciliation outcome |
 | `createdAt`     | 创建时间                                                            |
 | `updatedAt`     | 更新时间                                                            |
 

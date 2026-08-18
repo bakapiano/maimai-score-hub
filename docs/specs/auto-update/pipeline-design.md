@@ -76,8 +76,8 @@ FC/FS Enrichment 是 **change-driven**，不是 **tier-driven**：
 2. 单用户 cooldown 或 producer 配额占用期间，把 CID 合并进 `pendingFcfsMusicIds`。
 3. 到期后创建 background `update_score(musicIds, fcfsOnly=true)`。
 4. Worker 根据 CID 元数据选择最小扫描量的具体 genre/level 页面组合。
-5. Level 页缺失目标时补抓对应的具体 `diff+genre` 页。
-6. Backend 按 CID 直接映射，并通过 rank-only CAS 合并 FC/FS。
+5. Backend 按 CID 直接映射，并通过 rank-only CAS 合并 FC/FS。
+6. task 跟踪 DXNet job 终态；失败时把原 CID 放回 pending 并按 backoff 重试。
 
 输出：
 

@@ -52,7 +52,7 @@ function createHarness(input?: {
       .mockResolvedValue(input?.activeCount ?? 0),
     findById: jest.fn().mockResolvedValue(null),
     findLatestDailyFullUpdate: jest.fn().mockResolvedValue(null),
-    getActiveUpdateScoreByFriendCode: jest.fn().mockResolvedValue(null),
+    getActiveFullUpdateScoreByFriendCode: jest.fn().mockResolvedValue(null),
     create: jest
       .fn()
       .mockImplementation(({ friendCode }: { friendCode: string }) =>

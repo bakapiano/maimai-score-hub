@@ -137,6 +137,14 @@ JobSchema.index(
   { name: 'daily_full_update_lookup' },
 );
 JobSchema.index(
+  { 'context.source': 1, 'context.fcfsTaskId': 1, createdAt: -1 },
+  { name: 'fcfs_update_lookup' },
+);
+JobSchema.index(
+  { 'context.source': 1, 'context.settledTaskId': 1, createdAt: -1 },
+  { name: 'settled_full_update_lookup' },
+);
+JobSchema.index(
   { 'routing.version': 1, status: 1, deadlineAt: 1 },
   { name: 'routing_status_deadline' },
 );

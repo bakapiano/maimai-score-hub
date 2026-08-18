@@ -6,6 +6,7 @@ export type AutoUpdateTaskType =
   | 'rival_score_probe'
   | 'map_auxiliary_probe'
   | 'fcfs_enrichment'
+  | 'settled_full_update'
   | 'daily_full_update';
 
 export type AutoUpdateTaskStatus =

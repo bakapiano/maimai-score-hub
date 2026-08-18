@@ -12,6 +12,7 @@ import type { Model } from 'mongoose';
 
 import { RedisLeaseService } from '../../../common/redis/redis-lease.service';
 import { BotStatusService } from '../../bots/services/bot-status.service';
+import type { JobResponse } from '../../job/job.types';
 import { JobService } from '../../job/services/job.service';
 import { ProberExportService } from '../../prober-export/services/prober-export.service';
 import { SdgbJobDispatcher } from '../../sdgb-worker/services/sdgb-job.dispatcher';
@@ -33,6 +34,7 @@ import { AutoUpdateFcfsWindowService } from './auto-update-fcfs-window.service';
 
 const SCHEDULER_VERSION = 'rival-first-v1';
 const SETTLED_FULL_UPDATE_SOURCE = 'auto_update_settled_full_update';
+const SETTLED_FULL_UPDATE_TASK_TYPE = 'settled_full_update' as const;
 
 type AutoUpdateProbeResult = {
   friendCode: string;
@@ -47,6 +49,7 @@ type PendingFullUpdateSummary = {
   due: number;
   created: number;
   coveredByActive: number;
+  deferred: number;
   failed: number;
 };
 
@@ -249,6 +252,11 @@ export class AutoUpdateSchedulerService
         return null;
       });
       signal?.throwIfAborted();
+      const pendingFullReconciled = await this.reconcileSettledFullUpdateTasks(
+        now,
+        signal,
+      );
+      signal?.throwIfAborted();
       const pendingFullActive = await this.jobs.countActiveUpdateScoreBySource(
         SETTLED_FULL_UPDATE_SOURCE,
       );
@@ -291,7 +299,7 @@ export class AutoUpdateSchedulerService
         mapResults.filter((r) => r.action === 'failed').length;
 
       this.logger.log(
-        `rival-first auto-update sweep done: ${triggered} changed, ${skippedNoChange} unchanged, ${failed} failed (rivalDue=${due.length}, mapDue=${mapDue.length}, fcfsWindow=${fcfsWindow?.windowKey ?? '-'}, fcfsChangedUsers=${fcfsWindow?.changedUsers ?? 0}, fcfsDue=${fcfsWindow?.due ?? 0}, fcfsDispatched=${fcfsWindow?.dispatched ?? 0}, fcfsDeferred=${fcfsWindow?.deferred ?? 0}, fcfsFailed=${fcfsWindow?.failed ?? 0}, pendingFullActive=${pendingFullActive}, pendingFullLimit=${pendingFullDispatchLimit}, pendingFullDue=${pendingFullUpdate.due}, pendingFullCreated=${pendingFullUpdate.created}, pendingFullCovered=${pendingFullUpdate.coveredByActive}, pendingFullFailed=${pendingFullUpdate.failed}, dailyDate=${dailyFullUpdate?.businessDate ?? '-'}, dailyStaged=${dailyFullUpdate?.staged ?? 0}, dailyReconciled=${dailyFullUpdate?.reconciled ?? 0}, dailyDispatched=${dailyFullUpdate?.dispatched ?? 0}, dailyActive=${dailyFullUpdate?.activeUpdateScores ?? 0}, dailyLimit=${dailyFullUpdate?.dispatchLimit ?? 0})`,
+        `rival-first auto-update sweep done: ${triggered} changed, ${skippedNoChange} unchanged, ${failed} failed (rivalDue=${due.length}, mapDue=${mapDue.length}, fcfsWindow=${fcfsWindow?.windowKey ?? '-'}, fcfsChangedUsers=${fcfsWindow?.changedUsers ?? 0}, fcfsReconciled=${fcfsWindow?.reconciled ?? 0}, fcfsDue=${fcfsWindow?.due ?? 0}, fcfsDispatched=${fcfsWindow?.dispatched ?? 0}, fcfsDeferred=${fcfsWindow?.deferred ?? 0}, fcfsFailed=${fcfsWindow?.failed ?? 0}, pendingFullReconciled=${pendingFullReconciled}, pendingFullActive=${pendingFullActive}, pendingFullLimit=${pendingFullDispatchLimit}, pendingFullDue=${pendingFullUpdate.due}, pendingFullCreated=${pendingFullUpdate.created}, pendingFullCovered=${pendingFullUpdate.coveredByActive}, pendingFullDeferred=${pendingFullUpdate.deferred}, pendingFullFailed=${pendingFullUpdate.failed}, dailyDate=${dailyFullUpdate?.businessDate ?? '-'}, dailyStaged=${dailyFullUpdate?.staged ?? 0}, dailyReconciled=${dailyFullUpdate?.reconciled ?? 0}, dailyDispatched=${dailyFullUpdate?.dispatched ?? 0}, dailyActive=${dailyFullUpdate?.activeUpdateScores ?? 0}, dailyLimit=${dailyFullUpdate?.dispatchLimit ?? 0})`,
       );
 
       return {
@@ -415,7 +423,9 @@ export class AutoUpdateSchedulerService
     now: Date,
     signal?: AbortSignal,
   ): Promise<PendingFullUpdateSummary> {
-    const results: Array<'created' | 'coveredByActive' | 'failed'> = [];
+    const results: Array<
+      'created' | 'coveredByActive' | 'deferred' | 'failed'
+    > = [];
     let next = 0;
     const workers = Array.from(
       { length: Math.min(this.timing.mapConcurrency, states.length) },
@@ -435,6 +445,7 @@ export class AutoUpdateSchedulerService
       due: states.length,
       created: results.filter((r) => r === 'created').length,
       coveredByActive: results.filter((r) => r === 'coveredByActive').length,
+      deferred: results.filter((r) => r === 'deferred').length,
       failed: results.filter((r) => r === 'failed').length,
     };
   }
@@ -442,39 +453,76 @@ export class AutoUpdateSchedulerService
   private async processPendingFullUpdate(
     state: AutoUpdateProbeStateEntity,
     now: Date,
-  ): Promise<'created' | 'coveredByActive' | 'failed'> {
+  ): Promise<'created' | 'coveredByActive' | 'deferred' | 'failed'> {
+    const active = await this.jobs.getActiveUpdateScoreByFriendCode(
+      state.friendCode,
+    );
+    if (active?.musicIds?.length) {
+      return 'deferred';
+    }
+    const taskId = randomUUID();
+    const metrics = {
+      source: 'settled_activity',
+      pendingFullUpdateAt: state.pendingFullUpdateAt?.toISOString() ?? null,
+      lastActivityAt: state.lastAutoUpdateActivityAt?.toISOString() ?? null,
+      outcome: 'claiming',
+    };
+    const taskSnapshot = {
+      id: taskId,
+      type: SETTLED_FULL_UPDATE_TASK_TYPE,
+      friendCode: state.friendCode,
+      cabinetUserId: state.cabinetUserId,
+      status: 'processing',
+      priority: 0,
+      runAt: now,
+      attempts: 1,
+      lastError: null,
+      metrics,
+      createdAt: now,
+      updatedAt: now,
+    } as AutoUpdateTaskEntity;
+    await this.taskModel.create(taskSnapshot);
     try {
-      const active = await this.jobs.getActiveUpdateScoreByFriendCode(
-        state.friendCode,
-      );
       if (active) {
-        await this.clearPendingFullUpdate(state.friendCode);
+        await Promise.all([
+          this.trackSettledFullUpdateJob(
+            taskSnapshot,
+            active.id,
+            'covered_by_active',
+          ),
+          this.clearPendingFullUpdate(
+            state.friendCode,
+            state.pendingFullUpdateAt,
+          ),
+        ]);
         return 'coveredByActive';
       }
 
-      await this.jobs.create({
+      const created = await this.jobs.create({
         friendCode: state.friendCode,
         jobType: 'update_score',
+        source: 'auto_update',
         diffsToScrape: null,
         cancelActiveJobs: false,
         context: {
           source: SETTLED_FULL_UPDATE_SOURCE,
+          settledTaskId: taskId,
           lastActivityAt: state.lastAutoUpdateActivityAt?.toISOString() ?? null,
         },
       });
-      await this.clearPendingFullUpdate(state.friendCode);
+      await Promise.all([
+        this.trackSettledFullUpdateJob(taskSnapshot, created.jobId, 'created'),
+        this.clearPendingFullUpdate(
+          state.friendCode,
+          state.pendingFullUpdateAt,
+        ),
+      ]);
       return 'created';
     } catch (err) {
-      await this.stateModel.updateOne(
-        { friendCode: state.friendCode },
-        {
-          $set: {
-            pendingFullUpdateAt: new Date(
-              now.getTime() + this.timing.settledFullUpdateRetryMs,
-            ),
-            schedulerVersion: SCHEDULER_VERSION,
-          },
-        },
+      await this.failSettledFullUpdateTask(
+        taskSnapshot,
+        now,
+        err instanceof Error ? err.message : String(err),
       );
       this.logger.warn(
         `failed to create settled full update fc=${state.friendCode}: ${
@@ -485,16 +533,176 @@ export class AutoUpdateSchedulerService
     }
   }
 
-  private async clearPendingFullUpdate(friendCode: string): Promise<void> {
-    await this.stateModel.updateOne(
-      { friendCode },
+  private async clearPendingFullUpdate(
+    friendCode: string,
+    pendingAt?: Date | null,
+  ): Promise<void> {
+    const filter: Record<string, unknown> = { friendCode };
+    if (pendingAt) {
+      filter.pendingFullUpdateAt = pendingAt;
+    }
+    await this.stateModel.updateOne(filter, {
+      $set: {
+        pendingFullUpdateAt: null,
+        schedulerVersion: SCHEDULER_VERSION,
+      },
+    });
+  }
+
+  private async reconcileSettledFullUpdateTasks(
+    now: Date,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    const tasks = await this.taskModel
+      .find({ type: SETTLED_FULL_UPDATE_TASK_TYPE, status: 'processing' })
+      .sort({ updatedAt: 1 })
+      .limit(100)
+      .lean<AutoUpdateTaskEntity[]>()
+      .exec();
+    let reconciled = 0;
+    for (const task of tasks) {
+      signal?.throwIfAborted();
+      if (await this.reconcileSettledFullUpdateTask(task, now)) {
+        reconciled++;
+      }
+    }
+    return reconciled;
+  }
+
+  private async reconcileSettledFullUpdateTask(
+    task: AutoUpdateTaskEntity,
+    now: Date,
+  ): Promise<boolean> {
+    const trackedJobId = this.taskMetricString(task, 'jobId');
+    const tracked = trackedJobId
+      ? await this.jobs.findById(trackedJobId)
+      : null;
+    const job =
+      tracked ?? (await this.jobs.findLatestSettledFullUpdate(task.id));
+    if (job) {
+      return this.reconcileSettledTrackedJob(task, job, now);
+    }
+    const updatedAt = new Date(task.updatedAt ?? task.createdAt ?? now);
+    if (
+      now.getTime() - updatedAt.getTime() <
+      this.timing.settledFullUpdateClaimTimeoutMs
+    ) {
+      return false;
+    }
+    await this.failSettledFullUpdateTask(
+      task,
+      now,
+      'stale settled full-update dispatch claim',
+    );
+    return true;
+  }
+
+  private async reconcileSettledTrackedJob(
+    task: AutoUpdateTaskEntity,
+    job: JobResponse,
+    now: Date,
+  ): Promise<boolean> {
+    if (job.status === 'completed') {
+      await this.taskModel.updateOne(
+        { id: task.id, status: 'processing' },
+        {
+          $set: {
+            status: 'completed',
+            runAt: null,
+            lastError: null,
+            metrics: {
+              ...(task.metrics ?? {}),
+              jobId: job.id,
+              outcome: 'completed',
+            },
+          },
+        },
+      );
+      return true;
+    }
+    if (job.status === 'failed' || job.status === 'canceled') {
+      await this.failSettledFullUpdateTask(
+        task,
+        now,
+        job.error ?? `tracked job ${job.status}`,
+        job.id,
+      );
+      return true;
+    }
+    if (this.taskMetricString(task, 'jobId') !== job.id) {
+      await this.trackSettledFullUpdateJob(task, job.id, 'recovered');
+      return true;
+    }
+    return false;
+  }
+
+  private async trackSettledFullUpdateJob(
+    task: AutoUpdateTaskEntity,
+    jobId: string,
+    outcome: string,
+  ): Promise<void> {
+    await this.taskModel.updateOne(
+      { id: task.id, status: 'processing' },
       {
         $set: {
-          pendingFullUpdateAt: null,
-          schedulerVersion: SCHEDULER_VERSION,
+          metrics: { ...(task.metrics ?? {}), jobId, outcome },
+          lastError: null,
         },
       },
     );
+  }
+
+  private async failSettledFullUpdateTask(
+    task: AutoUpdateTaskEntity,
+    now: Date,
+    error: string,
+    previousJobId?: string,
+  ): Promise<void> {
+    const retryAt = new Date(
+      now.getTime() + this.timing.settledFullUpdateRetryMs,
+    );
+    await Promise.all([
+      this.stateModel.updateOne(
+        {
+          friendCode: task.friendCode,
+          $or: [
+            { pendingFullUpdateAt: null },
+            { pendingFullUpdateAt: { $exists: false } },
+            { pendingFullUpdateAt: { $gt: retryAt } },
+          ],
+        },
+        {
+          $set: {
+            pendingFullUpdateAt: retryAt,
+            schedulerVersion: SCHEDULER_VERSION,
+          },
+        },
+      ),
+      this.taskModel.updateOne(
+        { id: task.id, status: 'processing' },
+        {
+          $set: {
+            status: 'failed',
+            runAt: null,
+            lastError: error,
+            metrics: {
+              ...(task.metrics ?? {}),
+              jobId: null,
+              ...(previousJobId ? { previousJobId } : {}),
+              outcome: 'retry_scheduled',
+            },
+          },
+        },
+      ),
+    ]);
+  }
+
+  private taskMetricString(
+    task: AutoUpdateTaskEntity,
+    key: string,
+  ): string | null {
+    const value = task.metrics?.[key];
+    return typeof value === 'string' ? value : null;
   }
 
   private async processRivalProbe(

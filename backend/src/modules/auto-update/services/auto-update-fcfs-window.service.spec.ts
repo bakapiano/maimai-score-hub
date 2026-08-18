@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable max-lines-per-function, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import {
   AutoUpdateFcfsWindowService,
   latestClosedFcfsWindow,
@@ -20,6 +20,7 @@ function createHarness() {
     updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
   };
   const taskModel = {
+    find: jest.fn(() => queryResult([])),
     create: jest.fn().mockResolvedValue({}),
     updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
   };
@@ -30,6 +31,8 @@ function createHarness() {
   };
   const jobs = {
     getActiveUpdateScoreByFriendCode: jest.fn().mockResolvedValue(null),
+    findById: jest.fn().mockResolvedValue(null),
+    findLatestFcfsUpdate: jest.fn().mockResolvedValue(null),
     create: jest.fn().mockResolvedValue({ jobId: 'fcfs-job' }),
   };
   const scoreChanges = {
@@ -44,6 +47,7 @@ function createHarness() {
     mapBatchLimit: 120,
     mapConcurrency: 2,
     fcfsCooldownMs: 30 * 60_000,
+    fcfsClaimTimeoutMs: 5 * 60_000,
     fcfsRetryDelayMs: jest.fn((count: number) => count * 30 * 60_000),
     leaseTtlMs: 90_000,
     leaseRenewEveryMs: 30_000,
@@ -96,7 +100,7 @@ describe('latestClosedFcfsWindow', () => {
 
 describe('AutoUpdateFcfsWindowService', () => {
   it('keeps the producer dormant behind the rollout gate', async () => {
-    const { service, timing, leases, stateModel } = createHarness();
+    const { service, timing, leases, stateModel, taskModel } = createHarness();
     timing.fcfsEnabled = false;
 
     await expect(
@@ -108,6 +112,7 @@ describe('AutoUpdateFcfsWindowService', () => {
     });
     expect(leases.run).not.toHaveBeenCalled();
     expect(stateModel.find).not.toHaveBeenCalled();
+    expect(taskModel.find).toHaveBeenCalled();
   });
 
   it('stages exact-chart ids from score and DX score changes', async () => {
@@ -191,10 +196,103 @@ describe('AutoUpdateFcfsWindowService', () => {
     );
     expect(stateModel.updateOne).toHaveBeenCalledWith(
       { friendCode: 'friend-a' },
+      {
+        $pullAll: { pendingFcfsMusicIds: ['17_3', '18_4'] },
+        $set: {
+          nextFcfsUpdateAt: new Date('2026-08-18T03:17:00.000Z'),
+        },
+      },
+    );
+    expect(stateModel.updateOne).not.toHaveBeenCalledWith(
+      { friendCode: 'friend-a' },
+      expect.objectContaining({
+        $set: expect.objectContaining({ lastFcfsUpdateAt: now }),
+      }),
+    );
+  });
+
+  it('marks the task completed only after its DXNet job completes', async () => {
+    const { service, taskModel, jobs, stateModel } = createHarness();
+    const now = new Date('2026-08-18T03:20:00.000Z');
+    const task = {
+      id: 'fcfs-task',
+      type: 'fcfs_enrichment',
+      friendCode: 'friend-a',
+      status: 'processing',
+      createdAt: new Date('2026-08-18T03:00:00.000Z'),
+      updatedAt: new Date('2026-08-18T03:00:00.000Z'),
+      metrics: { musicIds: ['17_3'], dxnetJobId: 'fcfs-job' },
+    };
+    taskModel.find.mockReturnValue(queryResult([task]) as never);
+    jobs.findById.mockResolvedValue({
+      id: 'fcfs-job',
+      status: 'completed',
+    });
+
+    await expect((service as any).reconcileProcessingTasks(now)).resolves.toBe(
+      1,
+    );
+    expect(stateModel.updateOne).toHaveBeenCalledWith(
+      { friendCode: 'friend-a' },
       expect.objectContaining({
         $set: expect.objectContaining({
-          nextFcfsUpdateAt: new Date('2026-08-18T03:17:00.000Z'),
-          pendingFcfsMusicIds: [],
+          lastFcfsUpdateAt: now,
+          fcfsErrorCount: 0,
+        }),
+      }),
+    );
+    expect(taskModel.updateOne).toHaveBeenCalledWith(
+      { id: 'fcfs-task', status: 'processing' },
+      expect.objectContaining({
+        $set: expect.objectContaining({ status: 'completed' }),
+      }),
+    );
+  });
+
+  it('puts music ids back into pending when the DXNet job fails', async () => {
+    const { service, taskModel, jobs, stateModel } = createHarness();
+    const now = new Date('2026-08-18T03:20:00.000Z');
+    const task = {
+      id: 'fcfs-task',
+      type: 'fcfs_enrichment',
+      friendCode: 'friend-a',
+      status: 'processing',
+      createdAt: new Date('2026-08-18T03:00:00.000Z'),
+      updatedAt: new Date('2026-08-18T03:00:00.000Z'),
+      metrics: {
+        musicIds: ['17_3', '18_4'],
+        dxnetJobId: 'fcfs-job',
+        failureCount: 0,
+      },
+    };
+    taskModel.find.mockReturnValue(queryResult([task]) as never);
+    jobs.findById.mockResolvedValue({
+      id: 'fcfs-job',
+      status: 'failed',
+      error: 'job aborted',
+    });
+
+    await expect((service as any).reconcileProcessingTasks(now)).resolves.toBe(
+      1,
+    );
+    expect(stateModel.updateOne).toHaveBeenCalledWith(
+      { friendCode: 'friend-a' },
+      expect.objectContaining({
+        $addToSet: {
+          pendingFcfsMusicIds: { $each: ['17_3', '18_4'] },
+        },
+        $set: expect.objectContaining({
+          fcfsErrorCount: 1,
+          nextFcfsUpdateAt: new Date('2026-08-18T03:50:00.000Z'),
+        }),
+      }),
+    );
+    expect(taskModel.updateOne).toHaveBeenCalledWith(
+      { id: 'fcfs-task', status: 'processing' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          status: 'failed',
+          lastError: 'job aborted',
         }),
       }),
     );
