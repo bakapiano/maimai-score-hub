@@ -92,7 +92,7 @@ export const TIMEOUTS = {
   /** 好友请求接受等待超时 (ms) */
   friendAcceptWait: 5 * 60_000,
   /** 单个 job 的硬性超时 (ms). */
-  jobHardTimeout: 20 * 60_000,
+  jobHardTimeout: 30 * 60_000,
 } as const;
 
 export const RETRY = {

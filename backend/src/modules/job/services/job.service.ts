@@ -21,6 +21,8 @@ import type {
   JobType,
 } from '../job.types';
 import {
+  DXNET_ALL_DIFFICULTIES,
+  DXNET_DEFAULT_DIFFICULTIES,
   getDxnetDeadlineAt,
   getDxnetRouteDefinition,
   inferDxnetJobSource,
@@ -29,6 +31,7 @@ import {
   type DxnetRouteDefinition,
   getDxnetPinnedQueueName,
   getDxnetSharedQueueName,
+  type ScoreFetchTarget,
 } from '@maimai-score-hub/shared';
 import { JobEntity } from '../schemas/job.schema';
 import {
@@ -47,7 +50,6 @@ import { DxnetAssignmentMutexService } from './dxnet-assignment-mutex.service';
 import { DxnetBotAssignmentBusyException } from '../dxnet-job.exceptions';
 import type { BotStatus } from '../../bots/services/bot-status.service';
 import { MusicService } from '../../music/services/music.service';
-import type { ScoreFetchTarget } from '@maimai-score-hub/shared';
 
 export interface CreateDxnetJobInput {
   friendCode: string;
@@ -149,22 +151,34 @@ export class JobService {
     const musicIds = input.musicIds
       ? [...new Set(input.musicIds.map((id) => id.trim()).filter(Boolean))]
       : [];
+    const diffsToScrape = input.diffsToScrape
+      ? [...new Set(input.diffsToScrape)].sort((a, b) => a - b)
+      : [];
     if (jobType !== 'update_score') {
-      if (musicIds.length || input.fcfsOnly === true) {
+      if (musicIds.length || diffsToScrape.length || input.fcfsOnly === true) {
         throw new BadRequestException(
-          'musicIds and fcfsOnly require update_score',
+          'musicIds, fcfsOnly and diffsToScrape require update_score',
         );
       }
       return {
         ...input,
+        diffsToScrape: null,
         musicIds: null,
         scoreFetchTargets: null,
         fcfsOnly: false,
       };
     }
+    if (musicIds.length && diffsToScrape.length) {
+      throw new BadRequestException(
+        'diffsToScrape and musicIds are mutually exclusive',
+      );
+    }
     if (!musicIds.length) {
       return {
         ...input,
+        diffsToScrape: diffsToScrape.length
+          ? diffsToScrape
+          : [...DXNET_DEFAULT_DIFFICULTIES],
         musicIds: null,
         scoreFetchTargets: null,
         fcfsOnly: input.fcfsOnly ?? false,
@@ -190,6 +204,7 @@ export class JobService {
     }
     return {
       ...input,
+      diffsToScrape: null,
       musicIds,
       scoreFetchTargets: resolved.targets,
       fcfsOnly: input.fcfsOnly ?? false,
@@ -1497,6 +1512,20 @@ export class JobService {
           { musicIds: null },
           { musicIds: { $exists: false } },
           { musicIds: { $size: 0 } },
+        ],
+        $and: [
+          {
+            $or: [
+              { diffsToScrape: null },
+              { diffsToScrape: { $exists: false } },
+              {
+                diffsToScrape: {
+                  $all: [...DXNET_ALL_DIFFICULTIES],
+                  $size: DXNET_ALL_DIFFICULTIES.length,
+                },
+              },
+            ],
+          },
         ],
       })
       .sort({ createdAt: -1 });

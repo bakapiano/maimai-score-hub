@@ -126,7 +126,7 @@ describe('AutoUpdateSchedulerService settled full updates', () => {
         friendCode: '634142510810999',
         jobType: 'update_score',
         source: 'auto_update',
-        diffsToScrape: null,
+        diffsToScrape: [0, 1, 2, 3, 4, 10],
         cancelActiveJobs: false,
         context: expect.objectContaining({
           source: 'auto_update_settled_full_update',
@@ -209,6 +209,32 @@ describe('AutoUpdateSchedulerService settled full updates', () => {
     expect(jobs.create).not.toHaveBeenCalled();
     expect(taskModel.create).not.toHaveBeenCalled();
     expect(stateModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('keeps settled work pending while a partial-difficulty update is active', async () => {
+    const { service, jobs, taskModel } = createService({
+      jobs: {
+        getActiveUpdateScoreByFriendCode: jest.fn().mockResolvedValue({
+          id: 'partial-diff-job',
+          jobType: 'update_score',
+          musicIds: null,
+          diffsToScrape: [2, 3, 4, 10],
+        }),
+      },
+    });
+
+    await expect(
+      (service as any).processPendingFullUpdate(
+        {
+          friendCode: '634142510810999',
+          cabinetUserId: 42,
+          pendingFullUpdateAt: new Date('2026-07-05T07:00:00.000Z'),
+        },
+        new Date('2026-07-05T07:00:00.000Z'),
+      ),
+    ).resolves.toBe('deferred');
+    expect(jobs.create).not.toHaveBeenCalled();
+    expect(taskModel.create).not.toHaveBeenCalled();
   });
 
   it('restores settled pending state when the tracked full job fails', async () => {

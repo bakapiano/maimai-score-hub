@@ -1,12 +1,12 @@
+import { DXNET_DEFAULT_DIFFICULTIES } from "@maimai-score-hub/shared";
 import type { JobExecutionContext } from "../../index.ts";
 import { ScoreAggregator } from "./score-aggregator.ts";
 
-const DEFAULT_DIFFICULTIES = [0, 1, 2, 3, 4, 10] as const;
-
-function getDifficulties(ctx: JobExecutionContext): readonly number[] {
-  const diffs = ctx.job.diffsToScrape;
+export function resolveUpdateDifficulties(
+  diffs: number[] | null | undefined,
+): readonly number[] {
   if (!Array.isArray(diffs) || diffs.length === 0) {
-    return DEFAULT_DIFFICULTIES;
+    return DXNET_DEFAULT_DIFFICULTIES;
   }
   return [...new Set(diffs.filter((d) => Number.isInteger(d)))].sort(
     (a, b) => a - b,
@@ -20,7 +20,7 @@ export async function updateScore(ctx: JobExecutionContext): Promise<void> {
   const targets = ctx.job.scoreFetchTargets ?? [];
   const difficulties = targets.length
     ? [...new Set(targets.map((target) => target.diff))].sort((a, b) => a - b)
-    : getDifficulties(ctx);
+    : resolveUpdateDifficulties(ctx.job.diffsToScrape);
   const totalDiffs = difficulties.length;
   let completedCount = 0;
 

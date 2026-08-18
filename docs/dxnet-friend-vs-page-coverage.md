@@ -168,15 +168,20 @@ Friend Level VS:
 只有 `diff=10/genre=99` 候选。Level HTTP 页的三行实测缺口由执行期覆盖检查
 处理：目标 CID 在 level 结果中缺失时，补抓对应的具体 `diff + genre` 页。
 
-`fcfsOnly=true` 与 `musicIds` 独立：它把 scoreType 请求集合从 `{1,2}` 收敛为
-`{2}`，Worker 只返回 FC/FS 字段；目标规划方式保持一致。四种组合均有固定测试：
+`diffsToScrape` 与 `musicIds` 是两种互斥的更新目标。前者按难度抓取，后者按
+特定谱面规划 genre/level 页面；同时传入会在 API 契约和 JobService 两层被拒绝。
+两者均省略时默认抓取 `[2,3,4,10]`，明确全量的调用方传入
+`[0,1,2,3,4,10]`。
 
-| musicIds | fcfsOnly | 行为 |
-|---|---|---|
-| 空 | false | 全量难度、两个 scoreType |
-| 空 | true | 全量难度、单个 scoreType、只合并 FC/FS |
-| 有值 | false | 最优 genre/level 页面、两个 scoreType、只返回目标 CID |
-| 有值 | true | 最优 genre/level 页面、单个 scoreType、只返回目标 CID 的 FC/FS |
+`fcfsOnly=true` 独立于上述目标选择：它把 scoreType 请求集合从 `{1,2}` 收敛为
+`{2}`，Worker 只返回 FC/FS 字段；目标规划方式保持一致。主要组合均有固定测试：
+
+| diffsToScrape | musicIds | fcfsOnly | 行为 |
+|---|---|---|---|
+| 省略 | 省略 | false | 默认四个难度、两个 scoreType |
+| 有值 | 省略 | true | 指定难度、单个 scoreType、只合并 FC/FS |
+| 省略 | 有值 | false | 最优 genre/level 页面、两个 scoreType、只返回目标 CID |
+| 省略 | 有值 | true | 最优 genre/level 页面、单个 scoreType、只返回目标 CID 的 FC/FS |
 
 ## 真实 E2E 验收（2026-08-18）
 

@@ -240,6 +240,7 @@ describe('AutoUpdateDailyFullUpdateService dispatch', () => {
       expect.objectContaining({
         friendCode: 'friend-a',
         source: 'auto_update',
+        diffsToScrape: [0, 1, 2, 3, 4, 10],
         context: expect.objectContaining({
           source: 'auto_update_daily_full_update',
           dailyTaskId: tasks[0].id,

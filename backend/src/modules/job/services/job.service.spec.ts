@@ -169,6 +169,49 @@ describe('JobService execution route fencing', () => {
 });
 
 describe('JobService targeted score input', () => {
+  function prepare(service: JobService, input: unknown) {
+    return (
+      service as unknown as {
+        prepareScoreFetchInput(input: unknown): Promise<unknown>;
+      }
+    ).prepareScoreFetchInput(input);
+  }
+
+  it('defaults an untargeted update to EXPERT through UTAGE', async () => {
+    const service = makeService({
+      totalCount: 0,
+      completedCount: 0,
+      failedCount: 0,
+    });
+
+    await expect(
+      prepare(service, {
+        friendCode: '123456789012345',
+        jobType: 'update_score',
+      }),
+    ).resolves.toMatchObject({
+      diffsToScrape: [2, 3, 4, 10],
+      musicIds: null,
+    });
+  });
+
+  it('rejects simultaneous difficulty and music targets', async () => {
+    const service = makeService({
+      totalCount: 0,
+      completedCount: 0,
+      failedCount: 0,
+    });
+
+    await expect(
+      prepare(service, {
+        friendCode: '123456789012345',
+        jobType: 'update_score',
+        diffsToScrape: [2, 3],
+        musicIds: ['100_3'],
+      }),
+    ).rejects.toThrow('diffsToScrape and musicIds are mutually exclusive');
+  });
+
   it('resolves chart ids while keeping fcfsOnly independent', async () => {
     const service = makeService({
       totalCount: 0,
@@ -195,11 +238,7 @@ describe('JobService targeted score input', () => {
     });
 
     await expect(
-      (
-        service as unknown as {
-          prepareScoreFetchInput(input: unknown): Promise<unknown>;
-        }
-      ).prepareScoreFetchInput({
+      prepare(service, {
         friendCode: '123456789012345',
         jobType: 'update_score',
         musicIds: ['100_3', '100_3'],
@@ -207,6 +246,7 @@ describe('JobService targeted score input', () => {
       }),
     ).resolves.toMatchObject({
       musicIds: ['100_3'],
+      diffsToScrape: null,
       scoreFetchTargets: targets,
       fcfsOnly: true,
     });

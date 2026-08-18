@@ -51,6 +51,7 @@ export class MeDxnetJobsController {
         friendshipJobId: body.friendshipJobId,
         musicIds: body.musicIds,
         fcfsOnly: body.fcfsOnly,
+        diffsToScrape: body.diffsToScrape,
       });
     });
   }

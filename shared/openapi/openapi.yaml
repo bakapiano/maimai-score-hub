@@ -2804,6 +2804,19 @@ paths:
                   maxItems: 6000
                 fcfsOnly:
                   type: boolean
+                diffsToScrape:
+                  type: array
+                  items:
+                    type: number
+                    enum:
+                      - 0
+                      - 1
+                      - 2
+                      - 3
+                      - 4
+                      - 10
+                  minItems: 1
+                  maxItems: 6
       responses:
         "201":
           description: "201"

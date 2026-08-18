@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
+import { DXNET_ALL_DIFFICULTIES } from '@maimai-score-hub/shared';
 
 import { RedisLeaseService } from '../../../common/redis/redis-lease.service';
 import type { JobResponse } from '../../job/job.types';
@@ -364,7 +365,7 @@ export class AutoUpdateDailyFullUpdateService {
         friendCode: task.friendCode,
         jobType: 'update_score',
         source: 'auto_update',
-        diffsToScrape: null,
+        diffsToScrape: [...DXNET_ALL_DIFFICULTIES],
         cancelActiveJobs: false,
         context: {
           source: DAILY_JOB_SOURCE,

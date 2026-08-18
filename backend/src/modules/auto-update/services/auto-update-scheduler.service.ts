@@ -9,6 +9,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
 import { CronJob } from 'cron';
 import type { Model } from 'mongoose';
+import { DXNET_ALL_DIFFICULTIES } from '@maimai-score-hub/shared';
 
 import { RedisLeaseService } from '../../../common/redis/redis-lease.service';
 import { BotStatusService } from '../../bots/services/bot-status.service';
@@ -52,6 +53,18 @@ type PendingFullUpdateSummary = {
   deferred: number;
   failed: number;
 };
+
+function coversAllDifficulties(job: JobResponse): boolean {
+  if (job.musicIds?.length) {
+    return false;
+  }
+  if (!job.diffsToScrape?.length) {
+    return true;
+  }
+  return DXNET_ALL_DIFFICULTIES.every((diff) =>
+    job.diffsToScrape?.includes(diff),
+  );
+}
 
 @Injectable()
 export class AutoUpdateSchedulerService
@@ -457,7 +470,7 @@ export class AutoUpdateSchedulerService
     const active = await this.jobs.getActiveUpdateScoreByFriendCode(
       state.friendCode,
     );
-    if (active?.musicIds?.length) {
+    if (active && !coversAllDifficulties(active)) {
       return 'deferred';
     }
     const taskId = randomUUID();
@@ -502,7 +515,7 @@ export class AutoUpdateSchedulerService
         friendCode: state.friendCode,
         jobType: 'update_score',
         source: 'auto_update',
-        diffsToScrape: null,
+        diffsToScrape: [...DXNET_ALL_DIFFICULTIES],
         cancelActiveJobs: false,
         context: {
           source: SETTLED_FULL_UPDATE_SOURCE,

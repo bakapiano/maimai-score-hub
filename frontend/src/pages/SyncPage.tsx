@@ -3,6 +3,7 @@ import {
   Badge,
   Box,
   Button,
+  Checkbox,
   Divider,
   Group,
   Loader,
@@ -64,6 +65,10 @@ import { recordAnalyticsEvent } from "../utils/observability";
 import { type AuthProfile, useAuth } from "../providers/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { runWhenIdle, scheduleIdleTask } from "../utils/idle";
+import {
+  hasExistingDxnetScores,
+  selectDxnetDifficulties,
+} from "../utils/dxnetDifficultySelection";
 
 type UserProfileResponse = AuthProfile;
 
@@ -431,6 +436,33 @@ function AutoExportBadges({
   );
 }
 
+function DxnetDifficultyCheckbox({
+  isDxnet,
+  hasExistingScores,
+  checked,
+  disabled,
+  onChange,
+}: {
+  isDxnet: boolean;
+  hasExistingScores: boolean;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  if (!isDxnet || !hasExistingScores) {
+    return null;
+  }
+  return (
+    <Checkbox
+      checked={checked}
+      onChange={(event) => onChange(event.currentTarget.checked)}
+      disabled={disabled}
+      label="更新全部难度"
+      description="开启后同时更新 BASIC 与 ADVANCED"
+    />
+  );
+}
+
 export default function SyncPage() {
   const {
     token,
@@ -450,6 +482,7 @@ export default function SyncPage() {
   const [lastSync, setLastSync] = useState<LastSyncInfo | null>(() =>
     readCachedLastSyncSummary(),
   );
+  const hasExistingScores = hasExistingDxnetScores(lastSync?.scoreCount);
 
   // Sync job state
   const [syncMethod, setSyncMethod] = useState<"dxnet_bot" | "cabinet_qr">(
@@ -471,6 +504,7 @@ export default function SyncPage() {
   const [dxnetError, setDxnetError] = useState<string | null>(null);
   const [cabinetError, setCabinetError] = useState<string | null>(null);
   const [dxnetStats, setDxnetStats] = useState<JobRecentStats | null>(null);
+  const [updateAllDifficulties, setUpdateAllDifficulties] = useState(false);
   const chainedFriendshipJobIdRef = useRef<string | null>(null);
   const latestRequestSeqRef = useRef(0);
 
@@ -655,17 +689,22 @@ export default function SyncPage() {
         return;
       }
       clearPreviousDxnetJob();
+      const diffsToScrape = selectDxnetDifficulties(
+        hasExistingScores,
+        updateAllDifficulties,
+      );
       const res = await createJob(
         {
           jobType: "update_score",
           ...(friendshipJobId ? { friendshipJobId } : {}),
+          ...(diffsToScrape ? { diffsToScrape } : {}),
         },
         token,
       );
       setSyncJobId(res.jobId);
       setSyncStatus(res.job);
     },
-    [clearPreviousDxnetJob, token],
+    [clearPreviousDxnetJob, hasExistingScores, token, updateAllDifficulties],
   );
 
   const startFriendshipJob = useCallback(async () => {
@@ -1053,6 +1092,14 @@ export default function SyncPage() {
                       )}
                     </Stack>
                   ))}
+
+                <DxnetDifficultyCheckbox
+                  isDxnet={syncMethod === "dxnet_bot"}
+                  hasExistingScores={hasExistingScores}
+                  checked={updateAllDifficulties}
+                  disabled={dxnetSyncing || pageLoading}
+                  onChange={setUpdateAllDifficulties}
+                />
 
                 {!cabinetBindingRequired && (
                   <Group justify="space-between" align="center" wrap="wrap">

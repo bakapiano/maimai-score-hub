@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+export const DXNET_ALL_DIFFICULTIES = [0, 1, 2, 3, 4, 10] as const;
+export const DXNET_DEFAULT_DIFFICULTIES = [2, 3, 4, 10] as const;
+export type DxnetDifficulty = (typeof DXNET_ALL_DIFFICULTIES)[number];
+
 export const JobStatusSchema = z.enum([
   "queued",
   "processing",
@@ -138,22 +142,47 @@ export const WorkerJobResponseSchema = JobResponseBaseSchema.extend({
 /** Default public response alias. */
 export const JobResponseSchema = PublicJobResponseSchema;
 
-export const JobCreateBodySchema = z.object({
-  jobType: z
-    .enum(["update_score", "send_friend_request"])
-    .optional()
-    .default("update_score"),
-  /**
-   * Optional proof from a just-completed send_friend_request job. This lets the
-   * frontend immediately start update_score even before the next bot friend
-   * snapshot heartbeat lands.
-   */
-  friendshipJobId: z.string().optional(),
-  /** Chart-specific ids such as `100_3`; present means targeted fetching. */
-  musicIds: z.array(z.string().min(1)).min(1).max(6000).optional(),
-  /** Fetch one Friend VS score type and merge only FC/FS fields. */
-  fcfsOnly: z.boolean().optional(),
-});
+export const JobCreateBodySchema = z
+  .object({
+    jobType: z
+      .enum(["update_score", "send_friend_request"])
+      .optional()
+      .default("update_score"),
+    /**
+     * Optional proof from a just-completed send_friend_request job. This lets the
+     * frontend immediately start update_score even before the next bot friend
+     * snapshot heartbeat lands.
+     */
+    friendshipJobId: z.string().optional(),
+    /** Chart-specific ids such as `100_3`; present means targeted fetching. */
+    musicIds: z.array(z.string().min(1)).min(1).max(6000).optional(),
+    /** Fetch one Friend VS score type and merge only FC/FS fields. */
+    fcfsOnly: z.boolean().optional(),
+    /** Difficulty-scoped full-score fetching; omitted defaults to 2/3/4/10. */
+    diffsToScrape: z
+      .array(
+        z.union([
+          z.literal(0),
+          z.literal(1),
+          z.literal(2),
+          z.literal(3),
+          z.literal(4),
+          z.literal(10),
+        ]),
+      )
+      .min(1)
+      .max(6)
+      .optional(),
+  })
+  .superRefine((body, ctx) => {
+    if (body.musicIds && body.diffsToScrape) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["diffsToScrape"],
+        message: "diffsToScrape and musicIds are mutually exclusive",
+      });
+    }
+  });
 
 export const JobCreateResponseSchema = z.object({
   jobId: z.string(),
