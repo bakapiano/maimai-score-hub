@@ -114,51 +114,17 @@ test("target musicIds and fcfsOnly are independent options", async (t) => {
   );
 
   await t.test(
-    "a missing level row falls back to its concrete genre",
+    "fcfsOnly keeps covered charts when the planned page omits one target",
     async () => {
       const calls: string[] = [];
       const aggregator = new ScoreAggregator({
         scores: {
+          getFriendVsGenre: async () => {
+            calls.push("genre:3:105");
+            return [targetSong("Companion", 3)];
+          },
           getFriendVsLevel: async () => {
-            calls.push("level");
-            return [];
-          },
-          getFriendVsGenre: async () => {
-            calls.push("genre:0:102");
-            return [song(2, 0)];
-          },
-        },
-      } as never);
-
-      const result = await aggregator.fetchAndAggregate("friend", {
-        targets: [target],
-        fcfsOnly: true,
-      });
-
-      assert.deepEqual(calls, ["level", "genre:0:102"]);
-      assert.deepEqual(result, {
-        targetedScores: [{ musicId: "100_0", fc: "ap", fs: "fdx" }],
-      });
-    },
-  );
-
-  await t.test(
-    "a missing genre row falls back to its concrete level",
-    async () => {
-      const calls: string[] = [];
-      const aggregator = new ScoreAggregator({
-        scores: {
-          getFriendVsGenre: async () => {
-            calls.push("genre:3:105");
-            return [targetSong("Companion", 3)];
-          },
-          getFriendVsLevel: async (
-            _friendCode: string,
-            _scoreType: 1 | 2,
-            level: number,
-          ) => {
-            calls.push(`level:${level}`);
-            return [targetSong("FLΛME/FRΦST", 3)];
+            throw new Error("alternate page should not run");
           },
         },
       } as never);
@@ -168,43 +134,7 @@ test("target musicIds and fcfsOnly are independent options", async (t) => {
         fcfsOnly: true,
       });
 
-      assert.deepEqual(calls, ["genre:3:105", "level:22"]);
-      assert.deepEqual(result, {
-        targetedScores: [
-          { musicId: "11814_3", fc: "ap", fs: "fdx" },
-          { musicId: "companion_3", fc: "ap", fs: "fdx" },
-        ],
-      });
-    },
-  );
-
-  await t.test(
-    "fcfsOnly keeps covered charts when both pages omit one target",
-    async () => {
-      const calls: string[] = [];
-      const aggregator = new ScoreAggregator({
-        scores: {
-          getFriendVsGenre: async () => {
-            calls.push("genre:3:105");
-            return [targetSong("Companion", 3)];
-          },
-          getFriendVsLevel: async (
-            _friendCode: string,
-            _scoreType: 1 | 2,
-            level: number,
-          ) => {
-            calls.push(`level:${level}`);
-            return [];
-          },
-        },
-      } as never);
-
-      const result = await aggregator.fetchAndAggregate("friend", {
-        targets: [flameTarget, companionTarget],
-        fcfsOnly: true,
-      });
-
-      assert.deepEqual(calls, ["genre:3:105", "level:22"]);
+      assert.deepEqual(calls, ["genre:3:105"]);
       assert.deepEqual(result, {
         targetedScores: [
           { musicId: "companion_3", fc: "ap", fs: "fdx" },
@@ -216,7 +146,9 @@ test("target musicIds and fcfsOnly are independent options", async (t) => {
   await t.test("normal targeted fetch keeps strict coverage", async () => {
     const aggregator = new ScoreAggregator({
       scores: {
-        getFriendVsGenre: async () => [],
+        getFriendVsGenre: async () => {
+          throw new Error("alternate page should not run");
+        },
         getFriendVsLevel: async () => [],
       },
     } as never);
@@ -239,7 +171,7 @@ function clientWithLevelPage(calls: number[]) {
         return [song(scoreType, 0)];
       },
       getFriendVsGenre: async () => {
-        throw new Error("genre fallback should not run");
+        throw new Error("alternate page should not run");
       },
     },
   };
