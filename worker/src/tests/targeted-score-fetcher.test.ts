@@ -121,6 +121,60 @@ test("target musicIds and fcfsOnly are independent options", async (t) => {
       });
     },
   );
+
+  await t.test(
+    "a missing genre row falls back to its concrete level",
+    async () => {
+      const calls: string[] = [];
+      const flame: ScoreFetchTarget = {
+        musicId: "11814_3",
+        title: "FLΛME/FRΦST",
+        type: "dx",
+        category: "舞萌",
+        diff: 3,
+        genre: 105,
+        level: 22,
+      };
+      const companion: ScoreFetchTarget = {
+        musicId: "companion_3",
+        title: "Companion",
+        type: "dx",
+        category: "舞萌",
+        diff: 3,
+        genre: 105,
+        level: 19,
+      };
+      const aggregator = new ScoreAggregator({
+        scores: {
+          getFriendVsGenre: async () => {
+            calls.push("genre:3:105");
+            return [targetSong("Companion", 3)];
+          },
+          getFriendVsLevel: async (
+            _friendCode: string,
+            _scoreType: 1 | 2,
+            level: number,
+          ) => {
+            calls.push(`level:${level}`);
+            return [targetSong("FLΛME/FRΦST", 3)];
+          },
+        },
+      } as never);
+
+      const result = await aggregator.fetchAndAggregate("friend", {
+        targets: [flame, companion],
+        fcfsOnly: true,
+      });
+
+      assert.deepEqual(calls, ["genre:3:105", "level:22"]);
+      assert.deepEqual(result, {
+        targetedScores: [
+          { musicId: "11814_3", fc: "ap", fs: "fdx" },
+          { musicId: "companion_3", fc: "ap", fs: "fdx" },
+        ],
+      });
+    },
+  );
 });
 
 function clientWithLevelPage(calls: number[]) {
@@ -144,6 +198,19 @@ function song(scoreType: 1 | 2, diff: number) {
     score: scoreType === 1 ? "1001" : "100.0000%",
     category: null,
     type: "standard" as const,
+    fs: "fdx",
+    fc: "ap",
+    diff,
+  };
+}
+
+function targetSong(name: string, diff: number) {
+  return {
+    level: diff === 3 ? "14+" : "1",
+    name,
+    score: null,
+    category: null,
+    type: "dx" as const,
     fs: "fdx",
     fc: "ap",
     diff,
