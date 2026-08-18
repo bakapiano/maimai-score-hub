@@ -8,6 +8,7 @@ import type {
 import { MaimaiClient } from "../../../../../common/maimai/client.ts";
 import {
   planScoreFetchPages,
+  scoreFetchCandidatePages,
   type ScoreFetchPage,
 } from "./score-fetch-planner.ts";
 
@@ -54,7 +55,7 @@ export class TargetedScoreFetcher {
       fetched.add(fetchKey(result.page, result.scoreType));
     }
 
-    const fallbackTasks = this.genreFallbackTasks(
+    const fallbackTasks = this.alternateFallbackTasks(
       friendCode,
       state,
       scoreTypes,
@@ -78,7 +79,7 @@ export class TargetedScoreFetcher {
     return { targetedScores: state.entries() };
   }
 
-  private genreFallbackTasks(
+  private alternateFallbackTasks(
     friendCode: string,
     state: TargetResultState,
     scoreTypes: readonly (1 | 2)[],
@@ -87,16 +88,10 @@ export class TargetedScoreFetcher {
   ): Array<() => Promise<PageResult>> {
     const pages = new Map<string, { page: ScoreFetchPage; scoreType: 1 | 2 }>();
     for (const { target, scoreType } of state.missingTargets(scoreTypes)) {
-      if (target.genre === null) continue;
-      const estimatedSongs = genreFallbackEstimate(target);
-      const page: ScoreFetchPage = {
-        kind: "genre",
-        diff: target.diff,
-        genre: target.genre,
-        estimatedSongs,
-      };
-      const key = fetchKey(page, scoreType);
-      if (!fetched.has(key)) pages.set(key, { page, scoreType });
+      for (const page of scoreFetchCandidatePages(target)) {
+        const key = fetchKey(page, scoreType);
+        if (!fetched.has(key)) pages.set(key, { page, scoreType });
+      }
     }
     return [...pages.values()].map(
       ({ page, scoreType }) =>
@@ -204,14 +199,6 @@ function fetchKey(page: ScoreFetchPage, scoreType: 1 | 2): string {
   return page.kind === "genre"
     ? `genre:${page.diff}:${page.genre}:type${scoreType}`
     : `level:${page.level}:type${scoreType}`;
-}
-
-function genreFallbackEstimate(target: ScoreFetchTarget): number {
-  const page = planScoreFetchPages([{ ...target, level: null }])[0];
-  if (!page || page.kind !== "genre") {
-    throw new Error(`No genre fallback for ${target.musicId}`);
-  }
-  return page.estimatedSongs;
 }
 
 function higherRank(

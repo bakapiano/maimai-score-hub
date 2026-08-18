@@ -12,8 +12,8 @@ export type ScoreFetchPage =
 const GENRE_ROWS: Record<number, Record<number, number>> = {
   0: { 101: 88, 102: 319, 103: 153, 104: 241, 105: 384, 106: 134 },
   1: { 101: 88, 102: 319, 103: 153, 104: 241, 105: 384, 106: 134 },
-  2: { 101: 88, 102: 319, 103: 153, 104: 241, 105: 384, 106: 134 },
-  3: { 101: 88, 102: 319, 103: 153, 104: 241, 105: 384, 106: 134 },
+  2: { 101: 88, 102: 319, 103: 153, 104: 241, 105: 383, 106: 134 },
+  3: { 101: 88, 102: 319, 103: 153, 104: 241, 105: 383, 106: 134 },
   4: { 101: 15, 102: 31, 103: 14, 104: 16, 105: 53, 106: 3 },
   10: { 99: 60 },
 };
@@ -40,7 +40,7 @@ const LEVEL_ROWS: Record<number, number> = {
   19: 473,
   20: 357,
   21: 198,
-  22: 75,
+  22: 76,
   23: 2,
 };
 
@@ -53,7 +53,7 @@ export function planScoreFetchPages(
   const pages = new Map<string, ScoreFetchPage>();
   const candidates = new Map<string, string[]>();
   for (const target of uniqueTargets) {
-    const targetPages = candidatePages(target);
+    const targetPages = scoreFetchCandidatePages(target);
     if (!targetPages.length) {
       throw new Error(`No Friend VS page covers chart ${target.musicId}`);
     }
@@ -76,7 +76,9 @@ export function planScoreFetchPages(
   return [...selected].map((key) => pages.get(key)!).sort(comparePages);
 }
 
-function candidatePages(target: ScoreFetchTarget): ScoreFetchPage[] {
+export function scoreFetchCandidatePages(
+  target: ScoreFetchTarget,
+): ScoreFetchPage[] {
   const result: ScoreFetchPage[] = [];
   if (target.genre !== null) {
     const estimatedSongs = GENRE_ROWS[target.diff]?.[target.genre];
