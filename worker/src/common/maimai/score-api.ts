@@ -57,6 +57,15 @@ const COMPLETE_FRIEND_VS_SIDES = ["win", "lose", "tie"] as const;
 const FRIEND_VS_LOGICAL_ATTEMPTS = 3;
 const FRIEND_VS_SPLIT_RETRY_ATTEMPTS = FRIEND_VS_LOGICAL_ATTEMPTS - 1;
 
+/**
+ * A real 101 full-diff response (2,344,863 bytes / 1,319 rows) completed in
+ * 125,465ms. One 150-second attempt lets a steadily streaming page finish,
+ * while the first transport failure immediately enters genre fallback. This
+ * also caps the fast path below the former two 90-second attempts.
+ */
+const FRIEND_VS_FULL_PAGE_ATTEMPTS = 1;
+const FRIEND_VS_FULL_PAGE_TIMEOUT_MS = 150_000;
+
 export class MaimaiScoreApi {
   private readonly http: MaimaiHttpClient;
 
@@ -98,7 +107,15 @@ export class MaimaiScoreApi {
     const startTime = Date.now();
     let songs: FriendVsSong[];
     try {
-      songs = await this.fetchFriendVsPage(friendCode, scoreType, diff, side);
+      songs = await this.fetchFriendVsPage(
+        friendCode,
+        scoreType,
+        diff,
+        side,
+        99,
+        diff === 10 ? RETRY.friendVSCount : FRIEND_VS_FULL_PAGE_ATTEMPTS,
+        diff === 10 ? TIMEOUTS.friendVS : FRIEND_VS_FULL_PAGE_TIMEOUT_MS,
+      );
     } catch (error) {
       if (!shouldFallbackToGenres(error, diff)) {
         throw error;
@@ -235,9 +252,11 @@ export class MaimaiScoreApi {
     diff: number,
     side?: FriendVsSide,
     genre = 99,
+    retryCount: number = RETRY.friendVSCount,
+    timeoutMs: number = TIMEOUTS.friendVS,
   ): Promise<FriendVsSong[]> {
     const url = MAIMAI_URLS.friendVS(friendCode, scoreType, diff, side, genre);
-    return this.fetchFriendVsUrl(url);
+    return this.fetchFriendVsUrl(url, retryCount, timeoutMs);
   }
 
   private async fetchFriendVsLevelPage(
@@ -305,11 +324,12 @@ export class MaimaiScoreApi {
   private async fetchFriendVsUrl(
     url: string,
     retryCount: number = RETRY.friendVSCount,
+    timeoutMs: number = TIMEOUTS.friendVS,
   ): Promise<FriendVsSong[]> {
     const result = await this.http.requestPage({
       url,
       policy: {
-        timeoutMs: TIMEOUTS.friendVS,
+        timeoutMs,
         retryCount,
         assertBody: (body) => {
           if (!body.includes('<div class="friend_vs_block">')) {

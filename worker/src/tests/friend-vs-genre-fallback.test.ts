@@ -13,16 +13,21 @@ import type { MaimaiPageRequest } from "../common/maimai/infra/request-policy.ts
 type RequestPage = MaimaiHttpClient["requestPage"];
 
 test("uses the full Friend VS page when it succeeds", async () => {
-  const urls: string[] = [];
+  const requests: MaimaiPageRequest[] = [];
   const api = createApi(async (request) => {
-    urls.push(request.url);
+    requests.push(request);
     return page(request, friendVsHtml("full-song"));
   });
 
   const songs = await api.getFriendVS("123", 2, 3);
 
   assert.equal(songs.length, 1);
-  assert.deepEqual(urls.map(genreFromUrl), [99]);
+  assert.deepEqual(
+    requests.map((request) => genreFromUrl(request.url)),
+    [99],
+  );
+  assert.equal(requests[0]?.policy?.retryCount, 1);
+  assert.equal(requests[0]?.policy?.timeoutMs, 150_000);
 });
 
 test("falls back to six sequential genre pages after a terminated request", async () => {
@@ -52,7 +57,7 @@ test("falls back to six sequential genre pages after a terminated request", asyn
   assert.ok(urls.every((url) => url.includes("loseOnly=on")));
   assert.deepEqual(
     [99, 101, 102, 103, 104, 105, 106].map((genre) => retryCounts.get(genre)),
-    [2, 2, 2, 2, 2, 2, 2],
+    [1, 2, 2, 2, 2, 2, 2],
   );
 });
 
@@ -91,7 +96,7 @@ test("always splits large genre fallback pages with three attempts per side", as
   ]);
   assert.deepEqual(
     requests.map((request) => request.policy?.retryCount),
-    [2, 1, 3, 3, 3, 1, 1, 3, 3, 3, 1],
+    [1, 1, 3, 3, 3, 1, 1, 3, 3, 3, 1],
   );
   assert.deepEqual(
     songs.map((song) => song.name),
@@ -159,6 +164,19 @@ test("a planner-selected large genre remains a single all-page request", async (
   assert.equal(songs[0]?.name, "planned-genre-102");
   assert.deepEqual(urls.map(genreFromUrl), [102]);
   assert.deepEqual(urls.map(sideFromUrl), ["all"]);
+});
+
+test("UTAGE retains its independent retry and timeout policy", async () => {
+  const requests: MaimaiPageRequest[] = [];
+  const api = createApi(async (request) => {
+    requests.push(request);
+    return page(request, friendVsHtml("utage"));
+  });
+
+  await api.getFriendVS("123", 2, 10);
+
+  assert.equal(requests[0]?.policy?.retryCount, 2);
+  assert.equal(requests[0]?.policy?.timeoutMs, 90_000);
 });
 
 test("falls back after the worker timeout error", async () => {

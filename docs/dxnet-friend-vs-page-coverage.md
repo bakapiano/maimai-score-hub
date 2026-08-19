@@ -133,6 +133,10 @@ Bot/用户展示信息会让同一页面的字节数产生小幅波动。
 
 ### 高峰期大页面拆分（2026-08-19）
 
+- 普通 `diff` 的 `genre=99` 整页只尝试一次，总超时为 150 秒；101 实测
+  2,344,863 B / 1,319 行页面在 125,465ms 完整返回。首次出现
+  `terminated/timeout` 等传输错误时立即进入 genre fallback。UTAGE (`diff=10`)
+  继续使用独立的普通重试策略。
 - 整 diff 页面因 `terminated/timeout` 进入 genre fallback 后，genre 102
   （319 行、579,154 B）和 genre 105（384 行、692,767 B）从第一轮起就拆成
   `winOnly`、`loseOnly`、`winOnly+loseOnly` 三页；最后一种参数组合已由 101
