@@ -131,6 +131,20 @@ Bot/用户展示信息会让同一页面的字节数产生小幅波动。
 4. UTAGE 不属于数值等级页覆盖范围，继续使用 `diff=10` 独立抓取。
 5. 页面内容按账号成绩变化，字节数适合作为容量基线，行数用于覆盖正确性。
 
+### 高峰期大页面拆分（2026-08-19）
+
+- 整 diff 页面因 `terminated/timeout` 进入 genre fallback 后，genre 102
+  （319 行、579,154 B）和 genre 105（384 行、692,767 B）直接拆成
+  `winOnly`、`loseOnly`、`winOnly+loseOnly` 三页；最后一种参数组合已由 101
+  实测确认恰好返回平局集合。
+- level 18/19/20（显示等级 12+/13/13+）保留单个 all 页快路径。all 页第一次出现
+  `terminated/timeout` 时立即进入三页拆分，同一大页面不再重试。
+- 触发原因是高峰期大响应体更容易在 body 传输中途出现 `TypeError: terminated`、
+  `ECONNRESET` 或 timeout。三页合并后仍作为一个逻辑 genre/level 页面缓存和消费。
+- 101 故障注入验收主动 abort 首个 all 请求：level 19 立即拆分为
+  `1 + 217 + 255 = 473` 行；diff 4 进入 genre fallback 后，genre 102 拆分为
+  `0 + 21 + 10 = 31` 行、genre 105 拆分为 `0 + 30 + 23 = 53` 行，均与基准完整覆盖一致。
+
 ### 2026-08-18 增量验证
 
 新曲 `FLΛME/FRΦST` 在 `genre=105` 的 BASIC/ADVANCED 页面存在，在

@@ -56,6 +56,70 @@ test("falls back to six sequential genre pages after a terminated request", asyn
   );
 });
 
+test("splits large genre pages into win, lose, and tie during all-page fallback", async () => {
+  const urls: string[] = [];
+  const api = createApi(async (request) => {
+    urls.push(request.url);
+    const genre = genreFromUrl(request.url);
+    if (genre === 99) {
+      throw new TypeError("terminated");
+    }
+    return page(
+      request,
+      friendVsHtml(`genre-${genre}-${sideFromUrl(request.url)}`),
+    );
+  });
+
+  const songs = await api.getFriendVS("123", 2, 3);
+
+  assert.deepEqual(
+    urls.map(genreFromUrl),
+    [99, 101, 102, 102, 102, 103, 104, 105, 105, 105, 106],
+  );
+  assert.deepEqual(urls.map(sideFromUrl), [
+    "all",
+    "all",
+    "win",
+    "lose",
+    "tie",
+    "all",
+    "all",
+    "win",
+    "lose",
+    "tie",
+    "all",
+  ]);
+  assert.deepEqual(
+    songs.map((song) => song.name),
+    [
+      "genre-101-all",
+      "genre-102-win",
+      "genre-102-lose",
+      "genre-102-tie",
+      "genre-103-all",
+      "genre-104-all",
+      "genre-105-win",
+      "genre-105-lose",
+      "genre-105-tie",
+      "genre-106-all",
+    ],
+  );
+});
+
+test("a planner-selected large genre remains a single all-page request", async () => {
+  const urls: string[] = [];
+  const api = createApi(async (request) => {
+    urls.push(request.url);
+    return page(request, friendVsHtml("planned-genre-102"));
+  });
+
+  const songs = await api.getFriendVsGenre("123", 2, 3, 102);
+
+  assert.equal(songs[0]?.name, "planned-genre-102");
+  assert.deepEqual(urls.map(genreFromUrl), [102]);
+  assert.deepEqual(urls.map(sideFromUrl), ["all"]);
+});
+
 test("falls back after the worker timeout error", async () => {
   const urls: string[] = [];
   const api = createApi(async (request) => {
@@ -69,8 +133,11 @@ test("falls back after the worker timeout error", async () => {
 
   const songs = await api.getFriendVS("123", 1, 0);
 
-  assert.equal(songs.length, 6);
-  assert.deepEqual(urls.map(genreFromUrl), [99, 101, 102, 103, 104, 105, 106]);
+  assert.equal(songs.length, 10);
+  assert.deepEqual(
+    urls.map(genreFromUrl),
+    [99, 101, 102, 102, 102, 103, 104, 105, 105, 105, 106],
+  );
 });
 
 test("preserves permanent, auth, and UTAGE failures", async (t) => {
@@ -108,6 +175,16 @@ function createApi(requestPage: RequestPage): MaimaiScoreApi {
 
 function genreFromUrl(url: string): number {
   return Number(new URL(url).searchParams.get("genre"));
+}
+
+function sideFromUrl(url: string): "all" | "win" | "lose" | "tie" {
+  const params = new URL(url).searchParams;
+  const win = params.has("winOnly");
+  const lose = params.has("loseOnly");
+  if (win && lose) return "tie";
+  if (win) return "win";
+  if (lose) return "lose";
+  return "all";
 }
 
 function page(request: MaimaiPageRequest, body: string) {

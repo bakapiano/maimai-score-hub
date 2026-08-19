@@ -25,6 +25,15 @@ export const DEFAULT_HEADERS = {
 export const MAIMAI_BASE_URL = "https://maimai.wahlap.com/maimai-mobile";
 export const AUTH_BASE_URL = "https://tgk-wcaime.wahlap.com/wc_auth/oauth";
 
+export type FriendVsSide = "win" | "lose" | "tie";
+
+function friendVsSideQuery(side?: FriendVsSide): string {
+  if (side === "win") return "&winOnly=on";
+  if (side === "lose") return "&loseOnly=on";
+  if (side === "tie") return "&winOnly=on&loseOnly=on";
+  return "";
+}
+
 /** Standard Friend VS genre ids. UTAGE is exposed separately through diff=10. */
 export const FRIEND_VS_GENRES = [101, 102, 103, 104, 105, 106] as const;
 
@@ -49,15 +58,17 @@ export const MAIMAI_URLS = {
     code: string,
     scoreType: number,
     diff: number,
-    side?: "win" | "lose",
+    side?: FriendVsSide,
     genre = 99,
-  ) => {
-    const sideQuery =
-      side === "win" ? "&winOnly=on" : side === "lose" ? "&loseOnly=on" : "";
-    return `${MAIMAI_BASE_URL}/friend/friendGenreVs/battleStart/?scoreType=${scoreType}&genre=${genre}&diff=${diff}${sideQuery}&idx=${code}`;
-  },
-  friendLevelVS: (code: string, scoreType: number, level: number) =>
-    `${MAIMAI_BASE_URL}/friend/friendLevelVs/battleStart/?scoreType=${scoreType}&level=${level}&idx=${code}`,
+  ) =>
+    `${MAIMAI_BASE_URL}/friend/friendGenreVs/battleStart/?scoreType=${scoreType}&genre=${genre}&diff=${diff}${friendVsSideQuery(side)}&idx=${code}`,
+  friendLevelVS: (
+    code: string,
+    scoreType: number,
+    level: number,
+    side?: FriendVsSide,
+  ) =>
+    `${MAIMAI_BASE_URL}/friend/friendLevelVs/battleStart/?scoreType=${scoreType}&level=${level}${friendVsSideQuery(side)}&idx=${code}`,
   userFriendCode: `${MAIMAI_BASE_URL}/friend/userFriendCode/`,
   error: `${MAIMAI_BASE_URL}/error/`,
   logout: `${MAIMAI_BASE_URL}/logout/`,
