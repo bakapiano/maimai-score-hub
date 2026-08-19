@@ -24,7 +24,6 @@ interface ExternalApiCallEntry {
   bodySize: number | null;
   errorClass?: string;
   throttleWaitMs?: number;
-  activeSlotWaitMs?: number;
   sessionQueueWaitMs?: number;
   headersMs?: number;
   bodyReadMs?: number;
@@ -89,7 +88,6 @@ export function recordExternalApiCall(
     botFriendCode: metadata.botFriendCode || "",
     attrs: {
       throttleWaitMs: entry.throttleWaitMs ?? 0,
-      activeSlotWaitMs: entry.activeSlotWaitMs ?? 0,
       sessionQueueWaitMs: entry.sessionQueueWaitMs ?? 0,
       headersMs: entry.headersMs ?? 0,
       bodyReadMs: entry.bodyReadMs ?? 0,

@@ -50,23 +50,12 @@ export async function executeMaimaiPageRequest({
     let logErrorClass = "";
     let requestStartedAt = 0;
     let throttleWaitMs = 0;
-    let activeSlotWaitMs = 0;
     let sessionQueueWaitMs = 0;
     let headersMs = 0;
     let bodyReadMs = 0;
     let headersReceived = false;
-    let releaseActiveSlot: (() => void) | undefined;
 
     try {
-      if (isFriendVsPage(requestPlan.url)) {
-        const activeSlotQueuedAt = Date.now();
-        releaseActiveSlot = await requestRuntime.acquireFriendVsSlot(
-          requestPriority,
-          requestContext.signal,
-        );
-        activeSlotWaitMs = Date.now() - activeSlotQueuedAt;
-      }
-
       const throttleQueuedAt = Date.now();
       requestContext.signal?.throwIfAborted();
       await requestRuntime.waitForSlot(requestPriority, requestContext.signal);
@@ -171,7 +160,6 @@ export async function executeMaimaiPageRequest({
       );
       await requestRuntime.sleep(delay, requestContext.signal);
     } finally {
-      releaseActiveSlot?.();
       if (requestContext.onRequestLog) {
         try {
           requestContext.onRequestLog({
@@ -185,7 +173,6 @@ export async function executeMaimaiPageRequest({
                 : null,
             errorClass: logErrorClass,
             throttleWaitMs,
-            activeSlotWaitMs,
             sessionQueueWaitMs,
             headersMs,
             bodyReadMs,
@@ -203,10 +190,6 @@ export async function executeMaimaiPageRequest({
   }
 
   throw new Error("Unreachable");
-}
-
-function isFriendVsPage(url: string): boolean {
-  return url.includes("friendGenreVs") || url.includes("friendLevelVs");
 }
 
 function getRequestErrorClass(error: unknown, statusCode: number): string {
