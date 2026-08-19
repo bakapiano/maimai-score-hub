@@ -86,7 +86,11 @@ export async function executeMaimaiPageRequest({
       const bodyReadStartedAt = Date.now();
       let body: string;
       try {
-        body = await response.clone().text();
+        // Consume the original response. Cloning tees the stream and leaves the
+        // unused branch buffering one complete Friend VS body until GC; a real
+        // 2.34 MB page on Worker 101 retained another ~2.3 MB per request.
+        // Callers only inspect response metadata after this point.
+        body = await response.text();
       } finally {
         bodyReadMs = Date.now() - bodyReadStartedAt;
       }

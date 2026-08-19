@@ -36,7 +36,7 @@ try {
   const cookieJar = new CookieJar();
   const entries: RequestLogEntry[] = [];
 
-  await runWithRequestContext(
+  const pages = await runWithRequestContext(
     { onRequestLog: (entry) => entries.push(entry) },
     () =>
       runInBatch(
@@ -49,6 +49,11 @@ try {
       ),
   );
 
+  assert.deepEqual(
+    pages.map((page) => page.body).sort(),
+    ["fast body", "slow body"],
+  );
+  assert.ok(pages.every((page) => page.response.bodyUsed));
   assert.equal(entries.length, 2);
   assert.ok(entries.every((entry) => entry.throttleWaitMs >= 0));
   assert.ok(entries.every((entry) => entry.headersReceived));
