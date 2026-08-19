@@ -8,23 +8,12 @@ import type { MaimaiPageRequest } from "../common/maimai/infra/request-policy.ts
 
 type RequestPage = MaimaiHttpClient["requestPage"];
 
-test("levels 12+, 13, and 13+ immediately split on the first transport failure", async () => {
-  const cases = [
-    { level: 18, error: new TypeError("terminated") },
-    {
-      level: 19,
-      error: Object.assign(new Error("socket reset"), { code: "ECONNRESET" }),
-    },
-    { level: 20, error: new Error("请求超时, 超时时间: 90 秒") },
-  ];
-  for (const { level, error } of cases) {
+test("levels 12+, 13, and 13+ always use three side partitions", async () => {
+  for (const level of [18, 19, 20]) {
     const requests: MaimaiPageRequest[] = [];
     const api = createApi(async (request) => {
       requests.push(request);
       const side = sideFromUrl(request.url);
-      if (side === "all") {
-        throw error;
-      }
       return page(request, friendVsHtml(`level-${level}-${side}`));
     });
 
@@ -32,11 +21,11 @@ test("levels 12+, 13, and 13+ immediately split on the first transport failure",
 
     assert.deepEqual(
       requests.map((request) => sideFromUrl(request.url)),
-      ["all", "win", "lose", "tie"],
+      ["win", "lose", "tie"],
     );
     assert.deepEqual(
       requests.map((request) => request.policy?.retryCount),
-      [1, 2, 2, 2],
+      [3, 3, 3],
     );
     assert.deepEqual(
       songs.map((song) => song.name),
@@ -45,16 +34,16 @@ test("levels 12+, 13, and 13+ immediately split on the first transport failure",
   }
 });
 
-test("a successful large level page stays on its first all request", async () => {
+test("a successful smaller level page uses its one all-page fast path", async () => {
   const requests: MaimaiPageRequest[] = [];
   const api = createApi(async (request) => {
     requests.push(request);
-    return page(request, friendVsHtml("level-19-all"));
+    return page(request, friendVsHtml("level-17-all"));
   });
 
-  const songs = await api.getFriendVsLevel("123", 2, 19);
+  const songs = await api.getFriendVsLevel("123", 2, 17);
 
-  assert.equal(songs[0]?.name, "level-19-all");
+  assert.equal(songs[0]?.name, "level-17-all");
   assert.deepEqual(
     requests.map((request) => sideFromUrl(request.url)),
     ["all"],
@@ -62,20 +51,33 @@ test("a successful large level page stays on its first all request", async () =>
   assert.equal(requests[0]?.policy?.retryCount, 1);
 });
 
-test("other levels retain their normal request policy", async () => {
+test("other levels switch to side partitions for attempts two and three", async () => {
   const requests: MaimaiPageRequest[] = [];
   const error = new TypeError("terminated");
   const api = createApi(async (request) => {
     requests.push(request);
-    throw error;
+    const side = sideFromUrl(request.url);
+    if (side === "all") throw error;
+    return page(request, friendVsHtml(`level-17-${side}`));
   });
 
-  await assert.rejects(() => api.getFriendVsLevel("123", 2, 17), error);
-  assert.equal(requests.length, 1);
-  assert.equal(requests[0]?.policy?.retryCount, 2);
+  const songs = await api.getFriendVsLevel("123", 2, 17);
+
+  assert.deepEqual(
+    requests.map((request) => sideFromUrl(request.url)),
+    ["all", "win", "lose", "tie"],
+  );
+  assert.deepEqual(
+    requests.map((request) => request.policy?.retryCount),
+    [1, 2, 2, 2],
+  );
+  assert.deepEqual(
+    songs.map((song) => song.name),
+    ["win", "lose", "tie"].map((side) => `level-17-${side}`),
+  );
 });
 
-test("large level pages preserve permanent failures", async () => {
+test("level pages preserve permanent failures", async () => {
   const requests: MaimaiPageRequest[] = [];
   const error = new NonRetryableError("friend relation missing");
   const api = createApi(async (request) => {
@@ -83,7 +85,7 @@ test("large level pages preserve permanent failures", async () => {
     throw error;
   });
 
-  await assert.rejects(() => api.getFriendVsLevel("123", 2, 18), error);
+  await assert.rejects(() => api.getFriendVsLevel("123", 2, 17), error);
   assert.equal(requests.length, 1);
 });
 

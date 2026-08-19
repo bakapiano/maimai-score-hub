@@ -31,19 +31,31 @@ type FriendVsOptions = {
  * measured all-page bodies are the two largest genre fallbacks (genre 102:
  * 319 rows / 579,154 B; genre 105: 384 rows / 692,767 B). During DX NET peak
  * traffic, large response bodies frequently end mid-stream as
- * `TypeError: terminated` / ECONNRESET, so go straight to win/lose/tie instead
- * of risking another oversized all-page request.
+ * `TypeError: terminated` / ECONNRESET, so every attempt uses the smaller
+ * win/lose/tie partitions.
  */
 const SIDE_SPLIT_GENRES = new Set([102, 105]);
 
 /**
  * Level 12+, 13, and 13+ are the largest planned level pages (360–473 rows,
- * 647,890–852,893 B measured). Keep the one-request fast path, but the first
- * terminated/timeout immediately switches to smaller side partitions; waiting
- * for the same large request to exhaust retries performs poorly at peak time.
+ * 647,890–852,893 B measured). They also use win/lose/tie from the first
+ * attempt so peak-time body truncation cannot repeatedly hit the same large
+ * all page.
  */
 const SIDE_SPLIT_LEVELS = new Set([18, 19, 20]);
 const COMPLETE_FRIEND_VS_SIDES = ["win", "lose", "tie"] as const;
+
+/**
+ * Production incidents have also reset smaller pages: a 153-row genre 103
+ * page and an already-split genre 102 lose page both exhausted two attempts
+ * with `read ECONNRESET`. Give every logical genre/level page three transport
+ * attempts. Pages outside the known-large sets keep one all-page fast path,
+ * then spend the remaining two attempts on smaller side partitions. Each side
+ * retains its own successful result, so subsequent attempts only repeat the
+ * partition that failed.
+ */
+const FRIEND_VS_LOGICAL_ATTEMPTS = 3;
+const FRIEND_VS_SPLIT_RETRY_ATTEMPTS = FRIEND_VS_LOGICAL_ATTEMPTS - 1;
 
 export class MaimaiScoreApi {
   private readonly http: MaimaiHttpClient;
@@ -182,8 +194,15 @@ export class MaimaiScoreApi {
     const songs: FriendVsSong[] = [];
     for (const genre of FRIEND_VS_GENRES) {
       const genreSongs =
-        side === undefined && SIDE_SPLIT_GENRES.has(genre)
-          ? await this.fetchFriendVsSideSplit(
+        side === undefined
+          ? await this.fetchAdaptiveFriendVsPage(
+              MAIMAI_URLS.friendVS(
+                friendCode,
+                scoreType,
+                diff,
+                undefined,
+                genre,
+              ),
               (partition) =>
                 MAIMAI_URLS.friendVS(
                   friendCode,
@@ -192,7 +211,8 @@ export class MaimaiScoreApi {
                   partition,
                   genre,
                 ),
-              `genre diff=${diff} genre=${genre}`,
+              `genre friendCode=${friendCode} scoreType=${scoreType} diff=${diff} genre=${genre}`,
+              SIDE_SPLIT_GENRES.has(genre),
             )
           : await this.fetchFriendVsPage(
               friendCode,
@@ -226,19 +246,39 @@ export class MaimaiScoreApi {
     level: number,
   ): Promise<FriendVsSong[]> {
     const url = MAIMAI_URLS.friendLevelVS(friendCode, scoreType, level);
-    if (!SIDE_SPLIT_LEVELS.has(level)) {
-      return this.fetchFriendVsUrl(url);
+    return this.fetchAdaptiveFriendVsPage(
+      url,
+      (side) => MAIMAI_URLS.friendLevelVS(friendCode, scoreType, level, side),
+      `level friendCode=${friendCode} scoreType=${scoreType} level=${level}`,
+      SIDE_SPLIT_LEVELS.has(level),
+    );
+  }
+
+  private async fetchAdaptiveFriendVsPage(
+    allUrl: string,
+    urlForSide: (side: FriendVsSide) => string,
+    description: string,
+    splitFromFirstAttempt: boolean,
+  ): Promise<FriendVsSong[]> {
+    if (splitFromFirstAttempt) {
+      return this.fetchFriendVsSideSplit(
+        urlForSide,
+        description,
+        FRIEND_VS_LOGICAL_ATTEMPTS,
+      );
     }
+
     try {
-      return await this.fetchFriendVsUrl(url, 1);
+      return await this.fetchFriendVsUrl(allUrl, 1);
     } catch (error) {
       if (!isFriendVsTransportFallbackError(error)) throw error;
       console.warn(
-        `[MaimaiClient] Friend VS level page failed; falling back to side partitions friendCode=${friendCode} scoreType=${scoreType} level=${level} error=${errorMessage(error)}`,
+        `[MaimaiClient] Friend VS ${description} all page failed; retrying with side partitions error=${errorMessage(error)}`,
       );
       return this.fetchFriendVsSideSplit(
-        (side) => MAIMAI_URLS.friendLevelVS(friendCode, scoreType, level, side),
-        `level=${level}`,
+        urlForSide,
+        description,
+        FRIEND_VS_SPLIT_RETRY_ATTEMPTS,
       );
     }
   }
@@ -246,10 +286,14 @@ export class MaimaiScoreApi {
   private async fetchFriendVsSideSplit(
     urlForSide: (side: FriendVsSide) => string,
     description: string,
+    retryCount: number,
   ): Promise<FriendVsSong[]> {
     const songs: FriendVsSong[] = [];
     for (const side of COMPLETE_FRIEND_VS_SIDES) {
-      const partitionSongs = await this.fetchFriendVsUrl(urlForSide(side));
+      const partitionSongs = await this.fetchFriendVsUrl(
+        urlForSide(side),
+        retryCount,
+      );
       songs.push(...partitionSongs);
       console.log(
         `[MaimaiClient] Friend VS side partition ${description} side=${side} songs=${partitionSongs.length}`,

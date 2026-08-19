@@ -134,13 +134,17 @@ Bot/用户展示信息会让同一页面的字节数产生小幅波动。
 ### 高峰期大页面拆分（2026-08-19）
 
 - 整 diff 页面因 `terminated/timeout` 进入 genre fallback 后，genre 102
-  （319 行、579,154 B）和 genre 105（384 行、692,767 B）直接拆成
+  （319 行、579,154 B）和 genre 105（384 行、692,767 B）从第一轮起就拆成
   `winOnly`、`loseOnly`、`winOnly+loseOnly` 三页；最后一种参数组合已由 101
-  实测确认恰好返回平局集合。
-- level 18/19/20（显示等级 12+/13/13+）保留单个 all 页快路径。all 页第一次出现
-  `terminated/timeout` 时立即进入三页拆分，同一大页面不再重试。
-- 触发原因是高峰期大响应体更容易在 body 传输中途出现 `TypeError: terminated`、
-  `ECONNRESET` 或 timeout。三页合并后仍作为一个逻辑 genre/level 页面缓存和消费。
+  实测确认恰好返回平局集合。其他 genre 第一轮请求 all 页，传输失败后的第
+  2、3 轮改用三页拆分。
+- level 18/19/20（显示等级 12+/13/13+）从第一轮起使用三页拆分；其他 level
+  第一轮使用 all 页，第 2、3 轮使用三页拆分。
+- 每个逻辑页面最多三轮（含初始轮）。三分片分别保存成功结果，后续轮次只重试
+  失败分片，三页完整后合并为一个逻辑 genre/level 页面缓存和消费。
+- 触发原因是高峰期响应体更容易在传输中途出现 `TypeError: terminated`、
+  `ECONNRESET` 或 timeout；生产上也出现过 153 行的 genre 103 页面和已经拆小的
+  genre 102 lose 分片连续两次 `read ECONNRESET`，因此小页面同样使用三轮预算。
 - 101 故障注入验收主动 abort 首个 all 请求：level 19 立即拆分为
   `1 + 217 + 255 = 473` 行；diff 4 进入 genre fallback 后，genre 102 拆分为
   `0 + 21 + 10 = 31` 行、genre 105 拆分为 `0 + 30 + 23 = 53` 行，均与基准完整覆盖一致。

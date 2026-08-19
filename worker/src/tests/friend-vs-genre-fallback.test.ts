@@ -56,10 +56,10 @@ test("falls back to six sequential genre pages after a terminated request", asyn
   );
 });
 
-test("splits large genre pages into win, lose, and tie during all-page fallback", async () => {
-  const urls: string[] = [];
+test("always splits large genre fallback pages with three attempts per side", async () => {
+  const requests: MaimaiPageRequest[] = [];
   const api = createApi(async (request) => {
-    urls.push(request.url);
+    requests.push(request);
     const genre = genreFromUrl(request.url);
     if (genre === 99) {
       throw new TypeError("terminated");
@@ -73,10 +73,10 @@ test("splits large genre pages into win, lose, and tie during all-page fallback"
   const songs = await api.getFriendVS("123", 2, 3);
 
   assert.deepEqual(
-    urls.map(genreFromUrl),
+    requests.map((request) => genreFromUrl(request.url)),
     [99, 101, 102, 102, 102, 103, 104, 105, 105, 105, 106],
   );
-  assert.deepEqual(urls.map(sideFromUrl), [
+  assert.deepEqual(requests.map((request) => sideFromUrl(request.url)), [
     "all",
     "all",
     "win",
@@ -89,6 +89,10 @@ test("splits large genre pages into win, lose, and tie during all-page fallback"
     "tie",
     "all",
   ]);
+  assert.deepEqual(
+    requests.map((request) => request.policy?.retryCount),
+    [2, 1, 3, 3, 3, 1, 1, 3, 3, 3, 1],
+  );
   assert.deepEqual(
     songs.map((song) => song.name),
     [
@@ -103,6 +107,43 @@ test("splits large genre pages into win, lose, and tie during all-page fallback"
       "genre-105-tie",
       "genre-106-all",
     ],
+  );
+});
+
+test("switches a smaller genre fallback to side partitions for attempts two and three", async () => {
+  const requests: MaimaiPageRequest[] = [];
+  const api = createApi(async (request) => {
+    requests.push(request);
+    const genre = genreFromUrl(request.url);
+    const side = sideFromUrl(request.url);
+    if (genre === 99 || (genre === 103 && side === "all")) {
+      throw new TypeError("terminated", {
+        cause: Object.assign(new Error("socket closed"), {
+          code: "ECONNRESET",
+        }),
+      });
+    }
+    return page(request, friendVsHtml(`genre-${genre}-${side}`));
+  });
+
+  const songs = await api.getFriendVS("123", 2, 3);
+  const genre103Requests = requests.filter(
+    (request) => genreFromUrl(request.url) === 103,
+  );
+
+  assert.deepEqual(
+    genre103Requests.map((request) => sideFromUrl(request.url)),
+    ["all", "win", "lose", "tie"],
+  );
+  assert.deepEqual(
+    genre103Requests.map((request) => request.policy?.retryCount),
+    [1, 2, 2, 2],
+  );
+  assert.deepEqual(
+    songs
+      .filter((song) => song.name.startsWith("genre-103-"))
+      .map((song) => song.name),
+    ["genre-103-win", "genre-103-lose", "genre-103-tie"],
   );
 });
 
