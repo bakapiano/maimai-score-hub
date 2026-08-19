@@ -18,6 +18,6 @@ test("existing-score updates default to EXPERT through UTAGE", () => {
   assert.deepEqual(selectDxnetDifficulties(true, false), [2, 3, 4, 10]);
 });
 
-test("the checkbox selects every DXNet difficulty", () => {
+test("the switch selects every DXNet difficulty", () => {
   assert.deepEqual(selectDxnetDifficulties(true, true), [0, 1, 2, 3, 4, 10]);
 });

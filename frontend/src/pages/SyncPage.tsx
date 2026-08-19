@@ -3,13 +3,13 @@ import {
   Badge,
   Box,
   Button,
-  Checkbox,
   Divider,
   Group,
   Loader,
   Progress,
   SimpleGrid,
   Stack,
+  Switch,
   Text,
 } from "@mantine/core";
 import {
@@ -436,7 +436,7 @@ function AutoExportBadges({
   );
 }
 
-function DxnetDifficultyCheckbox({
+function DxnetDifficultySwitch({
   isDxnet,
   hasExistingScores,
   checked,
@@ -453,7 +453,7 @@ function DxnetDifficultyCheckbox({
     return null;
   }
   return (
-    <Checkbox
+    <Switch
       checked={checked}
       onChange={(event) => onChange(event.currentTarget.checked)}
       disabled={disabled}
@@ -1093,7 +1093,7 @@ export default function SyncPage() {
                     </Stack>
                   ))}
 
-                <DxnetDifficultyCheckbox
+                <DxnetDifficultySwitch
                   isDxnet={syncMethod === "dxnet_bot"}
                   hasExistingScores={hasExistingScores}
                   checked={updateAllDifficulties}
