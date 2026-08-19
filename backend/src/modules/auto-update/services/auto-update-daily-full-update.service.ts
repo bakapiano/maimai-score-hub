@@ -366,6 +366,10 @@ export class AutoUpdateDailyFullUpdateService {
         jobType: 'update_score',
         source: 'auto_update',
         diffsToScrape: [...DXNET_ALL_DIFFICULTIES],
+        // Daily candidates come from Rival-observed score changes. Achievement
+        // and DX score are already current; this sweep only fills FC/FS across
+        // every difficulty and therefore needs a single score type.
+        fcfsOnly: true,
         cancelActiveJobs: false,
         context: {
           source: DAILY_JOB_SOURCE,

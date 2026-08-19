@@ -12,7 +12,8 @@ RivalMusic 能直接更新 achievement 与 DX Score，页面结果缺少 FC/FS�
 
 - Rival 继续负责 achievement / DX Score 主更新。
 - 定向 FC/FS 结果通过谱面 CID 映射，避免标题消歧。
-- 稳定后 full update 继续负责全量收尾。
+- 稳定后 full update 继续负责全谱面 FC/FS 收尾；achievement 与 DX Score 以
+  Rival 更新结果为准。
 
 ## 定向 FC/FS 语义
 
@@ -121,7 +122,8 @@ dispatchLimit = min(batchLimit, maxActive - active)
 JobService.create({
   friendCode,
   jobType: "update_score",
-  diffsToScrape: null,
+  diffsToScrape: [0, 1, 2, 3, 4, 10],
+  fcfsOnly: true,
   cancelActiveJobs: false,
   removeFriendAfterComplete: true,
   context: {
@@ -131,7 +133,7 @@ JobService.create({
 });
 ```
 
-`diffsToScrape: null` 走 worker 默认全难度：
+显式全难度范围为：
 
 ```text
 0 basic
@@ -142,7 +144,8 @@ JobService.create({
 10 utage
 ```
 
-代码沿用 worker 现有默认范围，包含 utage。
+任务仅请求 `scoreType=2` 并合并 FC/FS，保留 Rival 已写入的 achievement、
+DX Score 与 rating；范围包含 utage。
 
 成功创建 job 后按原 `pendingFullUpdateAt` 条件清理 pending，并创建
 `settled_full_update` processing task 跟踪 job 终态：
@@ -227,6 +230,9 @@ Mongo staging task 按 `runAt/createdAt` 从旧到新原子 claim，随后创建
 `update_score` 时，task 绑定该 job 并跟踪其终态。Job 完成后 task 进入 `completed`；Job
 失败、取消或 stale claim 恢复后按 10 分钟退避重新排队，达到 3 次尝试后进入 `failed`。
 
+每日全量 job 同样传入 `fcfsOnly=true`：Rival 已负责 achievement 与 DX Score，
+每日收尾只补齐所有难度的 FC/FS。
+
 ## 数据模型
 
 `auto_update_probe_states` 字段：
@@ -302,7 +308,8 @@ score version。如需排查成绩来源，看 DXNet job context 的
 ## 已确认决策
 
 1. `AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS` 固定为 45 分钟，不按 tier 变化。
-2. Full update 使用 worker 默认难度范围 `[0,1,2,3,4,10]`，包含 utage。
+2. 自动 Full update 使用 `[0,1,2,3,4,10] + fcfsOnly=true`，包含 utage，并保留
+   Rival 写入的 achievement、DX Score 与 rating。
 3. Continuous play 不设置最大延迟上限，始终等待 quiet window。
 4. Due 时只有 active 全量 `update_score` 能覆盖本次收尾，并持续跟踪到终态。
 5. 不创建来源级导出 trigger；score version 增加后走统一 per-user wake 与版本 reconciliation。

@@ -516,6 +516,10 @@ export class AutoUpdateSchedulerService
         jobType: 'update_score',
         source: 'auto_update',
         diffsToScrape: [...DXNET_ALL_DIFFICULTIES],
+        // Rival probes already persist achievement and DX score. The settled
+        // sweep only closes whole-catalog FC/FS gaps, so one score type halves
+        // DX NET page work and reduces background hard-timeout pressure.
+        fcfsOnly: true,
         cancelActiveJobs: false,
         context: {
           source: SETTLED_FULL_UPDATE_SOURCE,

@@ -18,7 +18,8 @@
 - FC/FS enrichment 每半小时聚合 `score_changes` 中 achievement/DX Score 变化的谱面 CID，并在 cooldown/限流期间持久化合并 pending。
 - Worker 的 targeted `update_score` 使用具体 genre/level 页面规划；`fcfsOnly=true` 只请求一个 scoreType。
 - `JobService.patch()` 通过统一 `update_score` commit-first finalization，把 CID 结果按 FC/FS rank 合并。
-- `update_score` 支持 `diffsToScrape` 字段；稳定后全量更新传 `diffsToScrape=null`，走 worker 默认全难度。
+- `update_score` 支持 `diffsToScrape` 字段；稳定后与每日自动全量更新显式传
+  `diffsToScrape=[0,1,2,3,4,10]` 和 `fcfsOnly=true`，全谱面补齐 FC/FS。
 - music 表在 `SyncService` 内做 5 分钟缓存，避免每个用户 probe 都全表查询。
 - 初次迁移到新状态表时，会按 friendCode 做 deterministic offset，把首次 probe 分散到 cold interval 内，避免 cutover 后所有用户同时到期。
 - 每个 backend replica 都注册 scheduler；每轮先竞争可续租 Redis lease，获胜者再写入唯一 `auto_update_runs.bucketKey` 并执行 sweep。lease 覆盖整个 sweep，Mongo bucket 保留作每轮审计。

@@ -127,6 +127,7 @@ describe('AutoUpdateSchedulerService settled full updates', () => {
         jobType: 'update_score',
         source: 'auto_update',
         diffsToScrape: [0, 1, 2, 3, 4, 10],
+        fcfsOnly: true,
         cancelActiveJobs: false,
         context: expect.objectContaining({
           source: 'auto_update_settled_full_update',

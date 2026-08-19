@@ -61,8 +61,8 @@
 - Rival-first 主链路通过 `SdgbJobDispatcher.getRivalHash()` 拉取 RivalMusic；hash 变化时直接调用 `SyncService.createFromRivalMusic()` 合并写入 sync，不再创建自动 `update_score`。
 - Map auxiliary 通过 `SdgbJobDispatcher.getUserMap()` 计算 map fingerprint，用于识别 score-silent 活跃并延长 hot session。
 - FC/FS enrichment 每半小时聚合该窗口 `score_changes` 中 achievement/DX Score 发生变化的谱面 CID；pending 按用户合并，到期创建 `musicIds + fcfsOnly=true` 的 background `update_score`。
-- Rival/map 活动信号会把稳定后全量 `update_score` 预约到 activity 后 45 分钟；due 时已有 active `update_score` 会覆盖本次收尾需求。
-- 每日北京时间 02:00 汇总前一自然日 `score_changes` 中有实际变化、且仍开启自动更新的用户，生成幂等 `daily_full_update` staging task；scheduler 按全局 active `update_score` 水位逐批创建全量 job，并跟踪终态与有限重试。
+- Rival/map 活动信号会把稳定后全难度 `fcfsOnly=true` 更新预约到 activity 后 45 分钟；due 时已有 active `update_score` 会覆盖本次收尾需求。
+- 每日北京时间 02:00 汇总前一自然日 `score_changes` 中有实际变化、且仍开启自动更新的用户，生成幂等 `daily_full_update` staging task；scheduler 按全局 active `update_score` 水位逐批创建全难度 `fcfsOnly=true` job，并跟踪终态与有限重试。Rival 更新负责 achievement 与 DX Score，自动全量任务负责全谱面 FC/FS 收尾。
 - 持有 `auto_update_runs`、`auto_update_probe_states`、`auto_update_tasks`，记录每轮执行摘要、用户状态和短期任务日志。
 - 处理 rival/map/定向 FC/FS 失败退避；用户习惯画像尚未实现，仅预留 multiplier 字段。
 
