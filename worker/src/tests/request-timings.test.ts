@@ -32,7 +32,7 @@ await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 try {
   const address = server.address();
   assert.ok(address && typeof address === "object");
-  const url = `http://127.0.0.1:${address.port}/timings`;
+  const url = `http://127.0.0.1:${address.port}/friend/friendGenreVs/battleStart/`;
   const cookieJar = new CookieJar();
   const entries: RequestLogEntry[] = [];
 
@@ -41,21 +41,24 @@ try {
     () =>
       runInBatch(
         () =>
-          Promise.all([
-            executeMaimaiPageRequest({ cookieJar, request: { url } }),
-            executeMaimaiPageRequest({ cookieJar, request: { url } }),
-          ]),
+          Promise.all(
+            Array.from({ length: 4 }, () =>
+              executeMaimaiPageRequest({ cookieJar, request: { url } }),
+            ),
+          ),
         "request-timings-test",
       ),
   );
 
   assert.deepEqual(
     pages.map((page) => page.body).sort(),
-    ["fast body", "slow body"],
+    ["fast body", "fast body", "fast body", "slow body"],
   );
   assert.ok(pages.every((page) => page.response.bodyUsed));
-  assert.equal(entries.length, 2);
+  assert.equal(entries.length, 4);
   assert.ok(entries.every((entry) => entry.throttleWaitMs >= 0));
+  assert.ok(entries.every((entry) => entry.activeSlotWaitMs >= 0));
+  assert.ok(entries.some((entry) => entry.activeSlotWaitMs >= 50));
   assert.ok(entries.every((entry) => entry.headersReceived));
   assert.ok(
     entries.every(

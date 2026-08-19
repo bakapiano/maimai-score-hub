@@ -3,9 +3,21 @@ import { AsyncLocalStorage } from "async_hooks";
 import { Agent, setGlobalDispatcher } from "undici";
 
 import { REQUEST_PRIORITY_BACKGROUND } from "./request-priority.ts";
+import { RequestConcurrencyGate } from "./request-concurrency-gate.ts";
 import { RequestThrottle } from "./request-throttle.ts";
 
 export const UNDICI_CONNECTION_LIMIT = 32;
+
+/**
+ * 2026-08-19 production samples showed full-page failures at 1.96% with
+ * 1-3 active score bodies and 12.26% with 4+, while p50 rose from 10-17s to
+ * 47-52s. Bound long Friend VS downloads per one-Bot process; control-plane
+ * and friend-management requests retain their independent priority path.
+ */
+export const FRIEND_VS_ACTIVE_REQUEST_LIMIT = positiveIntEnv(
+  "FRIEND_VS_ACTIVE_REQUEST_LIMIT",
+  3,
+);
 
 setGlobalDispatcher(
   new Agent({
@@ -25,6 +37,8 @@ export interface RequestLogEntry {
   errorClass?: string;
   /** Time spent waiting for the priority-aware request throttle. */
   throttleWaitMs: number;
+  /** Time spent waiting for a Friend VS response-body slot. */
+  activeSlotWaitMs: number;
   /** Time spent in the per-cookie FIFO before the fetch callback started. */
   sessionQueueWaitMs: number;
   /** Time from fetch dispatch until response headers or a dispatch error. */
@@ -48,9 +62,14 @@ export class RequestRuntime {
   private readonly requestContextStorage =
     new AsyncLocalStorage<RequestContext>();
   private readonly throttle: RequestThrottle;
+  private readonly friendVsGate: RequestConcurrencyGate;
 
-  constructor(throttle = new RequestThrottle()) {
+  constructor(
+    throttle = new RequestThrottle(),
+    friendVsGate = new RequestConcurrencyGate(FRIEND_VS_ACTIVE_REQUEST_LIMIT),
+  ) {
     this.throttle = throttle;
+    this.friendVsGate = friendVsGate;
   }
 
   getContext(): RequestContext {
@@ -85,6 +104,13 @@ export class RequestRuntime {
     return this.throttle.waitForSlot(priority, signal);
   }
 
+  acquireFriendVsSlot(
+    priority = REQUEST_PRIORITY_BACKGROUND,
+    signal?: AbortSignal,
+  ): Promise<() => void> {
+    return this.friendVsGate.acquire(priority, signal);
+  }
+
   sleep(ms: number, signal?: AbortSignal): Promise<void> {
     return this.throttle.sleep(ms, signal);
   }
@@ -112,4 +138,9 @@ export function runInBatch<T>(
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function positiveIntEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
