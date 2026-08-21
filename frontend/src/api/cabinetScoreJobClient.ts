@@ -60,10 +60,15 @@ export async function createCabinetScoreJob(
   );
 }
 
-export function getCabinetScoreJob(jobId: string, token: string) {
+export function getCabinetScoreJob(
+  jobId: string,
+  token: string,
+  signal?: AbortSignal,
+) {
   return request<CabinetScoreJob>(
     `/me/cabinet-score-jobs/${encodeURIComponent(jobId)}`,
     token,
+    { signal },
   );
 }
 

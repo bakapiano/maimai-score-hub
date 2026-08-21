@@ -34,6 +34,25 @@ export class JobApiError extends Error {
   }
 }
 
+function toJobApiError(response: { status: number; body?: unknown }) {
+  const body = response.body as
+    | {
+        code?: string;
+        message?: string | string[];
+        recommendedBotFriendCode?: string | null;
+      }
+    | undefined;
+  const message = Array.isArray(body?.message)
+    ? body.message.join(", ")
+    : (body?.message ?? `Unexpected status: ${response.status}`);
+  return new JobApiError(
+    message,
+    response.status,
+    body?.code,
+    body?.recommendedBotFriendCode,
+  );
+}
+
 export async function createJob(
   body: JobCreateBody,
   authToken: string,
@@ -43,22 +62,7 @@ export async function createJob(
     headers: { authorization: `Bearer ${authToken}` },
   });
   if (response.status !== 201) {
-    const errorBody = response.body as
-      | {
-          code?: string;
-          message?: string | string[];
-          recommendedBotFriendCode?: string | null;
-        }
-      | undefined;
-    const message = Array.isArray(errorBody?.message)
-      ? errorBody.message.join(", ")
-      : (errorBody?.message ?? `Unexpected status: ${response.status}`);
-    throw new JobApiError(
-      message,
-      response.status,
-      errorBody?.code,
-      errorBody?.recommendedBotFriendCode,
-    );
+    throw toJobApiError(response);
   }
   return response.body;
 }
@@ -70,7 +74,7 @@ export async function getFriendshipStatus(
     headers: { authorization: `Bearer ${authToken}` },
   });
   if (response.status !== 200) {
-    throw new Error(`Unexpected status: ${response.status}`);
+    throw toJobApiError(response);
   }
   return response.body;
 }
@@ -78,13 +82,15 @@ export async function getFriendshipStatus(
 export async function getJobById(
   jobId: string,
   authToken: string,
+  signal?: AbortSignal,
 ): Promise<JobResponse> {
   const response = await client.getById({
     params: { jobId },
     headers: { authorization: `Bearer ${authToken}` },
+    fetchOptions: { signal },
   });
   if (response.status !== 200) {
-    throw new Error(`Unexpected status: ${response.status}`);
+    throw toJobApiError(response);
   }
   return response.body;
 }
@@ -98,7 +104,7 @@ export async function getActiveJobByFriendCode(
   });
 
   if (response.status !== 200) {
-    throw new Error(`Unexpected status: ${response.status}`);
+    throw toJobApiError(response);
   }
 
   return response.body;
@@ -114,7 +120,7 @@ export async function verifyJob(
   });
 
   if (response.status !== 200) {
-    throw new Error(`Unexpected status: ${response.status}`);
+    throw toJobApiError(response);
   }
 
   return response.body;

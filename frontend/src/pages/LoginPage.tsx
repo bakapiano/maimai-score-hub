@@ -60,10 +60,15 @@ import { hasOfflineData } from "../utils/offlineCache";
 import { AppFooter } from "../components/AppFooter";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { apiUrl } from "../api/baseUrl";
+import { clearPendingFriendLogin, persistPendingFriendLogin, readPendingFriendLogin } from "../utils/loginTaskCache";
+import { getJobStatusDisposition, parseJobStatus } from "../utils/jobStatus";
+import { HttpClientError, PollAborted, PollDead, PollTimeout, fetchForPoll, pollWithBackoff } from "../utils/poll";
 
 const PASSWORD_LOGIN_IDENTIFIER_KEY = "passwordLoginIdentifier";
 const LOGIN_METHOD_KEY = "loginMethod";
 const LOGIN_TYPE_KEY = "loginType";
+const LOGIN_REQUEST_TIMEOUT_MS = 15_000;
 
 type LoginJobStatus = {
   profile?: UserProfile;
@@ -94,41 +99,11 @@ type LoginRequestBody = {
   job?: LoginJobStatus;
 };
 
+type LoginPollOutcome = { kind: "authenticated"; token: string } | { kind: "ended"; status: "completed" | "failed" | "canceled"; message: string };
+
 type PasswordLoginIdentifier = "friendCode" | "username";
 type LoginMethod = "bot_sends_request" | "user_sends_request";
 type LoginType = "friendCode" | "password" | "qr" | "passkey";
-
-function clearPendingLoginStorage() {
-  try {
-    localStorage.removeItem("pendingLoginJobId");
-    localStorage.removeItem("pendingLoginBotFriendCode");
-    localStorage.removeItem("pendingLoginCreatedAt");
-  } catch {
-    // localStorage may be unavailable.
-  }
-}
-
-function persistPendingLoginStorage(
-  jobId: string,
-  botFriendCode: string,
-  createdAt: string,
-) {
-  try {
-    localStorage.setItem("pendingLoginJobId", jobId);
-    if (botFriendCode) {
-      localStorage.setItem("pendingLoginBotFriendCode", botFriendCode);
-    } else {
-      localStorage.removeItem("pendingLoginBotFriendCode");
-    }
-    if (createdAt) {
-      localStorage.setItem("pendingLoginCreatedAt", createdAt);
-    } else {
-      localStorage.removeItem("pendingLoginCreatedAt");
-    }
-  } catch {
-    // localStorage may be unavailable.
-  }
-}
 
 function persistLastLoginAccount(account?: {
   friendCode?: string | number | null;
@@ -425,24 +400,13 @@ export default function LoginPage() {
   const [loginMethod, setLoginMethod] =
     useState<LoginMethod>(() => readLoginMethod());
   const [, setHealth] = useState("");
-  const [jobId, setJobId] = useState(() => {
-    try {
-      return localStorage.getItem("pendingLoginJobId") || "";
-    } catch {
-      return "";
-    }
-  });
+  const [initialPendingLogin] = useState(() => readPendingFriendLogin());
+  const [jobId, setJobId] = useState(initialPendingLogin?.jobId ?? "");
   // QR-login (other tab) reports its busy state up so we can lock the
   // friend-code tab while it's running, and vice-versa via `polling`.
   const [qrBusy, setQrBusy] = useState(false);
   const [, setJobStatus] = useState("");
-  const [polling, setPolling] = useState(() => {
-    try {
-      return !!localStorage.getItem("pendingLoginJobId");
-    } catch {
-      return false;
-    }
-  });
+  const [polling, setPolling] = useState(initialPendingLogin !== null);
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [jobStage, setJobStage] = useState("");
@@ -450,27 +414,31 @@ export default function LoginPage() {
   const [friendRequestSentAt, setFriendRequestSentAt] = useState<string | null>(
     null,
   );
-  const [assignedBotFriendCode, setAssignedBotFriendCode] = useState(() => {
-    try {
-      return localStorage.getItem("pendingLoginBotFriendCode") || "";
-    } catch {
-      return "";
-    }
-  });
-  const [loginCreatedAt, setLoginCreatedAt] = useState(() => {
-    try {
-      return localStorage.getItem("pendingLoginCreatedAt") || "";
-    } catch {
-      return "";
-    }
-  });
+  const [assignedBotFriendCode, setAssignedBotFriendCode] = useState(
+    initialPendingLogin?.botFriendCode ?? "",
+  );
+  const [loginCreatedAt, setLoginCreatedAt] = useState(
+    initialPendingLogin?.createdAt ?? "",
+  );
+  const [loginExpiresAt, setLoginExpiresAt] = useState(
+    initialPendingLogin?.expiresAt ?? 0,
+  );
   const canLogin = useMemo(
     () =>
       /^\d{15}$/.test(friendCode.trim()) &&
       !!loginMethod &&
       !loading &&
-      !passkeyLoginLoading,
-    [friendCode, loginMethod, loading, passkeyLoginLoading],
+      !passkeyLoginLoading &&
+      !polling &&
+      !qrBusy,
+    [
+      friendCode,
+      loginMethod,
+      loading,
+      passkeyLoginLoading,
+      polling,
+      qrBusy,
+    ],
   );
 
   const canPasswordLogin = useMemo(
@@ -527,122 +495,172 @@ export default function LoginPage() {
   useEffect(() => {
     if (!jobId || polling === false) {return;}
 
-    let consecutiveFails = 0;
-    const MAX_FAILS = 5;
-    const BACKOFF = [1_000, 2_000, 4_000, 8_000, 16_000];
-    let scheduled: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
+    const controller = new AbortController();
+    const remainingCacheMs = loginExpiresAt - Date.now();
 
-    const runOnce = async () => {
-      let res;
-      try {
-        res = await authApi.loginStatus({ params: { jobId } });
-      } catch (err) {
-        // network failure → counted as 5xx
-        consecutiveFails++;
-        if (consecutiveFails >= MAX_FAILS) {
-          setJobStatus(`network error: ${String(err)}`);
-          return;
-        }
-        scheduleNext(
-          BACKOFF[Math.min(consecutiveFails - 1, BACKOFF.length - 1)],
-        );
-        return;
+    const resetPendingState = () => {
+      setPolling(false);
+      setJobId("");
+      setJobStage("");
+      setJobStatusValue("");
+      setFriendRequestSentAt(null);
+      setAssignedBotFriendCode("");
+      setLoginCreatedAt("");
+      setLoginExpiresAt(0);
+      setProfile(null);
+      clearPendingFriendLogin();
+    };
+
+    const pollLoginJob = async () => {
+      if (remainingCacheMs <= 0) {
+        throw new PollTimeout();
       }
 
-      if (res.status >= 500) {
-        consecutiveFails++;
-        if (consecutiveFails >= MAX_FAILS) {
-          setJobStatus(`HTTP ${res.status} (after ${MAX_FAILS} retries)`);
-          return;
-        }
-        scheduleNext(
-          BACKOFF[Math.min(consecutiveFails - 1, BACKOFF.length - 1)],
-        );
-        return;
-      }
+      return pollWithBackoff<LoginPollOutcome>(
+        async () => {
+          const { body } = await fetchForPoll(
+            apiUrl(`/auth/login-requests/${encodeURIComponent(jobId)}`),
+            { signal: controller.signal },
+          );
+          const data = body as LoginStatus;
+          setJobStatus(JSON.stringify(data, null, 2));
 
-      consecutiveFails = 0;
+          const stage = data.job?.stage;
+          setJobStage(typeof stage === "string" ? stage : "");
 
-      if (res.status !== 200) {
-        setJobStatus(`HTTP ${res.status}`);
-        if (res.status === 404) {
+          const status = parseJobStatus(data.job?.status ?? data.status);
+          setJobStatusValue(status ?? "");
+
+          const sentAt = data.job?.friendRequestSentAt;
+          setFriendRequestSentAt(
+            typeof sentAt === "string" ? sentAt : null,
+          );
+          const botFriendCode = data.job?.botUserFriendCode;
+          if (botFriendCode !== null && botFriendCode !== undefined) {
+            setAssignedBotFriendCode(String(botFriendCode));
+          }
+          const createdAt = data.job?.createdAt;
+          if (typeof createdAt === "string") {
+            setLoginCreatedAt(createdAt);
+          }
+
+          const profileFromStatus = data.profile ?? data.job?.profile ?? null;
+          if (profileFromStatus) {
+            setProfile(profileFromStatus);
+            persistLastLoginAccount({ username: profileFromStatus.username });
+          }
+
+          if (typeof data.token === "string" && data.token) {
+            return {
+              done: true,
+              value: { kind: "authenticated", token: data.token },
+            };
+          }
+          if (!status) {
+            return {
+              done: true,
+              value: {
+                kind: "ended",
+                status: "failed",
+                message: "登录任务返回了未知状态，请重新发起登录",
+              },
+            };
+          }
+
+          const disposition = getJobStatusDisposition(status);
+          if (disposition === "active") {
+            return { done: false };
+          }
+          if (disposition === "succeeded") {
+            return {
+              done: true,
+              value: {
+                kind: "ended",
+                status: "completed",
+                message: "登录任务已完成，但登录凭证缺失，请重新发起登录",
+              },
+            };
+          }
+          const failureStatus = status === "canceled" ? "canceled" : "failed";
+          return {
+            done: true,
+            value: {
+              kind: "ended",
+              status: failureStatus,
+              message:
+                data.job?.error ||
+                (failureStatus === "canceled"
+                  ? "登录请求已取消或超时，请重新发起登录"
+                  : "登录请求处理失败，请重新发起登录"),
+            },
+          };
+        },
+        {
+          intervalMs: 1_000,
+          maxFailures: 5,
+          signal: controller.signal,
+          timeoutMs: remainingCacheMs,
+        },
+      );
+    };
+
+    void pollLoginJob()
+      .then((outcome) => {
+        if (controller.signal.aborted) {return;}
+        if (outcome.kind === "authenticated") {
+          setToken(outcome.token);
+          recordAnalyticsEvent("login_success", { method: "friend_code" });
           setPolling(false);
           setJobId("");
-          clearPendingLoginStorage();
+          setLoginExpiresAt(0);
+          clearPendingFriendLogin();
+          notifications.show({
+            title: "登录成功",
+            message: "欢迎使用 maimai Score Hub！",
+            color: "green",
+          });
+          navigate("/app", { replace: true });
           return;
         }
-        scheduleNext(1_000);
-        return;
-      }
 
-      const data = res.body as LoginStatus;
-      setJobStatus(JSON.stringify(data, null, 2));
-
-      const stage = data.job?.stage;
-      if (stage) {setJobStage(stage);}
-
-      const jobSt = data.job?.status ?? data?.status;
-      if (jobSt) {setJobStatusValue(String(jobSt));}
-
-      const sentAt = data.job?.friendRequestSentAt;
-      if (sentAt) {setFriendRequestSentAt(sentAt);}
-      const botFriendCode = data.job?.botUserFriendCode;
-      if (botFriendCode) {setAssignedBotFriendCode(String(botFriendCode));}
-      const createdAt = data.job?.createdAt;
-      if (createdAt) {setLoginCreatedAt(String(createdAt));}
-
-      const profileFromStatus =
-        (data as LoginStatus)?.profile ??
-        (data as LoginStatus)?.job?.profile ??
-        null;
-      if (profileFromStatus) {
-        setProfile(profileFromStatus);
-        persistLastLoginAccount({ username: profileFromStatus.username });
-      }
-
-      if (data?.token) {
-        setToken(data.token);
-        recordAnalyticsEvent("login_success", { method: "friend_code" });
-        setPolling(false);
-        clearPendingLoginStorage();
-        notifications.show({
-          title: "登录成功",
-          message: "欢迎使用 maimai Score Hub！",
-          color: "green",
+        resetPendingState();
+        recordAnalyticsEvent("login_failed", {
+          method: "friend_code",
+          status: outcome.status,
         });
-        navigate("/app", { replace: true });
-        return;
-      }
-      if (data?.status === "failed") {
-        setPolling(false);
-        setJobStage("");
-        setJobStatusValue("");
-        setProfile(null);
-        clearPendingLoginStorage();
         notifications.show({
-          title: "登录失败",
-          message: String(data?.job?.error || "未知错误"),
+          title: outcome.status === "canceled" ? "登录请求已结束" : "登录失败",
+          message: outcome.message,
           color: "red",
         });
-        return;
-      }
-      scheduleNext(1_000);
-    };
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || error instanceof PollAborted) {return;}
+        resetPendingState();
+        const expired = error instanceof PollTimeout;
+        const unavailable = error instanceof PollDead;
+        setJobStatus(
+          error instanceof Error ? error.message : String(error),
+        );
+        notifications.show({
+          title: expired ? "登录请求已过期" : "登录状态查询失败",
+          message: expired
+            ? "登录请求已超过 5 分钟，请重新发起登录"
+            : unavailable
+              ? "多次查询登录状态失败，请检查网络后重试"
+              : error instanceof HttpClientError && error.status === 404
+                ? "登录任务不存在或已过期，请重新发起登录"
+                : error instanceof Error
+                  ? error.message
+                  : String(error),
+          color: "red",
+        });
+      });
 
-    const scheduleNext = (ms: number) => {
-      if (cancelled) {return;}
-      scheduled = setTimeout(() => {
-        void runOnce();
-      }, ms);
-    };
-
-    void runOnce();
     return () => {
-      cancelled = true;
-      if (scheduled !== null) {clearTimeout(scheduled);}
+      controller.abort();
     };
-  }, [jobId, polling, setToken, navigate]);
+  }, [jobId, loginExpiresAt, polling, setToken, navigate]);
 
   const startLogin = async () => {
     setLoading(true);
@@ -655,6 +673,8 @@ export default function LoginPage() {
     setFriendRequestSentAt(null);
     setAssignedBotFriendCode("");
     setLoginCreatedAt("");
+    setLoginExpiresAt(0);
+    clearPendingFriendLogin();
 
     const trimmedCode = friendCode.trim();
     try {
@@ -663,49 +683,74 @@ export default function LoginPage() {
       // localStorage may be unavailable.
     }
 
-    const res = await authApi.loginRequest({
-      body: {
-        friendCode: trimmedCode,
-        method: loginMethod!,
-      },
-    });
+    const requestController = new AbortController();
+    const requestTimeout = window.setTimeout(
+      () => requestController.abort(new Error("创建登录任务超时")), LOGIN_REQUEST_TIMEOUT_MS,
+    );
+    try {
+      const res = await authApi.loginRequest({
+        body: {
+          friendCode: trimmedCode,
+          method: loginMethod,
+        },
+        fetchOptions: { signal: requestController.signal },
+      });
 
-    if (res.status === 201 && res.body) {
+      if (res.status !== 201 || !res.body) {
+        notifications.show({
+          title: "创建登录任务失败",
+          message: `HTTP ${res.status}`,
+          color: "red",
+        });
+        return;
+      }
+
       const body = res.body as LoginRequestBody;
-      // Handle skipAuth mode - direct token response
       if (body.skipAuth) {
-        setToken(String(body.token ?? ""));
+        const directToken = String(body.token ?? "");
+        if (!directToken) {
+          throw new Error("登录响应缺少凭证");
+        }
+        setToken(directToken);
         recordAnalyticsEvent("login_success", { method: "skip_auth" });
         notifications.show({
           title: "登录成功",
           message: "已跳过验证直接登录",
           color: "green",
         });
-        navigate("/");
-        setLoading(false);
+        navigate("/app", { replace: true });
         return;
       }
 
-      // Normal flow - poll job status
-      if (typeof body.jobId === "string") {
-        setJobId(body.jobId);
-        const botFriendCode = String(body.botFriendCode ?? "");
-        const createdAt = String(body.createdAt ?? body.job?.createdAt ?? "");
-        setAssignedBotFriendCode(botFriendCode);
-        setLoginCreatedAt(createdAt);
-        if (body.job?.stage) {setJobStage(String(body.job.stage));}
-        setPolling(true);
-        persistPendingLoginStorage(body.jobId, botFriendCode, createdAt);
+      if (typeof body.jobId !== "string" || !body.jobId) {
+        throw new Error("创建登录任务成功，但响应中缺少任务编号");
       }
-    } else {
+
+      const botFriendCode = String(body.botFriendCode ?? "");
+      const createdAt = String(body.createdAt ?? body.job?.createdAt ?? "");
+      const pending = persistPendingFriendLogin(
+        body.jobId,
+        botFriendCode,
+        createdAt,
+      );
+      setJobId(body.jobId);
+      setAssignedBotFriendCode(botFriendCode);
+      setLoginCreatedAt(createdAt);
+      setLoginExpiresAt(pending.expiresAt);
+      setJobStage(String(body.job?.stage ?? ""));
+      setJobStatusValue(String(body.job?.status ?? "queued"));
+      setPolling(true);
+    } catch (error) {
+      clearPendingFriendLogin();
       notifications.show({
         title: "创建登录任务失败",
-        message: `HTTP ${res.status}`,
+        message: error instanceof Error ? error.message : String(error),
         color: "red",
       });
+    } finally {
+      window.clearTimeout(requestTimeout);
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const startPasswordLogin = async () => {

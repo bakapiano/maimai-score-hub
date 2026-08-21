@@ -20,6 +20,7 @@ import { AppCard } from "./AppCard";
 import { QrCredentialInput } from "./QrCredentialInput";
 import {
   HttpClientError,
+  type PollResult,
   fetchForPoll,
   pollWithBackoff,
 } from "../utils/poll";
@@ -58,6 +59,44 @@ function getBindMismatchMessage(json: Record<string, unknown> | null): string {
   return json?.verification === "profile"
     ? "二维码反查出的好友码与当前登录账号不一致"
     : `匹配成绩条数：${json?.matchedRows ?? 0}（需要至少 ${json?.requiredRows ?? 10} 条）`;
+}
+
+type CabinetBindingAttempt = {
+  status?: string;
+  ok?: boolean;
+  error?: string | null;
+};
+
+function resolveCabinetBindingAttempt(
+  status: string,
+  attempt: CabinetBindingAttempt | null,
+  body: unknown,
+): PollResult<void> {
+  if (status === "matched") {
+    if (attempt?.ok) {
+      return { done: true, value: undefined };
+    }
+    throw new HttpClientError(
+      502,
+      body,
+      "二维码身份确认已完成，但响应结果缺失",
+    );
+  }
+  if (status === "failed") {
+    throw new HttpClientError(
+      409,
+      { message: attempt?.error },
+      attempt?.error || "二维码身份确认失败",
+    );
+  }
+  if (
+    status === "pending" ||
+    status === "adding_rival" ||
+    status === "waiting_snapshot"
+  ) {
+    return { done: false };
+  }
+  throw new HttpClientError(502, body, `未知的二维码绑定状态：${status}`);
 }
 
 export function CabinetBindingCard({
@@ -121,24 +160,10 @@ export function CabinetBindingCard({
                 apiUrl(`/me/cabinet/attempts/${String(json.attemptId)}`),
                 { headers: { Authorization: `Bearer ${token}` } },
               );
-              const attempt = body as {
-                status?: string;
-                ok?: boolean;
-                error?: string | null;
-              } | null;
+              const attempt = body as CabinetBindingAttempt | null;
               const status = attempt?.status ?? "pending";
               setBindingProgress(CABINET_BINDING_STATUS[status] ?? status);
-              if (status === "matched" && attempt?.ok) {
-                return { done: true, value: undefined };
-              }
-              if (status === "failed") {
-                throw new HttpClientError(
-                  409,
-                  { message: attempt?.error },
-                  attempt?.error || "二维码身份确认失败",
-                );
-              }
-              return { done: false };
+              return resolveCabinetBindingAttempt(status, attempt, body);
             },
             { intervalMs: 1_000, maxFailures: 5, timeoutMs: 5 * 60_000 },
           );

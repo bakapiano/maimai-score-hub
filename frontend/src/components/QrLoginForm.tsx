@@ -1,6 +1,7 @@
 import { Alert, Button, Loader, Stack, Text } from "@mantine/core";
 import {
   HttpClientError,
+  PollAborted,
   PollDead,
   PollTimeout,
   fetchForPoll,
@@ -12,8 +13,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { notifications } from "@mantine/notifications";
 import { apiUrl } from "../api/baseUrl";
 import { QrCredentialInput } from "./QrCredentialInput";
+import {
+  LOGIN_TASK_CACHE_TTL_MS,
+  clearPendingQrLogin,
+  persistPendingQrLogin,
+  readPendingQrLogin,
+} from "../utils/loginTaskCache";
 
-const QR_ATTEMPT_KEY = "pendingQrLoginAttemptId";
 const SLOW_JOB_NOTICE_MS = 30_000;
 const STATUS_LABEL: Record<string, string> = {
   pending: "正在准备登录…",
@@ -63,22 +69,6 @@ function isExpiredQr(json: QrLoginJson | null) {
 
 function showQrLoginSuccess() {
   notifications.show({ color: "green", message: "神秘二维码登录成功" });
-}
-
-function clearQrAttemptCache() {
-  try {
-    localStorage.removeItem(QR_ATTEMPT_KEY);
-  } catch {
-    // localStorage may be unavailable.
-  }
-}
-
-function persistQrAttempt(attemptId: string) {
-  try {
-    localStorage.setItem(QR_ATTEMPT_KEY, attemptId);
-  } catch {
-    // localStorage may be unavailable.
-  }
 }
 
 /**
@@ -139,7 +129,11 @@ export function QrLoginForm({
    * success; throws on failure or timeout.
    */
   const pollAttempt = useCallback(
-    async (attemptId: string, signal?: AbortSignal): Promise<string> => {
+    async (
+      attemptId: string,
+      signal?: AbortSignal,
+      timeoutMs = LOGIN_TASK_CACHE_TTL_MS,
+    ): Promise<string> => {
       return pollWithBackoff<string>(
         async () => {
           const { body } = await fetchForPoll(
@@ -153,8 +147,15 @@ export function QrLoginForm({
           } | null;
           const status = json?.status ?? "pending";
           setProgress(STATUS_LABEL[status] ?? status);
-          if (status === "matched" && json?.token) {
-            return { done: true, value: String(json.token) };
+          if (status === "matched") {
+            if (json?.token) {
+              return { done: true, value: String(json.token) };
+            }
+            throw new HttpClientError(
+              502,
+              body,
+              "二维码登录已完成，但登录凭证缺失",
+            );
           }
           if (status === "failed") {
             throw new HttpClientError(
@@ -163,9 +164,16 @@ export function QrLoginForm({
               json?.error || "神秘二维码登录失败",
             );
           }
-          return { done: false };
+          if (
+            status === "pending" ||
+            status === "adding_rival" ||
+            status === "waiting_snapshot"
+          ) {
+            return { done: false };
+          }
+          throw new HttpClientError(502, body, `未知的二维码任务状态：${status}`);
         },
-        { intervalMs: 1_000, maxFailures: 5, signal, timeoutMs: 5 * 60_000 },
+        { intervalMs: 1_000, maxFailures: 5, signal, timeoutMs },
       );
     },
     [],
@@ -173,17 +181,24 @@ export function QrLoginForm({
 
   const handleAsyncLogin = useCallback(
     async (attemptId: string) => {
-      persistQrAttempt(attemptId);
+      const pending = persistPendingQrLogin(attemptId);
       setProgress(STATUS_LABEL.pending);
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       try {
-        const token = await pollAttempt(attemptId, ctrl.signal);
-        clearQrAttemptCache();
+        const token = await pollAttempt(
+          attemptId,
+          ctrl.signal,
+          Math.max(1, pending.expiresAt - Date.now()),
+        );
+        clearPendingQrLogin();
         showQrLoginSuccess();
         onSuccess(token);
       } catch (pollErr) {
-        clearQrAttemptCache();
+        if (pollErr instanceof PollAborted) {
+          return;
+        }
+        clearPendingQrLogin();
         notifications.show({
           color: "red",
           title: "神秘二维码登录失败",
@@ -200,12 +215,7 @@ export function QrLoginForm({
   // on mount; if the attempt has already terminated we surface the
   // result and clear the cache.
   useEffect(() => {
-    let cached: string | null = null;
-    try {
-      cached = localStorage.getItem(QR_ATTEMPT_KEY);
-    } catch {
-      // ignore
-    }
+    const cached = readPendingQrLogin();
     if (!cached) {
       return;
     }
@@ -213,14 +223,21 @@ export function QrLoginForm({
     abortRef.current = ctrl;
     setBusy(true);
     setProgress(STATUS_LABEL.pending);
-    pollAttempt(cached, ctrl.signal)
+    pollAttempt(
+      cached.attemptId,
+      ctrl.signal,
+      Math.max(1, cached.expiresAt - Date.now()),
+    )
       .then((token) => {
-        clearQrAttemptCache();
+        clearPendingQrLogin();
         showQrLoginSuccess();
         onSuccess(token);
       })
       .catch((err) => {
-        clearQrAttemptCache();
+        if (err instanceof PollAborted) {
+          return;
+        }
+        clearPendingQrLogin();
         if (err instanceof PollTimeout || err instanceof PollDead) {
           notifications.show({
             color: "red",
@@ -246,12 +263,17 @@ export function QrLoginForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
+
   async function submit(payload: FormData | string) {
     setBusy(true);
     setProgress(null);
     try {
       const { res, json } = await postQrLogin(payload);
       if (res.ok && json?.kind === "fast" && json?.token) {
+        clearPendingQrLogin();
         showQrLoginSuccess();
         onSuccess(String(json.token));
         return;
@@ -264,6 +286,7 @@ export function QrLoginForm({
       // {token, user} directly without a `kind` discriminator. Remove
       // once all backend instances ship the new flow.
       if (res.ok && json?.token) {
+        clearPendingQrLogin();
         showQrLoginSuccess();
         onSuccess(String(json.token));
         return;

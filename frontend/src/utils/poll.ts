@@ -29,6 +29,7 @@ export interface PollOptions {
 }
 
 const DEFAULT_BACKOFF = [1_000, 2_000, 4_000, 8_000, 16_000];
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
 export class PollAborted extends Error {
   constructor() {
@@ -139,18 +140,35 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 export async function fetchForPoll(
   input: RequestInfo | URL,
   init?: RequestInit,
+  timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
 ): Promise<{ status: number; body: unknown }> {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(init?.signal?.reason);
+  if (init?.signal?.aborted) {
+    onAbort();
+  } else {
+    init?.signal?.addEventListener("abort", onAbort, { once: true });
+  }
+  const timeout = setTimeout(
+    () => controller.abort(new Error("request timed out")),
+    Math.max(1, timeoutMs),
+  );
+
   let res: Response;
+  let text: string;
   try {
-    res = await fetch(input, init);
+    res = await fetch(input, { ...init, signal: controller.signal });
+    text = await res.text();
   } catch (err) {
     // network errors look like 5xx for retry purposes
     throw new HttpServerError(
       0,
       err instanceof Error ? err.message : String(err),
     );
+  } finally {
+    clearTimeout(timeout);
+    init?.signal?.removeEventListener("abort", onAbort);
   }
-  const text = await res.text();
   const body = text ? safeJson(text) : null;
   if (res.status >= 500) {
     throw new HttpServerError(res.status, `HTTP ${res.status}`);

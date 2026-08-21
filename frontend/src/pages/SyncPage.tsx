@@ -35,10 +35,8 @@ import type {
 import { getStatistics } from "../api/appClient";
 import { fetchLatestSync } from "../api/syncLatest";
 import {
-  CabinetScoreJobApiError,
   createCabinetScoreJob,
   getActiveCabinetScoreJob,
-  getCabinetScoreJob,
 } from "../api/cabinetScoreJobClient";
 import {
   cacheSyncLatest,
@@ -50,7 +48,6 @@ import {
   createJob,
   getActiveJobByFriendCode,
   getFriendshipStatus,
-  getJobById,
   verifyJob,
 } from "../api/jobClient";
 import { ProfileCard } from "../components/ProfileCard";
@@ -69,6 +66,10 @@ import {
   hasExistingDxnetScores,
   selectDxnetDifficulties,
 } from "../utils/dxnetDifficultySelection";
+import {
+  useCabinetJobPolling,
+  useDxnetJobPolling,
+} from "../hooks/useSyncJobPolling";
 
 type UserProfileResponse = AuthProfile;
 
@@ -91,6 +92,8 @@ type LatestSyncPayload = Partial<Omit<LastSyncInfo, "scoreCount">> & {
   scoreCount?: number;
 };
 
+type SyncMethod = "dxnet_bot" | "cabinet_qr";
+
 const DXNET_LOW_SUCCESS_RATE_THRESHOLD = 60;
 const DXNET_STATS_MIN_TERMINAL_COUNT = 10;
 
@@ -102,6 +105,7 @@ const DIFFICULTY_NAMES: Record<number, string> = {
   4: "Re:MASTER",
   10: "宴会场",
 };
+
 function formatDate(dateString: string) {
   const date = new Date(dateString);
   return date.toLocaleString("zh-CN", {
@@ -214,6 +218,10 @@ function normalizeLastSync(
           : 0,
     autoExportResult: data.autoExportResult ?? null,
   };
+}
+
+function settledValue<T>(result: PromiseSettledResult<T>): T | null {
+  return result.status === "fulfilled" ? result.value : null;
 }
 
 function readCachedLastSyncSummary(): LastSyncInfo | null {
@@ -399,6 +407,58 @@ function getCabinetStageText(job: CabinetScoreJob | null) {
   return job ? labels[job.stage] : "等待开始";
 }
 
+function getSyncProgress(syncStatus: JobStatus | null) {
+  if (!syncStatus?.scoreProgress) {
+    return null;
+  }
+  const { completedDiffs, totalDiffs } = syncStatus.scoreProgress;
+  const percent =
+    totalDiffs > 0 ? (completedDiffs.length / totalDiffs) * 100 : 0;
+  return { completedDiffs, totalDiffs, percent };
+}
+
+function getSyncPageViewState(input: {
+  syncMethod: SyncMethod;
+  cabinetStatus: CabinetScoreJob | null;
+  syncStatus: JobStatus | null;
+  cabinetSyncing: boolean;
+  dxnetSyncing: boolean;
+  hasCabinetUserId: boolean;
+  dxnetStats: JobRecentStats | null;
+  lastSync: LastSyncInfo | null;
+  pageLoading: boolean;
+}) {
+  const isCabinet = input.syncMethod === "cabinet_qr";
+  const dxnetTerminalCount =
+    (input.dxnetStats?.completedCount ?? 0) +
+    (input.dxnetStats?.failedCount ?? 0);
+  return {
+    syncStatusView: isCabinet
+      ? getCabinetSyncStatusView(input.cabinetStatus)
+      : getSyncStatusView({
+          lastSync: input.lastSync,
+          loading: input.pageLoading,
+          syncStatus: input.syncStatus,
+        }),
+    syncStageText: isCabinet
+      ? getCabinetStageText(input.cabinetStatus)
+      : getSyncStageText(input.syncStatus),
+    effectiveSyncJobStatus: isCabinet
+      ? input.cabinetStatus?.status
+      : input.syncStatus?.status,
+    selectedSyncing: isCabinet
+      ? input.cabinetSyncing
+      : input.dxnetSyncing,
+    cabinetBindingRequired: isCabinet && !input.hasCabinetUserId,
+    dxnetTerminalCount,
+    dxnetSuccessRate: input.dxnetStats?.successRate ?? 0,
+    showDxnetHealthWarning:
+      input.dxnetStats !== null &&
+      dxnetTerminalCount >= DXNET_STATS_MIN_TERMINAL_COUNT &&
+      input.dxnetStats.successRate < DXNET_LOW_SUCCESS_RATE_THRESHOLD,
+  };
+}
+
 function AutoExportBadges({
   result,
 }: {
@@ -485,7 +545,7 @@ export default function SyncPage() {
   const hasExistingScores = hasExistingDxnetScores(lastSync?.scoreCount);
 
   // Sync job state
-  const [syncMethod, setSyncMethod] = useState<"dxnet_bot" | "cabinet_qr">(
+  const [syncMethod, setSyncMethod] = useState<SyncMethod>(
     () =>
       typeof window !== "undefined" &&
       window.localStorage.getItem("sync_update_method") === "cabinet_qr"
@@ -505,7 +565,6 @@ export default function SyncPage() {
   const [cabinetError, setCabinetError] = useState<string | null>(null);
   const [dxnetStats, setDxnetStats] = useState<JobRecentStats | null>(null);
   const [updateAllDifficulties, setUpdateAllDifficulties] = useState(false);
-  const chainedFriendshipJobIdRef = useRef<string | null>(null);
   const latestRequestSeqRef = useRef(0);
 
   // Loading state
@@ -590,7 +649,8 @@ export default function SyncPage() {
       if (loadedProfile) {
         // Active-job lookup needs friendCode, so it chains off profile.
         if (loadedProfile.friendCode) {
-          const [activeJobRes, cabinetActiveRes] = await Promise.all([
+          const [activeJobResult, cabinetActiveResult] =
+            await Promise.allSettled([
             getActiveJobByFriendCode(loadedProfile.friendCode, token),
             getActiveCabinetScoreJob(token),
           ]);
@@ -598,14 +658,15 @@ export default function SyncPage() {
             return;
           }
 
-          if (cabinetActiveRes.job) {
+          const cabinetActiveJob = settledValue(cabinetActiveResult)?.job;
+          if (cabinetActiveJob) {
             setSyncMethod("cabinet_qr");
-            setCabinetJobId(cabinetActiveRes.job.id);
-            setCabinetStatus(cabinetActiveRes.job);
+            setCabinetJobId(cabinetActiveJob.id);
+            setCabinetStatus(cabinetActiveJob);
             setCabinetSyncing(true);
           }
-          if (activeJobRes.job) {
-            const activeJob = activeJobRes.job;
+          const activeJob = settledValue(activeJobResult)?.job;
+          if (activeJob) {
             setSyncJobId(activeJob.id);
             setSyncStatus(activeJob);
             if (
@@ -618,12 +679,14 @@ export default function SyncPage() {
         }
       }
 
-      const syncRes = await syncPromise;
+      const syncRes = await syncPromise.catch(() => null);
       if (cancelled) {
         return;
       }
-      const nextLastSync = syncRes.ok ? rememberLastSync(syncRes.data) : null;
-      if (syncRes.ok && nextLastSync) {
+      const nextLastSync = syncRes?.ok
+        ? rememberLastSync(syncRes.data)
+        : null;
+      if (syncRes?.ok && nextLastSync) {
         setLastSync(nextLastSync);
       } else {
         const cachedLastSync = await readCachedLastSyncWhenIdle();
@@ -764,7 +827,6 @@ export default function SyncPage() {
 
     clearPreviousDxnetJob();
     setDxnetSyncing(true);
-    chainedFriendshipJobIdRef.current = null;
     recordAnalyticsEvent("sync_started", {
       friendCode: profile.friendCode,
     });
@@ -802,120 +864,60 @@ export default function SyncPage() {
     token,
   ]);
 
-  // Poll job status
-  useEffect(() => {
-    if (!syncJobId || !dxnetSyncing || !token) {
-      return;
-    }
-
-    const interval = setInterval(async () => {
-      try {
-        const job = await getJobById(syncJobId, token);
-        setDxnetError(null);
-        setSyncStatus(job);
-
-        if (
-          job.status === "completed" ||
-          job.status === "failed" ||
-          job.status === "canceled"
-        ) {
-          if (job.status === "completed") {
-            if (job.jobType === "send_friend_request") {
-              if (chainedFriendshipJobIdRef.current === job.id) {
-                return;
-              }
-              chainedFriendshipJobIdRef.current = job.id;
-              try {
-                await startUpdateScoreJob(job.id);
-              } catch (error) {
-                chainedFriendshipJobIdRef.current = null;
-                setDxnetSyncing(false);
-                const errorMessage =
-                  error instanceof Error ? error.message : "未知错误";
-                setDxnetError(`创建成绩更新任务失败: ${errorMessage}`);
-              }
-              return;
-            }
-            setDxnetSyncing(false);
-            recordAnalyticsEvent("sync_completed", {
-              jobId: job.id,
-              jobType: job.jobType,
-            });
-            loadProfile();
-            loadLastSync({ force: true });
-
-            // Refresh latest sync after a delay to pick up queued export results
-            setTimeout(async () => {
-              try {
-                await loadLastSync({ force: true });
-              } catch {
-                // ignore
-              }
-            }, 3000);
-          } else {
-            setDxnetSyncing(false);
-            recordAnalyticsEvent("sync_failed", {
-              jobId: job.id,
-              jobType: job.jobType,
-              status: job.status,
-            });
-          }
-        }
-      } catch {
-        setDxnetError("轮询失败");
-        return;
-      }
-    }, 1500);
-
-    return () => clearInterval(interval);
-  }, [
-    syncJobId,
-    dxnetSyncing,
+  useDxnetJobPolling({
+    jobId: syncJobId,
+    syncing: dxnetSyncing,
     token,
-    loadProfile,
-    loadLastSync,
-    startUpdateScoreJob,
-  ]);
+    deadlineAt: syncStatus?.deadlineAt,
+    setStatus: setSyncStatus,
+    setError: setDxnetError,
+    stop: () => setDxnetSyncing(false),
+    startScoreJob: startUpdateScoreJob,
+    completed: (job) => {
+      recordAnalyticsEvent("sync_completed", {
+        jobId: job.id,
+        jobType: job.jobType,
+      });
+      void loadProfile();
+      void loadLastSync({ force: true });
+      window.setTimeout(
+        () => void loadLastSync({ force: true }).catch(() => undefined),
+        3_000,
+      );
+    },
+    failed: (job) => {
+      recordAnalyticsEvent("sync_failed", {
+        jobId: job.id,
+        jobType: job.jobType,
+        status: job.status,
+      });
+    },
+  });
 
-  useEffect(() => {
-    if (!cabinetJobId || !cabinetSyncing || !token) {
-      return;
-    }
-    const interval = setInterval(async () => {
-      try {
-        const job = await getCabinetScoreJob(cabinetJobId, token);
-        setCabinetError(null);
-        setCabinetStatus(job);
-        const cleanupBlocked =
-          job.cleanupStatus === "pending" ||
-          (job.cleanupStatus === "unconfirmed" &&
-            !!job.error?.retryAfter &&
-            new Date(job.error.retryAfter).getTime() > Date.now());
-        if (job.status === "completed") {
-          setCabinetSyncing(false);
-          recordAnalyticsEvent("sync_completed", {
-            jobId: job.id,
-            method: "cabinet_qr",
-          });
-          void loadProfile();
-          void loadLastSync({ force: true });
-        } else if (job.status === "failed" && !cleanupBlocked) {
-          setCabinetSyncing(false);
-          recordAnalyticsEvent("sync_failed", {
-            jobId: job.id,
-            method: "cabinet_qr",
-            errorCode: job.error?.code ?? "",
-          });
-        }
-      } catch (error) {
-        if (error instanceof CabinetScoreJobApiError && error.status === 404) {
-          setCabinetSyncing(false);
-          setCabinetError("二维码任务不存在或已过期");
-        }
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [cabinetJobId, cabinetSyncing, token, loadProfile, loadLastSync]);
+  useCabinetJobPolling({
+    jobId: cabinetJobId,
+    syncing: cabinetSyncing,
+    token,
+    createdAt: cabinetStatus?.createdAt,
+    setStatus: setCabinetStatus,
+    setError: setCabinetError,
+    stop: () => setCabinetSyncing(false),
+    completed: (job) => {
+      recordAnalyticsEvent("sync_completed", {
+        jobId: job.id,
+        method: "cabinet_qr",
+      });
+      void loadProfile();
+      void loadLastSync({ force: true });
+    },
+    failed: (job) => {
+      recordAnalyticsEvent("sync_failed", {
+        jobId: job.id,
+        method: "cabinet_qr",
+        errorCode: job.error?.code ?? "",
+      });
+    },
+  });
 
   const verifySyncJob = async () => {
     if (!syncJobId || !token) {
@@ -927,43 +929,27 @@ export default function SyncPage() {
     setDxnetSyncing(true);
   };
 
-  // Compute sync progress
-  const getSyncProgress = () => {
-    if (!syncStatus?.scoreProgress) {
-      return null;
-    }
-    const { completedDiffs, totalDiffs } = syncStatus.scoreProgress;
-    const percent =
-      totalDiffs > 0 ? (completedDiffs.length / totalDiffs) * 100 : 0;
-    return { completedDiffs, totalDiffs, percent };
-  };
-
-  const progress = getSyncProgress();
-  const syncStatusView =
-    syncMethod === "cabinet_qr"
-      ? getCabinetSyncStatusView(cabinetStatus)
-      : getSyncStatusView({
-          lastSync,
-          loading: pageLoading,
-          syncStatus,
-        });
-  const syncStageText =
-    syncMethod === "cabinet_qr"
-      ? getCabinetStageText(cabinetStatus)
-      : getSyncStageText(syncStatus);
-  const effectiveSyncJobStatus =
-    syncMethod === "cabinet_qr" ? cabinetStatus?.status : syncStatus?.status;
-  const selectedSyncing =
-    syncMethod === "cabinet_qr" ? cabinetSyncing : dxnetSyncing;
-  const cabinetBindingRequired =
-    syncMethod === "cabinet_qr" && !profile?.hasCabinetUserId;
-  const dxnetTerminalCount = dxnetStats
-    ? dxnetStats.completedCount + dxnetStats.failedCount
-    : 0;
-  const showDxnetHealthWarning =
-    dxnetStats !== null &&
-    dxnetTerminalCount >= DXNET_STATS_MIN_TERMINAL_COUNT &&
-    dxnetStats.successRate < DXNET_LOW_SUCCESS_RATE_THRESHOLD;
+  const progress = getSyncProgress(syncStatus);
+  const {
+    syncStatusView,
+    syncStageText,
+    effectiveSyncJobStatus,
+    selectedSyncing,
+    cabinetBindingRequired,
+    dxnetTerminalCount,
+    dxnetSuccessRate,
+    showDxnetHealthWarning,
+  } = getSyncPageViewState({
+    syncMethod,
+    cabinetStatus,
+    syncStatus,
+    cabinetSyncing,
+    dxnetSyncing,
+    hasCabinetUserId: profile?.hasCabinetUserId ?? false,
+    dxnetStats,
+    lastSync,
+    pageLoading,
+  });
   return (
     <Box style={{ position: "relative" }}>
       {offline && (
@@ -1057,7 +1043,7 @@ export default function SyncPage() {
                     color="orange"
                     variant="light"
                     icon={<IconAlertTriangle size={18} />}
-                    title={`DX Net 近 1 小时成功率仅 ${dxnetStats.successRate.toFixed(1)}%（${dxnetTerminalCount} 个已结束任务），建议改用二维码更新`}
+                    title={`DX Net 近 1 小时成功率仅 ${dxnetSuccessRate.toFixed(1)}%（${dxnetTerminalCount} 个已结束任务），建议改用二维码更新`}
                     radius="md"
                   />
                 )}
