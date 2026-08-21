@@ -6,7 +6,8 @@ export type ScoreChangeSourceType =
   | 'dxnet_update_score'
   | 'auto_update_rival'
   | 'auto_update_fcfs'
-  | 'cabinet_qr_update';
+  | 'cabinet_qr_update'
+  | 'manual_score_update';
 
 export type ScoreChangeField =
   | 'score'

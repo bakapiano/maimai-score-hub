@@ -9,7 +9,8 @@ type ScoreSourceType =
   | 'dxnet_update_score'
   | 'auto_update_rival'
   | 'auto_update_fcfs'
-  | 'cabinet_qr_update';
+  | 'cabinet_qr_update'
+  | 'manual_score_update';
 
 type SyncEntity = {
   id: string;                    // 首次创建后稳定
@@ -54,7 +55,7 @@ type SyncScore = {
 
 ## 统一提交接口
 
-现有四个业务方法只负责校验和映射，最终全部调用
+现有业务方法只负责校验和映射，最终全部调用
 `SyncService.commitScoreDelta()`。
 
 ```ts

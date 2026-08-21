@@ -51,12 +51,13 @@ S(next) = S(latest) ⊔ Delta(source)
 
 当前所有成绩写入路径：
 
-| sourceType | 生产者 | 当前入口 | 来源字段 | 特殊规则 |
-| --- | --- | --- | --- | --- |
-| `dxnet_update_score` | DXNet worker | `SyncService.createFromJob()` | achievement、DX Score、FC、FS | 部分难度抓取仍视为 delta |
-| `auto_update_rival` | Rival-first scheduler | `SyncService.createFromRivalMusic()` | achievement、DX Score | `fc/fs=null` 表示未提供 |
-| `auto_update_fcfs` | targeted `update_score` | `SyncService.createFromJob()` | FC、FS | 按谱面 CID 更新并保留 score/dxScore |
-| `cabinet_qr_update` | sdgb `get_music_score` finalizer | `SyncService.createFromUserMusic()` | achievement、DX Score、FC、FS | cleanup 和身份校验成功后才提交 |
+| sourceType            | 生产者                           | 当前入口                               | 来源字段                      | 特殊规则                            |
+| --------------------- | -------------------------------- | -------------------------------------- | ----------------------------- | ----------------------------------- |
+| `dxnet_update_score`  | DXNet worker                     | `SyncService.createFromJob()`          | achievement、DX Score、FC、FS | 部分难度抓取仍视为 delta            |
+| `auto_update_rival`   | Rival-first scheduler            | `SyncService.createFromRivalMusic()`   | achievement、DX Score         | `fc/fs=null` 表示未提供             |
+| `auto_update_fcfs`    | targeted `update_score`          | `SyncService.createFromJob()`          | FC、FS                        | 按谱面 CID 更新并保留 score/dxScore |
+| `cabinet_qr_update`   | sdgb `get_music_score` finalizer | `SyncService.createFromUserMusic()`    | achievement、DX Score、FC、FS | cleanup 和身份校验成功后才提交      |
+| `manual_score_update` | 登录用户批量 API                 | `SyncService.createFromManualScores()` | achievement、DX Score、FC、FS | JWT 决定用户，整批曲库校验后提交    |
 
 每条 current score 还保存可选的 `observedAt`。所有来源使用 winning CAS attempt
 的当前时间。只有

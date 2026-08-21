@@ -31,6 +31,8 @@ import { convertSyncScoresToLxnsPayload } from '../../../common/prober/lxns/conv
 import { uploadLxnsScores } from '../../../common/prober/lxns/client';
 import { ProberExportMapService } from './prober-export-map.service';
 import type {
+  ManualScoreUpdateItem,
+  ManualScoreUpdateResponse,
   SdgbWorkerMusicEntry,
   SdgbWorkerUserMusicDetail,
 } from '@maimai-score-hub/shared';
@@ -321,6 +323,38 @@ export class SyncService {
           changedChartCount: committed.changedChartCount,
         }
       : null;
+  }
+
+  async createFromManualScores(input: {
+    friendCode: string;
+    ownerUserId: string;
+    scores: readonly ManualScoreUpdateItem[];
+  }): Promise<ManualScoreUpdateResponse> {
+    const delta = await this.mapManualScores(input.scores);
+    const sourceId = randomUUID();
+    const committed = await this.commitScoreDelta({
+      friendCode: input.friendCode,
+      ownerUserId: input.ownerUserId,
+      sourceType: 'manual_score_update',
+      sourceId,
+      buildDelta: () => ({ delta, meta: null }),
+    });
+    if (!committed.sync) {
+      throw new BadRequestException({
+        code: 'NO_SCORE_DATA',
+        message: '未提供可合并的铺面成绩',
+      });
+    }
+
+    return {
+      sourceId,
+      syncId: committed.sync.id,
+      outcome: committed.outcome,
+      submittedChartCount: input.scores.length,
+      changedChartCount: committed.changedChartCount,
+      scoreCount: committed.sync.scores.length,
+      scoreVersion: committed.sync.__v,
+    };
   }
 
   // Keep the read/build/CAS/retry sequence contiguous; splitting it makes it
@@ -1134,6 +1168,80 @@ export class SyncService {
         fs: this.mapSyncStatus(detail.syncStatus),
         rating,
         isNew: music.isNew ?? null,
+      });
+    }
+    return this.mergeWithPrevious(undefined, scores);
+  }
+
+  private async mapManualScores(
+    inputs: readonly ManualScoreUpdateItem[],
+  ): Promise<ScoreSnapshot[]> {
+    const { byId: musicMap } = await this.getMusicCache();
+    const scores: ScoreSnapshot[] = [];
+    const issues: Array<{
+      index: number;
+      musicId: string;
+      chartIndex: number;
+      code: 'MUSIC_NOT_FOUND' | 'CHART_NOT_FOUND';
+    }> = [];
+
+    inputs.forEach((input, index) => {
+      const music = musicMap.get(input.musicId);
+      if (!music) {
+        issues.push({
+          index,
+          musicId: input.musicId,
+          chartIndex: input.chartIndex,
+          code: 'MUSIC_NOT_FOUND',
+        });
+        return;
+      }
+      const chartIndexMatchesType =
+        music.type === 'utage'
+          ? input.chartIndex === 10
+          : input.chartIndex !== 10;
+      const chart = chartIndexMatchesType
+        ? this.resolveChartForIndex(music, input.chartIndex)
+        : undefined;
+      if (!chart?.cid) {
+        issues.push({
+          index,
+          musicId: input.musicId,
+          chartIndex: input.chartIndex,
+          code: 'CHART_NOT_FOUND',
+        });
+        return;
+      }
+
+      const score =
+        input.achievement === undefined
+          ? null
+          : `${input.achievement.toFixed(4)}%`;
+      const achievement = normalizeAchievement(score);
+      scores.push({
+        musicId: music.id,
+        cid: chart.cid,
+        chartIndex: input.chartIndex,
+        type: music.type,
+        dxScore: input.dxScore === undefined ? null : String(input.dxScore),
+        score,
+        fc: input.fc ?? null,
+        fs: input.fs ?? null,
+        rating:
+          chart.detailLevel !== undefined &&
+          chart.detailLevel !== null &&
+          achievement !== null
+            ? getRating(chart.detailLevel, achievement)
+            : null,
+        isNew: music.isNew ?? null,
+      });
+    });
+
+    if (issues.length) {
+      throw new BadRequestException({
+        code: 'INVALID_SCORE_TARGETS',
+        message: '部分铺面无法从当前曲库解析',
+        issues,
       });
     }
     return this.mergeWithPrevious(undefined, scores);

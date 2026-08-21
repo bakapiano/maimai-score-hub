@@ -31,7 +31,8 @@ type ScoreChangeSourceType =
   | 'dxnet_update_score'
   | 'auto_update_rival'
   | 'auto_update_fcfs'
-  | 'cabinet_qr_update';
+  | 'cabinet_qr_update'
+  | 'manual_score_update';
 
 type ScoreChangeField =
   | 'score'
@@ -119,12 +120,13 @@ Catalog 定数修正可能使派生 `ratingDelta` 为负，不代表成绩回退
 
 ## 写入流程
 
-四条来源全部接入同一 diff 计算：
+所有来源全部接入同一 diff 计算：
 
 1. `createFromJob()`：DXNet `update_score`；
 2. `createFromRivalMusic()`：Rival score change；
 3. `createFromJob()`：targeted FC/FS；
 4. `createFromUserMusic()`：二维码 `get_music_score`。
+5. `createFromManualScores()`：登录用户批量提交铺面成绩。
 
 ```text
 read current sync + __v

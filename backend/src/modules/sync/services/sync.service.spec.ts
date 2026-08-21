@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import { Types } from 'mongoose';
 
 import { getRating } from '../../../common/rating';
@@ -310,6 +311,202 @@ describe('SyncService initial score commit', () => {
       'fs',
       'rating',
     ]);
+  });
+});
+
+// eslint-disable-next-line max-lines-per-function
+describe('SyncService manual score updates', () => {
+  it('creates multiple catalog-backed charts in one commit', async () => {
+    const harness = createHarness({ current: null });
+    const ownerUserId = new Types.ObjectId();
+
+    const result = await harness.service.createFromManualScores({
+      friendCode: '634142510810999',
+      ownerUserId: String(ownerUserId),
+      scores: [
+        {
+          musicId: '17',
+          chartIndex: 3,
+          achievement: 100.5,
+          dxScore: 1234,
+          fc: 'app',
+        },
+        {
+          musicId: '18',
+          chartIndex: 3,
+          achievement: 99,
+          fs: 'fdx',
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'created',
+      submittedChartCount: 2,
+      changedChartCount: 2,
+      scoreCount: 2,
+      scoreVersion: 0,
+    });
+    expect(result.sourceId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(harness.current()).toMatchObject({ ownerUserId });
+    expect(harness.current()?.scores).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          musicId: '17',
+          cid: '17_3',
+          score: '100.5000%',
+          dxScore: '1234',
+          fc: 'app',
+          rating: getRating(13.5, 100.5),
+        }),
+        expect.objectContaining({
+          musicId: '18',
+          cid: '18_3',
+          score: '99.0000%',
+          fs: 'fdx',
+          rating: getRating(14, 99),
+        }),
+      ]),
+    );
+    const inserted =
+      scoreChangeCalls(harness)[0][0][0].updateOne.update.$setOnInsert;
+    expect(inserted).toMatchObject({
+      sourceType: 'manual_score_update',
+      sourceId: result.sourceId,
+    });
+  });
+
+  it('keeps the best value for each field across duplicate submitted charts', async () => {
+    const harness = createHarness({
+      current: {
+        scores: [
+          {
+            musicId: '17',
+            cid: '17_3',
+            chartIndex: 3,
+            type: 'standard',
+            dxScore: '1000',
+            score: '100.0000%',
+            fc: 'fcp',
+            fs: 'fdx',
+            rating: getRating(13.5, 100),
+            isNew: false,
+          },
+        ],
+      },
+    });
+
+    const result = await harness.service.createFromManualScores({
+      friendCode: '634142510810999',
+      ownerUserId: String(new Types.ObjectId()),
+      scores: [
+        {
+          musicId: '17',
+          chartIndex: 3,
+          achievement: 99,
+          dxScore: 1200,
+          fc: 'app',
+          fs: 'fsp',
+        },
+        {
+          musicId: '17',
+          chartIndex: 3,
+          achievement: 100.5,
+          dxScore: 1100,
+          fs: 'fdxp',
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'updated',
+      submittedChartCount: 2,
+      changedChartCount: 1,
+      scoreVersion: 1,
+    });
+    expect(harness.current()?.scores[0]).toMatchObject({
+      score: '100.5000%',
+      dxScore: '1200',
+      fc: 'app',
+      fs: 'fdxp',
+      rating: getRating(13.5, 100.5),
+    });
+  });
+
+  it('validates every catalog target before committing the batch', async () => {
+    const harness = createHarness();
+    const before = harness.current();
+
+    await expect(
+      harness.service.createFromManualScores({
+        friendCode: '634142510810999',
+        ownerUserId: String(new Types.ObjectId()),
+        scores: [
+          { musicId: '17', chartIndex: 3, achievement: 99 },
+          { musicId: 'missing', chartIndex: 3, dxScore: 1000 },
+          { musicId: '18', chartIndex: 4, fc: 'fc' },
+          { musicId: '17', chartIndex: 10, fs: 'fs' },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'INVALID_SCORE_TARGETS',
+        issues: [
+          expect.objectContaining({ index: 1, code: 'MUSIC_NOT_FOUND' }),
+          expect.objectContaining({ index: 2, code: 'CHART_NOT_FOUND' }),
+          expect.objectContaining({ index: 3, code: 'CHART_NOT_FOUND' }),
+        ],
+      },
+    });
+    expect(harness.current()).toEqual(before);
+    expect(harness.syncModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('returns no_change for a lower repeated submission', async () => {
+    const harness = createHarness({
+      current: {
+        scores: [
+          {
+            musicId: '17',
+            cid: '17_3',
+            chartIndex: 3,
+            type: 'standard',
+            dxScore: '1200',
+            score: '100.5000%',
+            fc: 'app',
+            fs: 'fdxp',
+            rating: getRating(13.5, 100.5),
+            isNew: false,
+            observedAt: new Date('2026-08-21T00:00:00.000Z'),
+          },
+        ],
+      },
+    });
+
+    const result = await harness.service.createFromManualScores({
+      friendCode: '634142510810999',
+      ownerUserId: String(new Types.ObjectId()),
+      scores: [
+        {
+          musicId: '17',
+          chartIndex: 3,
+          achievement: 99,
+          dxScore: 1000,
+          fc: 'fcp',
+          fs: 'fdx',
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'no_change',
+      changedChartCount: 0,
+      scoreVersion: 0,
+    });
+    expect(harness.current()?.__v).toBe(0);
+    expect(harness.scoreChangeModel.bulkWrite).not.toHaveBeenCalled();
   });
 });
 

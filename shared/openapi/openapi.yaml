@@ -1768,6 +1768,106 @@ paths:
                   - updatedAt
                 additionalProperties: true
                 nullable: true
+  /me/sync/scores:
+    post:
+      tags: *a4
+      parameters: []
+      operationId: sync.updateScores
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scores:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      musicId:
+                        type: string
+                        minLength: 1
+                        maxLength: 64
+                      chartIndex:
+                        type: integer
+                        minimum: 0
+                        maximum: 10
+                      achievement:
+                        type: number
+                        minimum: 0
+                        maximum: 101
+                      dxScore:
+                        type: integer
+                        minimum: 0
+                        maximum: 9007199254740991
+                      fc:
+                        type: string
+                        enum:
+                          - fc
+                          - fcp
+                          - ap
+                          - app
+                      fs:
+                        type: string
+                        enum:
+                          - fs
+                          - fsp
+                          - fdx
+                          - fdxp
+                    required:
+                      - musicId
+                      - chartIndex
+                    additionalProperties: false
+                  minItems: 1
+                  maxItems: 500
+              required:
+                - scores
+              additionalProperties: false
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sourceId:
+                    type: string
+                    format: uuid
+                  syncId:
+                    type: string
+                  outcome:
+                    type: string
+                    enum:
+                      - created
+                      - updated
+                      - no_change
+                  submittedChartCount:
+                    type: integer
+                    minimum: 0
+                    exclusiveMinimum: 0
+                  changedChartCount:
+                    type: integer
+                    minimum: 0
+                  scoreCount:
+                    type: integer
+                    minimum: 0
+                  scoreVersion:
+                    type: integer
+                    minimum: 0
+                required:
+                  - sourceId
+                  - syncId
+                  - outcome
+                  - submittedChartCount
+                  - changedChartCount
+                  - scoreCount
+                  - scoreVersion
+        "400":
+          description: "400"
+        "503":
+          description: "503"
   /me/sync/latest/exports/diving-fish:
     post:
       tags: *a4
@@ -2461,6 +2561,7 @@ paths:
                             - auto_update_rival
                             - auto_update_fcfs
                             - cabinet_qr_update
+                            - manual_score_update
                         beforeScoreVersion:
                           type: integer
                           minimum: 0
@@ -2606,6 +2707,7 @@ paths:
                             - auto_update_rival
                             - auto_update_fcfs
                             - cabinet_qr_update
+                            - manual_score_update
                         beforeScoreVersion:
                           type: integer
                           minimum: 0

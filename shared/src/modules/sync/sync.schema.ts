@@ -191,11 +191,56 @@ export type CabinetScoreJobCreateBody = z.infer<
 >;
 export type CabinetScoreJob = z.infer<typeof CabinetScoreJobSchema>;
 
+export const ManualScoreFcSchema = z.enum(["fc", "fcp", "ap", "app"]);
+export const ManualScoreFsSchema = z.enum(["fs", "fsp", "fdx", "fdxp"]);
+
+export const ManualScoreUpdateItemSchema = z
+  .object({
+    musicId: z.string().trim().min(1).max(64),
+    chartIndex: z.number().int().min(0).max(10),
+    achievement: z.number().finite().min(0).max(101).optional(),
+    dxScore: z.number().int().safe().nonnegative().optional(),
+    fc: ManualScoreFcSchema.optional(),
+    fs: ManualScoreFsSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (score) =>
+      score.achievement !== undefined ||
+      score.dxScore !== undefined ||
+      score.fc !== undefined ||
+      score.fs !== undefined,
+    { message: "at least one score field is required" },
+  );
+
+export const ManualScoreUpdateBodySchema = z
+  .object({
+    scores: z.array(ManualScoreUpdateItemSchema).min(1).max(500),
+  })
+  .strict();
+
+export const ManualScoreUpdateResponseSchema = z.object({
+  sourceId: z.string().uuid(),
+  syncId: z.string(),
+  outcome: z.enum(["created", "updated", "no_change"]),
+  submittedChartCount: z.number().int().positive(),
+  changedChartCount: z.number().int().nonnegative(),
+  scoreCount: z.number().int().nonnegative(),
+  scoreVersion: z.number().int().nonnegative(),
+});
+
+export type ManualScoreUpdateItem = z.infer<typeof ManualScoreUpdateItemSchema>;
+export type ManualScoreUpdateBody = z.infer<typeof ManualScoreUpdateBodySchema>;
+export type ManualScoreUpdateResponse = z.infer<
+  typeof ManualScoreUpdateResponseSchema
+>;
+
 export const ScoreChangeSourceTypeSchema = z.enum([
   "dxnet_update_score",
   "auto_update_rival",
   "auto_update_fcfs",
   "cabinet_qr_update",
+  "manual_score_update",
 ]);
 
 export const ScoreChangeFieldSchema = z.enum([

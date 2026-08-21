@@ -7,6 +7,7 @@ import { createClient } from 'redis';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import {
+  ManualScoreUpdateResponseSchema,
   ScoreChangeHistoryResponseSchema,
   ScoreHistoryCalendarResponseSchema,
   ScoreHistoryFeedResponseSchema,
@@ -249,6 +250,112 @@ describe('score update concurrency and export ownership (local e2e)', () => {
     expect(changes[0]?.changedFields).toContain('dxScore');
   });
 
+  it('accepts an authenticated batch score update and keeps repeated lower values settled', async () => {
+    const owner = await userModel.create({ friendCode });
+    const { token } = await moduleA
+      .get(AuthService)
+      .issueTokenForUser({ _id: owner._id, friendCode: owner.friendCode });
+    const payload = {
+      scores: [
+        {
+          musicId: '17',
+          chartIndex: 3,
+          achievement: 100.5,
+          dxScore: 1234,
+          fc: 'app',
+        },
+        {
+          musicId: '18',
+          chartIndex: 3,
+          achievement: 99,
+          fs: 'fdx',
+        },
+      ],
+    };
+
+    const firstResponse = await request(appA.getHttpServer())
+      .post('/me/sync/scores')
+      .set('Authorization', `Bearer ${token}`)
+      .send(payload)
+      .expect(200);
+    const first = ManualScoreUpdateResponseSchema.parse(
+      firstResponse.body as unknown,
+    );
+    expect(first).toMatchObject({
+      outcome: 'created',
+      submittedChartCount: 2,
+      changedChartCount: 2,
+      scoreCount: 2,
+      scoreVersion: 0,
+    });
+
+    const current = await syncModel.findOne({ friendCode }).lean();
+    expect(String(current?.ownerUserId)).toBe(String(owner._id));
+    expect(current?.scores).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          musicId: '17',
+          score: '100.5000%',
+          dxScore: '1234',
+          fc: 'app',
+        }),
+        expect.objectContaining({
+          musicId: '18',
+          score: '99.0000%',
+          fs: 'fdx',
+        }),
+      ]),
+    );
+    expect(
+      await scoreChangeModel.countDocuments({
+        friendCode,
+        sourceType: 'manual_score_update',
+        sourceId: first.sourceId,
+      }),
+    ).toBe(2);
+
+    const repeatedResponse = await request(appA.getHttpServer())
+      .post('/me/sync/scores')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        scores: [
+          {
+            musicId: '17',
+            chartIndex: 3,
+            achievement: 99,
+            dxScore: 1000,
+            fc: 'fcp',
+          },
+        ],
+      })
+      .expect(200);
+    expect(repeatedResponse.body).toMatchObject({
+      outcome: 'no_change',
+      changedChartCount: 0,
+      scoreVersion: 0,
+    });
+
+    await request(appA.getHttpServer())
+      .post('/me/sync/scores')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        scores: [
+          { musicId: '17', chartIndex: 3, dxScore: 1400 },
+          { musicId: 'missing', chartIndex: 3, dxScore: 1400 },
+        ],
+      })
+      .expect(400)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ code: 'INVALID_SCORE_TARGETS' });
+      });
+    expect((await syncModel.findOne({ friendCode }).lean())?.__v).toBe(0);
+
+    await request(appA.getHttpServer())
+      .post('/me/sync/scores')
+      .send(payload)
+      .expect(401);
+  });
+
   it('returns only the authenticated user exact-chart score history with cursor pagination', async () => {
     const owner = await userModel.create({ friendCode });
     const otherFriendCode = '700000000000099';
@@ -473,6 +580,12 @@ describe('score update concurrency and export ownership (local e2e)', () => {
 
   it('merges one business day and exports a four-column history PNG', async () => {
     const owner = await userModel.create({ friendCode });
+    await syncA.createFromUserMusic({
+      friendCode,
+      sourceId: 'history-export-current-sync',
+      musicDetails: [cabinetDetail(17)],
+      ownerUserId: String(owner._id),
+    });
     const start = Date.parse('2026-03-01T00:00:00.000Z');
     const rows = Array.from({ length: 15 }, (_, index) =>
       scoreHistoryRow({
@@ -533,6 +646,12 @@ describe('score update concurrency and export ownership (local e2e)', () => {
 
   it('applies the key-change filter to history exports', async () => {
     const owner = await userModel.create({ friendCode });
+    await syncA.createFromUserMusic({
+      friendCode,
+      sourceId: 'history-filter-current-sync',
+      musicDetails: [cabinetDetail(17)],
+      ownerUserId: String(owner._id),
+    });
     const start = Date.parse('2026-03-02T00:00:00.000Z');
     const quietRow = {
       ...scoreHistoryRow({

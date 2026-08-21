@@ -6,6 +6,8 @@ import {
   CabinetScoreJobCreateResponseSchema,
   CabinetScoreJobSchema,
   LastSyncSchema,
+  ManualScoreUpdateBodySchema,
+  ManualScoreUpdateResponseSchema,
   ProberExportCreateResponseSchema,
   ProberExportJobSchema,
   ProberExportListResponseSchema,
@@ -49,6 +51,21 @@ export const syncContract = c.router({
     path: "/me/sync/latest",
     headers: c.type<{ authorization: string }>(),
     responses: { 200: LastSyncSchema.nullable() },
+  },
+  updateScores: {
+    method: "POST",
+    path: "/me/sync/scores",
+    headers: c.type<{ authorization: string }>(),
+    body: ManualScoreUpdateBodySchema,
+    responses: {
+      200: ManualScoreUpdateResponseSchema,
+      400: c.type<{
+        code?: string;
+        message?: string;
+        issues?: Array<Record<string, unknown>>;
+      }>(),
+      503: c.type<{ code?: string; message?: string }>(),
+    },
   },
   exportToDivingFish: {
     method: "POST",

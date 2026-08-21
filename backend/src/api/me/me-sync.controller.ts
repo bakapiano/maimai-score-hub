@@ -1,15 +1,24 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
+  HttpCode,
+  Logger,
   Param,
   Post,
   Query,
   Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import {
+  ManualScoreUpdateBodySchema,
+  type ManualScoreUpdateBody,
+} from '@maimai-score-hub/shared';
 import type { Request } from 'express';
 
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuthGuard } from '../../modules/auth/guards/auth.guard';
 import { ProberExportService } from '../../modules/prober-export/services/prober-export.service';
 import { SyncService } from '../../modules/sync/services/sync.service';
@@ -38,6 +47,8 @@ function requireUserId(req: AuthedRequest): string {
 @Controller('me/sync')
 @UseGuards(AuthGuard)
 export class MeSyncController {
+  private readonly logger = new Logger(MeSyncController.name);
+
   constructor(
     private readonly syncs: SyncService,
     private readonly users: UsersService,
@@ -67,6 +78,37 @@ export class MeSyncController {
           }
         : null,
     };
+  }
+
+  @Post('scores')
+  @HttpCode(200)
+  async updateScores(
+    @Req() req: AuthedRequest,
+    @Body(new ZodValidationPipe(ManualScoreUpdateBodySchema))
+    body: ManualScoreUpdateBody,
+  ) {
+    const tokenFriendCode = requireFriendCode(req);
+    const ownerUserId = requireUserId(req);
+    const user = await this.users.getById(ownerUserId);
+    if (user.friendCode !== tokenFriendCode) {
+      throw new UnauthorizedException('User context mismatch');
+    }
+    const friendCode = user.friendCode;
+    const result = await this.syncs.createFromManualScores({
+      friendCode,
+      ownerUserId,
+      scores: body.scores,
+    });
+    if (result.changedChartCount > 0) {
+      void this.proberExports
+        .ensureAutoExportWake(friendCode)
+        .catch((error) =>
+          this.logger.warn(
+            `manual score auto-export wake failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+    }
+    return result;
   }
 
   @Post('latest/exports/diving-fish')
