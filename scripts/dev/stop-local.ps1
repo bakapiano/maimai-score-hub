@@ -11,6 +11,7 @@ $apps = @(
   "msh-admin",
   "msh-frontend",
   "msh-backend",
+  "msh-ocr-api",
   "msh-memurai"
 )
 $root = Get-RepoRoot

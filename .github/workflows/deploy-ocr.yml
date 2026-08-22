@@ -1,0 +1,190 @@
+name: deploy OCR API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ocr-api/**"
+      - ".github/workflows/deploy-ocr.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ocr-server101
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ocr-api/pyproject.toml
+
+      - name: Install API dependencies
+        run: python -m pip install --disable-pip-version-check -e ocr-api
+
+      - name: Run API tests
+        run: python -m unittest discover -s ocr-api/tests -v
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package source
+        run: |
+          tar -czf /tmp/maimai-score-hub-ocr-${GITHUB_SHA}.tgz ocr-api
+          sha256sum /tmp/maimai-score-hub-ocr-${GITHUB_SHA}.tgz
+
+      - name: Upload source archive to Server 101
+        timeout-minutes: 20
+        env:
+          DEPLOY_HOST: ${{ secrets.WORKER_3_HOST }}
+          DEPLOY_USER: ${{ secrets.WORKER_3_USER }}
+          DEPLOY_PORT: ${{ secrets.WORKER_3_PORT }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          bash .github/scripts/upload-deploy-archive.sh \
+            "/tmp/maimai-score-hub-ocr-${GITHUB_SHA}.tgz" \
+            "/tmp/maimai-score-hub-ocr-${GITHUB_SHA}.tgz"
+
+      - name: Deploy and activate on Server 101
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          OCR_API_TOKEN: ${{ secrets.OCR_API_TOKEN }}
+        with:
+          host: ${{ secrets.WORKER_3_HOST }}
+          username: ${{ secrets.WORKER_3_USER }}
+          port: ${{ secrets.WORKER_3_PORT }}
+          key: ${{ secrets.SSH_KEY }}
+          command_timeout: 30m
+          envs: OCR_API_TOKEN
+          script: |
+            set -euo pipefail
+
+            DEPLOY_ROOT="/home/bakapiano/maimai-score-hub-ocr"
+            RELEASE_DIR="$DEPLOY_ROOT/releases/${{ github.sha }}"
+            SOURCE_ARCHIVE="/tmp/maimai-score-hub-ocr-${{ github.sha }}.tgz"
+            PYTHON="/home/bakapiano/bench-venv/bin/python"
+
+            if [ -z "${OCR_API_TOKEN:-}" ]; then
+              echo "❌ OCR_API_TOKEN secret is required"
+              exit 1
+            fi
+            if [ ! -f "$SOURCE_ARCHIVE" ]; then
+              echo "❌ Source archive not found: $SOURCE_ARCHIVE"
+              exit 1
+            fi
+            if [ ! -x "$PYTHON" ]; then
+              echo "❌ OCR Python environment is missing: $PYTHON"
+              exit 1
+            fi
+            if [ ! -f /home/bakapiano/maimai-ocr/prod_run.py ]; then
+              echo "❌ Existing OCR model pipeline is missing"
+              exit 1
+            fi
+            if [ ! -f /home/bakapiano/.ssh/id_ed25519_ocr_tunnel ]; then
+              echo "❌ Host-only OCR tunnel key is missing"
+              exit 1
+            fi
+
+            mkdir -p "$DEPLOY_ROOT/releases"
+            if [ -e "$RELEASE_DIR" ]; then
+              rm -rf -- "$RELEASE_DIR"
+            fi
+            mkdir -p "$RELEASE_DIR"
+            tar -xzf "$SOURCE_ARCHIVE" -C "$RELEASE_DIR"
+            rm -f -- "$SOURCE_ARCHIVE"
+
+            HTTP_PROXY=http://127.0.0.1:7890 \
+            HTTPS_PROXY=http://127.0.0.1:7890 \
+            NO_PROXY=localhost,127.0.0.1 \
+              "$PYTHON" -m pip install --disable-pip-version-check \
+                "$RELEASE_DIR/ocr-api"
+
+            cd "$RELEASE_DIR/ocr-api"
+            "$PYTHON" -m unittest discover -s tests -v
+
+            upsert_env() {
+              local key="$1"
+              local value="$2"
+              local file="$DEPLOY_ROOT/.env"
+              touch "$file"
+              local tmp
+              tmp="$(mktemp)"
+              awk -v key="$key" -v value="$value" '
+                BEGIN { done = 0 }
+                $0 ~ "^" key "=" { print key "=" value; done = 1; next }
+                { print }
+                END { if (!done) print key "=" value }
+              ' "$file" > "$tmp"
+              mv "$tmp" "$file"
+              chmod 600 "$file"
+            }
+
+            upsert_env OCR_MODE real
+            upsert_env OCR_API_TOKEN "$OCR_API_TOKEN"
+            upsert_env OCR_PIPELINE_ROOT /home/bakapiano/maimai-ocr
+            upsert_env OCR_DEVICE cuda
+            upsert_env OCR_MAX_FILES 20
+            upsert_env OCR_MAX_FILE_BYTES 8388608
+            upsert_env OCR_CONCURRENCY 2
+
+            PREVIOUS_RELEASE="$(readlink -f "$DEPLOY_ROOT/current" 2>/dev/null || true)"
+            NEXT_LINK="$DEPLOY_ROOT/.current-${{ github.sha }}"
+            rm -f -- "$NEXT_LINK"
+            ln -s "$RELEASE_DIR" "$NEXT_LINK"
+            mv -Tf "$NEXT_LINK" "$DEPLOY_ROOT/current"
+            printf '%s\n' "${{ github.sha }}" > "$DEPLOY_ROOT/.deploy-revision"
+
+            sudo install -o root -g root -m 0644 \
+              "$RELEASE_DIR/ocr-api/deploy/ocr-api.service" \
+              /etc/systemd/system/maimai-score-hub-ocr.service
+            sudo install -o root -g root -m 0644 \
+              "$RELEASE_DIR/ocr-api/deploy/maimai-score-hub-ocr-tunnel.service" \
+              /etc/systemd/system/maimai-score-hub-ocr-tunnel.service
+            sudo systemctl daemon-reload
+            sudo systemctl enable maimai-score-hub-ocr.service \
+              maimai-score-hub-ocr-tunnel.service
+            sudo systemctl restart maimai-score-hub-ocr.service
+
+            READY=0
+            for attempt in $(seq 1 60); do
+              HEALTH="$(curl -fsS http://127.0.0.1:19100/healthz || true)"
+              if HEALTH="$HEALTH" "$PYTHON" -c \
+                'import json, os, sys; h=json.loads(os.environ["HEALTH"]); sys.exit(0 if h.get("status")=="ok" and h.get("mode")=="real" else 1)' \
+                2>/dev/null; then
+                READY=1
+                echo "$HEALTH"
+                break
+              fi
+              echo "Waiting for OCR API ($attempt/60)"
+              sleep 5
+            done
+
+            if [ "$READY" != "1" ]; then
+              echo "❌ OCR API failed to become ready"
+              sudo journalctl -u maimai-score-hub-ocr.service -n 120 --no-pager
+              if [ -n "$PREVIOUS_RELEASE" ] && [ -d "$PREVIOUS_RELEASE" ]; then
+                ROLLBACK_LINK="$DEPLOY_ROOT/.rollback-${{ github.sha }}"
+                rm -f -- "$ROLLBACK_LINK"
+                ln -s "$PREVIOUS_RELEASE" "$ROLLBACK_LINK"
+                mv -Tf "$ROLLBACK_LINK" "$DEPLOY_ROOT/current"
+                sudo systemctl restart maimai-score-hub-ocr.service
+              fi
+              exit 1
+            fi
+
+            sudo systemctl restart maimai-score-hub-ocr-tunnel.service
+            sudo systemctl is-active --quiet maimai-score-hub-ocr.service
+            sudo systemctl is-active --quiet maimai-score-hub-ocr-tunnel.service
+            echo "✅ OCR API and persistent SSH tunnel are active"

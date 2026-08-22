@@ -5,7 +5,7 @@ Invoke-Pm2 status
 
 Write-Host ""
 Write-Host "== Ports =="
-foreach ($port in @(6379, 9050, 3001, 3002)) {
+foreach ($port in @(6379, 9050, 19100, 3001, 3002)) {
   $ok = Test-NetConnection -ComputerName 127.0.0.1 -Port $port -InformationLevel Quiet
   Write-Host ("{0}: {1}" -f $port, $ok)
 }

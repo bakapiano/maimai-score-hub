@@ -1,0 +1,33 @@
+[Unit]
+Description=maimai Score Hub OCR reverse SSH tunnel to Server 5
+Wants=network-online.target maimai-score-hub-ocr.service
+After=network-online.target maimai-score-hub-ocr.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=bakapiano
+Environment=AUTOSSH_GATETIME=0
+Environment=AUTOSSH_POLL=30
+ExecStart=/usr/bin/autossh -M 0 -N -T \
+  -o BatchMode=yes \
+  -o IdentitiesOnly=yes \
+  -o StrictHostKeyChecking=yes \
+  -o UserKnownHostsFile=/home/bakapiano/.ssh/known_hosts \
+  -o ExitOnForwardFailure=yes \
+  -o ConnectTimeout=10 \
+  -o ConnectionAttempts=3 \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -o TCPKeepAlive=yes \
+  -o IPQoS=none \
+  -i /home/bakapiano/.ssh/id_ed25519_ocr_tunnel \
+  -R 172.17.0.1:19100:127.0.0.1:19100 \
+  ocr-tunnel@175.178.13.169
+Restart=always
+RestartSec=10
+TimeoutStartSec=30
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

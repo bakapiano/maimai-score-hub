@@ -1,0 +1,21 @@
+[Unit]
+Description=maimai Score Hub OCR API
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=bakapiano
+WorkingDirectory=/home/bakapiano/maimai-score-hub-ocr/current/ocr-api
+EnvironmentFile=/home/bakapiano/maimai-score-hub-ocr/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bakapiano/bench-venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 19100
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+TimeoutStopSec=30
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target

@@ -56,10 +56,12 @@ import { AppCard } from "../components/AppCard";
 import { ProberUpdateCard } from "../components/ProberUpdateCard";
 import { RadioCardGroup } from "../components/RadioCardGroup";
 import { QrCredentialInput } from "../components/QrCredentialInput";
+import { ScoreOcrImport } from "../features/score-ocr/ScoreOcrImport";
 import { SyncMetric } from "../components/SyncMetric";
 import { FriendRequestAcceptanceAlert } from "../components/FriendRequestVerification";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { type AuthProfile, useAuth } from "../providers/AuthContext";
+import { useMusic } from "../providers/MusicContext";
 import { useNavigate } from "react-router-dom";
 import { runWhenIdle, scheduleIdleTask } from "../utils/idle";
 import {
@@ -92,7 +94,7 @@ type LatestSyncPayload = Partial<Omit<LastSyncInfo, "scoreCount">> & {
   scoreCount?: number;
 };
 
-type SyncMethod = "dxnet_bot" | "cabinet_qr";
+type SyncMethod = "dxnet_bot" | "cabinet_qr" | "image_ocr";
 
 const DXNET_LOW_SUCCESS_RATE_THRESHOLD = 60;
 const DXNET_STATS_MIN_TERMINAL_COUNT = 10;
@@ -533,6 +535,11 @@ export default function SyncPage() {
     profileError: authProfileError,
     refreshProfile,
   } = useAuth();
+  const {
+    musics,
+    loading: musicLoading,
+    error: musicError,
+  } = useMusic();
   const navigate = useNavigate();
 
   // Profile state
@@ -546,11 +553,15 @@ export default function SyncPage() {
 
   // Sync job state
   const [syncMethod, setSyncMethod] = useState<SyncMethod>(
-    () =>
-      typeof window !== "undefined" &&
-      window.localStorage.getItem("sync_update_method") === "cabinet_qr"
-        ? "cabinet_qr"
-        : "dxnet_bot",
+    () => {
+      const stored =
+        typeof window === "undefined"
+          ? null
+          : window.localStorage.getItem("sync_update_method");
+      return stored === "cabinet_qr" || stored === "image_ocr"
+        ? stored
+        : "dxnet_bot";
+    },
   );
   const [syncJobId, setSyncJobId] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<JobStatus | null>(null);
@@ -813,6 +824,9 @@ export default function SyncPage() {
     if (!token) {
       return;
     }
+    if (syncMethod === "image_ocr") {
+      return;
+    }
     if (syncMethod === "cabinet_qr") {
       const value = qrText.trim();
       if (!value || !profile?.hasCabinetUserId) {
@@ -1015,7 +1029,7 @@ export default function SyncPage() {
                 <RadioCardGroup
                   value={syncMethod}
                   onChange={(value) => {
-                    const nextMethod = value as "dxnet_bot" | "cabinet_qr";
+                    const nextMethod = value as SyncMethod;
                     if (nextMethod === "dxnet_bot") {
                       setDxnetStats(null);
                     }
@@ -1034,6 +1048,11 @@ export default function SyncPage() {
                       value: "cabinet_qr",
                       name: "二维码",
                       description: "使用机台二维码读取完整游戏成绩",
+                    },
+                    {
+                      value: "image_ocr",
+                      name: "图片识别",
+                      description: "拍照或从相册批量识别结算图",
                     },
                   ]}
                 />
@@ -1079,6 +1098,33 @@ export default function SyncPage() {
                     </Stack>
                   ))}
 
+                {syncMethod === "image_ocr" && (
+                  <Stack gap="sm">
+                    <Text size="sm" c="dimmed">
+                      拍摄一张结算图，或从相册一次选择最多 20 张。识别后可以修改曲目和成绩，再确认更新。
+                    </Text>
+                    {musicError && musics.length === 0 ? (
+                      <Alert color="red">乐曲信息加载失败：{musicError}</Alert>
+                    ) : (
+                      <ScoreOcrImport
+                        musics={musics}
+                        disabled={
+                          pageLoading || musicLoading || musics.length === 0
+                        }
+                        onImported={() => loadLastSync({ force: true })}
+                      />
+                    )}
+                    {musicLoading && musics.length === 0 && (
+                      <Group gap="xs">
+                        <Loader size="xs" />
+                        <Text size="sm" c="dimmed">
+                          正在加载乐曲信息…
+                        </Text>
+                      </Group>
+                    )}
+                  </Stack>
+                )}
+
                 <DxnetDifficultySwitch
                   isDxnet={syncMethod === "dxnet_bot"}
                   hasExistingScores={hasExistingScores}
@@ -1087,7 +1133,7 @@ export default function SyncPage() {
                   onChange={setUpdateAllDifficulties}
                 />
 
-                {!cabinetBindingRequired && (
+                {syncMethod !== "image_ocr" && !cabinetBindingRequired && (
                   <Group justify="space-between" align="center" wrap="wrap">
                     <Group gap="sm" align="center" wrap="nowrap">
                       <Box

@@ -18,6 +18,35 @@
 
     // ─── Backend (NestJS) ───
     {
+      "label": "ocr-api:dev",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File ..\\scripts\\dev\\run-ocr-api.ps1",
+      "options": {
+        "cwd": "${workspaceFolder}/ocr-api",
+        "env": {
+          "OCR_MODE": "fake",
+          "OCR_API_TOKEN": "change-me-local-ocr"
+        }
+      },
+      "isBackground": true,
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev"
+      },
+      "problemMatcher": {
+        "pattern": { "regexp": "^(.*)$", "file": 1, "location": 2, "message": 3 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Started server process",
+          "endsPattern": "Application startup complete"
+        }
+      }
+    },
+
+    // ─── Backend (NestJS) ───
+    {
       "label": "backend:dev",
       "type": "shell",
       "command": "npm run start:dev",
@@ -153,6 +182,7 @@
     {
       "label": "dev:all",
       "dependsOn": [
+        "ocr-api:dev",
         "backend:dev",
         "frontend:dev",
         "worker:dev",

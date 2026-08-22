@@ -31,6 +31,7 @@ import { MusicCatalogController } from './catalog/music-catalog.controller';
 import { MusicModule } from '../modules/music/music.module';
 import { ObservabilityController } from './observability/observability.controller';
 import { ObservabilityModule } from '../modules/observability/observability.module';
+import { OcrModule } from '../modules/ocr/ocr.module';
 import { PublicStatisticsController } from './public/public-statistics.controller';
 import { ProberExportModule } from '../modules/prober-export/prober-export.module';
 import { ScoreExportModule } from '../modules/score-export/score-export.module';
@@ -61,6 +62,7 @@ import { DxnetBotAssignmentBusyFilter } from '../modules/job/dxnet-job.exception
     JobModule,
     MusicModule,
     ObservabilityModule,
+    OcrModule,
     ProberExportModule,
     ScoreExportModule,
     SdgbWorkerModule,

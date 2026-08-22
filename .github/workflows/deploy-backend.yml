@@ -64,13 +64,14 @@ jobs:
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
           ARTIFACT_SHARED_SECRET: ${{ secrets.ARTIFACT_SHARED_SECRET }}
+          OCR_API_TOKEN: ${{ secrets.OCR_API_TOKEN }}
         with:
           host: ${{ secrets.BACKEND_HOST }}
           username: ${{ secrets.BACKEND_USER }}
           port: ${{ secrets.BACKEND_PORT }}
           key: ${{ secrets.SSH_KEY }}
           command_timeout: 30m
-          envs: ADMIN_PASSWORD,API_SHARED_SECRET,REDIS_PASSWORD,CLICKHOUSE_PASSWORD,ARTIFACT_SHARED_SECRET
+          envs: ADMIN_PASSWORD,API_SHARED_SECRET,REDIS_PASSWORD,CLICKHOUSE_PASSWORD,ARTIFACT_SHARED_SECRET,OCR_API_TOKEN
           script: |
             DEPLOY_PATH="${{ secrets.BACKEND_PATH }}"
             SOURCE_ARCHIVE="/tmp/maimai-score-hub-backend-${{ github.sha }}.tgz"
@@ -80,6 +81,10 @@ jobs:
             fi
             if [ ! -f "$SOURCE_ARCHIVE" ]; then
               echo "❌ Source archive not found: $SOURCE_ARCHIVE"
+              exit 1
+            fi
+            if [ -z "${OCR_API_TOKEN:-}" ]; then
+              echo "❌ OCR_API_TOKEN secret is required"
               exit 1
             fi
 
@@ -165,6 +170,9 @@ jobs:
             upsert_env CLICKHOUSE_PASSWORD "${CLICKHOUSE_PASSWORD:-${ADMIN_PASSWORD:-}}"
             upsert_env ARTIFACT_SERVICE_URL "http://host.docker.internal:3901"
             upsert_env ARTIFACT_SHARED_SECRET "${ARTIFACT_SHARED_SECRET:-${ADMIN_PASSWORD:-}}"
+            upsert_env OCR_API_URL "http://host.docker.internal:19100"
+            upsert_env OCR_API_TOKEN "${OCR_API_TOKEN}"
+            upsert_env OCR_API_TIMEOUT_MS "180000"
             printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
 
             cd backend
@@ -293,6 +301,15 @@ jobs:
               npm run migrate:dxnet-routing-indexes
 
             sudo $COMPOSE_CMD up -d nginx
+
+            if ! sudo $COMPOSE_CMD exec -T backend \
+              curl -fsS http://host.docker.internal:19100/healthz \
+              | grep -q '"mode":"real"'; then
+              echo "❌ Backend container cannot reach the real OCR API tunnel"
+              sudo $COMPOSE_CMD exec -T backend \
+                curl -v http://host.docker.internal:19100/healthz || true
+              exit 1
+            fi
 
             # Final state check via nginx (the public path users hit)
             for i in 1 2 3 4 5; do

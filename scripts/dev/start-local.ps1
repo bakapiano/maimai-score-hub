@@ -2,6 +2,7 @@
 
 $ErrorActionPreference = "Stop"
 $root = Get-RepoRoot
+Import-LocalDevEnv
 $env:NODE_OPTIONS = "--max-old-space-size=4096"
 
 Write-Host "== Checking local prerequisites =="
@@ -15,6 +16,30 @@ if (-not (Test-Path $memuraiBinary)) {
 }
 
 Write-Host "== Building shared and backend =="
+$ocrApiRoot = Join-Path $root "ocr-api"
+$ocrMode = if ($env:OCR_MODE) { $env:OCR_MODE } else { "real" }
+$ocrPipelineRoot = if ($env:OCR_PIPELINE_ROOT) { $env:OCR_PIPELINE_ROOT } else { "D:\ocr\ocr" }
+$apiPython = Join-Path $ocrApiRoot ".venv\Scripts\python.exe"
+$pipelinePython = if ($env:OCR_PYTHON) {
+  $env:OCR_PYTHON
+} else {
+  Join-Path $ocrPipelineRoot ".venv\Scripts\python.exe"
+}
+$ocrPython = if ($ocrMode -eq "real") { $pipelinePython } else { $apiPython }
+if (-not (Test-Path -LiteralPath $ocrPython)) {
+  if ($ocrMode -eq "real") {
+    throw "Real OCR Python environment not found: $ocrPython"
+  }
+  Write-Host "== Creating fake OCR API virtual environment =="
+  python -m venv (Join-Path $ocrApiRoot ".venv")
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+& $ocrPython -c "import app, fastapi, httpx, multipart, uvicorn" 2>$null
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "== Installing OCR API into selected Python environment =="
+  & $ocrPython -m pip install --disable-pip-version-check -e $ocrApiRoot
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 Push-Location $root
 try {
   npm --prefix shared run build
@@ -52,6 +77,7 @@ if (-not $redisReady) {
 }
 Write-Host "== Starting PM2 local dev services =="
 $serviceApps = @(
+  "msh-ocr-api",
   "msh-backend",
   "msh-frontend",
   "msh-admin",
@@ -63,6 +89,9 @@ $serviceApps = @(
   "msh-devtunnel",
   "msh-admin-devtunnel"
 ) -join ","
+# PM2 keeps the original executable when an existing app changes Python env.
+# Recreate this one process so switching fake/real always uses the selected env.
+Invoke-Pm2 delete msh-ocr-api *> $null
 Invoke-Pm2 start ecosystem.local-dev.config.cjs --only $serviceApps --update-env
 Invoke-Pm2 status
 

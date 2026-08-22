@@ -3,6 +3,21 @@ const fs = require("node:fs");
 
 const root = __dirname;
 const env = readEnvFile(path.join(root, ".env.local-dev"));
+const ocrMode = env.OCR_MODE || "real";
+const ocrPipelineRoot = env.OCR_PIPELINE_ROOT || "D:\\ocr\\ocr";
+const apiPythonCandidate = path.join(
+  root,
+  "ocr-api",
+  ".venv",
+  "Scripts",
+  "python.exe",
+);
+const pipelinePythonCandidate =
+  env.OCR_PYTHON || path.join(ocrPipelineRoot, ".venv", "Scripts", "python.exe");
+const selectedOcrPython = ocrMode === "real" ? pipelinePythonCandidate : apiPythonCandidate;
+const ocrPython = fs.existsSync(selectedOcrPython)
+  ? selectedOcrPython
+  : "python";
 const fakeSdgb = env.SDGB_FAKE_UPSTREAM === "1";
 const sdgbDesiredActiveCount = fakeSdgb ? "2" : "1";
 
@@ -69,6 +84,24 @@ function readEnvFile(file) {
 module.exports = {
   apps: [
     {
+      name: "msh-ocr-api",
+      script: ocrPython,
+      args: "-m uvicorn app.main:app --host 127.0.0.1 --port 19100",
+      cwd: path.join(root, "ocr-api"),
+      interpreter: "none",
+      env: {
+        OCR_MODE: ocrMode,
+        OCR_API_TOKEN: env.OCR_API_TOKEN || "change-me-local-ocr",
+        OCR_MAX_FILES: env.OCR_MAX_FILES || "20",
+        OCR_MAX_FILE_BYTES: env.OCR_MAX_FILE_BYTES || "8388608",
+        OCR_CONCURRENCY: env.OCR_CONCURRENCY || "2",
+        OCR_PIPELINE_ROOT: ocrPipelineRoot,
+        OCR_DEVICE: env.OCR_DEVICE || "cuda",
+      },
+      autorestart: true,
+      max_restarts: 5,
+    },
+    {
       name: "msh-backend",
       script: path.join(root, "backend", "dist", "main.js"),
       cwd: path.join(root, "backend"),
@@ -84,6 +117,9 @@ module.exports = {
         REDIS_DB: "0",
         REDIS_KEY_PREFIX: "maimai:",
         AUTH_JWT_SECRET: "change-me-local",
+        OCR_API_URL: "http://127.0.0.1:19100",
+        OCR_API_TOKEN: env.OCR_API_TOKEN || "change-me-local-ocr",
+        OCR_API_TIMEOUT_MS: env.OCR_API_TIMEOUT_MS || "180000",
         SKIP_AUTH: "true",
         PROBER_AUTO_EXPORT_ENABLED: "false",
         OBSERVABILITY_ENV: "dev",

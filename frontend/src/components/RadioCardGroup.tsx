@@ -21,7 +21,7 @@ export function RadioCardGroup({
 }) {
   return (
     <Radio.Group value={value} onChange={onChange}>
-      <SimpleGrid cols={2} spacing="xs">
+      <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="xs">
         {data.map((item) => (
           <Radio.Card
             className={classes.root}

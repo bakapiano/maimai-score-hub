@@ -193,6 +193,8 @@ export type CabinetScoreJob = z.infer<typeof CabinetScoreJobSchema>;
 
 export const ManualScoreFcSchema = z.enum(["fc", "fcp", "ap", "app"]);
 export const ManualScoreFsSchema = z.enum(["fs", "fsp", "fdx", "fdxp"]);
+export type ManualScoreFc = z.infer<typeof ManualScoreFcSchema>;
+export type ManualScoreFs = z.infer<typeof ManualScoreFsSchema>;
 
 export const ManualScoreUpdateItemSchema = z
   .object({

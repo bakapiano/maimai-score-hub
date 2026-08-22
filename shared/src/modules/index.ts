@@ -9,3 +9,4 @@ export * from './cover';
 export * from './score-export';
 export * from './sdgb-worker';
 export * from './observability';
+export * from './ocr';

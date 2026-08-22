@@ -10,6 +10,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "lint:check": "eslint . --max-warnings=0",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview"
   },

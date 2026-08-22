@@ -9,6 +9,7 @@
     "lint": "eslint \"src/**/*.ts\" \"scripts/**/*.mjs\" --max-warnings=0",
     "check": "npm run typecheck && npm run lint",
     "test": "npm run test:local",
+    "test:ocr:local": "npm run check && node --test --test-concurrency=1 --experimental-strip-types src/ocr-flow.e2e.test.ts",
     "test:local": "npm run build:subjects && npm run check && cross-env E2E_INFRA=local node --test --test-concurrency=1 --experimental-strip-types src/sdgb.e2e.test.ts",
     "test:containers": "npm run build:subjects && npm run check && cross-env E2E_INFRA=containers node --test --test-concurrency=1 --experimental-strip-types src/sdgb.e2e.test.ts"
   },
