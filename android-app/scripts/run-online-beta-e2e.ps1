@@ -127,12 +127,24 @@ function Install-BetaApk([string]$ResolvedApk) {
     }
 }
 
-function Approve-VpnConsent {
-    $deadline = (Get-Date).AddSeconds(15)
+function Approve-StartupConsents {
+    $deadline = (Get-Date).AddSeconds(25)
     while ((Get-Date) -lt $deadline) {
         $nodes = @(Get-UiNodes)
+        $notification = $nodes | Where-Object {
+            $_.package -match 'permissioncontroller' -and (
+                $_.'resource-id' -match 'permission_allow' -or
+                $_.text -eq '允许'
+            )
+        } | Select-Object -First 1
+        if ($notification) {
+            Tap-UiNode $notification | Out-Null
+            Write-E2eStatus 'Notification permission approved'
+            Start-Sleep -Milliseconds 500
+            continue
+        }
         $allow = $nodes | Where-Object {
-            $_.package -eq 'com.android.vpndialogs' -and (
+            $_.package -match '(vpndialogs|wirelesssettings)$' -and (
                 $_.'resource-id' -eq 'android:id/button1' -or
                 $_.text -eq '确定' -or
                 $_.text -eq '允许'
@@ -184,7 +196,7 @@ function Start-OnlineMode(
     Invoke-Adb shell input keyevent 82 | Out-Null
     Invoke-Adb shell am start -n $componentName --es e2e_mode $Mode | Out-Null
     if ($Mode -eq 'login') {
-        Approve-VpnConsent
+        Approve-StartupConsents
     }
     Start-Sleep -Seconds 12
 
@@ -235,7 +247,7 @@ if ($assetLinksResponse.StatusCode -ne 200 -or
 Write-E2eStatus "ONLINE backend=ok workflow=$($manifest.workflowVersion)"
 & $AdbPath -s $DeviceSerial uninstall $packageName 2>$null | Out-Null
 Install-BetaApk -ResolvedApk $resolvedApk
-Invoke-Adb shell pm grant $packageName android.permission.POST_NOTIFICATIONS | Out-Null
+& $AdbPath -s $DeviceSerial shell pm grant $packageName android.permission.POST_NOTIFICATIONS 2>$null | Out-Null
 
 $packageDump = Invoke-Adb shell dumpsys package $packageName
 if ($packageDump -notmatch 'versionName=0\.2\.0-beta') {
