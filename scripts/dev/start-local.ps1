@@ -18,12 +18,12 @@ if (-not (Test-Path $memuraiBinary)) {
 Write-Host "== Building shared and backend =="
 $ocrApiRoot = Join-Path $root "ocr-api"
 $ocrMode = if ($env:OCR_MODE) { $env:OCR_MODE } else { "real" }
-$ocrPipelineRoot = if ($env:OCR_PIPELINE_ROOT) { $env:OCR_PIPELINE_ROOT } else { "D:\ocr\ocr" }
+$ocrPipelineRoot = if ($env:OCR_PIPELINE_ROOT) { $env:OCR_PIPELINE_ROOT } else { Join-Path $ocrApiRoot "pipeline" }
 $apiPython = Join-Path $ocrApiRoot ".venv\Scripts\python.exe"
 $pipelinePython = if ($env:OCR_PYTHON) {
   $env:OCR_PYTHON
 } else {
-  Join-Path $ocrPipelineRoot ".venv\Scripts\python.exe"
+  "D:\ocr\ocr\.venv\Scripts\python.exe"
 }
 $ocrPython = if ($ocrMode -eq "real") { $pipelinePython } else { $apiPython }
 if (-not (Test-Path -LiteralPath $ocrPython)) {

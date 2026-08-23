@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 
 from .config import Settings
+from .catalog import CatalogScheduler
 from .models import BatchRecognitionResponse, RecognitionItem
 from .recognizer import Recognizer, build_recognizer
 
@@ -19,7 +21,22 @@ def create_app(
     resolved_settings = settings or Settings.from_env()
     resolved_recognizer = recognizer or build_recognizer(resolved_settings)
     semaphore = asyncio.Semaphore(resolved_settings.concurrency)
-    app = FastAPI(title="maimai Score Hub OCR API", version="0.1.0")
+    catalog = CatalogScheduler(resolved_settings, resolved_recognizer)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        await catalog.start()
+        try:
+            yield
+        finally:
+            await catalog.stop()
+
+    app = FastAPI(
+        title="maimai Score Hub OCR API",
+        version="0.1.0",
+        lifespan=lifespan,
+    )
+    app.state.catalog = catalog
 
     @app.get("/healthz")
     async def healthz() -> dict[str, object]:
@@ -27,6 +44,7 @@ def create_app(
             "status": "ok",
             "mode": resolved_settings.mode,
             "maxFiles": resolved_settings.max_files,
+            "catalog": catalog.status(),
         }
 
     @app.post("/v1/recognize", response_model=BatchRecognitionResponse)

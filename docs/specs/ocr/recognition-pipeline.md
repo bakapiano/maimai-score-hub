@@ -8,12 +8,13 @@
 
 ## real 模式
 
-1. 优先从 `OCR_PIPELINE_ROOT/prod_run.py` 导入 `build_pipe()`；本地源码树直接导入 `final.pipeline.MaimaiPipeline`。
+1. 从仓库内 `ocr-api/pipeline/prod_run.py` 导入 `build_pipe()`。
 2. 启动时加载现有 `MaimaiPipeline` 和 Paddle text recognizer。
 3. 每张图片解码为 BGR 并执行完整 pipeline。
 4. 合并 `music.topk` 与 `title.topk`，最多返回 3 个去重候选。
 5. 提取 achievement、difficulty、level、SD/DX 和 FC。
 6. 使用 `dx_score` anchor 识别当前 DX 分数。
+7. API 每小时刷新一次曲库；新曲 Gallery 构建完成后热加载。
 
 ## FS 状态
 

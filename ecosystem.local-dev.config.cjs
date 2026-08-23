@@ -4,7 +4,8 @@ const fs = require("node:fs");
 const root = __dirname;
 const env = readEnvFile(path.join(root, ".env.local-dev"));
 const ocrMode = env.OCR_MODE || "real";
-const ocrPipelineRoot = env.OCR_PIPELINE_ROOT || "D:\\ocr\\ocr";
+const ocrPipelineRoot =
+  env.OCR_PIPELINE_ROOT || path.join(root, "ocr-api", "pipeline");
 const apiPythonCandidate = path.join(
   root,
   "ocr-api",
@@ -13,7 +14,7 @@ const apiPythonCandidate = path.join(
   "python.exe",
 );
 const pipelinePythonCandidate =
-  env.OCR_PYTHON || path.join(ocrPipelineRoot, ".venv", "Scripts", "python.exe");
+  env.OCR_PYTHON || "D:\\ocr\\ocr\\.venv\\Scripts\\python.exe";
 const selectedOcrPython = ocrMode === "real" ? pipelinePythonCandidate : apiPythonCandidate;
 const ocrPython = fs.existsSync(selectedOcrPython)
   ? selectedOcrPython
@@ -97,6 +98,9 @@ module.exports = {
         OCR_CONCURRENCY: env.OCR_CONCURRENCY || "2",
         OCR_PIPELINE_ROOT: ocrPipelineRoot,
         OCR_DEVICE: env.OCR_DEVICE || "cuda",
+        OCR_CATALOG_ENABLED: env.OCR_CATALOG_ENABLED || "false",
+        OCR_CATALOG_ROOT:
+          env.OCR_CATALOG_ROOT || path.join(root, ".local-dev", "ocr-catalog"),
       },
       autorestart: true,
       max_restarts: 5,

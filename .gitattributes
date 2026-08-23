@@ -1,0 +1,4 @@
+ocr-api/pipeline/models/*.pt filter=lfs diff=lfs merge=lfs -text
+ocr-api/pipeline/models/*.onnx filter=lfs diff=lfs merge=lfs -text
+ocr-api/pipeline/models/*.onnx.data filter=lfs diff=lfs merge=lfs -text
+ocr-api/pipeline/models/*.npz filter=lfs diff=lfs merge=lfs -text

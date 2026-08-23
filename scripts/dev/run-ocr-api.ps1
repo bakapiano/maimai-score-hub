@@ -3,8 +3,8 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $ocrApiRoot = Join-Path $root "ocr-api"
 $mode = if ($env:OCR_MODE) { $env:OCR_MODE } else { "real" }
-$pipelineRoot = if ($env:OCR_PIPELINE_ROOT) { $env:OCR_PIPELINE_ROOT } else { "D:\ocr\ocr" }
-$pipelinePython = Join-Path $pipelineRoot ".venv\Scripts\python.exe"
+$pipelineRoot = if ($env:OCR_PIPELINE_ROOT) { $env:OCR_PIPELINE_ROOT } else { Join-Path $ocrApiRoot "pipeline" }
+$pipelinePython = if ($env:OCR_PYTHON) { $env:OCR_PYTHON } else { "D:\ocr\ocr\.venv\Scripts\python.exe" }
 $apiPython = Join-Path $ocrApiRoot ".venv\Scripts\python.exe"
 $ocrPython = if ($mode -eq "real") { $pipelinePython } else { $apiPython }
 
@@ -25,6 +25,7 @@ if ($LASTEXITCODE -ne 0) {
 if (-not $env:OCR_MODE) { $env:OCR_MODE = $mode }
 if (-not $env:OCR_PIPELINE_ROOT) { $env:OCR_PIPELINE_ROOT = $pipelineRoot }
 if (-not $env:OCR_API_TOKEN) { $env:OCR_API_TOKEN = "change-me-local-ocr" }
+if (-not $env:OCR_CATALOG_ENABLED) { $env:OCR_CATALOG_ENABLED = "false" }
 
 Push-Location $ocrApiRoot
 try {

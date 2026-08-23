@@ -1,6 +1,6 @@
 # OCR 当前状态
 
-最后核对：2026-08-22
+最后核对：2026-08-23
 
 ## 当前仓库
 
@@ -13,6 +13,12 @@ ocr-api/
     recognizer.py    # fake/real recognizer 与结果归一化
     models.py        # API response models
     config.py        # 环境变量
+  pipeline/
+    prod_run.py      # 生产入口
+    final/           # 完整识别 pipeline
+    models/          # Git LFS 管理的生产模型与初始 Gallery
+    scripts/         # Title/Cover Gallery 构建脚本
+    catalog_refresh.py
   tests/
   deploy/ocr-api.service
   pyproject.toml
@@ -30,7 +36,7 @@ ocr-api/
 
 ## 模型源码
 
-完整模型 pipeline 位于 `D:\ocr\ocr`，101 对应 `/home/bakapiano/maimai-ocr`。本地实际入口和模型代码为：
+完整模型 pipeline 已收拢到 `ocr-api/pipeline/`。实际入口和模型代码为：
 
 - `final/pipeline.py`
 - `final/anchors.py`
@@ -38,11 +44,13 @@ ocr-api/
 - `final/cover_arcface_pipeline.py`
 - `final/title_arcface_pipeline.py`
 
-`D:\ocr\ocr` 当前没有 `prod_run.py`。real 模式在本地直接加载 `final.pipeline.MaimaiPipeline`；部署目录存在 `prod_run.py` 时优先调用其中的 `build_pipe()`。API 包保存服务边界与结果归一化，模型文件仍由 OCR 源码目录提供。
+real 模式统一调用 `prod_run.py`。101 的 release 包含 API、pipeline 与模型，
+`/home/bakapiano/maimai-score-hub-ocr/catalog` 持久化封面缓存和增量 Gallery。
+API 每小时刷新曲库清单，并在出现新曲时增量构建 Cover/Title Gallery。
 
 ## 已验证行为
 
-- Python API tests：6/6。
+- Python API/catalog tests：10 个通过，真实模型测试在普通环境跳过。
 - frontend tests：11/11。
 - backend OCR service tests：3/3。
 - shared、frontend、backend 生产构建通过。
@@ -64,5 +72,8 @@ difficulty=master
 isDx=false
 dxScore=2575
 ```
+
+该图片已加入 `ocr-api/tests/fixtures/`。OCR 部署在切换 release 前使用 CPU
+执行真实模型回归并断言以上结果；普通测试固定校验 fixture SHA-256。
 
 DX 分数的完整 PaddleOCR 文本为 `2575/277`；API 提取 `/` 左侧的当前分数 `2575`。分隔符缺失时使用 anchor crop 左侧 40% 再识别。

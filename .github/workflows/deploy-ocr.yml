@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - uses: actions/setup-python@v5
         with:
@@ -36,22 +38,28 @@ jobs:
   deploy:
     needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Package source
         run: |
+          test -s ocr-api/pipeline/prod_run.py
+          (cd ocr-api/pipeline/models && sha256sum -c SHA256SUMS)
           tar -czf /tmp/maimai-score-hub-ocr-${GITHUB_SHA}.tgz ocr-api
           sha256sum /tmp/maimai-score-hub-ocr-${GITHUB_SHA}.tgz
 
       - name: Upload source archive to Server 101
-        timeout-minutes: 20
+        timeout-minutes: 40
         env:
           DEPLOY_HOST: ${{ secrets.WORKER_3_HOST }}
           DEPLOY_USER: ${{ secrets.WORKER_3_USER }}
           DEPLOY_PORT: ${{ secrets.WORKER_3_PORT }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
+          UPLOAD_ATTEMPT_TIMEOUT_SECONDS: 1800
+          UPLOAD_STALL_TIMEOUT_SECONDS: 180
         run: |
           bash .github/scripts/upload-deploy-archive.sh \
             "/tmp/maimai-score-hub-ocr-${GITHUB_SHA}.tgz" \
@@ -88,10 +96,6 @@ jobs:
               echo "❌ OCR Python environment is missing: $PYTHON"
               exit 1
             fi
-            if [ ! -f /home/bakapiano/maimai-ocr/prod_run.py ]; then
-              echo "❌ Existing OCR model pipeline is missing"
-              exit 1
-            fi
             if [ ! -f /home/bakapiano/.ssh/id_ed25519_ocr_tunnel ]; then
               echo "❌ Host-only OCR tunnel key is missing"
               exit 1
@@ -105,14 +109,34 @@ jobs:
             tar -xzf "$SOURCE_ARCHIVE" -C "$RELEASE_DIR"
             rm -f -- "$SOURCE_ARCHIVE"
 
+            PIPELINE_ROOT="$RELEASE_DIR/ocr-api/pipeline"
+            CATALOG_ROOT="$DEPLOY_ROOT/catalog"
+            test -s "$PIPELINE_ROOT/prod_run.py"
+            (cd "$PIPELINE_ROOT/models" && sha256sum -c SHA256SUMS)
+            mkdir -p "$CATALOG_ROOT/covers" "$CATALOG_ROOT/galleries"
+
             HTTP_PROXY=http://127.0.0.1:7890 \
             HTTPS_PROXY=http://127.0.0.1:7890 \
             NO_PROXY=localhost,127.0.0.1 \
               "$PYTHON" -m pip install --disable-pip-version-check \
                 "$RELEASE_DIR/ocr-api"
 
+            PYTHONPATH="$PIPELINE_ROOT" "$PYTHON" -c \
+              'import cv2, numpy, onnxruntime, torch, torchvision, ultralytics; import final.pipeline, prod_run'
+
             cd "$RELEASE_DIR/ocr-api"
             "$PYTHON" -m unittest discover -s tests -v
+            OCR_RUN_REAL_MODEL_TESTS=1 \
+            OCR_REAL_TEST_DEVICE=cpu \
+            PYTHONPATH="$RELEASE_DIR/ocr-api" \
+              "$PYTHON" -m unittest tests.test_real_pipeline -v
+
+            ENV_BACKUP="$DEPLOY_ROOT/.env.rollback-${{ github.sha }}"
+            ENV_EXISTED=0
+            if [ -f "$DEPLOY_ROOT/.env" ]; then
+              cp -p -- "$DEPLOY_ROOT/.env" "$ENV_BACKUP"
+              ENV_EXISTED=1
+            fi
 
             upsert_env() {
               local key="$1"
@@ -133,11 +157,21 @@ jobs:
 
             upsert_env OCR_MODE real
             upsert_env OCR_API_TOKEN "$OCR_API_TOKEN"
-            upsert_env OCR_PIPELINE_ROOT /home/bakapiano/maimai-ocr
+            upsert_env OCR_PIPELINE_ROOT "$DEPLOY_ROOT/current/ocr-api/pipeline"
             upsert_env OCR_DEVICE cuda
             upsert_env OCR_MAX_FILES 20
             upsert_env OCR_MAX_FILE_BYTES 8388608
             upsert_env OCR_CONCURRENCY 2
+            upsert_env OCR_CATALOG_ENABLED true
+            upsert_env OCR_CATALOG_ROOT "$CATALOG_ROOT"
+            upsert_env OCR_CATALOG_REFRESH_SECONDS 3600
+            upsert_env OCR_CATALOG_REFRESH_TIMEOUT_SECONDS 3300
+            upsert_env OCR_CATALOG_INITIAL_DELAY_SECONDS 10
+            upsert_env OCR_CATALOG_COVER_WORKERS 6
+            upsert_env OCR_CATALOG_BUILD_DEVICE cpu
+            upsert_env HTTPS_PROXY http://127.0.0.1:7890
+            upsert_env HTTP_PROXY http://127.0.0.1:7890
+            upsert_env NO_PROXY localhost,127.0.0.1
 
             PREVIOUS_RELEASE="$(readlink -f "$DEPLOY_ROOT/current" 2>/dev/null || true)"
             NEXT_LINK="$DEPLOY_ROOT/.current-${{ github.sha }}"
@@ -161,7 +195,7 @@ jobs:
             for attempt in $(seq 1 60); do
               HEALTH="$(curl -fsS http://127.0.0.1:19100/healthz || true)"
               if HEALTH="$HEALTH" "$PYTHON" -c \
-                'import json, os, sys; h=json.loads(os.environ["HEALTH"]); sys.exit(0 if h.get("status")=="ok" and h.get("mode")=="real" else 1)' \
+                'import json, os, sys; h=json.loads(os.environ["HEALTH"]); c=h.get("catalog") or {}; sys.exit(0 if h.get("status")=="ok" and h.get("mode")=="real" and c.get("enabled") is True else 1)' \
                 2>/dev/null; then
                 READY=1
                 echo "$HEALTH"
@@ -175,6 +209,11 @@ jobs:
               echo "❌ OCR API failed to become ready"
               sudo journalctl -u maimai-score-hub-ocr.service -n 120 --no-pager
               if [ -n "$PREVIOUS_RELEASE" ] && [ -d "$PREVIOUS_RELEASE" ]; then
+                if [ "$ENV_EXISTED" = "1" ]; then
+                  cp -p -- "$ENV_BACKUP" "$DEPLOY_ROOT/.env"
+                else
+                  rm -f -- "$DEPLOY_ROOT/.env"
+                fi
                 ROLLBACK_LINK="$DEPLOY_ROOT/.rollback-${{ github.sha }}"
                 rm -f -- "$ROLLBACK_LINK"
                 ln -s "$PREVIOUS_RELEASE" "$ROLLBACK_LINK"
@@ -187,4 +226,16 @@ jobs:
             sudo systemctl restart maimai-score-hub-ocr-tunnel.service
             sudo systemctl is-active --quiet maimai-score-hub-ocr.service
             sudo systemctl is-active --quiet maimai-score-hub-ocr-tunnel.service
+            rm -f -- "$ENV_BACKUP"
+
+            mapfile -t OLD_RELEASES < <(
+              find "$DEPLOY_ROOT/releases" -mindepth 1 -maxdepth 1 -type d \
+                -printf '%T@ %p\n' | sort -rn | tail -n +4 | cut -d' ' -f2-
+            )
+            for old_release in "${OLD_RELEASES[@]}"; do
+              case "$old_release" in
+                "$DEPLOY_ROOT"/releases/*) rm -rf -- "$old_release" ;;
+                *) echo "Refusing to remove unexpected release path: $old_release" >&2; exit 1 ;;
+              esac
+            done
             echo "✅ OCR API and persistent SSH tunnel are active"

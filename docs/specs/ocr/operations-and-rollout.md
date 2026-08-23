@@ -2,7 +2,8 @@
 
 ## 本地全套
 
-本地默认加载 `D:\ocr\ocr` 的真实模型环境，并把 `ocr-api/` 安装到该环境：
+本地使用 `D:\ocr\ocr` 的 Python/GPU 环境运行仓库内
+`ocr-api/pipeline/` 的真实模型：
 
 ```powershell
 npm run dev:local:start
@@ -54,7 +55,7 @@ OCR_MODE=real
 OCR_API_URL=http://127.0.0.1:19100
 OCR_API_TOKEN=change-me-local-ocr
 OCR_API_TIMEOUT_MS=180000
-OCR_PIPELINE_ROOT=D:\ocr\ocr
+OCR_PIPELINE_ROOT=D:\maimaidx-prober-proxy-updater\ocr-api\pipeline
 OCR_PYTHON=D:\ocr\ocr\.venv\Scripts\python.exe
 OCR_DEVICE=cuda
 ```
@@ -63,14 +64,24 @@ OCR_DEVICE=cuda
 
 ```env
 OCR_MODE=real
-OCR_PIPELINE_ROOT=/home/bakapiano/maimai-ocr
+OCR_PIPELINE_ROOT=/home/bakapiano/maimai-score-hub-ocr/current/ocr-api/pipeline
 OCR_DEVICE=cuda
 OCR_API_TOKEN=<random shared token>
 OCR_MAX_FILES=20
 OCR_CONCURRENCY=2
+OCR_CATALOG_ENABLED=true
+OCR_CATALOG_ROOT=/home/bakapiano/maimai-score-hub-ocr/catalog
+OCR_CATALOG_REFRESH_SECONDS=3600
+OCR_CATALOG_BUILD_DEVICE=cpu
 ```
 
-systemd 示例位于 `ocr-api/deploy/ocr-api.service`。101 部署保留现有模型目录与 runtime env。
+systemd 示例位于 `ocr-api/deploy/ocr-api.service`。生产 pipeline、模型和初始
+Gallery 随 `ocr-api/` 部署。模型文件使用 Git LFS。101 在 release 之外保留
+runtime env、封面缓存和增量 Gallery。
+
+API 每小时拉取一次曲库并重建 title/cover 清单。封面存放在持久化
+`catalog/covers/`，有效缓存文件直接复用。新曲触发 Cover/Title Gallery
+增量构建和 API 热加载；构建使用 CPU，避免占用在线识别的 GPU 显存。
 
 ## Server 5 到 101
 
@@ -86,7 +97,7 @@ OCR_API_TIMEOUT_MS=180000
 
 ## 自动部署
 
-`.github/workflows/deploy-ocr.yml` 在 `main` 的 `ocr-api/**` 发生变更时自动触发，也支持手动运行。Workflow 使用 Worker 3 的 SSH secrets 上传 API 源码，保留 101 上的模型目录和 host-only tunnel key，完成测试、服务重启和 real-mode 健康检查。
+`.github/workflows/deploy-ocr.yml` 在 `main` 的 `ocr-api/**` 发生变更时自动触发，也支持手动运行。Workflow 使用 Worker 3 的 SSH secrets 上传 API、pipeline 和 LFS 模型，保留 101 上的 catalog 与 host-only tunnel key，完成测试、服务重启和 real-mode 健康检查。
 
 ## 部署顺序
 

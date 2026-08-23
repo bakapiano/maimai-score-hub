@@ -15,5 +15,16 @@ dependencies = [
   "uvicorn[standard]>=0.30,<1",
 ]
 
+[project.optional-dependencies]
+pipeline = [
+  "numpy>=1.26,<3",
+  "opencv-python-headless>=4.10,<5",
+  "onnxruntime-gpu>=1.20,<2",
+  "Pillow>=10,<13",
+  "torch>=2.5,<3",
+  "torchvision>=0.20,<1",
+  "ultralytics>=8.3,<9",
+]
+
 [tool.setuptools.packages.find]
 include = ["app*"]

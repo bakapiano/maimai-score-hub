@@ -25,6 +25,7 @@ class OcrApiTest(unittest.TestCase):
         response = self.client.get("/healthz")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["mode"], "fake")
+        self.assertFalse(response.json()["catalog"]["enabled"])
 
     def test_batch_recognition_preserves_order(self) -> None:
         response = self.client.post(

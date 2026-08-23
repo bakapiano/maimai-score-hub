@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 import re
 import sys
 import threading
 import unicodedata
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import unquote
@@ -15,6 +17,45 @@ from .models import RecognitionItem, ScoreCandidate
 class Recognizer(Protocol):
     def recognize(self, image_bytes: bytes, filename: str, index: int) -> RecognitionItem:
         ...
+
+
+class _ReadWriteLock:
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._readers = 0
+        self._writer = False
+        self._waiting_writers = 0
+
+    @contextmanager
+    def read(self):
+        with self._condition:
+            while self._writer or self._waiting_writers:
+                self._condition.wait()
+            self._readers += 1
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._readers -= 1
+                if self._readers == 0:
+                    self._condition.notify_all()
+
+    @contextmanager
+    def write(self):
+        with self._condition:
+            self._waiting_writers += 1
+            try:
+                while self._writer or self._readers:
+                    self._condition.wait()
+                self._writer = True
+            finally:
+                self._waiting_writers -= 1
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._writer = False
+                self._condition.notify_all()
 
 
 def parse_dx_score_text(text: str) -> int | None:
@@ -185,6 +226,14 @@ class FakeRecognizer:
 class RealRecognizer:
     def __init__(self, settings: Settings):
         root = Path(settings.pipeline_root).resolve()
+        catalog_root = settings.catalog_root or str(root / "runtime" / "catalog")
+        catalog_galleries = Path(catalog_root).resolve() / "galleries"
+        cover_gallery = catalog_galleries / "cover_arcface_v2_gallery.npz"
+        title_gallery = catalog_galleries / "title_arcface_v1_gallery.npz"
+        if cover_gallery.is_file():
+            os.environ["OCR_COVER_GALLERY_PATH"] = str(cover_gallery)
+        if title_gallery.is_file():
+            os.environ["OCR_TITLE_GALLERY_PATH"] = str(title_gallery)
         launcher = root / "prod_run.py"
         sys.path.insert(0, str(root))
         if launcher.is_file():
@@ -201,7 +250,41 @@ class RealRecognizer:
                 f"final/pipeline.py under {root}"
             )
         self._paddle_lock = threading.Lock()
+        self._pipeline_lock = _ReadWriteLock()
         self._paddle = self._pipe.tag_ocr.force_init_paddle()
+
+    def reload_catalog(
+        self,
+        cover_gallery_path: Path,
+        title_gallery_path: Path,
+    ) -> dict[str, int]:
+        import numpy as np
+        import torch
+
+        with np.load(cover_gallery_path, allow_pickle=True) as cover_data:
+            cover_titles = [str(title) for title in cover_data["titles"]]
+            cover_embeddings = cover_data["embeddings"].astype(np.float32)
+        with np.load(title_gallery_path, allow_pickle=True) as title_data:
+            title_titles = [str(title) for title in title_data["titles"]]
+            title_embeddings = title_data["embeddings"].astype(np.float32)
+
+        cover_tensor = torch.from_numpy(cover_embeddings).to(
+            self._pipe.cover.device
+        )
+        title_tensor = None
+        if self._pipe.title is not None:
+            title_tensor = torch.from_numpy(title_embeddings).to(
+                self._pipe.title.device
+            )
+        with self._pipeline_lock.write():
+            self._pipe.cover.gallery_titles = cover_titles
+            self._pipe.cover.gallery = cover_tensor
+            self._pipe.cover.gallery_np = cover_embeddings
+            if self._pipe.title is not None and title_tensor is not None:
+                self._pipe.title.gallery_titles = title_titles
+                self._pipe.title.gallery_emb = title_tensor
+                self._pipe.title.gallery_np = title_embeddings
+        return {"coverTitles": len(cover_titles), "titleTitles": len(title_titles)}
 
     def _paddle_text(self, crop: Any) -> tuple[str, float]:
         with self._paddle_lock:
@@ -264,7 +347,8 @@ class RealRecognizer:
                 status="error",
                 error="image decode failed",
             )
-        raw = self._pipe.run(image)
+        with self._pipeline_lock.read():
+            raw = self._pipe.run(image)
         if raw.get("status") != "ok":
             return RecognitionItem(
                 index=index,
