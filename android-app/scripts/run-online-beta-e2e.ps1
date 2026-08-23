@@ -209,8 +209,21 @@ if ($health.status -ne 'ok') {
     throw 'Production Backend health check failed'
 }
 $manifest = Invoke-RestMethod -Uri 'https://api.maiscorehub.bakapiano.com/api/v1/android/workflow/manifest' -TimeoutSec 20
-if (-not $manifest.version -or -not $manifest.sha256) {
+if (-not $manifest.workflowVersion -or -not $manifest.sha256) {
     throw 'Production Android Workflow manifest is invalid'
+}
+if ([int]$manifest.bridgeApiVersion -gt 1) {
+    throw 'Production Workflow requires a newer native bridge'
+}
+$bundleUrl = 'https://api.maiscorehub.bakapiano.com/api/v1' + [string]$manifest.entry
+$bundle = Invoke-WebRequest -UseBasicParsing -Uri $bundleUrl -TimeoutSec 20
+$bundleSha256 = [Convert]::ToHexString(
+    [Security.Cryptography.SHA256]::HashData(
+        [Text.Encoding]::UTF8.GetBytes($bundle.Content)
+    )
+).ToLowerInvariant()
+if ($bundle.StatusCode -ne 200 -or $bundleSha256 -ne $manifest.sha256) {
+    throw 'Production Android Workflow bundle digest is invalid'
 }
 $assetLinksResponse = Invoke-WebRequest -UseBasicParsing -Uri 'https://maiscorehub.bakapiano.com/.well-known/assetlinks.json' -TimeoutSec 20
 if ($assetLinksResponse.StatusCode -ne 200 -or
@@ -219,7 +232,7 @@ if ($assetLinksResponse.StatusCode -ne 200 -or
     throw 'Production Digital Asset Links does not include the Beta package'
 }
 
-Write-E2eStatus "ONLINE backend=ok workflow=$($manifest.version)"
+Write-E2eStatus "ONLINE backend=ok workflow=$($manifest.workflowVersion)"
 & $AdbPath -s $DeviceSerial uninstall $packageName 2>$null | Out-Null
 Install-BetaApk -ResolvedApk $resolvedApk
 Invoke-Adb shell pm grant $packageName android.permission.POST_NOTIFICATIONS | Out-Null

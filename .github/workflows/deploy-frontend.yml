@@ -74,6 +74,7 @@ jobs:
             fi
 
             test -s "$RELEASE_DIR/index.html"
+            test -s "$RELEASE_DIR/.well-known/assetlinks.json"
             rm -f -- "$WEB_ROOT/frontend-current.next"
             ln -s "frontend-releases/$RELEASE" "$WEB_ROOT/frontend-current.next"
             mv -Tf "$WEB_ROOT/frontend-current.next" "$WEB_ROOT/frontend-current"
@@ -85,4 +86,10 @@ jobs:
               -fsS https://maiscorehub.bakapiano.com/ >/dev/null
             curl --resolve maimai.bakapiano.com:443:127.0.0.1 \
               -fsS https://maimai.bakapiano.com/ >/dev/null
+            curl --resolve maiscorehub.bakapiano.com:443:127.0.0.1 \
+              -fsSI https://maiscorehub.bakapiano.com/.well-known/assetlinks.json \
+              | grep -qi '^content-type: application/json'
+            curl --resolve maiscorehub.bakapiano.com:443:127.0.0.1 \
+              -fsS https://maiscorehub.bakapiano.com/.well-known/assetlinks.json \
+              | grep -q 'com.bakapiano.maiscorehub.android.beta'
             echo "Frontend static release activated: $RELEASE"
