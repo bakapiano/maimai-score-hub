@@ -208,6 +208,12 @@ function Start-OnlineMode(
     if (-not $terminal.Success) {
         throw "$Mode failed: $($terminal.Message)"
     }
+    if ($Mode -eq 'login') {
+        # The terminal event is logged immediately before the website stores
+        # the bearer token and redirects. Keep the WebView alive long enough
+        # for that synchronous write plus navigation to finish.
+        Start-Sleep -Seconds 3
+    }
 }
 
 $resolvedApk = (Resolve-Path -LiteralPath $ApkPath).Path
