@@ -14,7 +14,6 @@ import {
 } from "@mantine/core";
 import {
   IconChartBar,
-  IconCheck,
   IconCloudUpload,
   IconClock,
   IconAlertTriangle,
@@ -22,7 +21,6 @@ import {
   IconQrcode,
   IconRefresh,
   IconSend,
-  IconX,
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -54,10 +52,17 @@ import { ProfileCard } from "../components/ProfileCard";
 import { CabinetBindingCard } from "../components/CabinetBindingCard";
 import { AppCard } from "../components/AppCard";
 import { ProberUpdateCard } from "../components/ProberUpdateCard";
-import { RadioCardGroup } from "../components/RadioCardGroup";
+import {
+  SyncMethodSelector,
+  type SyncMethod,
+} from "../components/SyncMethodSelector";
 import { QrCredentialInput } from "../components/QrCredentialInput";
 import { ScoreOcrImport } from "../features/score-ocr/ScoreOcrImport";
+import { AndroidLocalUpdatePanel } from "../features/android-update/AndroidLocalUpdatePanel";
+import { getAndroidUpdateBridge } from "../features/android-update/androidUpdateBridge";
+import { useAndroidUpdateAvailability } from "../features/android-update/useAndroidUpdateAvailability";
 import { SyncMetric } from "../components/SyncMetric";
+import { SyncStatusSummary } from "../components/SyncStatusSummary";
 import { FriendRequestAcceptanceAlert } from "../components/FriendRequestVerification";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { type AuthProfile, useAuth } from "../providers/AuthContext";
@@ -93,8 +98,6 @@ type LatestSyncPayload = Partial<Omit<LastSyncInfo, "scoreCount">> & {
   scores?: unknown[];
   scoreCount?: number;
 };
-
-type SyncMethod = "dxnet_bot" | "cabinet_qr" | "image_ocr";
 
 const DXNET_LOW_SUCCESS_RATE_THRESHOLD = 60;
 const DXNET_STATS_MIN_TERMINAL_COUNT = 10;
@@ -419,6 +422,14 @@ function getSyncProgress(syncStatus: JobStatus | null) {
   return { completedDiffs, totalDiffs, percent };
 }
 
+function usesEmbeddedUpdateFlow(syncMethod: SyncMethod) {
+  return syncMethod === "image_ocr" || syncMethod === "android_local";
+}
+
+function usesBackendSyncControls(syncMethod: SyncMethod) {
+  return syncMethod === "dxnet_bot" || syncMethod === "cabinet_qr";
+}
+
 function getSyncPageViewState(input: {
   syncMethod: SyncMethod;
   cabinetStatus: CabinetScoreJob | null;
@@ -541,6 +552,7 @@ export default function SyncPage() {
     error: musicError,
   } = useMusic();
   const navigate = useNavigate();
+  const androidUpdateAvailable = useAndroidUpdateAvailability();
 
   // Profile state
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -558,7 +570,10 @@ export default function SyncPage() {
         typeof window === "undefined"
           ? null
           : window.localStorage.getItem("sync_update_method");
-      return stored === "cabinet_qr" || stored === "image_ocr"
+      if (stored === "cabinet_qr" || stored === "image_ocr") {
+        return stored;
+      }
+      return stored === "android_local" && getAndroidUpdateBridge()
         ? stored
         : "dxnet_bot";
     },
@@ -824,7 +839,7 @@ export default function SyncPage() {
     if (!token) {
       return;
     }
-    if (syncMethod === "image_ocr") {
+    if (usesEmbeddedUpdateFlow(syncMethod)) {
       return;
     }
     if (syncMethod === "cabinet_qr") {
@@ -1026,35 +1041,23 @@ export default function SyncPage() {
                   icon={<IconCloudUpload size={16} />}
                   title="同步成绩"
                 />
-                <RadioCardGroup
+                <SyncMethodSelector
                   value={syncMethod}
+                  androidAvailable={androidUpdateAvailable}
+                  androidPanel={
+                    <AndroidLocalUpdatePanel
+                      onCompleted={() => loadLastSync({ force: true })}
+                    />
+                  }
                   onChange={(value) => {
-                    const nextMethod = value as SyncMethod;
-                    if (nextMethod === "dxnet_bot") {
+                    if (value === "dxnet_bot") {
                       setDxnetStats(null);
                     }
-                    setSyncMethod(nextMethod);
-                    if (nextMethod !== "cabinet_qr") {
+                    setSyncMethod(value);
+                    if (value !== "cabinet_qr") {
                       setQrText("");
                     }
                   }}
-                  data={[
-                    {
-                      value: "dxnet_bot",
-                      name: "DX Net",
-                      description: "通过 DX Net 好友成绩同步游戏数据",
-                    },
-                    {
-                      value: "cabinet_qr",
-                      name: "二维码",
-                      description: "使用机台二维码读取完整游戏成绩",
-                    },
-                    {
-                      value: "image_ocr",
-                      name: "图片识别",
-                      description: "拍照或从相册批量识别结算图",
-                    },
-                  ]}
                 />
 
                 {syncMethod === "dxnet_bot" && showDxnetHealthWarning && (
@@ -1100,9 +1103,6 @@ export default function SyncPage() {
 
                 {syncMethod === "image_ocr" && (
                   <Stack gap="sm">
-                    <Text size="sm" c="dimmed">
-                      拍摄一张结算图，或从相册一次选择最多 20 张。识别后可以修改曲目和成绩，再确认更新。
-                    </Text>
                     {musicError && musics.length === 0 ? (
                       <Alert color="red">乐曲信息加载失败：{musicError}</Alert>
                     ) : (
@@ -1133,79 +1133,50 @@ export default function SyncPage() {
                   onChange={setUpdateAllDifficulties}
                 />
 
-                {syncMethod !== "image_ocr" && !cabinetBindingRequired && (
-                  <Group justify="space-between" align="center" wrap="wrap">
-                    <Group gap="sm" align="center" wrap="nowrap">
-                      <Box
-                        style={{
-                          width: 42,
-                          height: 42,
-                          flex: "0 0 auto",
-                          borderRadius: 14,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color: `var(--mantine-color-${syncStatusView.color}-7)`,
-                          background: `var(--mantine-color-${syncStatusView.color}-light)`,
-                        }}
+                {usesBackendSyncControls(syncMethod) &&
+                  !cabinetBindingRequired && (
+                  <SyncStatusSummary
+                    color={syncStatusView.color}
+                    label={syncStatusView.label}
+                    text={syncStatusView.text}
+                    badge={effectiveSyncJobStatus ? syncStageText : null}
+                    state={
+                      pageLoading ||
+                      selectedSyncing ||
+                      effectiveSyncJobStatus === "queued" ||
+                      effectiveSyncJobStatus === "processing"
+                        ? "loading"
+                        : effectiveSyncJobStatus === "failed" ||
+                            effectiveSyncJobStatus === "canceled"
+                          ? "failed"
+                          : effectiveSyncJobStatus === "completed"
+                            ? "completed"
+                            : "idle"
+                    }
+                    action={
+                      <Button
+                        onClick={startSync}
+                        disabled={
+                          selectedSyncing ||
+                          pageLoading ||
+                          (syncMethod === "dxnet_bot"
+                            ? !profile?.friendCode
+                            : !profile?.hasCabinetUserId || !qrText.trim())
+                        }
+                        loading={selectedSyncing}
+                        variant="light"
+                        leftSection={<IconRefresh size={16} />}
+                        w={{ base: "100%", xs: "auto" }}
+                        styles={{ root: { flexShrink: 0 } }}
                       >
-                        {pageLoading ||
-                        selectedSyncing ||
-                        effectiveSyncJobStatus === "queued" ||
-                        effectiveSyncJobStatus === "processing" ? (
-                          <Loader size="sm" color={syncStatusView.color} />
-                        ) : effectiveSyncJobStatus === "failed" ||
-                          effectiveSyncJobStatus === "canceled" ? (
-                          <IconX size={22} />
-                        ) : effectiveSyncJobStatus === "completed" ? (
-                          <IconCheck size={22} />
-                        ) : (
-                          <IconRefresh size={22} />
-                        )}
-                      </Box>
-                      <Stack gap={1}>
-                        <Group gap="xs">
-                          <Text fw={700} size="md">
-                            {syncStatusView.label}
-                          </Text>
-                          {effectiveSyncJobStatus && (
-                            <Badge
-                              variant="light"
-                              color={syncStatusView.color}
-                              radius="xl"
-                              size="sm"
-                            >
-                              {syncStageText}
-                            </Badge>
-                          )}
-                        </Group>
-                        <Text size="sm" c="dimmed">
-                          {syncStatusView.text}
-                        </Text>
-                      </Stack>
-                    </Group>
-                    <Button
-                      onClick={startSync}
-                      disabled={
-                        selectedSyncing ||
-                        pageLoading ||
-                        (syncMethod === "dxnet_bot"
-                          ? !profile?.friendCode
-                          : !profile?.hasCabinetUserId || !qrText.trim())
-                      }
-                      loading={selectedSyncing}
-                      variant="light"
-                      leftSection={<IconRefresh size={16} />}
-                      w={{ base: "100%", xs: "auto" }}
-                      styles={{ root: { flexShrink: 0 } }}
-                    >
-                      {syncMethod === "cabinet_qr"
-                        ? "更新成绩"
-                        : lastSync
+                        {syncMethod === "cabinet_qr"
                           ? "更新成绩"
-                          : "开始同步"}
-                    </Button>
-                  </Group>
+                          : lastSync
+                            ? "更新成绩"
+                            : "开始同步"}
+                      </Button>
+                    }
+                  />
                 )}
 
                 {syncMethod === "dxnet_bot" &&
@@ -1261,43 +1232,6 @@ export default function SyncPage() {
                 {syncMethod === "dxnet_bot" && dxnetError && (
                   <Alert color="red">{dxnetError}</Alert>
                 )}
-
-                {syncMethod === "dxnet_bot" &&
-                  (syncStatus?.cabinetFriendshipStatus === "pending" ||
-                    syncStatus?.cabinetFriendshipStatus === "running") && (
-                    <Alert color="blue" variant="light">
-                      正在准备 Bot 好友关系，完成后会自动开始更新成绩。
-                    </Alert>
-                  )}
-
-                {syncMethod === "dxnet_bot" &&
-                  syncStatus?.cabinetFriendshipStatus === "uncertain" && (
-                    <Alert color="yellow" variant="light">
-                      机台请求结果暂不确定，正在通过 DXNet 确认好友关系。
-                    </Alert>
-                  )}
-
-                {syncMethod === "dxnet_bot" &&
-                  [
-                    "cabinet_bot_unavailable",
-                    "cabinet_friendship_failed",
-                    "cabinet_friendship_unconfirmed",
-                  ].includes(syncStatus?.errorCode ?? "") && (
-                    <Alert color="orange" variant="light" title="可改用好友申请">
-                      <Stack gap="xs">
-                        <Text size="sm">
-                          自动建立好友关系未成功，可以改用传统好友申请流程。
-                        </Text>
-                        <Button
-                          size="xs"
-                          variant="light"
-                          onClick={() => void startFriendshipJob()}
-                        >
-                          发起好友申请
-                        </Button>
-                      </Stack>
-                    </Alert>
-                  )}
 
                 {syncMethod === "dxnet_bot" && syncStatus?.error && (
                   <Alert color="red" variant="light" title="错误" radius="md">

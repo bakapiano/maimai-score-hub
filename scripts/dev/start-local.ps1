@@ -17,6 +17,7 @@ if (-not (Test-Path $memuraiBinary)) {
 
 Write-Host "== Building shared and backend =="
 $ocrApiRoot = Join-Path $root "ocr-api"
+$automationRoot = Join-Path $root "automation"
 $ocrMode = if ($env:OCR_MODE) { $env:OCR_MODE } else { "real" }
 $ocrPipelineRoot = if ($env:OCR_PIPELINE_ROOT) { $env:OCR_PIPELINE_ROOT } else { Join-Path $ocrApiRoot "pipeline" }
 $apiPython = Join-Path $ocrApiRoot ".venv\Scripts\python.exe"
@@ -39,6 +40,15 @@ if ($LASTEXITCODE -ne 0) {
   Write-Host "== Installing OCR API into selected Python environment =="
   & $ocrPython -m pip install --disable-pip-version-check -e $ocrApiRoot
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+Push-Location $automationRoot
+try {
+  python -c "import adbutils, aiosqlite, fastapi, httpx, uvicorn"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Automation Python dependencies are unavailable"
+  }
+} finally {
+  Pop-Location
 }
 Push-Location $root
 try {
@@ -82,6 +92,7 @@ $serviceApps = @(
   "msh-frontend",
   "msh-admin",
   "msh-worker",
+  "msh-automation",
   "msh-sdgb-stable-a",
   "msh-sdgb-stable-b",
   "msh-sdgb-recoverable-a",
@@ -91,7 +102,10 @@ $serviceApps = @(
 ) -join ","
 # PM2 keeps the original executable when an existing app changes Python env.
 # Recreate this one process so switching fake/real always uses the selected env.
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
 Invoke-Pm2 delete msh-ocr-api *> $null
+$ErrorActionPreference = $previousErrorActionPreference
 Invoke-Pm2 start ecosystem.local-dev.config.cjs --only $serviceApps --update-env
 Invoke-Pm2 status
 

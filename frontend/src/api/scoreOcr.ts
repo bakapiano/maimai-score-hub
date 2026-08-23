@@ -61,12 +61,12 @@ export async function recognizeScoreImages(input: {
   if (!response.ok) {
     throw new ScoreOcrApiError(
       response.status,
-      errorMessage(payload, `图片识别失败 (HTTP ${response.status})`),
+      errorMessage(payload, `成绩图识别失败 (HTTP ${response.status})`),
     );
   }
   const parsed = OcrBatchRecognitionResponseSchema.safeParse(payload);
   if (!parsed.success) {
-    throw new ScoreOcrApiError(response.status, "图片识别结果格式错误");
+    throw new ScoreOcrApiError(response.status, "成绩图识别结果格式错误");
   }
   return parsed.data;
 }

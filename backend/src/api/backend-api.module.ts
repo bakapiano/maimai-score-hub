@@ -9,6 +9,8 @@ import { AdminObservabilityController } from './admin/admin-observability.contro
 import { SharedSecretGuard } from '../common/guards/shared-secret.guard';
 import { AdminModule } from '../modules/admin/admin.module';
 import { AdminUsersController } from './admin/admin-users.controller';
+import { AndroidWorkflowController } from './public/android-workflow.controller';
+import { AndroidWorkflowModule } from '../modules/android-workflow/android-workflow.module';
 import { AuthController } from './auth/auth.controller';
 import { PasskeyAuthController } from './auth/passkey-auth.controller';
 import { AuthModule } from '../modules/auth/auth.module';
@@ -53,6 +55,7 @@ import { DxnetBotAssignmentBusyFilter } from '../modules/job/dxnet-job.exception
 @Module({
   imports: [
     AdminModule,
+    AndroidWorkflowModule,
     AuthModule,
     AutoUpdateModule,
     BotsModule,
@@ -71,6 +74,7 @@ import { DxnetBotAssignmentBusyFilter } from '../modules/job/dxnet-job.exception
   ],
   controllers: [
     AuthController,
+    AndroidWorkflowController,
     PasskeyAuthController,
     MeController,
     MePasskeysController,

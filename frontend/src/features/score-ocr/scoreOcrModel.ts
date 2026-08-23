@@ -39,19 +39,43 @@ const DIFFICULTY_INDEX: Record<OcrDifficulty, number> = {
   utage: 10,
 };
 
+function normalizeMusicTitle(title: string): string {
+  return title.normalize("NFKC").trim().toLocaleLowerCase();
+}
+
+export function getOcrCandidateMusics(
+  candidates: readonly OcrCandidate[],
+  musics: readonly MusicRow[],
+): MusicRow[] {
+  const musicsByTitle = new Map<string, MusicRow[]>();
+  for (const music of musics) {
+    const key = normalizeMusicTitle(music.title);
+    const rows = musicsByTitle.get(key) ?? [];
+    rows.push(music);
+    musicsByTitle.set(key, rows);
+  }
+
+  const seen = new Set<string>();
+  const matches: MusicRow[] = [];
+  for (const candidate of candidates) {
+    for (const music of musicsByTitle.get(normalizeMusicTitle(candidate.title)) ?? []) {
+      if (!seen.has(music.id)) {
+        seen.add(music.id);
+        matches.push(music);
+      }
+    }
+  }
+  return matches;
+}
+
 function matchingMusic(
   result: OcrRecognitionItem,
   musics: readonly MusicRow[],
 ): MusicRow | undefined {
   for (const candidate of result.candidates) {
-    const candidateTitle = candidate.title
-      .normalize("NFKC")
-      .trim()
-      .toLocaleLowerCase();
+    const candidateTitle = normalizeMusicTitle(candidate.title);
     const normalizedMatches = musics.filter(
-      (music) =>
-        music.title.normalize("NFKC").trim().toLocaleLowerCase() ===
-        candidateTitle,
+      (music) => normalizeMusicTitle(music.title) === candidateTitle,
     );
     if (!normalizedMatches.length) {
       continue;

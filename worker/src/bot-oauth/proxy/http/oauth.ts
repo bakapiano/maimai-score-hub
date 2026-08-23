@@ -107,7 +107,9 @@ async function exchangeBotAuthUrl(authUrl: string): Promise<void> {
       return;
     }
 
-    console.log(JSON.stringify(cookieJar.toJSON(), null, 2));
+    console.log(
+      `[OAuth] Cookie exchange completed with ${cookieJar.toJSON().cookies.length} cookies.`,
+    );
     botManager._set(friendCodeResult, cookieJar);
     console.log(`[OAuth] Cookie updated successfully for ${friendCodeResult}.`);
   } catch (err) {

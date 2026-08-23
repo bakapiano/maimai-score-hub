@@ -5,7 +5,9 @@ ADB 设备管理服务
 
 import asyncio
 import logging
+import os
 import re
+import subprocess
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -14,6 +16,12 @@ from models import Device
 import db
 
 logger = logging.getLogger("adb_service")
+
+_SUBPROCESS_OPTIONS = (
+    {"creationflags": subprocess.CREATE_NO_WINDOW}
+    if os.name == "nt"
+    else {}
+)
 
 
 async def _run_adb(*args: str, device: str = None, timeout: int = 15) -> tuple[int, str, str]:
@@ -28,6 +36,7 @@ async def _run_adb(*args: str, device: str = None, timeout: int = 15) -> tuple[i
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **_SUBPROCESS_OPTIONS,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return proc.returncode, stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace")
@@ -127,6 +136,7 @@ async def pair_device(ip: str, port: int, pairing_code: str) -> tuple[bool, str]
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        **_SUBPROCESS_OPTIONS,
     )
 
     try:

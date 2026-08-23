@@ -1,13 +1,10 @@
 import {
   Alert,
-  Anchor,
   AppShell,
   Box,
   Button,
-  Collapse,
   Container,
   Group,
-  Image,
   Loader,
   Paper,
   PasswordInput,
@@ -21,9 +18,8 @@ import {
 } from "@mantine/core";
 import {
   IconInfoCircle,
+  IconBrandWechat,
   IconCopy,
-  IconChevronDown,
-  IconChevronUp,
   IconId,
   IconLogin2,
   IconKey,
@@ -34,7 +30,6 @@ import {
   IconUser,
   IconWifiOff,
 } from "@tabler/icons-react";
-import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useMemo, useState } from "react";
 import {
   browserSupportsWebAuthn,
@@ -58,12 +53,16 @@ import { useAuth } from "../providers/AuthContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { hasOfflineData } from "../utils/offlineCache";
 import { AppFooter } from "../components/AppFooter";
+import { FriendCodeGuide } from "../components/FriendCodeGuide";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { apiUrl } from "../api/baseUrl";
 import { clearPendingFriendLogin, persistPendingFriendLogin, readPendingFriendLogin } from "../utils/loginTaskCache";
 import { getJobStatusDisposition, parseJobStatus } from "../utils/jobStatus";
 import { HttpClientError, PollAborted, PollDead, PollTimeout, fetchForPoll, pollWithBackoff } from "../utils/poll";
+import { AndroidAutoLoginPanel } from "../features/android-update/AndroidAutoLoginPanel";
+import { getAndroidLoginBridge } from "../features/android-update/androidUpdateBridge";
+import { useAndroidLoginAvailability } from "../features/android-update/useAndroidLoginAvailability";
 
 const PASSWORD_LOGIN_IDENTIFIER_KEY = "passwordLoginIdentifier";
 const LOGIN_METHOD_KEY = "loginMethod";
@@ -103,7 +102,7 @@ type LoginPollOutcome = { kind: "authenticated"; token: string } | { kind: "ende
 
 type PasswordLoginIdentifier = "friendCode" | "username";
 type LoginMethod = "bot_sends_request" | "user_sends_request";
-type LoginType = "friendCode" | "password" | "qr" | "passkey";
+type LoginType = "android" | "friendCode" | "password" | "qr" | "passkey";
 
 function persistLastLoginAccount(account?: {
   friendCode?: string | number | null;
@@ -162,15 +161,20 @@ function persistLoginMethod(method: LoginMethod) {
 }
 
 function isLoginType(value: string | null): value is LoginType {
-  return ["friendCode", "password", "qr", "passkey"].includes(value ?? "");
+  return ["android", "friendCode", "password", "qr", "passkey"].includes(
+    value ?? "",
+  );
 }
 
 function readLoginType(): LoginType {
   try {
     const cached = localStorage.getItem(LOGIN_TYPE_KEY);
-    return isLoginType(cached) ? cached : "friendCode";
+    if (isLoginType(cached) && (cached !== "android" || getAndroidLoginBridge())) {
+      return cached;
+    }
+    return getAndroidLoginBridge() ? "android" : "friendCode";
   } catch {
-    return "friendCode";
+    return getAndroidLoginBridge() ? "android" : "friendCode";
   }
 }
 
@@ -180,52 +184,6 @@ function persistLoginType(loginType: LoginType) {
   } catch {
     // localStorage may be unavailable.
   }
-}
-
-function FriendCodeGuide() {
-  const [opened, { toggle }] = useDisclosure(false);
-
-  return (
-    <Stack gap={4}>
-      <Anchor
-        component="button"
-        type="button"
-        size="md"
-        fw={500}
-        onClick={toggle}
-        style={{
-          alignSelf: "flex-start",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 4,
-        }}
-      >
-        {opened ? <IconChevronUp size={20} /> : <IconChevronDown size={20} />}
-        好友代码是什么？
-      </Anchor>
-      <Collapse in={opened}>
-        <Stack gap="xs">
-          <Text size="sm">
-            登录{" "}
-            <Anchor
-              href="https://tgk-wcaime.wahlap.com/wc_auth/oauth/authorize/maimai-dx"
-              target="_blank"
-              rel="noopener"
-            >
-              maimai NET
-            </Anchor>
-            ，进入「好友」页面，点击右下角「你的好友号码」即可查看。
-          </Text>
-          <Image
-            src="/friendcode.png"
-            alt="好友代码查找教程"
-            radius="md"
-            w="100%"
-          />
-        </Stack>
-      </Collapse>
-    </Stack>
-  );
 }
 
 function LoginMethodCard({
@@ -364,6 +322,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { token, setToken, offline, setOffline } = useAuth();
+  const androidLoginAvailable = useAndroidLoginAvailability();
 
   const [friendCode, setFriendCode] = useState(() => {
     try {
@@ -955,7 +914,11 @@ export default function LoginPage() {
           <Container size="sm" style={{ maxWidth: 600, width: "100%" }}>
             <PageHeader
               title={"欢迎！"}
-              description="选择好友码、账号密码、二维码或网站密钥登录"
+              description={
+                androidLoginAvailable
+                  ? "选择微信、好友码、账号密码、二维码或网站密钥登录"
+                  : "选择好友码、账号密码、二维码或网站密钥登录"
+              }
             />
           </Container>
         </Box>
@@ -1046,6 +1009,17 @@ export default function LoginPage() {
                     }}
                   >
                     <Tabs.List grow>
+                      {androidLoginAvailable && (
+                        <Tabs.Tab value="android">
+                          <Group gap={2} wrap="nowrap" justify="center">
+                            <IconBrandWechat
+                              className="msh-login-tab-icon"
+                              size={14}
+                            />
+                            <span>微信</span>
+                          </Group>
+                        </Tabs.Tab>
+                      )}
                       <Tabs.Tab
                         value="friendCode"
                       >
@@ -1077,6 +1051,12 @@ export default function LoginPage() {
                         </Group>
                       </Tabs.Tab>
                     </Tabs.List>
+
+                    {androidLoginAvailable && (
+                      <Tabs.Panel value="android" pt="md">
+                        <AndroidAutoLoginPanel />
+                      </Tabs.Panel>
+                    )}
 
                     <Tabs.Panel value="friendCode" pt="md">
                       <AppCard>
@@ -1372,7 +1352,7 @@ export default function LoginPage() {
                     </Tabs.Panel>
                   </Tabs>
 
-                  <FriendCodeGuide />
+                  {loginType !== "android" && <FriendCodeGuide />}
                 </>
               )}
             </Stack>

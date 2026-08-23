@@ -7,6 +7,7 @@ $apps = @(
   "msh-sdgb-stable-b",
   "msh-sdgb-recoverable-a",
   "msh-sdgb-recoverable-b",
+  "msh-automation",
   "msh-worker",
   "msh-admin",
   "msh-frontend",

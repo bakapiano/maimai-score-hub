@@ -247,7 +247,7 @@ function ScoreStat({
       <Text size="xs" c="dimmed">
         {label}
       </Text>
-      <Text fw={400} className={classes.statValue}>
+      <Text component="div" fw={400} className={classes.statValue}>
         {value}
       </Text>
       {detail ? (

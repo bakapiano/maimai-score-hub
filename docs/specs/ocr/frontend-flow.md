@@ -28,6 +28,7 @@
 每张卡显示图片预览、文件名、OCR 候选和以下控件：
 
 - 当前所选乐曲的封面；改选乐曲后同步更新。
+- 点击原始结算图打开全屏相册，可切换批次图片，并支持双指、双击和滚轮缩放。
 - 乐曲：当前曲库 searchable Select。
 - 难度：Basic、Advanced、Expert、Master、Re:Master、Utage。
 - 达成率：0–101，四位小数。

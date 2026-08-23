@@ -19,8 +19,17 @@ const selectedOcrPython = ocrMode === "real" ? pipelinePythonCandidate : apiPyth
 const ocrPython = fs.existsSync(selectedOcrPython)
   ? selectedOcrPython
   : "python";
+const ocrRunner = hiddenWindowsPython(ocrPython);
 const fakeSdgb = env.SDGB_FAKE_UPSTREAM === "1";
 const sdgbDesiredActiveCount = fakeSdgb ? "2" : "1";
+
+function hiddenWindowsPython(pythonExecutable) {
+  if (process.platform !== "win32") {
+    return pythonExecutable;
+  }
+  const pythonw = path.join(path.dirname(pythonExecutable), "pythonw.exe");
+  return fs.existsSync(pythonw) ? pythonw : pythonExecutable;
+}
 
 function sdgbWorkerApp(name, workerId, workerClass) {
   return {
@@ -86,10 +95,14 @@ module.exports = {
   apps: [
     {
       name: "msh-ocr-api",
-      script: ocrPython,
+      // A Windows venv's python.exe launcher creates a second visible console
+      // process even when PM2 uses windowsHide. pythonw.exe keeps the OCR API
+      // fully backgrounded while PM2's stdout/stderr pipes remain available.
+      script: ocrRunner,
       args: "-m uvicorn app.main:app --host 127.0.0.1 --port 19100",
       cwd: path.join(root, "ocr-api"),
       interpreter: "none",
+      windowsHide: true,
       env: {
         OCR_MODE: ocrMode,
         OCR_API_TOKEN: env.OCR_API_TOKEN || "change-me-local-ocr",
@@ -201,6 +214,19 @@ module.exports = {
           env.API_SHARED_SECRET ||
           "change-me-local-admin",
         ...env,
+      },
+      autorestart: true,
+      max_restarts: 5,
+    },
+    {
+      name: "msh-automation",
+      script: path.join(root, "automation", "app.py"),
+      cwd: path.join(root, "automation"),
+      interpreter: "python",
+      windowsHide: true,
+      env: {
+        HOST: "127.0.0.1",
+        PORT: "8080",
       },
       autorestart: true,
       max_restarts: 5,

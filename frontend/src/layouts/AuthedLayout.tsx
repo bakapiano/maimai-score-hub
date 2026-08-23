@@ -157,7 +157,7 @@ function MobileBottomNav({
         left: 0,
         right: 0,
         bottom: 0,
-        zIndex: 1900,
+        zIndex: "var(--mantine-z-index-app)",
         boxSizing: "border-box",
         height: "var(--msh-mobile-bottom-nav-height)",
         padding: "0 12px var(--msh-mobile-safe-area-bottom)",

@@ -98,6 +98,7 @@ backend/score-exports/
 CLAUDE.md
 # AGENTS.md is a local copy of CLAUDE.md and contains the same credentials
 AGENTS.md
+!/android-app/AGENTS.md
 
 .mcp.json
 
@@ -114,3 +115,13 @@ ocr/scripts/training/
 !/deploy/observability/**
 
 .playwright-mcp/.claude/
+/.husky/_/
+/manual-*.html
+
+# Android app local/build state
+/android-app/.gradle/
+/android-app/local.properties
+/android-app/app/build/
+/android-app/build/
+*.jks
+*.keystore

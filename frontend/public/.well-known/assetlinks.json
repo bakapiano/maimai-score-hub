@@ -1,0 +1,27 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.bakapiano.maiscorehub.android",
+      "sha256_cert_fingerprints": [
+        "C2:E2:BC:C0:FF:2F:72:C8:F5:7F:9F:BD:16:26:E5:06:53:AE:AC:11:64:FC:44:C9:6A:28:98:2C:2C:EF:AB:68"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.bakapiano.maiscorehub.android.beta",
+      "sha256_cert_fingerprints": [
+        "A6:A1:91:33:D0:05:59:CA:B8:8D:AF:D0:B4:A2:2F:9A:FD:F0:CB:69:B6:38:41:2B:0C:8E:1D:74:E8:B2:E6:9E",
+        "C2:E2:BC:C0:FF:2F:72:C8:F5:7F:9F:BD:16:26:E5:06:53:AE:AC:11:64:FC:44:C9:6A:28:98:2C:2C:EF:AB:68"
+      ]
+    }
+  }
+]
