@@ -37,6 +37,116 @@ function Save-PhoneArtifact([string]$RemotePath, [string]$LocalName) {
     Invoke-Adb pull $RemotePath $target | Out-Null
 }
 
+function Get-UiNodes {
+    $remotePath = '/sdcard/msh-online-ui.xml'
+    & $AdbPath -s $DeviceSerial shell uiautomator dump $remotePath 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        return @()
+    }
+    $content = (& $AdbPath -s $DeviceSerial shell cat $remotePath 2>$null) -join ''
+    if ($LASTEXITCODE -ne 0 -or -not $content) {
+        return @()
+    }
+    try {
+        [xml]$document = $content
+        return @($document.SelectNodes('//node'))
+    } catch {
+        return @()
+    }
+}
+
+function Tap-UiNode($Node) {
+    $match = [regex]::Match(
+        [string]$Node.bounds,
+        '^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$'
+    )
+    if (-not $match.Success) {
+        return $false
+    }
+    $x = [math]::Floor(
+        ([int]$match.Groups[1].Value + [int]$match.Groups[3].Value) / 2
+    )
+    $y = [math]::Floor(
+        ([int]$match.Groups[2].Value + [int]$match.Groups[4].Value) / 2
+    )
+    Invoke-Adb shell input tap $x $y | Out-Null
+    return $true
+}
+
+function Install-BetaApk([string]$ResolvedApk) {
+    $stdoutPath = Join-Path $artifactDirectory 'install.stdout.log'
+    $stderrPath = Join-Path $artifactDirectory 'install.stderr.log'
+    Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+    $installOptions = @{
+        FilePath = $AdbPath
+        ArgumentList = @('-s', $DeviceSerial, 'install', $ResolvedApk)
+        WindowStyle = 'Hidden'
+        PassThru = $true
+        RedirectStandardOutput = $stdoutPath
+        RedirectStandardError = $stderrPath
+    }
+    $install = Start-Process @installOptions
+    $deadline = (Get-Date).AddMinutes(3)
+    while (-not $install.HasExited -and (Get-Date) -lt $deadline) {
+        $nodes = @(Get-UiNodes)
+        $continue = $nodes | Where-Object { $_.text -eq '仍然继续' } | Select-Object -First 1
+        if ($continue) {
+            Tap-UiNode $continue | Out-Null
+            Start-Sleep -Milliseconds 500
+            continue
+        }
+        $checkbox = $nodes | Where-Object {
+            $_.text -eq '已知悉该应用存在风险'
+        } | Select-Object -First 1
+        if ($checkbox -and [string]$checkbox.checked -ne 'true') {
+            Tap-UiNode $checkbox | Out-Null
+            Start-Sleep -Milliseconds 300
+            continue
+        }
+        $authorize = $nodes | Where-Object {
+            $_.text -eq '授权本次安装'
+        } | Select-Object -First 1
+        if ($authorize) {
+            Tap-UiNode $authorize | Out-Null
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $install.HasExited) {
+        $install.Kill()
+        throw 'Beta APK installation timed out'
+    }
+    $install.WaitForExit()
+    $stdout = Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue
+    $stderr = Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue
+    if ($install.ExitCode -ne 0 -or $stdout -notmatch 'Success') {
+        throw "Unable to install the Beta APK: $stderr $stdout"
+    }
+    $done = @(Get-UiNodes) | Where-Object { $_.text -eq '完成' } | Select-Object -First 1
+    if ($done) {
+        Tap-UiNode $done | Out-Null
+    }
+}
+
+function Approve-VpnConsent {
+    $deadline = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $deadline) {
+        $nodes = @(Get-UiNodes)
+        $allow = $nodes | Where-Object {
+            $_.package -eq 'com.android.vpndialogs' -and (
+                $_.'resource-id' -eq 'android:id/button1' -or
+                $_.text -eq '确定' -or
+                $_.text -eq '允许'
+            )
+        } | Select-Object -First 1
+        if ($allow) {
+            Tap-UiNode $allow | Out-Null
+            Write-E2eStatus 'VPN consent approved'
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    }
+}
+
 function Wait-ForTerminal([string]$Mode, [int]$TimeoutSeconds) {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
@@ -73,6 +183,9 @@ function Start-OnlineMode(
     Invoke-Adb shell wm dismiss-keyguard | Out-Null
     Invoke-Adb shell input keyevent 82 | Out-Null
     Invoke-Adb shell am start -n $componentName --es e2e_mode $Mode | Out-Null
+    if ($Mode -eq 'login') {
+        Approve-VpnConsent
+    }
     Start-Sleep -Seconds 12
 
     Invoke-Adb shell screencap -p "/sdcard/msh-online-$Mode.png" | Out-Null
@@ -108,12 +221,8 @@ if ($assetLinksResponse.StatusCode -ne 200 -or
 
 Write-E2eStatus "ONLINE backend=ok workflow=$($manifest.version)"
 & $AdbPath -s $DeviceSerial uninstall $packageName 2>$null | Out-Null
-& $AdbPath -s $DeviceSerial install $resolvedApk | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw 'Unable to install the Beta APK'
-}
+Install-BetaApk -ResolvedApk $resolvedApk
 Invoke-Adb shell pm grant $packageName android.permission.POST_NOTIFICATIONS | Out-Null
-Invoke-Adb shell appops set $packageName ACTIVATE_VPN allow | Out-Null
 
 $packageDump = Invoke-Adb shell dumpsys package $packageName
 if ($packageDump -notmatch 'versionName=0\.2\.0-beta') {
