@@ -27,4 +27,4 @@ pipeline = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["app*"]
+include = ["app*", "pipeline*"]
