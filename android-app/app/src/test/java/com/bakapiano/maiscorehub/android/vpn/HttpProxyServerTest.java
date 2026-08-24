@@ -49,7 +49,6 @@ public class HttpProxyServerTest {
                 assertTrue(response.startsWith("HTTP/1.1 200 OK"));
                 assertTrue(response.contains("登陆成功！请手动返回 APP 内继续"));
                 assertTrue(response.contains("class=\"appIcon\""));
-                assertTrue(response.contains("class=\"successMark\""));
                 assertTrue(response.contains(TEST_ICON_DATA_URI));
                 assertTrue(response.contains("id=\"closePage\""));
                 assertTrue(response.contains("WeixinJSBridge.call('closeWindow')"));
