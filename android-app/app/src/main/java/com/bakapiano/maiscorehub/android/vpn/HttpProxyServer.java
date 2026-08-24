@@ -13,6 +13,8 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -37,6 +39,7 @@ final class HttpProxyServer implements Closeable {
     }
 
     private static final int MAX_HEADER_BYTES = 64 * 1024;
+    private static final SecureRandom NONCE_RANDOM = new SecureRandom();
     private final SocketProtector protector;
     private final CallbackListener callbackListener;
     private final LaunchTargetProvider launchTargetProvider;
@@ -290,6 +293,11 @@ final class HttpProxyServer implements Closeable {
     }
 
     private void sendCapturedResponse(OutputStream output) throws IOException {
+        byte[] nonceBytes = new byte[18];
+        NONCE_RANDOM.nextBytes(nonceBytes);
+        String scriptNonce = Base64.getEncoder()
+                .withoutPadding()
+                .encodeToString(nonceBytes);
         String html = "<!doctype html><html lang=\"zh-CN\"><head>"
                 + "<meta charset=\"utf-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover\">"
@@ -298,19 +306,34 @@ final class HttpProxyServer implements Closeable {
                 + "<style>"
                 + ":root{color:#212529;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,'PingFang SC','Microsoft YaHei',sans-serif;color-scheme:light}"
                 + "*{box-sizing:border-box}"
-                + "body{display:flex;min-height:100vh;min-height:100dvh;margin:0;align-items:center;justify-content:center;background:#fff}"
-                + "main{padding:32px 24px;text-align:center}"
-                + ".appIcon{display:block;width:88px;height:88px;margin:0 auto 24px;border-radius:22px}"
-                + "p{margin:0;font-size:20px;font-weight:700;line-height:1.6}"
+                + "body{display:flex;min-height:100vh;min-height:100dvh;margin:0;padding:max(24px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));align-items:center;justify-content:center;background:linear-gradient(160deg,#e7f5ff 0%,#f8fbff 52%,#fff 100%)}"
+                + "main{width:min(360px,100%);padding:38px 28px 34px;text-align:center;background:rgba(255,255,255,.96);border:1px solid #dbeafe;border-radius:28px;box-shadow:0 18px 50px rgba(34,139,230,.14)}"
+                + ".iconWrap{position:relative;width:88px;height:88px;margin:0 auto 26px}"
+                + ".appIcon{display:block;width:88px;height:88px;border:4px solid #fff;border-radius:24px;box-shadow:0 10px 24px rgba(34,139,230,.2)}"
+                + ".successMark{position:absolute;right:-6px;bottom:-6px;display:grid;width:30px;height:30px;place-items:center;color:#fff;font-size:18px;font-weight:900;line-height:1;background:#20c997;border:3px solid #fff;border-radius:50%}"
+                + "p{margin:0;color:#1f2937;font-size:20px;font-weight:750;line-height:1.65;letter-spacing:.01em}"
+                + ".closeButton{width:100%;margin-top:26px;padding:13px 18px;color:#fff;font:inherit;font-size:16px;font-weight:700;background:#228be6;border:0;border-radius:15px;box-shadow:0 8px 20px rgba(34,139,230,.22)}"
+                + ".closeButton:active{transform:scale(.98)}.closeButton:disabled{opacity:.62}"
+                + "@media(max-width:360px){main{padding:32px 20px 30px;border-radius:24px}p{font-size:18px}}"
                 + "</style></head><body><main>"
-                + "<img class=\"appIcon\" src=\"" + successIconDataUri
-                + "\" alt=\"MaiScoreHub\">"
+                + "<div class=\"iconWrap\"><img class=\"appIcon\" src=\""
+                + successIconDataUri
+                + "\" alt=\"MaiScoreHub\"><span class=\"successMark\" aria-hidden=\"true\">✓</span></div>"
                 + "<p>登陆成功！请手动返回 APP 内继续</p>"
-                + "</main></body></html>";
+                + "<button class=\"closeButton\" id=\"closePage\" type=\"button\">关闭页面</button>"
+                + "</main><script nonce=\"" + scriptNonce + "\">"
+                + "document.getElementById('closePage').addEventListener('click',function(){"
+                + "var button=this;button.disabled=true;"
+                + "if(window.WeixinJSBridge&&typeof window.WeixinJSBridge.call==='function'){window.WeixinJSBridge.call('closeWindow');return;}"
+                + "document.addEventListener('WeixinJSBridgeReady',function(){window.WeixinJSBridge.call('closeWindow');},{once:true});"
+                + "window.close();setTimeout(function(){button.disabled=false;},800);"
+                + "});</script></body></html>";
         byte[] body = html.getBytes(StandardCharsets.UTF_8);
         String header = "HTTP/1.1 200 OK\r\n"
                 + "Content-Type: text/html; charset=utf-8\r\n"
-                + "Content-Security-Policy: default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\r\n"
+                + "Content-Security-Policy: default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-"
+                + scriptNonce
+                + "'; base-uri 'none'; form-action 'none'\r\n"
                 + "Cache-Control: no-store\r\n"
                 + "Content-Length: " + body.length
                 + "\r\nConnection: close\r\n\r\n";

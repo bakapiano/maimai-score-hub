@@ -16,6 +16,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class HttpProxyServerTest {
     private static final String TEST_ICON_DATA_URI =
@@ -47,9 +49,15 @@ public class HttpProxyServerTest {
                 assertTrue(response.startsWith("HTTP/1.1 200 OK"));
                 assertTrue(response.contains("登陆成功！请手动返回 APP 内继续"));
                 assertTrue(response.contains("class=\"appIcon\""));
+                assertTrue(response.contains("class=\"successMark\""));
                 assertTrue(response.contains(TEST_ICON_DATA_URI));
-                assertFalse(response.contains("<script>"));
-                assertFalse(response.contains("<button"));
+                assertTrue(response.contains("id=\"closePage\""));
+                assertTrue(response.contains("WeixinJSBridge.call('closeWindow')"));
+                Matcher nonce = Pattern.compile("<script nonce=\"([^\"]+)\">")
+                        .matcher(response);
+                assertTrue(nonce.find());
+                assertTrue(response.contains("script-src 'nonce-" + nonce.group(1) + "'"));
+                assertFalse(response.contains("script-src 'unsafe-inline'"));
                 assertFalse(response.contains("class=\"phoneIcon\""));
                 assertFalse(response.contains("@keyframes"));
                 assertFalse(response.contains("class=\"progress\""));
