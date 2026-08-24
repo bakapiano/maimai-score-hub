@@ -32,12 +32,15 @@ import {
   buildScoreOcrDrafts,
   type ScoreOcrDraft,
 } from "./scoreOcrModel";
-import { compressScoreOcrImage } from "./scoreOcrImage";
+import {
+  compressScoreOcrImage,
+  createScoreOcrPreviewUrl,
+  revokeScoreOcrPreviewUrls,
+} from "./scoreOcrImage";
 import classes from "./ScoreOcrImport.module.css";
 
 const ACCEPTED_IMAGES = "image/jpeg,image/png,image/webp";
 const MAX_IMAGES = 20;
-const PREVIEW_MAX_EDGE = 640;
 const LIGHTBOX_PLUGINS = [Zoom, Counter];
 
 type ScoreOcrImportProps = {
@@ -47,38 +50,6 @@ type ScoreOcrImportProps = {
 };
 
 type LightboxSlide = { src: string; alt: string };
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error("图片预览读取失败"));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function createStablePreview(file: File): Promise<string> {
-  try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(
-      1,
-      PREVIEW_MAX_EDGE / Math.max(bitmap.width, bitmap.height),
-    );
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    const context = canvas.getContext("2d");
-    if (!context) {
-      bitmap.close();
-      return readFileAsDataUrl(file);
-    }
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
-    return canvas.toDataURL("image/jpeg", 0.82);
-  } catch {
-    return readFileAsDataUrl(file);
-  }
-}
 
 function ScoreImageLightbox({
   index,
@@ -171,6 +142,7 @@ export function ScoreOcrImport({
   >({});
   const recognitionAbort = useRef<AbortController | null>(null);
   const imageResetRef = useRef<() => void>(null);
+  const previewUrlsRef = useRef<string[]>([]);
 
   const musicMap = useMemo(
     () => new Map(musics.map((music) => [music.id, music])),
@@ -185,18 +157,22 @@ export function ScoreOcrImport({
     [files, previewUrls],
   );
 
-  useEffect(
-    () => () => {
-      recognitionAbort.current?.abort();
-    },
-    [],
-  );
+  const releasePreviewUrls = useCallback(() => {
+    revokeScoreOcrPreviewUrls(previewUrlsRef.current);
+    previewUrlsRef.current = [];
+  }, []);
+
+  useEffect(() => () => {
+    recognitionAbort.current?.abort();
+    releasePreviewUrls();
+  }, [releasePreviewUrls]);
 
   const reset = useCallback(() => {
     recognitionAbort.current?.abort();
     recognitionAbort.current = null;
     setOpened(false);
     setFiles([]);
+    releasePreviewUrls();
     setPreviewUrls([]);
     setDrafts([]);
     setError(null);
@@ -205,7 +181,7 @@ export function ScoreOcrImport({
     setSaving(false);
     setLightboxIndex(null);
     imageResetRef.current?.();
-  }, []);
+  }, [releasePreviewUrls]);
 
   const beginRecognition = useCallback(
     async (chosen: readonly File[]) => {
@@ -213,6 +189,7 @@ export function ScoreOcrImport({
         return;
       }
       const selected = chosen.slice(0, MAX_IMAGES);
+      releasePreviewUrls();
       setFiles(selected);
       setPreviewUrls([]);
       setLightboxIndex(null);
@@ -237,10 +214,14 @@ export function ScoreOcrImport({
           }
         }
         setFiles(uploadFiles);
-        void Promise.all(uploadFiles.map(createStablePreview)).then((urls) => {
-          if (!controller.signal.aborted) {
-            setPreviewUrls(urls);
+        void Promise.all(uploadFiles.map(createScoreOcrPreviewUrl)).then((urls) => {
+          if (controller.signal.aborted) {
+            revokeScoreOcrPreviewUrls(urls);
+            return;
           }
+          releasePreviewUrls();
+          previewUrlsRef.current = urls;
+          setPreviewUrls(urls);
         }).catch(() => {
           if (!controller.signal.aborted) {
             setPreviewUrls([]);
@@ -269,7 +250,7 @@ export function ScoreOcrImport({
         }
       }
     },
-    [musics, offline, token],
+    [musics, offline, releasePreviewUrls, token],
   );
 
   const updateDraft = useCallback(

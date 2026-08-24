@@ -55,3 +55,28 @@ export async function compressScoreOcrImage(file: File): Promise<File> {
     bitmap?.close();
   }
 }
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("图片预览读取失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
+export function createScoreOcrPreviewUrl(file: File): Promise<string> {
+  if (typeof URL.createObjectURL === "function") {
+    return Promise.resolve(URL.createObjectURL(file));
+  }
+  return readFileAsDataUrl(file);
+}
+
+export function revokeScoreOcrPreviewUrls(urls: readonly string[]) {
+  if (typeof URL.revokeObjectURL !== "function") {
+    return;
+  }
+  urls.filter((url) => url.startsWith("blob:")).forEach((url) => {
+    URL.revokeObjectURL(url);
+  });
+}

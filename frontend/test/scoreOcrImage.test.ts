@@ -5,6 +5,7 @@ import {
   OCR_UPLOAD_JPEG_QUALITY,
   OCR_UPLOAD_MAX_EDGE,
   compressScoreOcrImage,
+  createScoreOcrPreviewUrl,
   fitImageWithinEdge,
 } from "../src/features/score-ocr/scoreOcrImage.ts";
 
@@ -89,6 +90,31 @@ test("OCR uploads use the resized JPEG file", async () => {
     Object.defineProperty(globalThis, "document", {
       configurable: true,
       value: originalDocument,
+    });
+  }
+});
+
+test("the preview uses the exact file sent to OCR", async () => {
+  const upload = new File([new Uint8Array(1_000)], "score.jpg", {
+    type: "image/jpeg",
+  });
+  let previewFile: Blob | undefined;
+  const originalCreateObjectUrl = URL.createObjectURL;
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: (file: Blob) => {
+      previewFile = file;
+      return "blob:ocr-preview";
+    },
+  });
+
+  try {
+    assert.equal(await createScoreOcrPreviewUrl(upload), "blob:ocr-preview");
+    assert.equal(previewFile, upload);
+  } finally {
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: originalCreateObjectUrl,
     });
   }
 });
