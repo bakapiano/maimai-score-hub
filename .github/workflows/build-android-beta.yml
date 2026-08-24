@@ -7,6 +7,26 @@ on:
       - "android-app/**"
       - ".github/workflows/build-android-beta.yml"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this signed Beta through the Backend release registry
+        required: true
+        type: boolean
+        default: false
+      mandatory:
+        description: Mark this release as an important update
+        required: true
+        type: boolean
+        default: false
+      rollout_percent:
+        description: Deterministic rollout percentage (0-100)
+        required: true
+        type: number
+        default: 100
+      notes:
+        description: Website-visible release notes
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -74,6 +94,8 @@ jobs:
           APK="app/build/outputs/apk/beta/MaiScoreHub-beta.apk"
           test -s "$APK"
           APP_ID="$(apkanalyzer manifest application-id "$APK")"
+          VERSION_CODE="$(apkanalyzer manifest version-code "$APK")"
+          VERSION_NAME="$(apkanalyzer manifest version-name "$APK")"
           test "$APP_ID" = "com.bakapiano.maiscorehub.android.beta"
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           "$APKSIGNER" verify --verbose "$APK"
@@ -88,8 +110,83 @@ jobs:
             echo "revision=${GITHUB_SHA}"
             echo "run_id=${GITHUB_RUN_ID}"
             echo "application_id=${APP_ID}"
+            echo "version_code=${VERSION_CODE}"
+            echo "version_name=${VERSION_NAME}"
             echo "certificate_sha256=${ACTUAL_CERT_SHA256}"
           } > "app/build/outputs/apk/beta/build-info.txt"
+
+      - name: Generate signed release manifest
+        shell: bash
+        env:
+          ANDROID_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/maiscorehub-beta.jks
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_BETA_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_BETA_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_BETA_KEY_PASSWORD }}
+          INPUT_MANDATORY: ${{ inputs.mandatory }}
+          INPUT_ROLLOUT_PERCENT: ${{ inputs.rollout_percent }}
+          INPUT_NOTES: ${{ inputs.notes }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/beta/MaiScoreHub-beta.apk"
+          VERSION_CODE="$(apkanalyzer manifest version-code "$APK")"
+          VERSION_NAME="$(apkanalyzer manifest version-name "$APK")"
+          RELEASE_ID="android-beta-${VERSION_CODE}-${GITHUB_SHA:0:12}"
+          APK_URL="https://api.maiscorehub.bakapiano.com/api/v1/android/app/releases/${RELEASE_ID}/apk"
+          NOTES_FILE="$RUNNER_TEMP/android-release-notes.txt"
+          if [ -n "${INPUT_NOTES:-}" ]; then
+            printf '%s' "$INPUT_NOTES" > "$NOTES_FILE"
+          else
+            printf 'MaiScoreHub Beta %s' "$VERSION_NAME" > "$NOTES_FILE"
+          fi
+          java scripts/SignReleaseManifest.java \
+            --apk "$APK" \
+            --output "app/build/outputs/apk/beta/release-publish.json" \
+            --release-id "$RELEASE_ID" \
+            --channel beta \
+            --package-name com.bakapiano.maiscorehub.android.beta \
+            --version-code "$VERSION_CODE" \
+            --version-name "$VERSION_NAME" \
+            --required-bridge-api-version 2 \
+            --min-sdk 26 \
+            --apk-url "$APK_URL" \
+            --mandatory "${INPUT_MANDATORY:-false}" \
+            --rollout-percent "${INPUT_ROLLOUT_PERCENT:-100}" \
+            --notes-file "$NOTES_FILE"
+
+      - name: Publish signed Beta release
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        shell: bash
+        env:
+          API_SHARED_SECRET: ${{ secrets.API_SHARED_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$API_SHARED_SECRET"
+          PUBLISH_JSON="app/build/outputs/apk/beta/release-publish.json"
+          APK="app/build/outputs/apk/beta/MaiScoreHub-beta.apk"
+          RELEASE_ID="$(jq -r '.manifest.releaseId' "$PUBLISH_JSON")"
+          jq -c '.policy' "$PUBLISH_JSON" > "$RUNNER_TEMP/android-policy.json"
+          jq -c '.envelope' "$PUBLISH_JSON" > "$RUNNER_TEMP/android-envelope.json"
+          curl --fail-with-body --retry 3 \
+            -X PUT \
+            -H "X-API-Secret: $API_SHARED_SECRET" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/android-policy.json" \
+            "https://api.maiscorehub.bakapiano.com/api/v1/admin/android/app/releases/policies/beta"
+          curl --fail-with-body --retry 3 \
+            -X PUT \
+            -H "X-API-Secret: $API_SHARED_SECRET" \
+            -H 'Content-Type: application/vnd.android.package-archive' \
+            --data-binary "@$APK" \
+            "https://api.maiscorehub.bakapiano.com/api/v1/admin/android/app/releases/${RELEASE_ID}/apk"
+          curl --fail-with-body --retry 3 \
+            -X PUT \
+            -H "X-API-Secret: $API_SHARED_SECRET" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/android-envelope.json" \
+            "https://api.maiscorehub.bakapiano.com/api/v1/admin/android/app/releases/${RELEASE_ID}"
+          curl --fail-with-body \
+            "https://api.maiscorehub.bakapiano.com/api/v1/android/app/releases/${RELEASE_ID}/manifest" \
+            | jq -e '.signatureAlgorithm == "SHA256withRSA"' >/dev/null
 
       - name: Upload Beta APK
         uses: actions/upload-artifact@v7
@@ -99,5 +196,6 @@ jobs:
             android-app/app/build/outputs/apk/beta/MaiScoreHub-beta.apk
             android-app/app/build/outputs/apk/beta/MaiScoreHub-beta.apk.sha256
             android-app/app/build/outputs/apk/beta/build-info.txt
+            android-app/app/build/outputs/apk/beta/release-publish.json
           if-no-files-found: error
           retention-days: 30

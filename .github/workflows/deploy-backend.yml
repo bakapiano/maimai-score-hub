@@ -29,6 +29,7 @@ jobs:
           tar -cf - \
             --exclude='backend/.env' \
             --exclude='backend/covers' \
+            --exclude='backend/android-releases' \
             --exclude='backend/assets' \
             --exclude='backend/dist' \
             --exclude='backend/node_modules' \
@@ -113,7 +114,8 @@ jobs:
             # has a new inode, while existing containers remain mounted to the
             # now-empty deleted directory until the rolling restart finishes.
             if [ -d backend ]; then
-              find backend -mindepth 1 -maxdepth 1 ! -name covers \
+              find backend -mindepth 1 -maxdepth 1 \
+                ! -name covers ! -name android-releases \
                 -exec rm -rf -- {} +
             fi
             rm -rf shared package.json package-lock.json

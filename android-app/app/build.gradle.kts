@@ -14,6 +14,14 @@ val hasBetaSigning = listOf(
     betaKeyAlias,
     betaKeyPassword,
 ).all { !it.isNullOrBlank() }
+val appVersionCode = providers.gradleProperty("mshVersionCode")
+    .orNull
+    ?.toIntOrNull()
+    ?: 4
+val appVersionName = providers.gradleProperty("mshVersionName")
+    .orNull
+    ?.takeIf { it.isNotBlank() }
+    ?: "0.2.2"
 
 android {
     namespace = "com.bakapiano.maiscorehub.android"
@@ -35,14 +43,21 @@ android {
         applicationId = "com.bakapiano.maiscorehub.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = appVersionCode
+        versionName = appVersionName
         manifestPlaceholders["appLabel"] = "MaiScoreHub"
     }
 
     buildTypes {
         debug {
             buildConfigField("boolean", "E2E_ENABLED", "true")
+            buildConfigField("boolean", "ALLOW_INSECURE_APP_UPDATES", "true")
+            buildConfigField("String", "APP_RELEASE_CHANNEL", "\"debug\"")
+            buildConfigField(
+                "String",
+                "APP_RELEASE_API_BASE_URL",
+                "\"http://localhost:9050/api/v1\"",
+            )
             buildConfigField(
                 "String",
                 "WEB_URL",
@@ -52,6 +67,13 @@ android {
         }
         release {
             buildConfigField("boolean", "E2E_ENABLED", "false")
+            buildConfigField("boolean", "ALLOW_INSECURE_APP_UPDATES", "false")
+            buildConfigField("String", "APP_RELEASE_CHANNEL", "\"stable\"")
+            buildConfigField(
+                "String",
+                "APP_RELEASE_API_BASE_URL",
+                "\"https://api.maiscorehub.bakapiano.com/api/v1\"",
+            )
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -71,6 +93,8 @@ android {
             signingConfig = signingConfigs.findByName("beta")
                 ?: signingConfigs.getByName("debug")
             buildConfigField("boolean", "E2E_ENABLED", "true")
+            buildConfigField("boolean", "ALLOW_INSECURE_APP_UPDATES", "false")
+            buildConfigField("String", "APP_RELEASE_CHANNEL", "\"beta\"")
             buildConfigField(
                 "String",
                 "WEB_URL",

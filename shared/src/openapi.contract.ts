@@ -2,6 +2,7 @@ import { initContract } from '@ts-rest/core';
 
 import {
   adminContract,
+  androidAppReleaseContract,
   appContract,
   authContract,
   coverContract,
@@ -17,6 +18,7 @@ import {
 const c = initContract();
 
 export const openApiContract = c.router({
+  androidAppRelease: androidAppReleaseContract,
   app: appContract,
   auth: authContract,
   users: usersContract,

@@ -5,6 +5,8 @@ import { join } from 'node:path';
 
 const CURRENT_WORKFLOW_VERSION = '2026.08.24.1';
 const WORKFLOW_API_VERSION = 1;
+// This is the minimum needed by the score Workflow. Native Bridge v2 remains
+// backward-compatible with this v1 subset while app-release UI gates itself on v2.
 const BRIDGE_API_VERSION = 1;
 
 export type AndroidWorkflowManifest = {

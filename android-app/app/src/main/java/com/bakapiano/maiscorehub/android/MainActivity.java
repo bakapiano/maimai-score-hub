@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.net.VpnService;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.util.Log;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
@@ -25,6 +26,8 @@ import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewFeature;
 
 import com.bakapiano.maiscorehub.android.net.DxnetTransport;
+import com.bakapiano.maiscorehub.android.update.AppUpdateInstallReceiver;
+import com.bakapiano.maiscorehub.android.update.AppUpdateManager;
 import com.bakapiano.maiscorehub.android.vpn.ProxyUpdateVpnService;
 import com.bakapiano.maiscorehub.android.web.InsetWebViewContainer;
 import com.bakapiano.maiscorehub.android.web.WebFileChooser;
@@ -40,7 +43,7 @@ public final class MainActivity extends Activity {
     private static final int VPN_PERMISSION_REQUEST = 4101;
     private static final int NOTIFICATION_PERMISSION_REQUEST = 4102;
     private static final int WECHAT_SHARE_REQUEST = 4103;
-    private static final int BRIDGE_API_VERSION = 1;
+    private static final int APP_UPDATE_PERMISSION_REQUEST = 4104;
     private static final int MAX_REQUEST_JSON_CHARS = 64 * 1024;
     private static final String TAG_WEBVIEW = "MshWebView";
 
@@ -48,9 +51,15 @@ public final class MainActivity extends Activity {
     private InsetWebViewContainer webViewContainer;
     private WebView webView;
     private WebFileChooser webFileChooser;
+    private AppUpdateManager appUpdateManager;
     private String pendingOAuthRequestId = "";
+    private String pendingAppUpdateRequestId = "";
+    private String pendingAppUpdateReleaseId = "";
+    private boolean awaitingAppUpdatePermission;
     private JSONObject lastOAuthStatus;
+    private JSONObject lastAppUpdateStatus;
     private boolean receiverRegistered;
+    private boolean appUpdateReceiverRegistered;
     private boolean e2eDispatched;
 
     private final BroadcastReceiver oauthReceiver = new BroadcastReceiver() {
@@ -86,15 +95,59 @@ public final class MainActivity extends Activity {
         }
     };
 
+    private final BroadcastReceiver appUpdateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (!AppUpdateInstallReceiver.ACTION_UPDATE_STATUS.equals(intent.getAction())) {
+                return;
+            }
+            String raw = intent.getStringExtra("statusJson");
+            if (raw == null || raw.isBlank()) {
+                return;
+            }
+            try {
+                JSONObject status = new JSONObject(raw);
+                emitAppUpdateStatus(status);
+                if (status.optBoolean("terminal", false)) {
+                    AppUpdateManager.markTerminal();
+                }
+            } catch (JSONException ignored) {
+                // Status is produced by the app-local installer receiver.
+            }
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         webViewContainer = new InsetWebViewContainer(this);
         webView = webViewContainer.getWebView();
         webFileChooser = new WebFileChooser(this);
+        appUpdateManager = new AppUpdateManager(
+                this,
+                requestExecutor,
+                this::emitAppUpdateStatus
+        );
+        if (savedInstanceState != null) {
+            pendingAppUpdateRequestId = savedInstanceState.getString(
+                    "pending_app_update_request_id",
+                    ""
+            );
+            pendingAppUpdateReleaseId = savedInstanceState.getString(
+                    "pending_app_update_release_id",
+                    ""
+            );
+            awaitingAppUpdatePermission = savedInstanceState.getBoolean(
+                    "awaiting_app_update_permission",
+                    false
+            );
+            e2eDispatched = savedInstanceState.getBoolean("e2e_dispatched", false);
+        }
+        lastAppUpdateStatus = AppUpdateInstallReceiver.consumeLastStatus(this);
         setContentView(webViewContainer);
         configureWebView(savedInstanceState);
         registerOAuthReceiver();
+        registerAppUpdateReceiver();
         requestNotificationPermission();
     }
 
@@ -160,6 +213,9 @@ public final class MainActivity extends Activity {
                 if (lastOAuthStatus != null) {
                     dispatchEvent("msh-android-oauth-status", lastOAuthStatus);
                 }
+                if (lastAppUpdateStatus != null) {
+                    dispatchEvent("msh-android-app-update-status", lastAppUpdateStatus);
+                }
                 dispatchE2EStart();
             }
         });
@@ -191,6 +247,20 @@ public final class MainActivity extends Activity {
             return;
         }
         String mode = getIntent().getStringExtra("e2e_mode");
+        if ("app_update".equals(mode)) {
+            String releaseId = getIntent().getStringExtra("e2e_release_id");
+            if (!isValidReleaseId(releaseId)) {
+                return;
+            }
+            e2eDispatched = true;
+            String script = "(function waitForAppUpdateE2E(remaining){"
+                    + "if(typeof window.__mshStartAndroidAppUpdateE2E==='function'){"
+                    + "window.__mshStartAndroidAppUpdateE2E("
+                    + JSONObject.quote(releaseId) + ");return;}"
+                    + "if(remaining>0){setTimeout(function(){waitForAppUpdateE2E(remaining-1)},500)}})(60)";
+            webView.evaluateJavascript(script, null);
+            return;
+        }
         if (!"recent".equals(mode) && !"full".equals(mode) && !"login".equals(mode)) {
             return;
         }
@@ -253,6 +323,54 @@ public final class MainActivity extends Activity {
         );
     }
 
+    private void beginAppUpdate(String requestId, String releaseId) {
+        if (!isValidRequestId(requestId)) {
+            return;
+        }
+        if (!isValidReleaseId(releaseId)) {
+            emitAppUpdateFailure(requestId, "应用更新版本编号无效");
+            return;
+        }
+        if (!isTrustedWebPage()) {
+            emitAppUpdateFailure(requestId, "当前网页来源无法启动应用更新");
+            return;
+        }
+        if (AppUpdateManager.isRunning()) {
+            emitAppUpdateFailure(requestId, "已有应用更新正在进行");
+            return;
+        }
+        pendingAppUpdateRequestId = requestId;
+        pendingAppUpdateReleaseId = releaseId;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && !getPackageManager().canRequestPackageInstalls()) {
+            awaitingAppUpdatePermission = true;
+            emitAppUpdateStatus(
+                    requestId,
+                    "请允许 MaiScoreHub 安装应用更新",
+                    "permission",
+                    1,
+                    false,
+                    false,
+                    null
+            );
+            Intent settings = new Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:" + getPackageName())
+            );
+            startActivityForResult(settings, APP_UPDATE_PERMISSION_REQUEST);
+            return;
+        }
+        startAppUpdateManager();
+    }
+
+    private void startAppUpdateManager() {
+        awaitingAppUpdatePermission = false;
+        appUpdateManager.start(
+                pendingAppUpdateRequestId,
+                pendingAppUpdateReleaseId
+        );
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -269,6 +387,19 @@ public final class MainActivity extends Activity {
             );
             return;
         }
+        if (requestCode == APP_UPDATE_PERMISSION_REQUEST) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O
+                    || getPackageManager().canRequestPackageInstalls()) {
+                resumePendingAppUpdateIfAuthorized();
+            } else {
+                awaitingAppUpdatePermission = false;
+                emitAppUpdateFailure(
+                        pendingAppUpdateRequestId,
+                        "应用更新安装权限未开启"
+                );
+            }
+            return;
+        }
         if (requestCode != VPN_PERMISSION_REQUEST) {
             return;
         }
@@ -281,6 +412,31 @@ public final class MainActivity extends Activity {
                     true,
                     false,
                     "临时 VPN 授权已取消"
+            );
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        resumePendingAppUpdateIfAuthorized();
+    }
+
+    private void resumePendingAppUpdateIfAuthorized() {
+        if (!awaitingAppUpdatePermission
+                || !isValidRequestId(pendingAppUpdateRequestId)
+                || !isValidReleaseId(pendingAppUpdateReleaseId)
+                || AppUpdateManager.isRunning()) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O
+                || getPackageManager().canRequestPackageInstalls()) {
+            startAppUpdateManager();
+        } else {
+            awaitingAppUpdatePermission = false;
+            emitAppUpdateFailure(
+                    pendingAppUpdateRequestId,
+                    "应用更新安装权限未开启"
             );
         }
     }
@@ -398,6 +554,49 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void emitAppUpdateStatus(JSONObject detail) {
+        lastAppUpdateStatus = detail;
+        dispatchEvent("msh-android-app-update-status", detail);
+    }
+
+    private void emitAppUpdateStatus(
+            String requestId,
+            String message,
+            String stage,
+            int progress,
+            boolean terminal,
+            boolean success,
+            String error
+    ) {
+        try {
+            JSONObject detail = new JSONObject()
+                    .put("requestId", requestId)
+                    .put("message", message)
+                    .put("stage", stage)
+                    .put("progress", progress)
+                    .put("terminal", terminal)
+                    .put("success", success);
+            if (error != null && !error.isBlank()) {
+                detail.put("error", error);
+            }
+            emitAppUpdateStatus(detail);
+        } catch (JSONException ignored) {
+            // Primitive values are JSON-safe.
+        }
+    }
+
+    private void emitAppUpdateFailure(String requestId, String message) {
+        emitAppUpdateStatus(
+                requestId,
+                message,
+                "failed",
+                0,
+                true,
+                false,
+                message
+        );
+    }
+
     private void dispatchEvent(String eventName, JSONObject detail) {
         if (webView == null) {
             return;
@@ -447,6 +646,29 @@ public final class MainActivity extends Activity {
         receiverRegistered = true;
     }
 
+    private void registerAppUpdateReceiver() {
+        IntentFilter filter = new IntentFilter(
+                AppUpdateInstallReceiver.ACTION_UPDATE_STATUS
+        );
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(
+                    appUpdateReceiver,
+                    filter,
+                    AppUpdateInstallReceiver.INTERNAL_STATUS_PERMISSION,
+                    null,
+                    Context.RECEIVER_NOT_EXPORTED
+            );
+        } else {
+            registerReceiver(
+                    appUpdateReceiver,
+                    filter,
+                    AppUpdateInstallReceiver.INTERNAL_STATUS_PERMISSION,
+                    null
+            );
+        }
+        appUpdateReceiverRegistered = true;
+    }
+
     private void requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -460,6 +682,19 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
+        outState.putString(
+                "pending_app_update_request_id",
+                pendingAppUpdateRequestId
+        );
+        outState.putString(
+                "pending_app_update_release_id",
+                pendingAppUpdateReleaseId
+        );
+        outState.putBoolean(
+                "awaiting_app_update_permission",
+                awaitingAppUpdatePermission
+        );
+        outState.putBoolean("e2e_dispatched", e2eDispatched);
         webView.saveState(outState);
         super.onSaveInstanceState(outState);
     }
@@ -479,6 +714,10 @@ public final class MainActivity extends Activity {
             unregisterReceiver(oauthReceiver);
             receiverRegistered = false;
         }
+        if (appUpdateReceiverRegistered) {
+            unregisterReceiver(appUpdateReceiver);
+            appUpdateReceiverRegistered = false;
+        }
         requestExecutor.shutdownNow();
         webFileChooser.cancel();
         webView.removeJavascriptInterface("MaiScoreHubAndroid");
@@ -491,6 +730,10 @@ public final class MainActivity extends Activity {
 
     private static boolean isValidRequestId(String value) {
         return value != null && value.matches("^[A-Za-z0-9-]{8,80}$");
+    }
+
+    private static boolean isValidReleaseId(String value) {
+        return value != null && value.matches("^[a-z0-9][a-z0-9._-]{7,79}$");
     }
 
     private static String safeMessage(Exception error) {
@@ -513,7 +756,27 @@ public final class MainActivity extends Activity {
 
         @JavascriptInterface
         public int getBridgeApiVersion() {
-            return BRIDGE_API_VERSION;
+            return NativeBridgeContract.API_VERSION;
+        }
+
+        @JavascriptInterface
+        public int getVersionCode() {
+            return BuildConfig.VERSION_CODE;
+        }
+
+        @JavascriptInterface
+        public String getPackageName() {
+            return MainActivity.this.getPackageName();
+        }
+
+        @JavascriptInterface
+        public String getReleaseChannel() {
+            return BuildConfig.APP_RELEASE_CHANNEL;
+        }
+
+        @JavascriptInterface
+        public boolean isAppUpdateRunning() {
+            return AppUpdateManager.isRunning();
         }
 
         @JavascriptInterface
@@ -529,6 +792,11 @@ public final class MainActivity extends Activity {
         @JavascriptInterface
         public void dxnetRequest(String requestId, String requestJson) {
             runOnUiThread(() -> handleDxnetRequest(requestId, requestJson));
+        }
+
+        @JavascriptInterface
+        public void startAppUpdate(String requestId, String releaseId) {
+            runOnUiThread(() -> beginAppUpdate(requestId, releaseId));
         }
     }
 }

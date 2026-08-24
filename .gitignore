@@ -91,6 +91,7 @@ ocr-api/pipeline/runtime/
 
 *.zip
 backend/score-exports/
+backend/android-releases/
 
 # Copilot instructions (contains server credentials)
 .github/copilot-instructions.md

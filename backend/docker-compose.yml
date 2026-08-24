@@ -157,6 +157,9 @@ services:
       OCR_API_URL: ${OCR_API_URL:-http://host.docker.internal:19100}
       OCR_API_TOKEN: ${OCR_API_TOKEN:-}
       OCR_API_TIMEOUT_MS: ${OCR_API_TIMEOUT_MS:-180000}
+      ANDROID_RELEASES_DIR: /app/backend/android-releases
+      ANDROID_RELEASE_PUBLIC_BASE_URL: ${ANDROID_RELEASE_PUBLIC_BASE_URL:-https://api.maiscorehub.bakapiano.com/api/v1/android/app/releases}
+      ANDROID_RELEASE_MAX_UPLOAD_BYTES: ${ANDROID_RELEASE_MAX_UPLOAD_BYTES:-52428800}
       OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-false}
       OBSERVABILITY_ENV: ${OBSERVABILITY_ENV:-prod}
       OBSERVABILITY_INSTANCE: ${OBSERVABILITY_INSTANCE:-backend-server-5}
@@ -171,6 +174,7 @@ services:
       CLICKHOUSE_MAX_BUFFERED_ROWS: ${CLICKHOUSE_MAX_BUFFERED_ROWS:-50000}
     volumes:
       - ./covers:/app/backend/covers
+      - ./android-releases:/app/backend/android-releases
 
   nginx:
     image: nginx:1.27-alpine

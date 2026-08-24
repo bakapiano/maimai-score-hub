@@ -9,6 +9,7 @@ import { MantineProvider } from "@mantine/core";
 import { MusicProvider } from "./providers/MusicProvider";
 import { Notifications } from "@mantine/notifications";
 import { ObservabilityReporter } from "./components/ObservabilityReporter";
+import { AndroidAppUpdateE2EBridge } from "./features/android-update/AndroidAppUpdateE2EBridge";
 import { PwaInstallProvider } from "./providers/PwaInstallProvider";
 import { appTheme } from "./theme";
 
@@ -57,6 +58,7 @@ function App() {
           <BrowserRouter>
             <AuthProvider>
               <ObservabilityReporter />
+              <AndroidAppUpdateE2EBridge />
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="/login" element={<LoginRoute />} />

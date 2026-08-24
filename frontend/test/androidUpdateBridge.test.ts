@@ -5,6 +5,7 @@ import {
   getAndroidHostBridge,
   getAndroidLoginBridge,
   getAndroidUpdateBridge,
+  parseAndroidAppUpdateStatus,
   isAndroidHostBridge,
   parseAndroidUpdateStatus,
 } from "../src/features/android-update/androidUpdateBridge.ts";
@@ -55,6 +56,29 @@ test("normalizes dynamic workflow status events", () => {
     },
   );
   assert.equal(parseAndroidUpdateStatus({ message: "missing flags" }), null);
+});
+
+test("normalizes native application update progress", () => {
+  assert.deepEqual(
+    parseAndroidAppUpdateStatus({
+      requestId: "request-123",
+      message: "正在下载安装包",
+      stage: "download",
+      progress: 140,
+      terminal: false,
+      success: false,
+      releaseId: "android-beta-4-deadbeef",
+    }),
+    {
+      requestId: "request-123",
+      message: "正在下载安装包",
+      stage: "download",
+      progress: 100,
+      terminal: false,
+      success: false,
+      releaseId: "android-beta-4-deadbeef",
+    },
+  );
 });
 
 test("computes the workflow SHA-256 digest used by the manifest", async () => {

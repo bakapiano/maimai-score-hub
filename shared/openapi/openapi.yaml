@@ -1,8 +1,161 @@
 openapi: 3.0.2
 paths:
-  /health:
+  /android/app/releases/latest:
     get:
       tags: &a1
+        - androidAppRelease
+      parameters:
+        - name: channel
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - debug
+              - beta
+              - stable
+        - name: packageName
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 160
+            pattern: ^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)+$
+        - name: currentVersionCode
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            nullable: true
+        - name: installationId
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 128
+            pattern: ^[A-Za-z0-9._-]+$
+      operationId: androidAppRelease.getLatest
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updateAvailable:
+                    type: boolean
+                  release:
+                    type: object
+                    properties:
+                      releaseId:
+                        type: string
+                        minLength: 8
+                        maxLength: 80
+                        pattern: ^[a-z0-9][a-z0-9._-]+$
+                      channel:
+                        type: string
+                        enum:
+                          - debug
+                          - beta
+                          - stable
+                      packageName:
+                        type: string
+                        minLength: 3
+                        maxLength: 160
+                        pattern: ^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)+$
+                      versionCode:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: 0
+                      versionName:
+                        type: string
+                        minLength: 1
+                        maxLength: 80
+                      requiredBridgeApiVersion:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: 0
+                      apkSize:
+                        type: integer
+                        minimum: 0
+                        exclusiveMinimum: 0
+                        maximum: 52428800
+                      mandatory:
+                        type: boolean
+                      rolloutPercent:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                      notes:
+                        type: string
+                        maxLength: 4000
+                      publishedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - releaseId
+                      - channel
+                      - packageName
+                      - versionCode
+                      - versionName
+                      - requiredBridgeApiVersion
+                      - apkSize
+                      - mandatory
+                      - rolloutPercent
+                      - notes
+                      - publishedAt
+                    additionalProperties: false
+                    nullable: true
+                required:
+                  - updateAvailable
+                  - release
+                additionalProperties: false
+  /android/app/releases/{releaseId}/manifest:
+    get:
+      tags: *a1
+      parameters:
+        - name: releaseId
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: androidAppRelease.getManifest
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  manifestBase64:
+                    type: string
+                    minLength: 4
+                    maxLength: 65536
+                    pattern: ^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
+                  signatureBase64:
+                    type: string
+                    minLength: 4
+                    maxLength: 16384
+                    pattern: ^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
+                  signatureAlgorithm:
+                    type: string
+                    enum:
+                      - SHA256withRSA
+                required:
+                  - manifestBase64
+                  - signatureBase64
+                  - signatureAlgorithm
+                additionalProperties: false
+        "404":
+          description: "404"
+  /health:
+    get:
+      tags: &a2
         - app
       parameters: []
       operationId: app.getStatus
@@ -11,7 +164,7 @@ paths:
           description: "200"
   /statistics:
     get:
-      tags: *a1
+      tags: *a2
       parameters: []
       operationId: app.getStatistics
       responses:
@@ -49,7 +202,7 @@ paths:
                   - dxnetJobs
   /auth/login-requests:
     post:
-      tags: &a2
+      tags: &a3
         - auth
       parameters: []
       operationId: auth.loginRequest
@@ -257,7 +410,7 @@ paths:
                 additionalProperties: true
   /auth/login-requests/{jobId}:
     get:
-      tags: *a2
+      tags: *a3
       parameters:
         - name: jobId
           in: path
@@ -285,7 +438,7 @@ paths:
                 additionalProperties: true
   /auth/login-requests/{jobId}/verify:
     post:
-      tags: *a2
+      tags: *a3
       parameters:
         - name: jobId
           in: path
@@ -464,7 +617,7 @@ paths:
                   - job
   /auth/qr-login:
     post:
-      tags: *a2
+      tags: *a3
       parameters: []
       operationId: auth.loginByQr
       requestBody:
@@ -528,7 +681,7 @@ paths:
           description: "409"
   /auth/qr-login/{attemptId}:
     get:
-      tags: *a2
+      tags: *a3
       parameters:
         - name: attemptId
           in: path
@@ -584,7 +737,7 @@ paths:
           description: "404"
   /auth/password-login:
     post:
-      tags: *a2
+      tags: *a3
       parameters: []
       operationId: auth.passwordLogin
       requestBody:
@@ -640,7 +793,7 @@ paths:
           description: "401"
   /auth/passkey/options:
     post:
-      tags: *a2
+      tags: *a3
       parameters: []
       operationId: auth.passkeyOptions
       responses:
@@ -676,7 +829,7 @@ paths:
                   - message
   /auth/passkey/verify:
     post:
-      tags: *a2
+      tags: *a3
       parameters: []
       operationId: auth.passkeyVerify
       requestBody:
@@ -765,7 +918,7 @@ paths:
                   - message
   /me:
     get:
-      tags: &a3
+      tags: &a4
         - users
       parameters: []
       operationId: users.profile
@@ -801,7 +954,7 @@ paths:
                   - friendCode
                 additionalProperties: true
     patch:
-      tags: *a3
+      tags: *a4
       parameters: []
       operationId: users.updateProfile
       requestBody:
@@ -851,7 +1004,7 @@ paths:
                   - friendCode
                 additionalProperties: true
     delete:
-      tags: *a3
+      tags: *a4
       parameters: []
       operationId: users.deleteMe
       responses:
@@ -859,7 +1012,7 @@ paths:
           description: "200"
   /me/password:
     put:
-      tags: *a3
+      tags: *a4
       parameters: []
       operationId: users.setPassword
       requestBody:
@@ -921,7 +1074,7 @@ paths:
           description: "409"
   /me/passkeys:
     get:
-      tags: *a3
+      tags: *a4
       parameters: []
       operationId: users.listPasskeys
       responses:
@@ -966,7 +1119,7 @@ paths:
           description: "401"
   /me/passkeys/registration/options:
     post:
-      tags: *a3
+      tags: *a4
       parameters: []
       operationId: users.createPasskeyOptions
       requestBody:
@@ -1007,7 +1160,7 @@ paths:
           description: "429"
   /me/passkeys/registration/verify:
     post:
-      tags: *a3
+      tags: *a4
       parameters: []
       operationId: users.verifyPasskeyRegistration
       requestBody:
@@ -1073,7 +1226,7 @@ paths:
           description: "409"
   /me/passkeys/{id}:
     patch:
-      tags: *a3
+      tags: *a4
       parameters:
         - name: id
           in: path
@@ -1134,7 +1287,7 @@ paths:
           description: "404"
   /me/passkeys/{id}/delete:
     post:
-      tags: *a3
+      tags: *a4
       parameters:
         - name: id
           in: path
@@ -1166,7 +1319,7 @@ paths:
           description: "429"
   /me/prober-tokens/diving-fish:
     post:
-      tags: *a3
+      tags: *a4
       parameters: []
       operationId: users.getDivingFishToken
       requestBody:
@@ -1202,7 +1355,7 @@ paths:
                 additionalProperties: true
   /me/cabinet:
     put:
-      tags: *a3
+      tags: *a4
       parameters: []
       operationId: users.bindCabinetQr
       requestBody:
@@ -1280,7 +1433,7 @@ paths:
                   - matchedRows
                   - requiredRows
     delete:
-      tags: *a3
+      tags: *a4
       parameters: []
       operationId: users.unbindCabinet
       responses:
@@ -1301,7 +1454,7 @@ paths:
           description: "400"
   /me/cabinet/attempts/{attemptId}:
     get:
-      tags: *a3
+      tags: *a4
       parameters:
         - name: attemptId
           in: path
@@ -1339,7 +1492,7 @@ paths:
           description: "404"
   /me/cabinet-score-jobs:
     post:
-      tags: &a4
+      tags: &a5
         - sync
       parameters: []
       operationId: sync.createCabinetScoreJob
@@ -1455,7 +1608,7 @@ paths:
           description: "409"
   /me/cabinet-score-jobs/active:
     get:
-      tags: *a4
+      tags: *a5
       parameters: []
       operationId: sync.getActiveCabinetScoreJob
       responses:
@@ -1550,7 +1703,7 @@ paths:
                   - job
   /me/cabinet-score-jobs/{jobId}:
     get:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: jobId
           in: path
@@ -1644,7 +1797,7 @@ paths:
                   - updatedAt
   /me/sync/latest:
     get:
-      tags: *a4
+      tags: *a5
       parameters: []
       operationId: sync.latest
       responses:
@@ -1770,7 +1923,7 @@ paths:
                 nullable: true
   /me/sync/scores:
     post:
-      tags: *a4
+      tags: *a5
       parameters: []
       operationId: sync.updateScores
       requestBody:
@@ -1870,7 +2023,7 @@ paths:
           description: "503"
   /me/sync/latest/exports/diving-fish:
     post:
-      tags: *a4
+      tags: *a5
       parameters: []
       operationId: sync.exportToDivingFish
       responses:
@@ -2033,7 +2186,7 @@ paths:
                   - job
   /me/sync/latest/exports/lxns:
     post:
-      tags: *a4
+      tags: *a5
       parameters: []
       operationId: sync.exportToLxns
       responses:
@@ -2196,7 +2349,7 @@ paths:
                   - job
   /me/sync/prober-export-jobs/{exportJobId}:
     get:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: exportJobId
           in: path
@@ -2346,7 +2499,7 @@ paths:
                 additionalProperties: true
   /me/sync/prober-export-jobs:
     get:
-      tags: *a4
+      tags: *a5
       parameters: []
       operationId: sync.listProberExportJobs
       responses:
@@ -2498,7 +2651,7 @@ paths:
                   - items
   /me/score-changes:
     get:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: musicId
           in: query
@@ -2663,7 +2816,7 @@ paths:
                   - nextCursor
   /me/score-history:
     get:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: start
           in: query
@@ -2808,7 +2961,7 @@ paths:
                   - hasEarlier
   /me/score-history/calendar:
     get:
-      tags: *a4
+      tags: *a5
       parameters:
         - name: from
           in: query
@@ -2873,7 +3026,7 @@ paths:
                   - hasEarlier
   /me/dxnet-jobs:
     post:
-      tags: &a5
+      tags: &a6
         - job
       parameters:
         - name: authorization
@@ -3126,7 +3279,7 @@ paths:
                   - code
   /me/dxnet-jobs/{jobId}:
     get:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: jobId
           in: path
@@ -3305,7 +3458,7 @@ paths:
                   - friendCode
   /me/dxnet-jobs/active:
     get:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: authorization
           in: header
@@ -3485,7 +3638,7 @@ paths:
                   - job
   /me/dxnet-jobs/friendship:
     get:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: authorization
           in: header
@@ -3529,7 +3682,7 @@ paths:
                   - checkedAt
   /me/dxnet-jobs/{jobId}/verify:
     post:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: jobId
           in: path
@@ -3718,7 +3871,7 @@ paths:
                   - job
   /workers/dxnet/jobs/{jobId}:
     get:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: jobId
           in: path
@@ -3959,7 +4112,7 @@ paths:
                   - updatedAt
                   - friendCode
     patch:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: jobId
           in: path
@@ -4381,7 +4534,7 @@ paths:
                   - code
   /workers/dxnet/jobs/{jobId}/prepare-cabinet-friendship:
     post:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: jobId
           in: path
@@ -4518,7 +4671,7 @@ paths:
                   - code
   /workers/dxnet/bots/{botUserFriendCode}/active-friend-codes:
     get:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: botUserFriendCode
           in: path
@@ -4537,7 +4690,7 @@ paths:
                   type: string
   /workers/dxnet/qr-login/rival-names:
     get:
-      tags: *a5
+      tags: *a6
       parameters: []
       operationId: job.getRunningQrLoginRivalNames
       responses:
@@ -4551,7 +4704,7 @@ paths:
                   type: string
   /workers/dxnet/users/activity:
     post:
-      tags: *a5
+      tags: *a6
       parameters: []
       operationId: job.getUsersActivity
       requestBody:
@@ -4591,7 +4744,7 @@ paths:
                     - cabinetUserId
   /workers/dxnet/jobs/{jobId}/cache/{diff}/{type}:
     get:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: jobId
           in: path
@@ -4659,7 +4812,7 @@ paths:
                 required:
                   - songs
     put:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: jobId
           in: path
@@ -4764,7 +4917,7 @@ paths:
                   additionalProperties: true
   /admin/catalog/music/sync:
     post:
-      tags: &a6
+      tags: &a7
         - admin
       parameters: []
       operationId: admin.syncMusic
@@ -4773,7 +4926,7 @@ paths:
           description: "201"
   /admin/dashboard/stats:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getStats
       responses:
@@ -4795,7 +4948,7 @@ paths:
                 additionalProperties: true
   /admin/dashboard/job-stats:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getJobStats
       responses:
@@ -4807,7 +4960,7 @@ paths:
                 nullable: true
   /admin/dashboard/job-trend:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: hours
           in: query
@@ -4823,7 +4976,7 @@ paths:
                 nullable: true
   /admin/dashboard/job-error-stats:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getJobErrorStats
       responses:
@@ -4835,7 +4988,7 @@ paths:
                 nullable: true
   /admin/dxnet-jobs:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: friendCode
           in: query
@@ -4868,7 +5021,7 @@ paths:
                 nullable: true
   /admin/users:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getAllUsers
       responses:
@@ -4882,7 +5035,7 @@ paths:
                   nullable: true
   /admin/dxnet-jobs/active:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getActiveJobs
       responses:
@@ -4894,7 +5047,7 @@ paths:
                 nullable: true
   /workers/bots/status:
     post:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.reportBotStatus
       requestBody:
@@ -4977,7 +5130,7 @@ paths:
           description: "201"
   /admin/bots:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getBotStatus
       responses:
@@ -5025,7 +5178,7 @@ paths:
                   additionalProperties: true
   /admin/bots/{friendCode}/remark:
     patch:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: friendCode
           in: path
@@ -5050,7 +5203,7 @@ paths:
           description: "200"
   /admin/bots/{friendCode}/cabinet-user-id:
     patch:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: friendCode
           in: path
@@ -5077,7 +5230,7 @@ paths:
           description: "200"
   /admin/bots/{friendCode}:
     delete:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: friendCode
           in: path
@@ -5090,7 +5243,7 @@ paths:
           description: "200"
   /admin/catalog/covers/sync:
     post:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.syncCovers
       responses:
@@ -5098,7 +5251,7 @@ paths:
           description: "201"
   /admin/catalog/covers/force-sync:
     post:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.forceSyncCovers
       responses:
@@ -5106,7 +5259,7 @@ paths:
           description: "201"
   /admin/dxnet-jobs/cleanup:
     post:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.cleanupJobs
       responses:
@@ -5114,7 +5267,7 @@ paths:
           description: "201"
   /admin/dxnet-routing-control:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getDxnetRoutingControl
       responses:
@@ -5141,7 +5294,7 @@ paths:
                         - manual_update
                         - qr_identity
                   claimCanaryByFlow:
-                    default: &a7 {}
+                    default: &a8 {}
                     type: object
                     properties:
                       manual_update:
@@ -5154,7 +5307,7 @@ paths:
                   - botAllowlist
                   - enabledClaimFlows
     patch:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.patchDxnetRoutingControl
       requestBody:
@@ -5180,7 +5333,7 @@ paths:
                       - manual_update
                       - qr_identity
                 claimCanaryByFlow:
-                  default: *a7
+                  default: *a8
                   type: object
                   properties:
                     manual_update:
@@ -5214,7 +5367,7 @@ paths:
                         - manual_update
                         - qr_identity
                   claimCanaryByFlow:
-                    default: *a7
+                    default: *a8
                     type: object
                     properties:
                       manual_update:
@@ -5241,7 +5394,7 @@ paths:
                   - code
   /admin/observability/status:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: admin.getObservabilityStatus
       responses:
@@ -5253,7 +5406,7 @@ paths:
                 nullable: true
   /admin/realtime/overview:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: env
           in: query
@@ -5276,7 +5429,7 @@ paths:
                 nullable: true
   /admin/realtime/worker-groups:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: env
           in: query
@@ -5304,7 +5457,7 @@ paths:
                 nullable: true
   /admin/history/api:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: env
           in: query
@@ -5333,7 +5486,7 @@ paths:
                   nullable: true
   /admin/history/rum:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: env
           in: query
@@ -5362,7 +5515,7 @@ paths:
                   nullable: true
   /admin/history/analytics:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: env
           in: query
@@ -5391,7 +5544,7 @@ paths:
                   nullable: true
   /admin/history/workers:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: env
           in: query
@@ -5420,7 +5573,7 @@ paths:
                   nullable: true
   /admin/history/logs:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: env
           in: query
@@ -5478,7 +5631,7 @@ paths:
                   nullable: true
   /admin/history/log-workers:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: env
           in: query
@@ -5514,7 +5667,7 @@ paths:
                     - lastSeenAt
   /admin/jobs/{jobId}/debug:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: jobId
           in: path
@@ -5538,7 +5691,7 @@ paths:
                 nullable: true
   /catalog/covers/{songId}:
     get:
-      tags: &a8
+      tags: &a9
         - cover
       parameters:
         - name: songId
@@ -5554,7 +5707,7 @@ paths:
           description: "404"
   /catalog/covers/{songId}.jpg:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: songId
           in: path
@@ -5569,7 +5722,7 @@ paths:
           description: "404"
   /admin/catalog/covers/backfill-variants:
     post:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: cover.backfillVariants
       responses:
@@ -5577,7 +5730,7 @@ paths:
           description: "201"
   /me/score-exports/best50:
     get:
-      tags: &a9
+      tags: &a10
         - scoreExport
       parameters: []
       operationId: scoreExport.best50
@@ -5586,7 +5739,7 @@ paths:
           description: "200"
   /me/score-exports/level:
     get:
-      tags: *a9
+      tags: *a10
       parameters: []
       operationId: scoreExport.level
       responses:
@@ -5594,7 +5747,7 @@ paths:
           description: "200"
   /me/score-exports/version:
     get:
-      tags: *a9
+      tags: *a10
       parameters: []
       operationId: scoreExport.version
       responses:
@@ -5602,7 +5755,7 @@ paths:
           description: "200"
   /me/score-exports/history:
     get:
-      tags: *a9
+      tags: *a10
       parameters:
         - name: date
           in: query
@@ -5655,7 +5808,7 @@ paths:
           description: "200"
   /workers/sdgb/jobs/heartbeat:
     post:
-      tags: &a10
+      tags: &a11
         - sdgbWorker
       parameters: []
       operationId: sdgbWorker.heartbeat
@@ -5854,7 +6007,7 @@ paths:
                   - desiredLaneMemberships
   /workers/sdgb/incidents:
     post:
-      tags: *a10
+      tags: *a11
       parameters: []
       operationId: sdgbWorker.incident
       requestBody:
@@ -5937,7 +6090,7 @@ paths:
           description: "200"
   /workers/sdgb/jobs/{jobId}:
     get:
-      tags: *a10
+      tags: *a11
       parameters:
         - name: jobId
           in: path
@@ -6108,7 +6261,7 @@ paths:
         "404":
           description: "404"
     patch:
-      tags: *a10
+      tags: *a11
       parameters:
         - name: jobId
           in: path
@@ -6375,7 +6528,7 @@ paths:
           description: "404"
   /observability/rum:
     post:
-      tags: &a11
+      tags: &a12
         - observability
       parameters: []
       operationId: observability.ingestRum
@@ -6481,7 +6634,7 @@ paths:
                   - accepted
   /observability/events:
     post:
-      tags: *a11
+      tags: *a12
       parameters: []
       operationId: observability.ingestEvents
       requestBody:
@@ -6555,7 +6708,7 @@ paths:
                   - accepted
   /workers/logs/{kind}/batches:
     post:
-      tags: *a11
+      tags: *a12
       parameters:
         - name: kind
           in: path
@@ -6649,7 +6802,7 @@ paths:
                   - accepted
   /workers/dxnet/jobs/{jobId}/api-calls:
     post:
-      tags: *a11
+      tags: *a12
       parameters:
         - name: jobId
           in: path
@@ -6757,7 +6910,7 @@ paths:
                   - accepted
   /workers/{kind}/external-api-calls:
     post:
-      tags: *a11
+      tags: *a12
       parameters:
         - name: kind
           in: path

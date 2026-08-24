@@ -10,7 +10,9 @@ progress.
 ```text
 Backend
   ├─ GET /api/v1/android/workflow/manifest
-  └─ GET /api/v1/android/workflow/:version.js
+  ├─ GET /api/v1/android/workflow/:version.js
+  ├─ GET /api/v1/android/app/releases/latest
+  └─ GET /api/v1/android/app/releases/:releaseId/{manifest,apk}
                     │ version + SHA-256
                     ▼
 Score Hub WebView ── dynamic Workflow JS
@@ -26,7 +28,8 @@ MaiScoreHub APK
   ├─ Android photo picker + WebAuthn platform adapters
   ├─ OAuth callback VPN Service
   ├─ native DXNET CookieJar
-  └─ constrained GET/POST bridge
+  ├─ constrained GET/POST bridge
+  └─ signed APK verifier + PackageInstaller adapter
                     │ cookies attached natively
                     ▼
 maimai.wahlap.com
@@ -43,6 +46,8 @@ maimai.wahlap.com
   timers, polling and progress continue immediately.
 - Execute constrained cookie-bearing GET/POST requests for dynamic Workflow JS.
 - Return response status, final URL and HTML through asynchronous WebView events.
+- Download a Backend-authorized APK, verify its signed Manifest, hash, package,
+  version and signing certificate, then hand it to Android's PackageInstaller.
 
 ### Website responsibilities
 
@@ -51,6 +56,8 @@ maimai.wahlap.com
 - Render status, stage and numeric progress.
 - Hold the Score Hub login token and call Score Hub APIs.
 - Persist successful login tokens and refresh website data.
+- Render the application-update card, release notes, permission prompts and
+  download/install progress.
 
 ### Backend responsibilities
 
@@ -59,8 +66,10 @@ maimai.wahlap.com
 - Serve the Parser, DXNET request sequence and upload logic as one self-contained
   JavaScript module.
 - Validate and merge uploaded score batches through the normal authenticated API.
+- Own release channels, package policies, dynamic download Host allowlists,
+  deterministic rollout and immutable signed APK storage.
 
-## Native bridge v1
+## Native bridge v2
 
 The website receives `window.MaiScoreHubAndroid`:
 
@@ -69,11 +78,37 @@ interface MaiScoreHubAndroid {
   isAvailable(): boolean;
   getVersion(): string;
   getBridgeApiVersion(): number;
+  getVersionCode(): number;
+  getPackageName(): string;
+  getReleaseChannel(): "debug" | "beta" | "stable";
+  isAppUpdateRunning(): boolean;
+  startAppUpdate(requestId: string, releaseId: string): void;
   isOAuthRunning(): boolean;
   startOAuth(requestId: string): void;
   dxnetRequest(requestId: string, requestJson: string): void;
 }
 ```
+
+Application-update progress is dispatched as
+`msh-android-app-update-status`. The website supplies only an immutable
+`releaseId`; Native fetches the signed Manifest again from its compile-time
+Score Hub API origin.
+
+## Signed application releases
+
+The Pipeline signs the exact UTF-8 Manifest bytes with the same RSA private key
+that signs the APK. Backend verifies the signature against the channel policy,
+stores the immutable APK, and publishes metadata for the website. Native uses
+the currently installed app certificate's public key and additionally verifies:
+
+- release channel, package name and increasing versionCode;
+- HTTPS download origin (localhost HTTP is enabled only in Debug);
+- APK byte length and SHA-256;
+- archive package/version and certificate SHA-256.
+
+Ordinary devices retain Android's unknown-source permission and user install
+confirmation screens. The release Pipeline can publish through
+`build-android-beta.yml` with the manual `publish=true` input.
 
 OAuth results are dispatched as `msh-android-oauth-status`:
 
@@ -155,6 +190,8 @@ Changing five-difficulty requests to genre/category requests, updating selectors
 changing batch sizes or revising upload payloads requires a new Workflow version
 and Backend deployment. The APK bridge version changes only when a new native
 capability is required.
+The score Workflow currently declares minimum Bridge v1 because Bridge v2 is a
+backward-compatible superset; application-release UI independently requires v2.
 
 ## Security boundary
 
@@ -166,6 +203,9 @@ capability is required.
 - The website verifies bundle length and SHA-256 before importing it.
 - Versioned bundles are immutable and the Manifest is fetched with `no-store`.
 - OAuth broadcast events require the app's signature-level internal permission.
+- App-release Manifests use the installed APK certificate as their trust root;
+  Backend Host policies remain dynamically configurable without accepting an
+  unsigned URL from website JavaScript.
 - WebAuthn relies on `frontend/public/.well-known/assetlinks.json`; every
   distributed APK signing certificate must be listed there before release.
 
@@ -232,3 +272,13 @@ Mongo score version/count/source changes:
 ```
 
 Artifacts are written under `app/build/real-device-e2e/`.
+
+The application-update harness builds two Debug APK versions, publishes the
+target through the local Backend, installs the baseline and automates Android
+plus OnePlus installation confirmation:
+
+```powershell
+.\scripts\run-app-update-e2e.ps1
+```
+
+Artifacts are written under `app/build/app-update-e2e/`.

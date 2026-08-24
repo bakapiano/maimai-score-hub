@@ -23,6 +23,8 @@ import { AppCard } from "./AppCard";
 import { InstallAppButton } from "./InstallAppButton";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { usePwaInstall } from "../hooks/usePwaInstall";
+import { AndroidAppUpdatePanel } from "../features/android-update/AndroidAppUpdatePanel";
+import { useAndroidAppUpdateAvailability } from "../features/android-update/useAndroidAppUpdateAvailability";
 
 function InstallAppSettingsSection() {
   const { status } = usePwaInstall();
@@ -179,6 +181,7 @@ function preserveSessionCache() {
 export function SettingsContent({ onClose = () => {} }: { onClose?: () => void }) {
   const { colorScheme, setColorScheme } = useMantineColorScheme();
   const [clearing, setClearing] = useState(false);
+  const androidAppUpdateAvailable = useAndroidAppUpdateAvailability();
 
   const handleClearCache = () => {
     setClearing(true);
@@ -198,7 +201,11 @@ export function SettingsContent({ onClose = () => {} }: { onClose?: () => void }
           colorScheme={colorScheme}
           onChange={setColorScheme}
         />
-        <InstallAppSettingsSection />
+        {androidAppUpdateAvailable ? (
+          <AndroidAppUpdatePanel />
+        ) : (
+          <InstallAppSettingsSection />
+        )}
         <CacheSettingsSection
           clearing={clearing}
           onClearCache={handleClearCache}

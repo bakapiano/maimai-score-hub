@@ -13,6 +13,8 @@ MaiScoreHub is a thin native shell. Java owns only:
 4. asynchronous events between native code and website JavaScript;
 5. restoring the WebView task after OAuth so background timer throttling cannot
    stall the distributed Workflow.
+6. downloading Backend-registered application releases, verifying the signed
+   Manifest/APK and invoking Android's user-confirmed PackageInstaller flow.
 
 Update/login orchestration, DXNET paths and payloads, Parser rules, catalog
 mapping, Score Hub uploads, retry policy and progress belong to the Backend-
@@ -33,9 +35,9 @@ Score Hub API clients and score upload logic.
 
 ## Bridge contract
 
-Bridge API v1 exposes `isAvailable`, `getVersion`, `getBridgeApiVersion`,
-`isOAuthRunning`, `startOAuth(requestId)` and
-`dxnetRequest(requestId, requestJson)`.
+Bridge API v2 retains the v1 surface and adds `getVersionCode`,
+`getPackageName`, `getReleaseChannel`, `isAppUpdateRunning` and
+`startAppUpdate(requestId, releaseId)`.
 
 Increment `BRIDGE_API_VERSION` only when the native capability contract changes.
 Set the new minimum in the Workflow Manifest. Preserve request IDs and terminal
@@ -50,6 +52,22 @@ events so website Promises always settle.
 - Keep JavaScript interfaces active only for trusted Score Hub hosts.
 - Keep OAuth broadcasts signature-protected and app-local.
 - Log summaries and stages; keep callback query values and cookies out of logs.
+- Accept only an immutable release ID from JavaScript. Fetch the release
+  envelope from the compile-time Score Hub API origin and verify the Manifest
+  with the currently installed app certificate before downloading its APK.
+- Verify APK length, SHA-256, package, increasing versionCode and signing
+  certificate before committing a PackageInstaller session.
+
+## Application releases
+
+- Backend owns channel policies, package names, certificate digests, dynamic
+  download Host lists, rollout and immutable APK storage.
+- `build-android-beta.yml` signs the Manifest with the Beta APK key. Production
+  publication remains an explicit `workflow_dispatch` input.
+- Keep `android-releases/` runtime files out of Git and preserve the host bind
+  mount during Backend deployments.
+- Use `scripts/run-app-update-e2e.ps1` for a real baseline-to-target upgrade;
+  it must restore Drony and the legacy updater after the test.
 
 ## Workflow releases
 

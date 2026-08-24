@@ -25,6 +25,18 @@ export type AndroidDxnetResponse = {
   body: string;
 };
 
+export type AndroidAppUpdateStatus = {
+  requestId: string;
+  message: string;
+  stage: string;
+  progress: number;
+  terminal: boolean;
+  success: boolean;
+  error?: string;
+  releaseId?: string;
+  versionName?: string;
+};
+
 export interface AndroidHostBridge {
   isAvailable(): boolean;
   getVersion(): string;
@@ -32,6 +44,19 @@ export interface AndroidHostBridge {
   isOAuthRunning(): boolean;
   startOAuth(requestId: string): void;
   dxnetRequest(requestId: string, requestJson: string): void;
+  getVersionCode?(): number;
+  getPackageName?(): string;
+  getReleaseChannel?(): "debug" | "beta" | "stable";
+  isAppUpdateRunning?(): boolean;
+  startAppUpdate?(requestId: string, releaseId: string): void;
+}
+
+export interface AndroidAppUpdateBridge extends AndroidHostBridge {
+  getVersionCode(): number;
+  getPackageName(): string;
+  getReleaseChannel(): "debug" | "beta" | "stable";
+  isAppUpdateRunning(): boolean;
+  startAppUpdate(requestId: string, releaseId: string): void;
 }
 
 declare global {
@@ -44,9 +69,12 @@ export const ANDROID_READY_EVENT = "msh-android-ready";
 export const ANDROID_STATUS_EVENT = "msh-android-update-status";
 export const ANDROID_OAUTH_STATUS_EVENT = "msh-android-oauth-status";
 export const ANDROID_HTTP_RESULT_EVENT = "msh-android-http-result";
+export const ANDROID_APP_UPDATE_STATUS_EVENT =
+  "msh-android-app-update-status";
 
 const OAUTH_TIMEOUT_MS = 6 * 60_000;
 const HTTP_TIMEOUT_MS = 2 * 60_000;
+const APP_UPDATE_TIMEOUT_MS = 15 * 60_000;
 
 export function isAndroidHostBridge(
   value: unknown,
@@ -82,6 +110,69 @@ export function getAndroidHostBridge(): AndroidHostBridge | null {
 
 export const getAndroidUpdateBridge = getAndroidHostBridge;
 export const getAndroidLoginBridge = getAndroidHostBridge;
+
+export function getAndroidAppUpdateBridge(): AndroidAppUpdateBridge | null {
+  const bridge = getAndroidHostBridge();
+  if (!bridge || bridge.getBridgeApiVersion() < 2) {
+    return null;
+  }
+  if (
+    typeof bridge.getVersionCode !== "function" ||
+    typeof bridge.getPackageName !== "function" ||
+    typeof bridge.getReleaseChannel !== "function" ||
+    typeof bridge.isAppUpdateRunning !== "function" ||
+    typeof bridge.startAppUpdate !== "function"
+  ) {
+    return null;
+  }
+  return bridge as AndroidAppUpdateBridge;
+}
+
+export async function startAndroidAppUpdate(
+  releaseId: string,
+  onStatus?: (status: AndroidAppUpdateStatus) => void,
+): Promise<void> {
+  const bridge = getAndroidAppUpdateBridge();
+  if (!bridge) {
+    throw new Error("当前 Android 版本尚未提供应用更新安装器");
+  }
+  const requestId = crypto.randomUUID();
+  return new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("等待 Android 应用更新超时"));
+    }, APP_UPDATE_TIMEOUT_MS);
+    const handler = (event: Event) => {
+      const status = parseAndroidAppUpdateStatus(
+        (event as CustomEvent<unknown>).detail,
+      );
+      if (!status || status.requestId !== requestId) {
+        return;
+      }
+      onStatus?.(status);
+      if (!status.terminal) {
+        return;
+      }
+      cleanup();
+      if (status.success) {
+        resolve();
+      } else {
+        reject(new Error(status.error || status.message));
+      }
+    };
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener(ANDROID_APP_UPDATE_STATUS_EVENT, handler);
+    };
+    window.addEventListener(ANDROID_APP_UPDATE_STATUS_EVENT, handler);
+    try {
+      bridge.startAppUpdate(requestId, releaseId);
+    } catch (error) {
+      cleanup();
+      reject(toError(error));
+    }
+  });
+}
 
 export async function startAndroidOAuth(
   onStatus?: (status: AndroidNativeOAuthStatus) => void,
@@ -200,6 +291,41 @@ export function parseAndroidUpdateStatus(
     ...(details ? { details } : {}),
     ...(typeof candidate.workflowVersion === "string"
       ? { workflowVersion: candidate.workflowVersion }
+      : {}),
+  };
+}
+
+export function parseAndroidAppUpdateStatus(
+  value: unknown,
+): AndroidAppUpdateStatus | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Partial<AndroidAppUpdateStatus>;
+  if (
+    typeof candidate.requestId !== "string" ||
+    typeof candidate.message !== "string" ||
+    typeof candidate.stage !== "string" ||
+    typeof candidate.progress !== "number" ||
+    !Number.isFinite(candidate.progress) ||
+    typeof candidate.terminal !== "boolean" ||
+    typeof candidate.success !== "boolean"
+  ) {
+    return null;
+  }
+  return {
+    requestId: candidate.requestId,
+    message: candidate.message,
+    stage: candidate.stage,
+    progress: Math.max(0, Math.min(100, candidate.progress)),
+    terminal: candidate.terminal,
+    success: candidate.success,
+    ...(typeof candidate.error === "string" ? { error: candidate.error } : {}),
+    ...(typeof candidate.releaseId === "string"
+      ? { releaseId: candidate.releaseId }
+      : {}),
+    ...(typeof candidate.versionName === "string"
+      ? { versionName: candidate.versionName }
       : {}),
   };
 }

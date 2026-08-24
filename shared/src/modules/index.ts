@@ -10,3 +10,4 @@ export * from './score-export';
 export * from './sdgb-worker';
 export * from './observability';
 export * from './ocr';
+export * from './android-app-release';

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AdminBotsController } from './admin/admin-bots.controller';
+import { AdminAndroidAppReleaseController } from './admin/admin-android-app-release.controller';
 import { AdminCatalogController } from './admin/admin-catalog.controller';
 import { AdminDashboardController } from './admin/admin-dashboard.controller';
 import { AdminDxnetJobsController } from './admin/admin-dxnet-jobs.controller';
@@ -11,6 +12,8 @@ import { AdminModule } from '../modules/admin/admin.module';
 import { AdminUsersController } from './admin/admin-users.controller';
 import { AndroidWorkflowController } from './public/android-workflow.controller';
 import { AndroidWorkflowModule } from '../modules/android-workflow/android-workflow.module';
+import { AndroidAppReleaseController } from './public/android-app-release.controller';
+import { AndroidAppReleaseModule } from '../modules/android-app-release/android-app-release.module';
 import { AuthController } from './auth/auth.controller';
 import { PasskeyAuthController } from './auth/passkey-auth.controller';
 import { AuthModule } from '../modules/auth/auth.module';
@@ -55,6 +58,7 @@ import { DxnetBotAssignmentBusyFilter } from '../modules/job/dxnet-job.exception
 @Module({
   imports: [
     AdminModule,
+    AndroidAppReleaseModule,
     AndroidWorkflowModule,
     AuthModule,
     AutoUpdateModule,
@@ -74,6 +78,7 @@ import { DxnetBotAssignmentBusyFilter } from '../modules/job/dxnet-job.exception
   ],
   controllers: [
     AuthController,
+    AndroidAppReleaseController,
     AndroidWorkflowController,
     PasskeyAuthController,
     MeController,
@@ -89,6 +94,7 @@ import { DxnetBotAssignmentBusyFilter } from '../modules/job/dxnet-job.exception
     ObservabilityController,
     PublicStatisticsController,
     AdminBotsController,
+    AdminAndroidAppReleaseController,
     AdminCatalogController,
     AdminDashboardController,
     AdminDxnetJobsController,
