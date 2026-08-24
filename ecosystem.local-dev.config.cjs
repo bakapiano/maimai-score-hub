@@ -111,6 +111,7 @@ module.exports = {
         OCR_CONCURRENCY: env.OCR_CONCURRENCY || "2",
         OCR_PIPELINE_ROOT: ocrPipelineRoot,
         OCR_DEVICE: env.OCR_DEVICE || "cuda",
+        OCR_PADDLE_DEVICE: env.OCR_PADDLE_DEVICE || "cpu",
         OCR_CATALOG_ENABLED: env.OCR_CATALOG_ENABLED || "false",
         OCR_CATALOG_ROOT:
           env.OCR_CATALOG_ROOT || path.join(root, ".local-dev", "ocr-catalog"),

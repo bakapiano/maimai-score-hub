@@ -16,11 +16,14 @@ the pipeline treats those separately.
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
+
+from .paddle_device import paddle_device
 
 
 class _NullPaddle:
@@ -222,7 +225,10 @@ class TagOCR:
         # bench by ~7s on a single image).
         self._paddle_kwargs = dict(model_name=model_name,
                                    enable_mkldnn=enable_mkldnn,
-                                   cpu_threads=cpu_threads)
+                                   cpu_threads=cpu_threads,
+                                   device=paddle_device(
+                                       os.getenv("OCR_PADDLE_DEVICE", device)
+                                   ))
         self._disable_paddle = disable_paddle_fallback
         self.rec = _NullPaddle() if disable_paddle_fallback else None
         self.achv_crnn = None

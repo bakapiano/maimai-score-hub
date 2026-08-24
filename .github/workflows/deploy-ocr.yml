@@ -121,6 +121,36 @@ jobs:
               "$PYTHON" -m pip install --disable-pip-version-check \
                 "$RELEASE_DIR/ocr-api"
 
+            PADDLE_GPU_ROOT="$DEPLOY_ROOT/paddle-gpu-3.3.1-cu126"
+            PYTHON_SITE="$($PYTHON -c 'import site; print(site.getsitepackages()[0])')"
+            PADDLE_CUDA_LIBS="$(
+              find "$PYTHON_SITE/nvidia" -mindepth 2 -maxdepth 2 \
+                -type d -name lib | sort | paste -sd: -
+            )"
+            test -n "$PADDLE_CUDA_LIBS"
+            if ! LD_LIBRARY_PATH="$PADDLE_CUDA_LIBS" \
+              PYTHONPATH="$PADDLE_GPU_ROOT" \
+              "$PYTHON" -c \
+                'import paddle; assert paddle.__version__ == "3.3.1"; assert paddle.device.is_compiled_with_cuda()' \
+                2>/dev/null; then
+              PADDLE_GPU_NEXT="$DEPLOY_ROOT/.paddle-gpu-3.3.1-cu126-${{ github.sha }}"
+              rm -rf -- "$PADDLE_GPU_NEXT"
+              mkdir -p "$PADDLE_GPU_NEXT"
+              HTTP_PROXY=http://127.0.0.1:7890 \
+              HTTPS_PROXY=http://127.0.0.1:7890 \
+              NO_PROXY=localhost,127.0.0.1 \
+                "$PYTHON" -m pip install --disable-pip-version-check \
+                  --no-deps --target "$PADDLE_GPU_NEXT" \
+                  --index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ \
+                  paddlepaddle-gpu==3.3.1
+              LD_LIBRARY_PATH="$PADDLE_CUDA_LIBS" \
+              PYTHONPATH="$PADDLE_GPU_NEXT" \
+                "$PYTHON" -c \
+                  'import paddle; assert paddle.__version__ == "3.3.1"; assert paddle.device.is_compiled_with_cuda(); paddle.device.set_device("gpu:0"); print(paddle.randn([1]).numpy())'
+              rm -rf -- "$PADDLE_GPU_ROOT"
+              mv "$PADDLE_GPU_NEXT" "$PADDLE_GPU_ROOT"
+            fi
+
             PYTHONPATH="$PIPELINE_ROOT" "$PYTHON" -c \
               'import cv2, numpy, onnxruntime, torch, torchvision, ultralytics; import final.pipeline, prod_run'
 
@@ -159,6 +189,7 @@ jobs:
             upsert_env OCR_API_TOKEN "$OCR_API_TOKEN"
             upsert_env OCR_PIPELINE_ROOT "$DEPLOY_ROOT/current/ocr-api/pipeline"
             upsert_env OCR_DEVICE cuda
+            upsert_env OCR_PADDLE_DEVICE gpu:0
             upsert_env OCR_MAX_FILES 20
             upsert_env OCR_MAX_FILE_BYTES 8388608
             upsert_env OCR_CONCURRENCY 2

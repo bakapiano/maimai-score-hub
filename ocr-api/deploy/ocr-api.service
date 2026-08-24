@@ -10,6 +10,8 @@ User=bakapiano
 WorkingDirectory=/home/bakapiano/maimai-score-hub-ocr/current/ocr-api
 EnvironmentFile=/home/bakapiano/maimai-score-hub-ocr/.env
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/home/bakapiano/maimai-score-hub-ocr/paddle-gpu-3.3.1-cu126
+Environment=LD_LIBRARY_PATH=/home/bakapiano/bench-venv/lib/python3.12/site-packages/nvidia/cublas/lib:/home/bakapiano/bench-venv/lib/python3.12/site-packages/nvidia/cuda_cupti/lib:/home/bakapiano/bench-venv/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:/home/bakapiano/bench-venv/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:/home/bakapiano/bench-venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/home/bakapiano/bench-venv/lib/python3.12/site-packages/nvidia/cufft/lib:/home/bakapiano/bench-venv/lib/python3.12/site-packages/nvidia/curand/lib:/home/bakapiano/bench-venv/lib/python3.12/site-packages/nvidia/cusolver/lib:/home/bakapiano/bench-venv/lib/python3.12/site-packages/nvidia/cusparse/lib:/home/bakapiano/bench-venv/lib/python3.12/site-packages/nvidia/nccl/lib:/home/bakapiano/bench-venv/lib/python3.12/site-packages/nvidia/nvjitlink/lib:/home/bakapiano/bench-venv/lib/python3.12/site-packages/nvidia/nvtx/lib
 ExecStart=/home/bakapiano/bench-venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 19100
 Restart=always
 RestartSec=10

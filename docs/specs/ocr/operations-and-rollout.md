@@ -58,6 +58,7 @@ OCR_API_TIMEOUT_MS=180000
 OCR_PIPELINE_ROOT=D:\maimaidx-prober-proxy-updater\ocr-api\pipeline
 OCR_PYTHON=D:\ocr\ocr\.venv\Scripts\python.exe
 OCR_DEVICE=cuda
+OCR_PADDLE_DEVICE=cpu
 ```
 
 101 real 模式：
@@ -66,6 +67,7 @@ OCR_DEVICE=cuda
 OCR_MODE=real
 OCR_PIPELINE_ROOT=/home/bakapiano/maimai-score-hub-ocr/current/ocr-api/pipeline
 OCR_DEVICE=cuda
+OCR_PADDLE_DEVICE=gpu:0
 OCR_API_TOKEN=<random shared token>
 OCR_MAX_FILES=20
 OCR_CONCURRENCY=2
