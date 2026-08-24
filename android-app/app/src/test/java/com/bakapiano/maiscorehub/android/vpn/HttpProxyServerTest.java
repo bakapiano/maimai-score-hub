@@ -50,6 +50,9 @@ public class HttpProxyServerTest {
                 assertTrue(response.contains("登陆成功！请手动返回 APP 内继续"));
                 assertTrue(response.contains("class=\"appIcon\""));
                 assertTrue(response.contains(TEST_ICON_DATA_URI));
+                assertTrue(response.contains("<h1>MaiScoreHub</h1>"));
+                assertTrue(response.contains("class=\"resultCard\""));
+                assertTrue(response.contains("class=\"statusIcon\""));
                 assertTrue(response.contains("id=\"closePage\""));
                 assertTrue(response.contains("WeixinJSBridge.call('closeWindow')"));
                 Matcher nonce = Pattern.compile("<script nonce=\"([^\"]+)\">")
