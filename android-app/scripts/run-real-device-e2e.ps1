@@ -1,7 +1,9 @@
 param(
     [datetime]$NotBefore = (Get-Date).Date.AddHours(7).AddMinutes(1),
     [string]$DeviceSerial = 'b223378f',
-    [string]$AdbPath = 'D:\Android\Sdk\platform-tools\adb.exe'
+    [string]$AdbPath = 'D:\Android\Sdk\platform-tools\adb.exe',
+    [ValidateSet('direct', 'manual')]
+    [string]$OAuthPath = 'direct'
 )
 
 Set-StrictMode -Version Latest
@@ -62,7 +64,7 @@ function Wait-ForTerminal([string]$Mode, [int]$TimeoutSeconds) {
 }
 
 function Start-PhoneUpdate([ValidateSet('login', 'recent', 'full')][string]$Mode) {
-    Write-E2eStatus "START mode=$Mode"
+    Write-E2eStatus "START mode=$Mode oauthPath=$OAuthPath"
     Invoke-Adb shell am force-stop com.bakapiano.maimai.updater | Out-Null
     Invoke-Adb shell am force-stop com.bakapiano.maiscorehub.android | Out-Null
     Invoke-Adb shell am force-stop com.tencent.mm | Out-Null
@@ -70,10 +72,12 @@ function Start-PhoneUpdate([ValidateSet('login', 'recent', 'full')][string]$Mode
     Invoke-Adb shell input keyevent 224 | Out-Null
     Invoke-Adb shell wm dismiss-keyguard | Out-Null
     Invoke-Adb shell input keyevent 82 | Out-Null
-    Invoke-Adb shell am start -n com.bakapiano.maiscorehub.android/.MainActivity --es e2e_mode $Mode | Out-Null
+    Invoke-Adb shell am start -n com.bakapiano.maiscorehub.android/.MainActivity `
+        --es e2e_mode $Mode --es e2e_oauth_path $OAuthPath | Out-Null
     Start-Sleep -Seconds 12
 
-    # LauncherUI hands the local URL directly to WeChat's own WebViewUI.
+    # LauncherUI opens either the fresh HTTPS OAuth URL or the local HTTP
+    # manual fallback in WeChat's own WebViewUI.
     Invoke-Adb shell screencap -p "/sdcard/msh-$Mode-wechat.png" | Out-Null
     Save-PhoneArtifact "/sdcard/msh-$Mode-wechat.png" "$Mode-wechat.png"
 

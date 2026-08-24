@@ -40,6 +40,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class ProxyUpdateVpnService extends VpnService {
     public static final String EXTRA_REQUEST_ID = "requestId";
     public static final String EXTRA_AUTH_URL = "authUrl";
+    public static final String EXTRA_MANUAL_AUTH_URL = "manualAuthUrl";
     public static final String EXTRA_MESSAGE = "message";
     public static final String EXTRA_TERMINAL = "terminal";
     public static final String EXTRA_SUCCESS = "success";
@@ -102,6 +103,7 @@ public final class ProxyUpdateVpnService extends VpnService {
             callbackLatch = new CountDownLatch(1);
             DxnetTransport transport = DxnetTransport.shared();
             transport.resetSession();
+            String directAuthUrl = transport.resolveAuthorizationUrl();
             proxyServer = new HttpProxyServer(
                     this::protect,
                     url -> {
@@ -114,17 +116,19 @@ public final class ProxyUpdateVpnService extends VpnService {
                     createSuccessIconDataUri()
             );
             int proxyPort = proxyServer.start();
-            String launchUrl = "http://10.77.0.2:" + proxyPort
+            String manualAuthUrl = "http://10.77.0.2:" + proxyPort
                     + "/launch?nonce=" + System.currentTimeMillis();
-            copyAuthUrl(launchUrl);
+            copyManualAuthUrl(manualAuthUrl);
             establishVpn(proxyPort);
+            Log.i(TAG, "Prepared direct HTTPS OAuth with local HTTP fallback");
             broadcast(
                     activeRequestId,
-                    "临时 VPN 已启动，正在微信打开授权页…",
+                    "临时 VPN 已启动，备用链接已复制，正在微信打开授权页…",
                     false,
                     false,
                     null,
-                    launchUrl
+                    directAuthUrl,
+                    manualAuthUrl
             );
 
             if (!callbackLatch.await(5, TimeUnit.MINUTES)) {
@@ -249,7 +253,7 @@ public final class ProxyUpdateVpnService extends VpnService {
         }
     }
 
-    private void copyAuthUrl(String authUrl) {
+    private void copyManualAuthUrl(String authUrl) {
         ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         clipboard.setPrimaryClip(ClipData.newPlainText("maimai DXNET 授权", authUrl));
     }
@@ -261,6 +265,18 @@ public final class ProxyUpdateVpnService extends VpnService {
             boolean success,
             String error,
             String authUrl
+    ) {
+        broadcast(requestId, message, terminal, success, error, authUrl, null);
+    }
+
+    private void broadcast(
+            String requestId,
+            String message,
+            boolean terminal,
+            boolean success,
+            String error,
+            String authUrl,
+            String manualAuthUrl
     ) {
         Log.i(
                 TAG,
@@ -280,6 +296,9 @@ public final class ProxyUpdateVpnService extends VpnService {
         }
         if (authUrl != null && !authUrl.isBlank()) {
             status.putExtra(EXTRA_AUTH_URL, authUrl);
+        }
+        if (manualAuthUrl != null && !manualAuthUrl.isBlank()) {
+            status.putExtra(EXTRA_MANUAL_AUTH_URL, manualAuthUrl);
         }
         sendBroadcast(status, INTERNAL_STATUS_PERMISSION);
     }

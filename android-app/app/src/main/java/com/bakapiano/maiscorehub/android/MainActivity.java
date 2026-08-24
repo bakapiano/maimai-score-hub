@@ -71,6 +71,9 @@ public final class MainActivity extends Activity {
             );
             String error = intent.getStringExtra(ProxyUpdateVpnService.EXTRA_ERROR);
             String authUrl = intent.getStringExtra(ProxyUpdateVpnService.EXTRA_AUTH_URL);
+            String manualAuthUrl = intent.getStringExtra(
+                    ProxyUpdateVpnService.EXTRA_MANUAL_AUTH_URL
+            );
             if (isValidRequestId(requestId) && message != null) {
                 emitOAuthStatus(requestId, message, terminal, success, error);
                 if (terminal && success) {
@@ -78,7 +81,7 @@ public final class MainActivity extends Activity {
                 }
             }
             if (authUrl != null && !authUrl.isBlank()) {
-                launchWechatWebView(authUrl, requestId);
+                launchWechatWebView(authUrl, manualAuthUrl, requestId);
             }
         }
     };
@@ -282,21 +285,40 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void launchWechatWebView(String authUrl, String requestId) {
+    private void launchWechatWebView(
+            String directAuthUrl,
+            String manualAuthUrl,
+            String requestId
+    ) {
+        boolean exerciseManualFallback = BuildConfig.E2E_ENABLED
+                && "manual".equals(getIntent().getStringExtra("e2e_oauth_path"));
+        String launchTarget = exerciseManualFallback ? manualAuthUrl : directAuthUrl;
         try {
-            startActivity(WechatWebViewLauncher.createIntent(authUrl));
+            startActivity(WechatWebViewLauncher.createIntent(launchTarget));
             emitOAuthStatus(
                     requestId,
-                    "已在微信打开授权页，正在等待登录…",
+                    exerciseManualFallback
+                            ? "已在微信打开手动授权链接，正在等待登录…"
+                            : "已在微信直接打开授权页，正在等待登录…",
                     false,
                     false,
                     null
             );
         } catch (Exception directLaunchError) {
+            if (manualAuthUrl == null || manualAuthUrl.isBlank()) {
+                emitOAuthStatus(
+                        requestId,
+                        "微信授权页启动失败",
+                        true,
+                        false,
+                        safeMessage(directLaunchError)
+                );
+                return;
+            }
             Intent share = new Intent(Intent.ACTION_SEND)
                     .setType("text/plain")
                     .setPackage("com.tencent.mm")
-                    .putExtra(Intent.EXTRA_TEXT, authUrl);
+                    .putExtra(Intent.EXTRA_TEXT, manualAuthUrl);
             try {
                 startActivityForResult(share, WECHAT_SHARE_REQUEST);
             } catch (Exception error) {
