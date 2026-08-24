@@ -256,10 +256,10 @@ Install-BetaApk -ResolvedApk $resolvedApk
 & $AdbPath -s $DeviceSerial shell pm grant $packageName android.permission.POST_NOTIFICATIONS 2>$null | Out-Null
 
 $packageDump = Invoke-Adb shell dumpsys package $packageName
-if ($packageDump -notmatch 'versionName=0\.2\.0-beta') {
+if ($packageDump -notmatch 'versionName=0\.2\.1-beta') {
     throw 'Installed Beta package version is unexpected'
 }
-Write-E2eStatus 'INSTALL package=com.bakapiano.maiscorehub.android.beta version=0.2.0-beta'
+Write-E2eStatus 'INSTALL package=com.bakapiano.maiscorehub.android.beta version=0.2.1-beta'
 
 foreach ($mode in @('login', 'recent', 'full')) {
     Start-OnlineMode -Mode $mode
