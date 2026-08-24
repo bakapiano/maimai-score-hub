@@ -32,6 +32,7 @@ import {
   buildScoreOcrDrafts,
   type ScoreOcrDraft,
 } from "./scoreOcrModel";
+import { compressScoreOcrImage } from "./scoreOcrImage";
 import classes from "./ScoreOcrImport.module.css";
 
 const ACCEPTED_IMAGES = "image/jpeg,image/png,image/webp";
@@ -227,19 +228,27 @@ export function ScoreOcrImport({
       recognitionAbort.current?.abort();
       const controller = new AbortController();
       recognitionAbort.current = controller;
-      void Promise.all(selected.map(createStablePreview)).then((urls) => {
-        if (!controller.signal.aborted) {
-          setPreviewUrls(urls);
-        }
-      }).catch(() => {
-        if (!controller.signal.aborted) {
-          setPreviewUrls([]);
-        }
-      });
       try {
+        const uploadFiles: File[] = [];
+        for (const file of selected) {
+          uploadFiles.push(await compressScoreOcrImage(file));
+          if (controller.signal.aborted) {
+            return;
+          }
+        }
+        setFiles(uploadFiles);
+        void Promise.all(uploadFiles.map(createStablePreview)).then((urls) => {
+          if (!controller.signal.aborted) {
+            setPreviewUrls(urls);
+          }
+        }).catch(() => {
+          if (!controller.signal.aborted) {
+            setPreviewUrls([]);
+          }
+        });
         const response = await recognizeScoreImages({
           token,
-          files: selected,
+          files: uploadFiles,
           signal: controller.signal,
         });
         if (!controller.signal.aborted) {
