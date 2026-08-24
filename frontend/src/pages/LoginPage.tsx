@@ -63,10 +63,16 @@ import { HttpClientError, PollAborted, PollDead, PollTimeout, fetchForPoll, poll
 import { AndroidAutoLoginPanel } from "../features/android-update/AndroidAutoLoginPanel";
 import { getAndroidLoginBridge } from "../features/android-update/androidUpdateBridge";
 import { useAndroidLoginAvailability } from "../features/android-update/useAndroidLoginAvailability";
+import {
+  isOtherLoginType,
+  persistLoginType,
+  readLoginType,
+  readOtherLoginType,
+  type LoginType,
+} from "../utils/loginType";
 
 const PASSWORD_LOGIN_IDENTIFIER_KEY = "passwordLoginIdentifier";
 const LOGIN_METHOD_KEY = "loginMethod";
-const LOGIN_TYPE_KEY = "loginType";
 const LOGIN_REQUEST_TIMEOUT_MS = 15_000;
 
 type LoginJobStatus = {
@@ -102,7 +108,6 @@ type LoginPollOutcome = { kind: "authenticated"; token: string } | { kind: "ende
 
 type PasswordLoginIdentifier = "friendCode" | "username";
 type LoginMethod = "bot_sends_request" | "user_sends_request";
-type LoginType = "android" | "friendCode" | "password" | "qr" | "passkey";
 
 function persistLastLoginAccount(account?: {
   friendCode?: string | number | null;
@@ -155,32 +160,6 @@ function readLoginMethod(): LoginMethod {
 function persistLoginMethod(method: LoginMethod) {
   try {
     localStorage.setItem(LOGIN_METHOD_KEY, method);
-  } catch {
-    // localStorage may be unavailable.
-  }
-}
-
-function isLoginType(value: string | null): value is LoginType {
-  return ["android", "friendCode", "password", "qr", "passkey"].includes(
-    value ?? "",
-  );
-}
-
-function readLoginType(): LoginType {
-  try {
-    const cached = localStorage.getItem(LOGIN_TYPE_KEY);
-    if (isLoginType(cached) && (cached !== "android" || getAndroidLoginBridge())) {
-      return cached;
-    }
-    return getAndroidLoginBridge() ? "android" : "friendCode";
-  } catch {
-    return getAndroidLoginBridge() ? "android" : "friendCode";
-  }
-}
-
-function persistLoginType(loginType: LoginType) {
-  try {
-    localStorage.setItem(LOGIN_TYPE_KEY, loginType);
   } catch {
     // localStorage may be unavailable.
   }
@@ -355,7 +334,14 @@ export default function LoginPage() {
   const [passwordLoginPassword, setPasswordLoginPassword] = useState("");
   const [passwordLoginLoading, setPasswordLoginLoading] = useState(false);
   const [passkeyLoginLoading, setPasskeyLoginLoading] = useState(false);
-  const [loginType, setLoginType] = useState<LoginType>(() => readLoginType());
+  const [loginType, setLoginType] = useState<LoginType>(() =>
+    readLoginType(getAndroidLoginBridge() !== null),
+  );
+  useEffect(() => {
+    if (androidLoginAvailable) {
+      setLoginType("android");
+    }
+  }, [androidLoginAvailable]);
   const [loginMethod, setLoginMethod] =
     useState<LoginMethod>(() => readLoginMethod());
   const [, setHealth] = useState("");
@@ -916,7 +902,7 @@ export default function LoginPage() {
         >
           <Container size="sm" style={{ maxWidth: 600, width: "100%" }}>
             <PageHeader
-              title={"欢迎！"}
+              title="欢迎！"
               description={
                 androidLoginAvailable
                   ? "选择微信、好友码、账号密码、二维码或网站密钥登录"
@@ -994,35 +980,39 @@ export default function LoginPage() {
                 </Alert>
               ) : (
                 <>
-                  <Tabs
-                    value={loginType}
-                    onChange={(value) => {
-                      if (!isLoginType(value)) {return;}
-                      setLoginType(value);
-                      persistLoginType(value);
-                    }}
-                    keepMounted={false}
-                    styles={{
-                      list: { flexWrap: "nowrap" },
-                      tab: {
-                        minWidth: 0,
-                        paddingInline: 4,
-                        fontSize: "clamp(0.75rem, 3.2vw, 0.875rem)",
-                      },
-                    }}
-                  >
-                    <Tabs.List grow>
-                      {androidLoginAvailable && (
-                        <Tabs.Tab value="android">
-                          <Group gap={2} wrap="nowrap" justify="center">
-                            <IconBrandWechat
-                              className="msh-login-tab-icon"
-                              size={14}
-                            />
-                            <span>微信</span>
-                          </Group>
-                        </Tabs.Tab>
-                      )}
+                  {androidLoginAvailable && loginType === "android" ? (
+                    <Stack gap="sm">
+                      <AndroidAutoLoginPanel />
+                      <Button
+                        data-testid="show-other-login-methods"
+                        variant="subtle"
+                        color="gray"
+                        leftSection={<IconLogin2 size={16} />}
+                        onClick={() => setLoginType(readOtherLoginType())}
+                      >
+                        使用其他登录方式
+                      </Button>
+                    </Stack>
+                  ) : (
+                    <Stack gap="md">
+                      <Tabs
+                        value={loginType}
+                        onChange={(value) => {
+                          if (!isOtherLoginType(value)) {return;}
+                          setLoginType(value);
+                          persistLoginType(value);
+                        }}
+                        keepMounted={false}
+                        styles={{
+                          list: { flexWrap: "nowrap" },
+                          tab: {
+                            minWidth: 0,
+                            paddingInline: 4,
+                            fontSize: "clamp(0.75rem, 3.2vw, 0.875rem)",
+                          },
+                        }}
+                      >
+                    <Tabs.List grow data-testid="other-login-method-tabs">
                       <Tabs.Tab
                         value="friendCode"
                       >
@@ -1054,12 +1044,6 @@ export default function LoginPage() {
                         </Group>
                       </Tabs.Tab>
                     </Tabs.List>
-
-                    {androidLoginAvailable && (
-                      <Tabs.Panel value="android" pt="md">
-                        <AndroidAutoLoginPanel />
-                      </Tabs.Panel>
-                    )}
 
                     <Tabs.Panel value="friendCode" pt="md">
                       <AppCard>
@@ -1353,7 +1337,20 @@ export default function LoginPage() {
                         </Stack>
                       </AppCard>
                     </Tabs.Panel>
-                  </Tabs>
+                      </Tabs>
+                      {androidLoginAvailable && (
+                        <Button
+                          data-testid="return-to-android-login"
+                          variant="transparent"
+                          color="green"
+                          leftSection={<IconBrandWechat size={17} />}
+                          onClick={() => setLoginType("android")}
+                        >
+                          返回微信登录
+                        </Button>
+                      )}
+                    </Stack>
+                  )}
 
                   {loginType !== "android" && <FriendCodeGuide />}
                 </>

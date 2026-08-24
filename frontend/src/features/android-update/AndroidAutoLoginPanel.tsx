@@ -1,6 +1,5 @@
 import {
   Alert,
-  Badge,
   Button,
   Group,
   Progress,
@@ -21,26 +20,25 @@ import {
   getAndroidRuntimeSnapshot,
   runAndroidWorkflow,
 } from "./androidWorkflowRuntime";
+import { AndroidAppUpdateBadge } from "./AndroidAppUpdateBadge";
 
 function readBridgeSnapshot() {
   const bridge = getAndroidHostBridge();
   if (!bridge) {
-    return { running: false, version: "" };
+    return { running: false };
   }
   try {
     return {
       running: getAndroidRuntimeSnapshot("login").running,
-      version: bridge.getVersion(),
     };
   } catch {
-    return { running: false, version: "" };
+    return { running: false };
   }
 }
 
 export function AndroidAutoLoginPanel() {
   const [initialBridgeState] = useState(readBridgeSnapshot);
   const [running, setRunning] = useState(initialBridgeState.running);
-  const [version] = useState(initialBridgeState.version);
   const [status, setStatus] = useState<AndroidUpdateStatus | null>(() =>
     initialBridgeState.running
       ? {
@@ -91,19 +89,17 @@ export function AndroidAutoLoginPanel() {
 
   return (
     <AppCard data-testid="android-auto-login-panel">
-      <Stack gap="md">
+      <Stack gap="lg" py="md">
         <Group justify="space-between" align="center">
           <Group gap="xs">
             <IconBrandWechat size={22} color="var(--mantine-color-green-6)" />
             <Text fw={700}>微信一键登录</Text>
           </Group>
-          <Badge variant="light" color="teal">
-            Android{version ? ` ${version}` : ""}
-          </Badge>
+          <AndroidAppUpdateBadge />
         </Group>
 
         <Text size="sm" c="dimmed">
-          使用当前手机微信读取 DXNET 身份，并自动向分配的 Bot 发送好友申请。
+          使用当前微信的 DX Net 身份进行登录
         </Text>
 
         {running && <Progress value={100} animated size="sm" radius="xl" />}
@@ -129,10 +125,6 @@ export function AndroidAutoLoginPanel() {
         >
           使用微信登录
         </Button>
-
-        <Text size="xs" c="dimmed">
-          首次使用时，Android 会请求建立仅用于微信授权回调的临时 VPN。
-        </Text>
       </Stack>
     </AppCard>
   );

@@ -92,27 +92,27 @@ function AppearanceSettingsSection({
           {
             value: "light",
             label: (
-              <Group gap={6} justify="center">
+              <Group gap={6} justify="center" wrap="nowrap">
                 <IconSun size={16} />
-                <span>浅色</span>
+                <span style={{ whiteSpace: "nowrap" }}>浅色</span>
               </Group>
             ),
           },
           {
             value: "dark",
             label: (
-              <Group gap={6} justify="center">
+              <Group gap={6} justify="center" wrap="nowrap">
                 <IconMoon size={16} />
-                <span>深色</span>
+                <span style={{ whiteSpace: "nowrap" }}>深色</span>
               </Group>
             ),
           },
           {
             value: "auto",
             label: (
-              <Group gap={6} justify="center">
+              <Group gap={6} justify="center" wrap="nowrap">
                 <IconDeviceDesktop size={16} />
-                <span>跟随系统</span>
+                <span style={{ whiteSpace: "nowrap" }}>跟随系统</span>
               </Group>
             ),
           },

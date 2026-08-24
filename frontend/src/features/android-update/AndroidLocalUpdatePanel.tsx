@@ -142,11 +142,6 @@ export function AndroidLocalUpdatePanel({
         ]}
       />
 
-      <Text size="sm" c="dimmed">
-        使用当前手机微信授权，通过本地代理读取并解析 DXNET
-        页面，再写入当前网站账号。
-      </Text>
-
       <SyncStatusSummary
         color={presentation.color}
         label={presentation.label}
