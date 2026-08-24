@@ -93,7 +93,7 @@
 
   .modalFooter {
     align-items: stretch;
-    padding: 10px 12px calc(10px + var(--msh-mobile-safe-area-bottom));
+    padding: 10px 12px;
   }
 
   .footerActions {

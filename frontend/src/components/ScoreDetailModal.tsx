@@ -723,8 +723,8 @@ export function ScoreDetailModal({
       lockScroll
       size="lg"
       classNames={{
-        inner: classes.modalInner,
-        content: classes.modalContent,
+        inner: `${classes.modalInner} msh-safe-modal-inner`,
+        content: `${classes.modalContent} msh-safe-modal-content`,
         header: classes.modalHeader,
         body: classes.modalBody,
       }}

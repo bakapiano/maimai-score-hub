@@ -44,6 +44,10 @@ export function MobileFilterModalButton({
         onClose={() => setOpened(false)}
         title={title}
         fullScreen
+        classNames={{
+          inner: "msh-safe-modal-inner",
+          content: "msh-safe-modal-content",
+        }}
         transitionProps={{ transition: "fade", duration: 120 }}
       >
         {children}

@@ -160,7 +160,11 @@ function MobileBottomNav({
         zIndex: "var(--mantine-z-index-app)",
         boxSizing: "border-box",
         height: "var(--msh-mobile-bottom-nav-height)",
-        padding: "0 12px var(--msh-mobile-safe-area-bottom)",
+        paddingTop: 0,
+        paddingRight:
+          "calc(12px + var(--msh-mobile-safe-area-right))",
+        paddingBottom: "var(--msh-mobile-safe-area-bottom)",
+        paddingLeft: "calc(12px + var(--msh-mobile-safe-area-left))",
         borderTop: `1px solid ${
           colorScheme === "dark"
             ? "var(--mantine-color-dark-4)"
@@ -259,7 +263,7 @@ export default function AuthedLayout() {
 
   return (
     <AppShell
-      header={{ height: 56 }}
+      header={{ height: "var(--msh-mobile-header-height)" }}
       navbar={{
         width: 220,
         breakpoint: "sm",
@@ -267,7 +271,7 @@ export default function AuthedLayout() {
       }}
       padding={0}
     >
-      <AppShell.Header>
+      <AppShell.Header className="msh-safe-header">
         <AppHeader
           profile={profile}
           onLogout={handleLogout}
@@ -321,7 +325,7 @@ export default function AuthedLayout() {
           {
             display: "flex",
             flexDirection: "column",
-            minHeight: "100vh",
+            minHeight: "100dvh",
             paddingBottom: "var(--msh-mobile-bottom-nav-height)",
             "--msh-mobile-page-background": headerBg,
           } as React.CSSProperties

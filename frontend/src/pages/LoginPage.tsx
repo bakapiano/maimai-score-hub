@@ -890,8 +890,11 @@ export default function LoginPage() {
   ].includes(jobStage);
 
   return (
-    <AppShell header={{ height: 56 }} padding={0}>
-      <AppShell.Header>
+    <AppShell
+      header={{ height: "var(--msh-mobile-header-height)" }}
+      padding={0}
+    >
+      <AppShell.Header className="msh-safe-header">
         <AppHeader showProfile={false} />
       </AppShell.Header>
 
@@ -900,7 +903,7 @@ export default function LoginPage() {
         style={{
           display: "flex",
           flexDirection: "column",
-          minHeight: "100vh",
+          minHeight: "100dvh",
         }}
       >
         <Box

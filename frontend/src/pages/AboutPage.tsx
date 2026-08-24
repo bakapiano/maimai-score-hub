@@ -85,8 +85,11 @@ export default function AboutPage() {
   };
 
   return (
-    <AppShell header={{ height: 56 }} padding={0}>
-      <AppShell.Header>
+    <AppShell
+      header={{ height: "var(--msh-mobile-header-height)" }}
+      padding={0}
+    >
+      <AppShell.Header className="msh-safe-header">
         <AppHeader
           profile={profile}
           onLogout={handleLogout}
@@ -110,7 +113,8 @@ export default function AboutPage() {
         style={{
           display: "flex",
           flexDirection: "column",
-          minHeight: "100vh",
+          minHeight: "100dvh",
+          paddingBottom: "var(--msh-mobile-safe-area-bottom)",
         }}
       >
         <Box p="md" pt="xl">

@@ -26,6 +26,7 @@ import androidx.webkit.WebViewFeature;
 
 import com.bakapiano.maiscorehub.android.net.DxnetTransport;
 import com.bakapiano.maiscorehub.android.vpn.ProxyUpdateVpnService;
+import com.bakapiano.maiscorehub.android.web.InsetWebViewContainer;
 import com.bakapiano.maiscorehub.android.web.WebFileChooser;
 import com.bakapiano.maiscorehub.android.wechat.WechatWebViewLauncher;
 
@@ -44,6 +45,7 @@ public final class MainActivity extends Activity {
     private static final String TAG_WEBVIEW = "MshWebView";
 
     private final ExecutorService requestExecutor = Executors.newFixedThreadPool(4);
+    private InsetWebViewContainer webViewContainer;
     private WebView webView;
     private WebFileChooser webFileChooser;
     private String pendingOAuthRequestId = "";
@@ -84,9 +86,10 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        webView = new WebView(this);
+        webViewContainer = new InsetWebViewContainer(this);
+        webView = webViewContainer.getWebView();
         webFileChooser = new WebFileChooser(this);
-        setContentView(webView);
+        setContentView(webViewContainer);
         configureWebView(savedInstanceState);
         registerOAuthReceiver();
         requestNotificationPermission();
@@ -459,6 +462,8 @@ public final class MainActivity extends Activity {
         webView.removeJavascriptInterface("MaiScoreHubAndroid");
         webView.destroy();
         webView = null;
+        webViewContainer.removeAllViews();
+        webViewContainer = null;
         super.onDestroy();
     }
 

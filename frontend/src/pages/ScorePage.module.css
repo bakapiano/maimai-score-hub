@@ -26,6 +26,7 @@
 
 @media (max-width: 48em) {
   .tabsList {
+    top: 0;
     background-color: var(
       --msh-mobile-page-background,
       var(--mantine-color-body)

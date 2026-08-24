@@ -1,25 +1,68 @@
 :root {
+  --msh-mobile-safe-area-top: 0px;
+  --msh-mobile-safe-area-right: 0px;
   --msh-mobile-safe-area-bottom: 0px;
+  --msh-mobile-safe-area-left: 0px;
+  --msh-mobile-header-height: 56px;
   --msh-mobile-bottom-nav-height: 0px;
 }
 
 @media (max-width: 48em) {
   :root {
+    --msh-mobile-safe-area-top: env(safe-area-inset-top, 0px);
+    --msh-mobile-safe-area-right: env(safe-area-inset-right, 0px);
     --msh-mobile-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --msh-mobile-safe-area-left: env(safe-area-inset-left, 0px);
+    --msh-mobile-header-height: calc(
+      56px + var(--msh-mobile-safe-area-top)
+    );
     --msh-mobile-bottom-nav-height: calc(
       56px + var(--msh-mobile-safe-area-bottom)
     );
+  }
+
+  .msh-safe-header {
+    box-sizing: border-box;
+    height: var(--msh-mobile-header-height) !important;
+    padding-top: var(--msh-mobile-safe-area-top);
+    padding-right: var(--msh-mobile-safe-area-right);
+    padding-left: var(--msh-mobile-safe-area-left);
   }
 
   .msh-authed-main {
     background-color: var(--msh-mobile-page-background);
   }
 
+  .mantine-AppShell-main.msh-authed-main {
+    height: calc(100dvh - var(--msh-mobile-bottom-nav-height));
+    min-height: calc(100dvh - var(--msh-mobile-bottom-nav-height)) !important;
+    padding-bottom: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+  }
+
   .msh-login-main {
+    padding-bottom: var(--msh-mobile-safe-area-bottom);
     background-color: light-dark(
       var(--mantine-color-gray-0),
       var(--mantine-color-dark-6)
     );
+  }
+
+  .msh-safe-modal-inner {
+    box-sizing: border-box;
+    padding: var(--msh-mobile-safe-area-top)
+      var(--msh-mobile-safe-area-right)
+      var(--msh-mobile-safe-area-bottom)
+      var(--msh-mobile-safe-area-left) !important;
+  }
+
+  .msh-safe-modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
   }
 }
 
