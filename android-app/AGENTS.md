@@ -63,7 +63,9 @@ events so website Promises always settle.
 - Backend owns channel policies, package names, certificate digests, dynamic
   download Host lists, rollout and immutable APK storage.
 - `build-android-beta.yml` signs the Manifest with the Beta APK key. Production
-  publication remains an explicit `workflow_dispatch` input.
+  publication uses the separate `build-android-release.yml`, stable package and
+  production signing key. Both publication paths require an explicit
+  `workflow_dispatch` input.
 - Keep `android-releases/` runtime files out of Git and preserve the host bind
   mount during Backend deployments.
 - Use `scripts/run-app-update-e2e.ps1` for a real baseline-to-target upgrade;
@@ -118,6 +120,11 @@ Before distributing a Beta artifact, download `MaiScoreHub-beta` from the
 `build-android-beta.yml` Actions run and execute
 `scripts/run-online-beta-e2e.ps1` against a physical phone. This verifies the
 exact CI-signed APK with the production website, Workflow and API.
+
+Before distributing a stable artifact, run `build-android-release.yml` once
+with `publish=false`, inspect the signed artifact, then publish the same
+revision with `publish=true`. Install the downloaded CI APK on a physical phone
+and exercise login, recent and full modes against the production website/API.
 
 ## Repository hygiene
 

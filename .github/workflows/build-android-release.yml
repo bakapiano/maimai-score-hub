@@ -1,0 +1,261 @@
+name: build Android Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this signed APK to Backend and GitHub Releases
+        required: true
+        type: boolean
+        default: false
+      version_code:
+        description: Monotonically increasing Android versionCode
+        required: true
+        type: number
+        default: 4
+      version_name:
+        description: User-facing stable version
+        required: true
+        type: string
+        default: 0.2.2
+      mandatory:
+        description: Mark this release as an important update
+        required: true
+        type: boolean
+        default: false
+      rollout_percent:
+        description: Deterministic rollout percentage (0-100)
+        required: true
+        type: number
+        default: 100
+      notes:
+        description: Website-visible release notes
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-android-production-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android-app
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate release inputs
+        shell: bash
+        env:
+          VERSION_CODE: ${{ inputs.version_code }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          ROLLOUT_PERCENT: ${{ inputs.rollout_percent }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]]
+          [[ "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]
+          test "$ROLLOUT_PERCENT" -ge 0
+          test "$ROLLOUT_PERCENT" -le 100
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Restore production signing key
+        shell: bash
+        env:
+          ANDROID_PROD_KEYSTORE_BASE64: ${{ secrets.ANDROID_PROD_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_PROD_KEYSTORE_BASE64"
+          printf '%s' "$ANDROID_PROD_KEYSTORE_BASE64" \
+            | base64 --decode > "$RUNNER_TEMP/maiscorehub-production.jks"
+          chmod 600 "$RUNNER_TEMP/maiscorehub-production.jks"
+
+      - name: Test and build production APK
+        shell: bash
+        env:
+          ANDROID_PROD_KEYSTORE_PATH: ${{ runner.temp }}/maiscorehub-production.jks
+          ANDROID_PROD_STORE_PASSWORD: ${{ secrets.ANDROID_PROD_STORE_PASSWORD }}
+          ANDROID_PROD_KEY_ALIAS: ${{ secrets.ANDROID_PROD_KEY_ALIAS }}
+          ANDROID_PROD_KEY_PASSWORD: ${{ secrets.ANDROID_PROD_KEY_PASSWORD }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          VERSION_NAME: ${{ inputs.version_name }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_PROD_STORE_PASSWORD"
+          test -n "$ANDROID_PROD_KEY_ALIAS"
+          test -n "$ANDROID_PROD_KEY_PASSWORD"
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest testReleaseUnitTest assembleRelease \
+            -PmshVersionCode="$VERSION_CODE" \
+            -PmshVersionName="$VERSION_NAME" \
+            --no-daemon
+
+      - name: Verify package, version, certificate and checksum
+        shell: bash
+        env:
+          EXPECTED_CERT_SHA256: 84907f135a7f49540310fbd1369de862ff78f221fe66b79902f2a48125ee72dd
+          EXPECTED_VERSION_CODE: ${{ inputs.version_code }}
+          EXPECTED_VERSION_NAME: ${{ inputs.version_name }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/MaiScoreHub-release.apk"
+          test -s "$APK"
+          APP_ID="$(apkanalyzer manifest application-id "$APK")"
+          VERSION_CODE="$(apkanalyzer manifest version-code "$APK")"
+          VERSION_NAME="$(apkanalyzer manifest version-name "$APK")"
+          test "$APP_ID" = "com.bakapiano.maiscorehub.android"
+          test "$VERSION_CODE" = "$EXPECTED_VERSION_CODE"
+          test "$VERSION_NAME" = "$EXPECTED_VERSION_NAME"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$APKSIGNER" verify --verbose "$APK"
+          ACTUAL_CERT_SHA256="$(
+            "$APKSIGNER" verify --print-certs "$APK" \
+              | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
+          )"
+          test "$ACTUAL_CERT_SHA256" = "$EXPECTED_CERT_SHA256"
+          sha256sum "$APK" | tee "${APK}.sha256"
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "revision=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "application_id=${APP_ID}"
+            echo "version_code=${VERSION_CODE}"
+            echo "version_name=${VERSION_NAME}"
+            echo "certificate_sha256=${ACTUAL_CERT_SHA256}"
+          } > "app/build/outputs/apk/release/build-info.txt"
+
+      - name: Generate signed stable release manifest
+        shell: bash
+        env:
+          ANDROID_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/maiscorehub-production.jks
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_PROD_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_PROD_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_PROD_KEY_PASSWORD }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          INPUT_MANDATORY: ${{ inputs.mandatory }}
+          INPUT_ROLLOUT_PERCENT: ${{ inputs.rollout_percent }}
+          INPUT_NOTES: ${{ inputs.notes }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/MaiScoreHub-release.apk"
+          RELEASE_ID="android-stable-${VERSION_CODE}-${GITHUB_SHA:0:12}"
+          APK_URL="https://api.maiscorehub.bakapiano.com/api/v1/android/app/releases/${RELEASE_ID}/apk"
+          PUBLISHED_AT="$(git show -s --format=%cI "$GITHUB_SHA")"
+          NOTES_FILE="$RUNNER_TEMP/android-stable-release-notes.txt"
+          if [ -n "${INPUT_NOTES:-}" ]; then
+            printf '%s' "$INPUT_NOTES" > "$NOTES_FILE"
+          else
+            printf 'MaiScoreHub %s 正式版：微信一键登录、代理更新与应用内更新。' \
+              "$VERSION_NAME" > "$NOTES_FILE"
+          fi
+          java scripts/SignReleaseManifest.java \
+            --apk "$APK" \
+            --output "app/build/outputs/apk/release/release-publish.json" \
+            --release-id "$RELEASE_ID" \
+            --channel stable \
+            --package-name com.bakapiano.maiscorehub.android \
+            --version-code "$VERSION_CODE" \
+            --version-name "$VERSION_NAME" \
+            --required-bridge-api-version 2 \
+            --min-sdk 26 \
+            --apk-url "$APK_URL" \
+            --mandatory "${INPUT_MANDATORY:-false}" \
+            --rollout-percent "${INPUT_ROLLOUT_PERCENT:-100}" \
+            --published-at "$PUBLISHED_AT" \
+            --notes-file "$NOTES_FILE"
+
+      - name: Publish stable release to Backend
+        if: inputs.publish
+        shell: bash
+        env:
+          API_SHARED_SECRET: ${{ secrets.API_SHARED_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$API_SHARED_SECRET"
+          PUBLISH_JSON="app/build/outputs/apk/release/release-publish.json"
+          APK="app/build/outputs/apk/release/MaiScoreHub-release.apk"
+          RELEASE_ID="$(jq -r '.manifest.releaseId' "$PUBLISH_JSON")"
+          jq -c '.policy' "$PUBLISH_JSON" > "$RUNNER_TEMP/android-policy.json"
+          jq -c '.envelope' "$PUBLISH_JSON" > "$RUNNER_TEMP/android-envelope.json"
+          curl --fail-with-body --retry 3 \
+            -X PUT \
+            -H "X-API-Secret: $API_SHARED_SECRET" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/android-policy.json" \
+            "https://api.maiscorehub.bakapiano.com/api/v1/admin/android/app/releases/policies/stable"
+          curl --fail-with-body --retry 3 \
+            -X PUT \
+            -H "X-API-Secret: $API_SHARED_SECRET" \
+            -H 'Content-Type: application/vnd.android.package-archive' \
+            --data-binary "@$APK" \
+            "https://api.maiscorehub.bakapiano.com/api/v1/admin/android/app/releases/${RELEASE_ID}/apk"
+          curl --fail-with-body --retry 3 \
+            -X PUT \
+            -H "X-API-Secret: $API_SHARED_SECRET" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/android-envelope.json" \
+            "https://api.maiscorehub.bakapiano.com/api/v1/admin/android/app/releases/${RELEASE_ID}"
+          curl --fail-with-body \
+            "https://api.maiscorehub.bakapiano.com/api/v1/android/app/releases/${RELEASE_ID}/manifest" \
+            | jq -e '.signatureAlgorithm == "SHA256withRSA"' >/dev/null
+
+      - name: Upload production APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MaiScoreHub-production-${{ inputs.version_name }}
+          path: |
+            android-app/app/build/outputs/apk/release/MaiScoreHub-release.apk
+            android-app/app/build/outputs/apk/release/MaiScoreHub-release.apk.sha256
+            android-app/app/build/outputs/apk/release/build-info.txt
+            android-app/app/build/outputs/apk/release/release-publish.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish GitHub Release
+        if: inputs.publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_NAME: ${{ inputs.version_name }}
+        run: |
+          set -euo pipefail
+          TAG="android-v${VERSION_NAME}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "app/build/outputs/apk/release/MaiScoreHub-release.apk#MaiScoreHub ${VERSION_NAME} APK" \
+              "app/build/outputs/apk/release/MaiScoreHub-release.apk.sha256" \
+              "app/build/outputs/apk/release/build-info.txt" \
+              --clobber
+            gh release edit "$TAG" \
+              --title "MaiScoreHub ${VERSION_NAME}" \
+              --notes-file "$RUNNER_TEMP/android-stable-release-notes.txt"
+          else
+            gh release create "$TAG" \
+              "app/build/outputs/apk/release/MaiScoreHub-release.apk#MaiScoreHub ${VERSION_NAME} APK" \
+              "app/build/outputs/apk/release/MaiScoreHub-release.apk.sha256" \
+              "app/build/outputs/apk/release/build-info.txt" \
+              --target "$GITHUB_SHA" \
+              --title "MaiScoreHub ${VERSION_NAME}" \
+              --notes-file "$RUNNER_TEMP/android-stable-release-notes.txt" \
+              --latest
+          fi

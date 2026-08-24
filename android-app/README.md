@@ -107,8 +107,9 @@ the currently installed app certificate's public key and additionally verifies:
 - archive package/version and certificate SHA-256.
 
 Ordinary devices retain Android's unknown-source permission and user install
-confirmation screens. The release Pipeline can publish through
-`build-android-beta.yml` with the manual `publish=true` input.
+confirmation screens. Beta publication uses `build-android-beta.yml`; stable
+publication uses the manual-only `build-android-release.yml`. Both require the
+explicit `publish=true` input.
 
 OAuth results are dispatched as `msh-android-oauth-status`:
 
@@ -227,8 +228,29 @@ adb install -r app\build\outputs\apk\beta\MaiScoreHub-beta.apk
 ```
 
 Local Beta builds fall back to the Android debug key; CI artifacts use the
-dedicated Beta signing key. Both can coexist with the future production-signed
+dedicated Beta signing key. Both can coexist with the production-signed
 `com.bakapiano.maiscorehub.android` package.
+
+Stable builds use the dedicated production key and package
+`com.bakapiano.maiscorehub.android`. The key is independent from both Debug and
+Beta; every future stable update must retain it. The production workflow checks
+the package, version, pinned certificate digest and APK signature before it can
+publish to the Backend registry and GitHub Releases:
+
+```bash
+gh workflow run build-android-release.yml --ref main \
+  -f publish=false -f version_code=4 -f version_name=0.2.2 \
+  -f mandatory=false -f rollout_percent=100
+
+gh workflow run build-android-release.yml --ref main \
+  -f publish=true -f version_code=4 -f version_name=0.2.2 \
+  -f mandatory=false -f rollout_percent=100 \
+  -f notes='微信一键登录、代理更新与应用内更新。'
+```
+
+`publish=true` writes the stable channel policy, immutable Manifest/APK and a
+matching GitHub Release. The public Backend download URL is the APK URL carried
+by the signed Manifest.
 
 CI uses the dedicated Beta key stored in GitHub Actions Secrets and publishes
 `MaiScoreHub-beta` as a workflow artifact. After downloading the artifact, run

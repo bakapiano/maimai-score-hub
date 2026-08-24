@@ -14,6 +14,16 @@ val hasBetaSigning = listOf(
     betaKeyAlias,
     betaKeyPassword,
 ).all { !it.isNullOrBlank() }
+val productionKeystorePath = System.getenv("ANDROID_PROD_KEYSTORE_PATH")
+val productionKeystorePassword = System.getenv("ANDROID_PROD_STORE_PASSWORD")
+val productionKeyAlias = System.getenv("ANDROID_PROD_KEY_ALIAS")
+val productionKeyPassword = System.getenv("ANDROID_PROD_KEY_PASSWORD")
+val hasProductionSigning = listOf(
+    productionKeystorePath,
+    productionKeystorePassword,
+    productionKeyAlias,
+    productionKeyPassword,
+).all { !it.isNullOrBlank() }
 val appVersionCode = providers.gradleProperty("mshVersionCode")
     .orNull
     ?.toIntOrNull()
@@ -28,6 +38,15 @@ android {
     compileSdk = 35
 
     signingConfigs {
+        if (hasProductionSigning) {
+            create("production") {
+                storeFile = file(productionKeystorePath!!)
+                storePassword = productionKeystorePassword
+                keyAlias = productionKeyAlias
+                keyPassword = productionKeyPassword
+                storeType = "JKS"
+            }
+        }
         if (hasBetaSigning) {
             create("beta") {
                 storeFile = file(betaKeystorePath!!)
@@ -66,6 +85,7 @@ android {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
         }
         release {
+            signingConfig = signingConfigs.findByName("production")
             buildConfigField("boolean", "E2E_ENABLED", "false")
             buildConfigField("boolean", "ALLOW_INSECURE_APP_UPDATES", "false")
             buildConfigField("String", "APP_RELEASE_CHANNEL", "\"stable\"")
