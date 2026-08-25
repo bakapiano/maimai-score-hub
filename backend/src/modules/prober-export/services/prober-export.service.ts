@@ -30,6 +30,7 @@ import {
   type CurrentExportSnapshot,
   SyncService,
 } from '../../sync/services/sync.service';
+import { ObservabilityIngestService } from '../../observability/services/observability-ingest.service';
 import { UsersService } from '../../users/services/users.service';
 import {
   ProberExportJobEntity,
@@ -184,6 +185,7 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
     private readonly users: UsersService,
     private readonly syncs: SyncService,
     private readonly leases: RedisLeaseService,
+    private readonly observability: ObservabilityIngestService,
     config: ConfigService,
   ) {
     const queueOptions = createBullmqQueueOptions(config);
@@ -309,9 +311,15 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
         { kind: 'manual', jobId: id, friendCode: input.friendCode },
         1,
       );
+      this.recordTimeline(
+        created.toObject() as ProberExportJobEntity,
+        null,
+        'queued',
+        now,
+      );
     } catch (error) {
       const failedAt = new Date();
-      await this.model.updateOne(
+      const failed = await this.model.findOneAndUpdate(
         { id, status: 'queued' },
         {
           $set: {
@@ -321,7 +329,16 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
             updatedAt: failedAt,
           },
         },
+        { new: true },
       );
+      if (failed) {
+        this.recordTimeline(
+          failed.toObject() as ProberExportJobEntity,
+          'queued',
+          'failed',
+          failedAt,
+        );
+      }
       throw error;
     }
     return toView(created.toObject() as ProberExportJobEntity);
@@ -422,17 +439,27 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
         friendCode: legacy.friendCode,
       });
     }
-    await this.model.updateOne(
+    const completedAt = new Date();
+    const skipped = await this.model.findOneAndUpdate(
       { id: jobId, status: { $nin: TERMINAL_STATUSES } },
       {
         $set: {
           status: 'skipped',
           error: 'superseded by version reconciliation',
-          completedAt: new Date(),
-          updatedAt: new Date(),
+          completedAt,
+          updatedAt: completedAt,
         },
       },
+      { new: true },
     );
+    if (skipped) {
+      this.recordTimeline(
+        skipped.toObject() as ProberExportJobEntity,
+        legacy.status,
+        'skipped',
+        completedAt,
+      );
+    }
     await this.ensureAutoExportWake(legacy.friendCode);
     return { kind: 'done' };
   }
@@ -697,6 +724,9 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
         { new: true },
       )
       .lean<ProberExportJobEntity | null>();
+    if (job) {
+      this.recordTimeline(job, 'queued', 'processing', now);
+    }
     return job?.targets ?? null;
   }
 
@@ -709,7 +739,7 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
   ): Promise<string> {
     const id = randomUUID();
     const now = new Date();
-    await this.model.create({
+    const created = await this.model.create({
       id,
       kind: 'auto',
       trigger: 'auto_latest',
@@ -731,6 +761,12 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
       createdAt: now,
       updatedAt: now,
     });
+    this.recordTimeline(
+      created.toObject() as ProberExportJobEntity,
+      null,
+      'processing',
+      now,
+    );
     return id;
   }
 
@@ -800,7 +836,7 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
     error: string | null,
   ): Promise<void> {
     const completedAt = new Date();
-    await this.model.updateOne(
+    const completed = await this.model.findOneAndUpdate(
       { id: attemptId, claimToken },
       {
         $set: {
@@ -813,7 +849,45 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
           updatedAt: completedAt,
         },
       },
+      { new: true },
     );
+    if (completed) {
+      this.recordTimeline(
+        completed.toObject() as ProberExportJobEntity,
+        'processing',
+        status,
+        completedAt,
+      );
+    }
+  }
+
+  private recordTimeline(
+    job: ProberExportJobEntity,
+    fromStatus: ProberExportStatus | null,
+    toStatus: ProberExportStatus,
+    ts: Date,
+  ): void {
+    const terminal = TERMINAL_STATUSES.includes(toStatus);
+    this.observability.recordJobTimelineEvent({
+      ts,
+      jobId: job.id,
+      jobKind: 'prober_export',
+      jobType: job.trigger,
+      eventName: toStatus === 'processing' ? 'picked' : toStatus,
+      fromStatus,
+      toStatus,
+      workerId: toStatus === 'queued' ? null : this.instanceId,
+      durationMs: terminal ? ts.getTime() - job.createdAt.getTime() : null,
+      errorClass:
+        toStatus === 'failed' || toStatus === 'partial_failed'
+          ? 'prober_export_failed'
+          : null,
+      message: job.error,
+      attrs: {
+        kind: job.kind,
+        targets: job.targets.join(','),
+      },
+    });
   }
 
   private async exportTarget(
@@ -1056,7 +1130,8 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
       if (job.kind === 'manual') {
-        await this.model.updateOne(
+        const requeuedAt = new Date();
+        const requeued = await this.model.findOneAndUpdate(
           { id: job.id, status: 'processing', claimToken: job.claimToken },
           {
             $set: {
@@ -1064,23 +1139,42 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
               claimToken: null,
               claimedAt: null,
               error: 'orphan manual export claim released',
-              updatedAt: new Date(),
+              updatedAt: requeuedAt,
             },
           },
+          { new: true },
         );
+        if (requeued) {
+          this.recordTimeline(
+            requeued.toObject() as ProberExportJobEntity,
+            'processing',
+            'queued',
+            requeuedAt,
+          );
+        }
       } else {
-        await this.model.updateOne(
+        const failedAt = new Date();
+        const failed = await this.model.findOneAndUpdate(
           { id: job.id, status: 'processing', claimToken: job.claimToken },
           {
             $set: {
               status: 'failed',
               claimToken: null,
               error: 'orphan automatic export claim released',
-              completedAt: new Date(),
-              updatedAt: new Date(),
+              completedAt: failedAt,
+              updatedAt: failedAt,
             },
           },
+          { new: true },
         );
+        if (failed) {
+          this.recordTimeline(
+            failed.toObject() as ProberExportJobEntity,
+            'processing',
+            'failed',
+            failedAt,
+          );
+        }
       }
     }
   }
@@ -1112,7 +1206,8 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
     jobId: string,
     failedReason?: string,
   ): Promise<void> {
-    await this.model.updateOne(
+    const failedAt = new Date();
+    const failed = await this.model.findOneAndUpdate(
       {
         id: jobId,
         status: { $nin: TERMINAL_STATUSES },
@@ -1125,11 +1220,20 @@ export class ProberExportService implements OnModuleInit, OnModuleDestroy {
         $set: {
           status: 'failed',
           error: failedReason || 'BullMQ delivery failed',
-          completedAt: new Date(),
-          updatedAt: new Date(),
+          completedAt: failedAt,
+          updatedAt: failedAt,
         },
       },
+      { new: true },
     );
+    if (failed) {
+      this.recordTimeline(
+        failed.toObject() as ProberExportJobEntity,
+        null,
+        'failed',
+        failedAt,
+      );
+    }
   }
 
   private aggregateStatus(

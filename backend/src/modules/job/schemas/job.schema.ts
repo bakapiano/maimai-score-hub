@@ -132,6 +132,8 @@ JobSchema.index(
   { status: 1, createdAt: -1 },
   { name: 'status_createdAt_desc' },
 );
+JobSchema.index({ status: 1, jobType: 1 }, { name: 'status_jobType' });
+JobSchema.index({ status: 1, updatedAt: -1 }, { name: 'status_updatedAt' });
 JobSchema.index(
   { 'context.source': 1, 'context.dailyTaskId': 1, createdAt: -1 },
   { name: 'daily_full_update_lookup' },

@@ -23,6 +23,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DynamicTable } from "../components/DynamicTable";
+import { LazyColumnChart } from "../components/LazyColumnChart";
 import { LazyLineChart } from "../components/LazyLineChart";
 import { MetricCard } from "../components/MetricCard";
 import { PageHeader } from "../components/PageHeader";
@@ -158,11 +159,11 @@ const WINDOW_OPTIONS: Array<{
 export default function RealtimePage() {
   const { password, environment, realtimeWindow } = useAdminContext();
   const [data, setData] = useState<RealtimeOverview | null>(null);
-  const [workerGroups, setWorkerGroups] =
-    useState<RealtimeWorkerGroups | null>(null);
+  const [workerGroups, setWorkerGroups] = useState<RealtimeWorkerGroups | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
-  const [activeWorkerKind, setActiveWorkerKind] =
-    useState<WorkerKind>("dxnet");
+  const [activeWorkerKind, setActiveWorkerKind] = useState<WorkerKind>("dxnet");
   const loadInFlight = useRef(false);
 
   const load = useCallback(async () => {
@@ -228,9 +229,15 @@ export default function RealtimePage() {
       <div className="metric-grid">
         <MetricCard
           title="ClickHouse"
-          value={clickhouse?.ping ? "正常" : clickhouse?.enabled ? "异常" : "关闭"}
-          status={clickhouse?.ping ? "OK" : clickhouse?.enabled ? "ERROR" : "OFF"}
-          color={clickhouse?.ping ? "green" : clickhouse?.enabled ? "red" : "default"}
+          value={
+            clickhouse?.ping ? "正常" : clickhouse?.enabled ? "异常" : "关闭"
+          }
+          status={
+            clickhouse?.ping ? "OK" : clickhouse?.enabled ? "ERROR" : "OFF"
+          }
+          color={
+            clickhouse?.ping ? "green" : clickhouse?.enabled ? "red" : "default"
+          }
         />
         <MetricCard
           title="ClickHouse 写入缓冲"
@@ -292,16 +299,17 @@ export default function RealtimePage() {
                   : kind === "sdgb"
                     ? "SDGB 详情"
                     : "查分器导出详情",
-              children: kind === activeWorkerKind ? (
-                <WorkerMonitorPanel
-                  group={workerGroups?.groups.find(
-                    (candidate) => candidate.workerKind === kind,
-                  )}
-                  password={password}
-                  environment={environment}
-                  onRefresh={load}
-                />
-              ) : null,
+              children:
+                kind === activeWorkerKind ? (
+                  <WorkerMonitorPanel
+                    group={workerGroups?.groups.find(
+                      (candidate) => candidate.workerKind === kind,
+                    )}
+                    password={password}
+                    environment={environment}
+                    onRefresh={load}
+                  />
+                ) : null,
             }),
           )}
         />
@@ -363,8 +371,18 @@ function WorkerOverviewCard({ groups }: { groups: WorkerGroup[] }) {
       ),
     },
     { title: "p95 耗时", dataIndex: "p95Label", key: "p95Label", width: 110 },
-    { title: "最近错误", dataIndex: "errorCount", key: "errorCount", width: 100 },
-    { title: "活跃任务", dataIndex: "activeCount", key: "activeCount", width: 100 },
+    {
+      title: "最近错误",
+      dataIndex: "errorCount",
+      key: "errorCount",
+      width: 100,
+    },
+    {
+      title: "活跃任务",
+      dataIndex: "activeCount",
+      key: "activeCount",
+      width: 100,
+    },
   ];
 
   return (
@@ -392,7 +410,10 @@ function WorkerOverviewCard({ groups }: { groups: WorkerGroup[] }) {
                     {row.status}
                   </Tag>,
                 ],
-                ["在线 / 实例", `${row.onlineWorkerCount} / ${row.workerCount}`],
+                [
+                  "在线 / 实例",
+                  `${row.onlineWorkerCount} / ${row.workerCount}`,
+                ],
                 ["排队 / 处理", `${row.queued} / ${row.processing}`],
                 [
                   "最近成功 / 失败",
@@ -400,7 +421,9 @@ function WorkerOverviewCard({ groups }: { groups: WorkerGroup[] }) {
                 ],
                 [
                   "成功率",
-                  <Tag color={row.successRateColor}>{row.successRateLabel}</Tag>,
+                  <Tag color={row.successRateColor}>
+                    {row.successRateLabel}
+                  </Tag>,
                 ],
                 ["p95 耗时", row.p95Label],
                 ["最近错误", row.errorCount],
@@ -496,13 +519,12 @@ function formatWorkerDetailValue(value: unknown): string {
   return String(value);
 }
 
-function summarizeWorkerGroup(group: WorkerGroup | undefined, kind: WorkerKind) {
+function summarizeWorkerGroup(
+  group: WorkerGroup | undefined,
+  kind: WorkerKind,
+) {
   const title =
-    kind === "dxnet"
-      ? "DXNet"
-      : kind === "sdgb"
-        ? "SDGB"
-        : "查分器导出";
+    kind === "dxnet" ? "DXNet" : kind === "sdgb" ? "SDGB" : "查分器导出";
   if (!group) {
     return {
       kind,
@@ -529,7 +551,10 @@ function summarizeWorkerGroup(group: WorkerGroup | undefined, kind: WorkerKind) 
   const processing = sumQueue(group.queueByJobType, "processing");
   const onlineWorkers = group.workers.filter(isWorkerAlive);
   const onlineWorkerCount = onlineWorkers.length;
-  const errorCount = group.recentErrors.reduce((sum, row) => sum + row.count, 0);
+  const errorCount = group.recentErrors.reduce(
+    (sum, row) => sum + row.count,
+    0,
+  );
   const successTotals = group.successRateTrend.reduce(
     (acc, row) => ({
       completed: acc.completed + row.completed,
@@ -551,11 +576,9 @@ function summarizeWorkerGroup(group: WorkerGroup | undefined, kind: WorkerKind) 
     ...group.queueByJobType.map((row) => row.oldestQueuedAgeSeconds ?? 0),
   );
   const hasQueueBacklog =
-    queued > 0 &&
-    oldestQueuedAgeSeconds > WORKER_QUEUE_BACKLOG_AGE_SECONDS;
+    queued > 0 && oldestQueuedAgeSeconds > WORKER_QUEUE_BACKLOG_AGE_SECONDS;
   const hasUsableDxnetBot =
-    kind !== "dxnet" ||
-    onlineWorkers.some((row) => row.available === true);
+    kind !== "dxnet" || onlineWorkers.some((row) => row.available === true);
   const p95Values = group.durationTrend
     .map((row) => row.p95Ms)
     .filter((value): value is number => typeof value === "number");
@@ -645,17 +668,27 @@ function WorkerMonitorPanel({
       </div>
 
       <div className="metric-grid">
-        <MetricCard title="Worker 实例" value={group.workers.length} status="live" />
+        <MetricCard
+          title="Worker 实例"
+          value={group.workers.length}
+          status="live"
+        />
         <MetricCard
           title="排队中"
           value={sumQueue(group.queueByJobType, "queued")}
-          color={sumQueue(group.queueByJobType, "queued") > 0 ? "gold" : "default"}
+          color={
+            sumQueue(group.queueByJobType, "queued") > 0 ? "gold" : "default"
+          }
           status="queued"
         />
         <MetricCard
           title="处理中"
           value={sumQueue(group.queueByJobType, "processing")}
-          color={sumQueue(group.queueByJobType, "processing") > 0 ? "blue" : "default"}
+          color={
+            sumQueue(group.queueByJobType, "processing") > 0
+              ? "blue"
+              : "default"
+          }
           status="processing"
         />
         <MetricCard
@@ -683,12 +716,7 @@ function WorkerMonitorPanel({
       </div>
 
       <div className="panel-grid-2">
-        <TrendCard
-          title="成功率趋势"
-          data={group.successRateTrend}
-          valueKey="successRate"
-          unit="%"
-        />
+        <SuccessRateTrendCard data={group.successRateTrend} />
         <CountTrendCard data={group.successRateTrend} />
       </div>
 
@@ -697,7 +725,7 @@ function WorkerMonitorPanel({
           title="耗时趋势 p95"
           data={group.durationTrend}
           valueKey="p95Ms"
-          unit="ms"
+          valueFormatter={formatChartDuration}
         />
       </div>
     </div>
@@ -817,7 +845,9 @@ function WorkerInstancesTable({
         } | null;
         if (!response.ok) {
           throw new Error(
-            responseBody?.message ?? responseBody?.error ?? `HTTP ${response.status}`,
+            responseBody?.message ??
+              responseBody?.error ??
+              `HTTP ${response.status}`,
           );
         }
         message.success(
@@ -1129,7 +1159,8 @@ function ActiveWorkerJobsTable({ jobs }: { jobs: WorkerActiveJob[] }) {
       title: "Worker/Bot",
       key: "worker",
       width: 180,
-      render: (row: WorkerActiveJob) => row.workerId ?? row.botFriendCode ?? "-",
+      render: (row: WorkerActiveJob) =>
+        row.workerId ?? row.botFriendCode ?? "-",
     },
     { title: "用户", dataIndex: "friendCode", key: "friendCode", width: 140 },
     {
@@ -1228,14 +1259,17 @@ function TrendCard({
   title,
   data,
   valueKey,
-  unit,
+  valueFormatter,
 }: {
   title: string;
   data: Array<Record<string, unknown>>;
   valueKey: string;
-  unit: string;
+  valueFormatter: (value: number) => string;
 }) {
-  const chartData = useMemo(() => toChartRows(data, valueKey), [data, valueKey]);
+  const chartData = useMemo(
+    () => toChartRows(data, valueKey),
+    [data, valueKey],
+  );
 
   return (
     <Card className="admin-card" title={title}>
@@ -1249,14 +1283,14 @@ function TrendCard({
           autoFit
           point={{ sizeField: 3 }}
           axis={{
-            y: { labelFormatter: (value: number) => `${value}${unit}` },
+            y: { labelFormatter: valueFormatter },
           }}
           tooltip={{
             title: "bucketLabel",
             items: [
               {
                 channel: "y",
-                valueFormatter: (value: number) => `${value}${unit}`,
+                valueFormatter,
               },
             ],
           }}
@@ -1266,6 +1300,20 @@ function TrendCard({
       )}
     </Card>
   );
+}
+
+function formatChartDuration(value: number): string {
+  if (!Number.isFinite(value)) return "-";
+  const milliseconds = Math.max(0, value);
+  if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
+  if (milliseconds < 60_000) {
+    const seconds = milliseconds / 1000;
+    return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`;
+  }
+  const totalSeconds = Math.round(milliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
 }
 
 function CountTrendCard({ data }: { data: SuccessRateTrendPoint[] }) {
@@ -1291,6 +1339,74 @@ function CountTrendCard({ data }: { data: SuccessRateTrendPoint[] }) {
         />
       ) : (
         <Text type="secondary">暂无数量趋势数据</Text>
+      )}
+    </Card>
+  );
+}
+
+function SuccessRateTrendCard({ data }: { data: SuccessRateTrendPoint[] }) {
+  const chartData = useMemo(
+    () =>
+      data.map((row) => ({
+        bucketLabel: formatBucketLabel(row.bucket),
+        series: row.jobType,
+        value: row.successRate,
+        completed: row.completed,
+        failed: row.failed,
+      })),
+    [data],
+  );
+  const totals = useMemo(
+    () =>
+      data.reduce(
+        (sum, row) => ({
+          completed: sum.completed + row.completed,
+          failed: sum.failed + row.failed,
+        }),
+        { completed: 0, failed: 0 },
+      ),
+    [data],
+  );
+
+  return (
+    <Card
+      className="admin-card"
+      title="成功率趋势"
+      extra={
+        <Space size={4} wrap>
+          <Tag color="green">成功 {totals.completed}</Tag>
+          <Tag color="red">失败 {totals.failed}</Tag>
+        </Space>
+      }
+    >
+      {chartData.length ? (
+        <LazyColumnChart
+          data={chartData}
+          xField="bucketLabel"
+          yField="value"
+          colorField="series"
+          group
+          height={260}
+          autoFit
+          scale={{ y: { domain: [0, 100] } }}
+          axis={{
+            y: { labelFormatter: (value: number) => `${value}%` },
+          }}
+          tooltip={{
+            title: "bucketLabel",
+            items: [
+              {
+                field: "value",
+                name: "成功率",
+                valueFormatter: (value: number) => `${value}%`,
+              },
+              { field: "completed", name: "成功" },
+              { field: "failed", name: "失败" },
+            ],
+          }}
+        />
+      ) : (
+        <Text type="secondary">暂无趋势数据</Text>
       )}
     </Card>
   );

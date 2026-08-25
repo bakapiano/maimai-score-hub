@@ -79,6 +79,31 @@ type WorkerGroup = {
   }>;
 };
 
+type WorkerHistory = Pick<
+  WorkerGroup,
+  'successRateTrend' | 'durationTrend' | 'recentErrors'
+>;
+
+type ClickHouseWorkerTrendRow = {
+  jobKind: string;
+  bucket: string;
+  jobType: string;
+  completed: number | string;
+  failed: number | string;
+  total: number | string;
+  successRate: number | string;
+  avgMs: number | string;
+  p50Ms: number | string;
+  p95Ms: number | string;
+};
+
+type ClickHouseWorkerErrorRow = {
+  jobKind: string;
+  jobType: string;
+  message: string;
+  count: number | string;
+};
+
 @Injectable()
 export class ObservabilityQueryService {
   constructor(
@@ -192,9 +217,10 @@ export class ObservabilityQueryService {
     const since = new Date(now.getTime() - realtimeWindowMs(window));
     const bucketMs = getTrendBucketMs(window);
 
-    const [dxnet, sdgb, proberExport] = await Promise.all([
-      this.buildDxnetWorkerGroup(now, since, bucketMs),
-      this.buildSdgbWorkerGroup(now, since, bucketMs),
+    const [clickhouseHistory, dxnet, sdgb, proberExport] = await Promise.all([
+      this.getClickHouseWorkerHistory(environment, since, bucketMs),
+      this.buildDxnetWorkerGroup(now),
+      this.buildSdgbWorkerGroup(now),
       this.buildProberExportWorkerGroup(now, since, bucketMs),
     ]);
 
@@ -202,8 +228,109 @@ export class ObservabilityQueryService {
       environment,
       generatedAt: now.toISOString(),
       window,
-      groups: [dxnet, sdgb, proberExport],
+      groups: [
+        attachWorkerHistory(dxnet, clickhouseHistory.dxnet),
+        attachWorkerHistory(sdgb, clickhouseHistory.sdgb),
+        attachWorkerHistory(proberExport, pickWorkerHistory(proberExport)),
+      ],
     };
+  }
+
+  async getClickHouseWorkerHistory(
+    environment: ObservabilityEnvironment,
+    since: Date,
+    bucketMs: number,
+  ): Promise<Record<'dxnet' | 'sdgb', WorkerHistory>> {
+    const bucketMinutes = bucketMs === 60_000 ? 1 : 5;
+    const params = { environment, sinceMs: since.getTime() };
+    const [trendRows, errorRows] = await Promise.all([
+      this.clickhouse.query<ClickHouseWorkerTrendRow>(
+        `
+        SELECT
+          jobKind,
+          formatDateTime(
+            toTimeZone(
+              toStartOfInterval(ts, INTERVAL ${bucketMinutes} MINUTE),
+              'UTC'
+            ),
+            '%Y-%m-%dT%H:%i:%S.000Z'
+          ) AS bucket,
+          jobType,
+          countIf(eventName = 'completed') AS completed,
+          countIf(eventName = 'failed') AS failed,
+          completed + failed AS total,
+          round(if(total = 0, 0, completed / total * 100), 2) AS successRate,
+          round(avg(durationMs)) AS avgMs,
+          round(quantile(0.50)(durationMs)) AS p50Ms,
+          round(quantile(0.95)(durationMs)) AS p95Ms
+        FROM job_timeline_events
+        WHERE environment = {environment:String}
+          AND ts >= fromUnixTimestamp64Milli({sinceMs:Int64}, 'Asia/Shanghai')
+          AND jobKind IN ('dxnet', 'sdgb')
+          AND eventName IN ('completed', 'failed')
+        GROUP BY jobKind, bucket, jobType
+        ORDER BY bucket ASC, jobType ASC
+        `,
+        params,
+      ),
+      this.clickhouse.query<ClickHouseWorkerErrorRow>(
+        `
+        SELECT
+          jobKind,
+          jobType,
+          if(empty(message), 'unknown', message) AS message,
+          count() AS count
+        FROM job_timeline_events
+        WHERE environment = {environment:String}
+          AND ts >= fromUnixTimestamp64Milli({sinceMs:Int64}, 'Asia/Shanghai')
+          AND jobKind IN ('dxnet', 'sdgb')
+          AND eventName = 'failed'
+        GROUP BY jobKind, jobType, message
+        ORDER BY jobKind ASC, count DESC
+        LIMIT 20 BY jobKind
+        `,
+        params,
+      ),
+    ]);
+
+    const histories = {
+      dxnet: emptyWorkerHistory(),
+      sdgb: emptyWorkerHistory(),
+    };
+    for (const row of trendRows) {
+      if (row.jobKind !== 'dxnet' && row.jobKind !== 'sdgb') {
+        continue;
+      }
+      const history = histories[row.jobKind];
+      history.successRateTrend.push({
+        bucket: row.bucket,
+        jobType: row.jobType,
+        completed: numericValue(row.completed),
+        failed: numericValue(row.failed),
+        total: numericValue(row.total),
+        successRate: numericValue(row.successRate),
+      });
+      history.durationTrend.push({
+        bucket: row.bucket,
+        jobType: row.jobType,
+        avgMs: numericValue(row.avgMs),
+        p50Ms: numericValue(row.p50Ms),
+        p95Ms: numericValue(row.p95Ms),
+      });
+    }
+    for (const row of errorRows) {
+      if (row.jobKind !== 'dxnet' && row.jobKind !== 'sdgb') {
+        continue;
+      }
+      const message = row.message || 'unknown';
+      histories[row.jobKind].recentErrors.push({
+        jobType: row.jobType,
+        errorClass: classifyError(message),
+        message,
+        count: numericValue(row.count),
+      });
+    }
+    return histories;
   }
 
   async getApiHistory(environmentInput: unknown, windowInput: unknown) {
@@ -524,12 +651,8 @@ export class ObservabilityQueryService {
     );
   }
 
-  private async buildDxnetWorkerGroup(
-    now: Date,
-    since: Date,
-    bucketMs: number,
-  ): Promise<WorkerGroup> {
-    const [bots, queueByJobType, activeJobs, terminalJobs] = await Promise.all([
+  private async buildDxnetWorkerGroup(now: Date): Promise<WorkerGroup> {
+    const [bots, queueByJobType, activeJobs] = await Promise.all([
       this.botStatusModel
         .find()
         .sort({ available: -1, lastReportedAt: -1 })
@@ -537,7 +660,7 @@ export class ObservabilityQueryService {
       this.getQueueByJobType({
         model: this.jobModel,
         typeField: 'jobType',
-        statuses: ['queued', 'processing', 'failed', 'completed'],
+        statuses: ['queued', 'processing'],
         now,
       }),
       this.jobModel
@@ -545,27 +668,7 @@ export class ObservabilityQueryService {
         .sort({ createdAt: -1 })
         .limit(100)
         .lean<JobEntity[]>(),
-      this.jobModel
-        .find({
-          status: { $in: ['completed', 'failed'] },
-          updatedAt: { $gte: since },
-        })
-        .select('jobType status error createdAt updatedAt updateScoreDuration')
-        .lean<JobEntity[]>(),
     ]);
-
-    const normalizedTerminalJobs: TerminalJob[] = terminalJobs.map((job) => ({
-      jobType: job.jobType,
-      status: job.status,
-      error: job.error ?? null,
-      createdAt: job.createdAt,
-      updatedAt: job.updatedAt,
-      durationMs:
-        typeof job.updateScoreDuration === 'number' &&
-        Number.isFinite(job.updateScoreDuration)
-          ? Math.max(0, Math.floor(job.updateScoreDuration))
-          : Math.max(0, job.updatedAt.getTime() - job.createdAt.getTime()),
-    }));
 
     return {
       workerKind: 'dxnet',
@@ -592,61 +695,25 @@ export class ObservabilityQueryService {
         createdAt: job.createdAt.toISOString(),
         updatedAt: job.updatedAt.toISOString(),
       })),
-      successRateTrend: buildSuccessRateTrend(
-        normalizedTerminalJobs,
-        since,
-        bucketMs,
-        isSuccessStatus,
-        isFailureStatus,
-      ),
-      durationTrend: buildDurationTrend(
-        normalizedTerminalJobs,
-        since,
-        bucketMs,
-      ),
-      recentErrors: buildRecentErrors(normalizedTerminalJobs),
+      ...emptyWorkerHistory(),
     };
   }
 
-  private async buildSdgbWorkerGroup(
-    now: Date,
-    since: Date,
-    bucketMs: number,
-  ): Promise<WorkerGroup> {
-    const [workers, queueByJobType, activeJobs, terminalJobs] =
-      await Promise.all([
-        this.getSdgbWorkerStatuses(),
-        this.getQueueByJobType({
-          model: this.sdgbJobModel,
-          typeField: 'jobType',
-          statuses: ['queued', 'processing', 'failed', 'completed'],
-          now,
-        }),
-        this.sdgbJobModel
-          .find({ status: { $in: ['queued', 'processing'] } })
-          .sort({ createdAt: -1 })
-          .limit(100)
-          .lean<SdgbJobEntity[]>(),
-        this.sdgbJobModel
-          .find({
-            status: { $in: ['completed', 'failed'] },
-            updatedAt: { $gte: since },
-          })
-          .select('jobType status error createdAt updatedAt')
-          .lean<SdgbJobEntity[]>(),
-      ]);
-
-    const normalizedTerminalJobs: TerminalJob[] = terminalJobs.map((job) => ({
-      jobType: job.jobType,
-      status: job.status,
-      error: job.error ?? null,
-      createdAt: job.createdAt,
-      updatedAt: job.updatedAt,
-      durationMs: Math.max(
-        0,
-        job.updatedAt.getTime() - job.createdAt.getTime(),
-      ),
-    }));
+  private async buildSdgbWorkerGroup(now: Date): Promise<WorkerGroup> {
+    const [workers, queueByJobType, activeJobs] = await Promise.all([
+      this.getSdgbWorkerStatuses(),
+      this.getQueueByJobType({
+        model: this.sdgbJobModel,
+        typeField: 'jobType',
+        statuses: ['queued', 'processing'],
+        now,
+      }),
+      this.sdgbJobModel
+        .find({ status: { $in: ['queued', 'processing'] } })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .lean<SdgbJobEntity[]>(),
+    ]);
 
     return {
       workerKind: 'sdgb',
@@ -665,19 +732,7 @@ export class ObservabilityQueryService {
         createdAt: job.createdAt.toISOString(),
         updatedAt: job.updatedAt.toISOString(),
       })),
-      successRateTrend: buildSuccessRateTrend(
-        normalizedTerminalJobs,
-        since,
-        bucketMs,
-        isSuccessStatus,
-        isFailureStatus,
-      ),
-      durationTrend: buildDurationTrend(
-        normalizedTerminalJobs,
-        since,
-        bucketMs,
-      ),
-      recentErrors: buildRecentErrors(normalizedTerminalJobs),
+      ...emptyWorkerHistory(),
     };
   }
 
@@ -686,18 +741,13 @@ export class ObservabilityQueryService {
     since: Date,
     bucketMs: number,
   ): Promise<WorkerGroup> {
+    // Compatibility bridge while prober_export timeline events accumulate a
+    // complete 24-hour window in ClickHouse.
     const [queueByJobType, activeJobs, terminalJobs] = await Promise.all([
       this.getQueueByJobType({
         model: this.proberExportJobModel,
         typeField: 'trigger',
-        statuses: [
-          'queued',
-          'processing',
-          'failed',
-          'completed',
-          'partial_failed',
-          'skipped',
-        ],
+        statuses: ['queued', 'processing'],
         now,
       }),
       this.proberExportJobModel
@@ -885,6 +935,57 @@ export class ObservabilityQueryService {
   }
 }
 
+function emptyWorkerHistory(): WorkerHistory {
+  return {
+    successRateTrend: [],
+    durationTrend: [],
+    recentErrors: [],
+  };
+}
+
+function pickWorkerHistory(group: WorkerGroup): WorkerHistory {
+  return {
+    successRateTrend: group.successRateTrend,
+    durationTrend: group.durationTrend,
+    recentErrors: group.recentErrors,
+  };
+}
+
+function attachWorkerHistory(
+  group: WorkerGroup,
+  history: WorkerHistory,
+): WorkerGroup {
+  const queueRows = new Map(
+    group.queueByJobType.map((row) => [row.jobType, { ...row }]),
+  );
+  for (const trend of history.successRateTrend) {
+    const row = queueRows.get(trend.jobType) ?? {
+      jobType: trend.jobType,
+      queued: 0,
+      processing: 0,
+      delayed: 0,
+      failed: 0,
+      completed: 0,
+      oldestQueuedAgeSeconds: null,
+    };
+    row.completed += trend.completed;
+    row.failed += trend.failed;
+    queueRows.set(trend.jobType, row);
+  }
+  return {
+    ...group,
+    queueByJobType: [...queueRows.values()].sort((a, b) =>
+      a.jobType.localeCompare(b.jobType),
+    ),
+    ...history,
+  };
+}
+
+function numericValue(value: number | string): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function getStringField(row: Record<string, unknown>, key: string): string {
   const value = row[key];
   return typeof value === 'string' ? value : '';
@@ -933,10 +1034,6 @@ function getTrendBucketMs(window: RealtimeWorkerWindow): number {
     return 60 * 1000;
   }
   return 5 * 60 * 1000;
-}
-
-function isSuccessStatus(status: string): boolean {
-  return status === 'completed';
 }
 
 function isFailureStatus(status: string): boolean {

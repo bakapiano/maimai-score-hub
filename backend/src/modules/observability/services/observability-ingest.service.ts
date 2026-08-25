@@ -41,7 +41,7 @@ export interface HttpRequestEvent {
 export interface JobTimelineEvent {
   ts?: Date;
   jobId: string;
-  jobKind: 'dxnet' | 'sdgb';
+  jobKind: 'dxnet' | 'sdgb' | 'prober_export';
   jobType: string;
   eventName: string;
   fromStatus?: string | null;

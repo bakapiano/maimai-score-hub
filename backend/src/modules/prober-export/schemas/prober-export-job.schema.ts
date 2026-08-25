@@ -130,3 +130,11 @@ ProberExportJobSchema.index(
   { status: 1, claimedAt: 1 },
   { name: 'status_claimedAt' },
 );
+ProberExportJobSchema.index(
+  { status: 1, trigger: 1 },
+  { name: 'status_trigger' },
+);
+ProberExportJobSchema.index(
+  { status: 1, updatedAt: -1 },
+  { name: 'status_updatedAt' },
+);
