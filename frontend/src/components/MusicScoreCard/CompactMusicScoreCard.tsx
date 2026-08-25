@@ -93,7 +93,7 @@ export function CompactMusicScoreCard({
                 position: "absolute",
                 top: 6,
                 right: 6,
-                zIndex: 10,
+                zIndex: 1,
                 pointerEvents: "none",
               }}
             >
@@ -110,7 +110,7 @@ export function CompactMusicScoreCard({
               position: "absolute",
               top: 6,
               left: 6,
-              zIndex: 10,
+              zIndex: 1,
               backgroundColor: difficultyColor,
               color: "white",
             }}
@@ -127,7 +127,7 @@ export function CompactMusicScoreCard({
               position: "absolute",
               bottom: 6,
               left: 6,
-              zIndex: 10,
+              zIndex: 1,
               backgroundColor: "rgba(0,0,0,0.6)",
               color: "white",
             }}
@@ -140,7 +140,7 @@ export function CompactMusicScoreCard({
               position: "absolute",
               bottom: 3,
               right: 3,
-              zIndex: 10,
+              zIndex: 1,
               display: "flex",
               alignItems: "center",
               gap: 0,
