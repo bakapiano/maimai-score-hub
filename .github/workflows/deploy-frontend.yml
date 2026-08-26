@@ -78,7 +78,13 @@ jobs:
               | cut -d' ' -f2- \
               | while IFS= read -r PREVIOUS_DIR; do
                   if [ -d "$PREVIOUS_DIR/assets" ]; then
-                    cp -an "$PREVIOUS_DIR/assets/." "$INCOMING/assets/"
+                    for PREVIOUS_ASSET in "$PREVIOUS_DIR"/assets/*; do
+                      [ -f "$PREVIOUS_ASSET" ] || continue
+                      TARGET_ASSET="$INCOMING/assets/$(basename "$PREVIOUS_ASSET")"
+                      if [ ! -e "$TARGET_ASSET" ]; then
+                        cp -a -- "$PREVIOUS_ASSET" "$TARGET_ASSET"
+                      fi
+                    done
                   fi
                 done
             chmod -R a+rX "$INCOMING"
