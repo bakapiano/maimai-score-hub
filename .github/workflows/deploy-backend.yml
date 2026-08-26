@@ -304,6 +304,22 @@ jobs:
 
             sudo $COMPOSE_CMD up -d nginx
 
+            # Keep the Server 5 host TLS/static reverse proxy aligned with the
+            # tracked configuration. The Docker nginx above serves only the
+            # internal two-replica Backend load balancer.
+            test -s host-nginx/msh.conf
+            test -s host-nginx/msh-proxy-params.conf
+            test -s host-nginx/msh-web-locations.conf
+            sudo install -d -m 755 /etc/nginx/conf.d /etc/nginx/snippets
+            sudo install -m 644 host-nginx/msh.conf \
+              /etc/nginx/conf.d/msh.conf
+            sudo install -m 644 host-nginx/msh-proxy-params.conf \
+              /etc/nginx/snippets/msh-proxy-params.conf
+            sudo install -m 644 host-nginx/msh-web-locations.conf \
+              /etc/nginx/snippets/msh-web-locations.conf
+            sudo nginx -t
+            sudo systemctl reload nginx
+
             if ! sudo $COMPOSE_CMD exec -T backend \
               curl -fsS http://host.docker.internal:19100/healthz \
               | grep -q '"mode":"real"'; then

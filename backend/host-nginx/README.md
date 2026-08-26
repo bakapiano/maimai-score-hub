@@ -22,6 +22,10 @@ releases into the incoming release. This compatibility window lets already-open
 WebViews finish lazy imports while `index.html` and SPA routes use no-cache
 headers to discover the new entry bundle.
 
+`deploy-backend.yml` installs the tracked `msh.conf`, proxy parameters and web
+location snippet into `/etc/nginx`, validates them with `nginx -t`, then reloads
+the host service after a successful Backend rollout.
+
 ## Compression
 
 The host uses the OpenCloudOS nginx 1.26.3 package with gzip and the official
