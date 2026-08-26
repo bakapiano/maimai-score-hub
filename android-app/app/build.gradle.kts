@@ -27,7 +27,7 @@ val hasProductionSigning = listOf(
 val appVersionCode = providers.gradleProperty("mshVersionCode")
     .orNull
     ?.toIntOrNull()
-    ?: 5
+    ?: 6
 val appVersionName = providers.gradleProperty("mshVersionName")
     .orNull
     ?.takeIf { it.isNotBlank() }

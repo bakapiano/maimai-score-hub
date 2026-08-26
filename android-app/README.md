@@ -287,11 +287,11 @@ publish to the Backend registry and GitHub Releases:
 
 ```bash
 gh workflow run build-android-release.yml --ref main \
-  -f publish=false -f version_code=5 -f version_name=0.3.0 \
+  -f publish=false -f version_code=6 -f version_name=0.3.0 \
   -f mandatory=false -f rollout_percent=100
 
 gh workflow run build-android-release.yml --ref main \
-  -f publish=true -f version_code=5 -f version_name=0.3.0 \
+  -f publish=true -f version_code=6 -f version_name=0.3.0 \
   -f mandatory=false -f rollout_percent=100 \
   -f notes='修复了图片导出'
 ```
@@ -299,6 +299,10 @@ gh workflow run build-android-release.yml --ref main \
 `publish=true` writes the stable channel policy, immutable Manifest/APK and a
 matching GitHub Release. The public Backend download URL is the APK URL carried
 by the signed Manifest.
+
+Stable clears the hosted-frontend cache once after each app version upgrade.
+This keeps the login data while ensuring the first post-upgrade launch loads
+the frontend code paired with the new native bridge.
 
 CI uses the dedicated Beta key stored in GitHub Actions Secrets and publishes
 `MaiScoreHub-beta` as a workflow artifact. After downloading the artifact, run

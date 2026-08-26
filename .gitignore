@@ -124,5 +124,6 @@ ocr/scripts/training/
 /android-app/local.properties
 /android-app/app/build/
 /android-app/build/
+/android-app/release-artifacts/
 *.jks
 *.keystore

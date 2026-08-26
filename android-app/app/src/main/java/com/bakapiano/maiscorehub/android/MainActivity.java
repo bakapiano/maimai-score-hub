@@ -47,6 +47,8 @@ public final class MainActivity extends Activity {
     private static final int APP_UPDATE_PERMISSION_REQUEST = 4104;
     private static final int MAX_REQUEST_JSON_CHARS = 64 * 1024;
     private static final String TAG_WEBVIEW = "MshWebView";
+    private static final String WEB_CACHE_PREFERENCES = "web_cache";
+    private static final String WEB_CACHE_VERSION_CODE = "version_code";
 
     private final ExecutorService requestExecutor = Executors.newFixedThreadPool(4);
     private InsetWebViewContainer webViewContainer;
@@ -226,11 +228,29 @@ public final class MainActivity extends Activity {
                 dispatchE2EStart();
             }
         });
-        if (savedInstanceState == null) {
+        boolean webCacheRefreshed = refreshWebCacheAfterAppUpgrade();
+        if (savedInstanceState == null || webCacheRefreshed) {
             webView.loadUrl(BuildConfig.WEB_URL);
         } else {
             webView.restoreState(savedInstanceState);
         }
+    }
+
+    private boolean refreshWebCacheAfterAppUpgrade() {
+        int cachedVersionCode = getSharedPreferences(
+                WEB_CACHE_PREFERENCES,
+                MODE_PRIVATE
+        ).getInt(WEB_CACHE_VERSION_CODE, 0);
+        if (!WebCachePolicy.shouldRefresh(cachedVersionCode, BuildConfig.VERSION_CODE)) {
+            return false;
+        }
+        webView.clearCache(true);
+        getSharedPreferences(WEB_CACHE_PREFERENCES, MODE_PRIVATE)
+                .edit()
+                .putInt(WEB_CACHE_VERSION_CODE, BuildConfig.VERSION_CODE)
+                .apply();
+        Log.i(TAG_WEBVIEW, "Cleared WebView cache for app version " + BuildConfig.VERSION_CODE);
+        return true;
     }
 
     private void configureWebAuthentication(WebSettings settings) {

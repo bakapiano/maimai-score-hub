@@ -12,7 +12,7 @@ on:
         description: Monotonically increasing Android versionCode
         required: true
         type: number
-        default: 5
+        default: 6
       version_name:
         description: User-facing stable version
         required: true
@@ -247,6 +247,8 @@ jobs:
               "app/build/outputs/apk/release/build-info.txt" \
               --clobber
             gh release edit "$TAG" \
+              --target "$GITHUB_SHA" \
+              --latest \
               --title "MaiScoreHub ${VERSION_NAME}" \
               --notes-file "$RUNNER_TEMP/android-stable-release-notes.txt"
           else
