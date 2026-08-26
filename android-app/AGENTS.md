@@ -7,7 +7,7 @@ These instructions apply to the entire `android-app/` tree.
 MaiScoreHub is a thin native shell. Java owns only:
 
 1. trusted-host WebView lifecycle and Android platform adapters for the photo
-   picker and Credential Manager WebAuthn;
+   picker, scoped image saving and Credential Manager WebAuthn;
 2. temporary VPN capture for WeChat OAuth callbacks;
 3. in-memory DXNET CookieJar and constrained cookie-bearing GET/POST transport;
 4. asynchronous events between native code and website JavaScript;
@@ -35,7 +35,8 @@ Score Hub API clients and score upload logic.
 
 ## Bridge contract
 
-Bridge API v2 retains the v1 surface and adds `getVersionCode`,
+Bridge API v3 retains the v2 surface, adds `saveImage`, and keeps the v2
+application-update additions `getVersionCode`,
 `getPackageName`, `getReleaseChannel`, `isAppUpdateRunning` and
 `startAppUpdate(requestId, releaseId)`.
 
@@ -50,6 +51,8 @@ events so website Promises always settle.
 - Keep cookies and `_t` values inside `DxnetTransport`.
 - Bound request JSON, form-field count, response size and timeouts.
 - Keep JavaScript interfaces active only for trusted Score Hub hosts.
+- Keep WebView image saves size-bounded, MIME/signature checked and scoped to
+  MediaStore or the system document picker.
 - Keep OAuth broadcasts signature-protected and app-local.
 - Log summaries and stages; keep callback query values and cookies out of logs.
 - Accept only an immutable release ID from JavaScript. Fetch the release
@@ -68,6 +71,8 @@ events so website Promises always settle.
   `workflow_dispatch` input.
 - Keep `android-releases/` runtime files out of Git and preserve the host bind
   mount during Backend deployments.
+- Use the `.devicetest` application ID for manual native-adapter checks that
+  should coexist with installed Stable and Beta packages.
 - Use `scripts/run-app-update-e2e.ps1` for a real baseline-to-target upgrade;
   it must restore Drony and the legacy updater after the test.
 

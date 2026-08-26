@@ -27,11 +27,15 @@ val hasProductionSigning = listOf(
 val appVersionCode = providers.gradleProperty("mshVersionCode")
     .orNull
     ?.toIntOrNull()
-    ?: 4
+    ?: 5
 val appVersionName = providers.gradleProperty("mshVersionName")
     .orNull
     ?.takeIf { it.isNotBlank() }
-    ?: "0.2.2"
+    ?: "0.3.0"
+val deviceTestWebUrl = providers.gradleProperty("mshDeviceTestWebUrl")
+    .orNull
+    ?.takeIf { it.isNotBlank() }
+    ?: "http://localhost:3001/app/sync"
 
 android {
     namespace = "com.bakapiano.maiscorehub.android"
@@ -83,6 +87,14 @@ android {
                 "\"http://localhost:3001/app/sync\"",
             )
             manifestPlaceholders["usesCleartextTraffic"] = "true"
+        }
+        create("deviceTest") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".devicetest"
+            versionNameSuffix = "-device-test"
+            matchingFallbacks += listOf("debug")
+            buildConfigField("String", "WEB_URL", "\"$deviceTestWebUrl\"")
+            manifestPlaceholders["appLabel"] = "MaiScoreHub Device Test"
         }
         release {
             signingConfig = signingConfigs.findByName("production")

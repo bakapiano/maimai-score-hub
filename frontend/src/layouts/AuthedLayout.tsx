@@ -4,6 +4,7 @@ import {
   AppShell,
   Box,
   Group,
+  Indicator,
   Menu,
   NavLink,
   Stack,
@@ -30,6 +31,7 @@ import { AppFooter } from "../components/AppFooter";
 import { useAuth } from "../providers/AuthContext";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { getCachedProfile } from "../utils/offlineCache";
+import { useAndroidAppUpdate } from "../features/android-update/AndroidAppUpdateContext";
 
 type PageMeta = {
   label: string;
@@ -114,10 +116,12 @@ function readCachedMiniProfile(friendCode?: string | null): MiniProfile | null {
 function MobileBottomNav({
   pathname,
   colorScheme,
+  updateAvailable,
   onNavigate,
 }: {
   pathname: string;
   colorScheme: "light" | "dark";
+  updateAvailable: boolean;
   onNavigate: (to: string) => void;
 }) {
   const items = [
@@ -140,6 +144,7 @@ function MobileBottomNav({
       icon: <IconSettings size={22} />,
       color: "gray",
       active: pathname === "/app/settings",
+      showUpdateDot: updateAvailable,
       onClick: () => onNavigate("/app/settings"),
     },
   ];
@@ -182,6 +187,9 @@ function MobileBottomNav({
             <UnstyledButton
               key={item.label}
               onClick={item.onClick}
+              aria-label={
+                item.showUpdateDot ? `${item.label}，有新版本` : item.label
+              }
               aria-current={item.active ? "page" : undefined}
               style={{
                 flex: 1,
@@ -196,7 +204,15 @@ function MobileBottomNav({
                 color,
               }}
             >
-              {item.icon}
+              <Indicator
+                inline
+                color="red"
+                size={8}
+                offset={2}
+                disabled={!item.showUpdateDot}
+              >
+                {item.icon}
+              </Indicator>
               <Text size="xs" fw={item.active ? 700 : 500} lh={1.1}>
                 {item.label}
               </Text>
@@ -211,6 +227,7 @@ function MobileBottomNav({
 export default function AuthedLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { updateAvailable } = useAndroidAppUpdate();
   const { clearToken, offline, setOffline, profile: authProfile } = useAuth();
   // useMantineColorScheme returns the raw setting ("light" | "dark" |
   // "auto"). For visual conditionals like the header background we need
@@ -288,16 +305,29 @@ export default function AuthedLayout() {
               .filter((page) => !page.hidden)
               .map((page) => {
                 const isDisabled = offline && page.to === "/app/sync";
+                const showUpdateDot =
+                  updateAvailable && page.to === "/app/settings";
                 return (
                   <NavLink
                     key={page.to}
                     component={Link}
                     to={page.to}
                     label={page.label}
+                    aria-label={
+                      showUpdateDot ? `${page.label}，有新版本` : page.label
+                    }
                     leftSection={
-                      <ThemeIcon size={28} radius="md" color={page.color}>
-                        {page.icon}
-                      </ThemeIcon>
+                      <Indicator
+                        inline
+                        color="red"
+                        size={8}
+                        offset={2}
+                        disabled={!showUpdateDot}
+                      >
+                        <ThemeIcon size={28} radius="md" color={page.color}>
+                          {page.icon}
+                        </ThemeIcon>
+                      </Indicator>
                     }
                     active={location.pathname === page.to}
                     style={isDisabled ? { opacity: 0.5 } : undefined}
@@ -392,6 +422,7 @@ export default function AuthedLayout() {
       <MobileBottomNav
         pathname={location.pathname}
         colorScheme={colorScheme}
+        updateAvailable={updateAvailable}
         onNavigate={(to) => navigate(to)}
       />
     </AppShell>

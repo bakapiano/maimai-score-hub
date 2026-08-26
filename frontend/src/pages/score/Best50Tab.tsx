@@ -180,7 +180,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
         throw new Error(`导出失败 (HTTP ${res.status})`);
       }
       const blob = await res.blob();
-      downloadBlob(blob, "best50.png");
+      await downloadBlob(blob, "best50.png");
     } catch (err) {
       console.error(err);
       alert((err as Error).message || "导出失败");

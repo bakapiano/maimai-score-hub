@@ -37,6 +37,15 @@ export type AndroidAppUpdateStatus = {
   versionName?: string;
 };
 
+export type AndroidImageSaveStatus = {
+  requestId: string;
+  message: string;
+  terminal: boolean;
+  success: boolean;
+  uri?: string;
+  error?: string;
+};
+
 export interface AndroidHostBridge {
   isAvailable(): boolean;
   getVersion(): string;
@@ -49,6 +58,12 @@ export interface AndroidHostBridge {
   getReleaseChannel?(): "debug" | "beta" | "stable";
   isAppUpdateRunning?(): boolean;
   startAppUpdate?(requestId: string, releaseId: string): void;
+  saveImage?(
+    requestId: string,
+    fileName: string,
+    mimeType: string,
+    encodedImage: string,
+  ): void;
 }
 
 export interface AndroidAppUpdateBridge extends AndroidHostBridge {
@@ -57,6 +72,15 @@ export interface AndroidAppUpdateBridge extends AndroidHostBridge {
   getReleaseChannel(): "debug" | "beta" | "stable";
   isAppUpdateRunning(): boolean;
   startAppUpdate(requestId: string, releaseId: string): void;
+}
+
+export interface AndroidImageSaveBridge extends AndroidHostBridge {
+  saveImage(
+    requestId: string,
+    fileName: string,
+    mimeType: string,
+    encodedImage: string,
+  ): void;
 }
 
 declare global {
@@ -71,10 +95,14 @@ export const ANDROID_OAUTH_STATUS_EVENT = "msh-android-oauth-status";
 export const ANDROID_HTTP_RESULT_EVENT = "msh-android-http-result";
 export const ANDROID_APP_UPDATE_STATUS_EVENT =
   "msh-android-app-update-status";
+export const ANDROID_IMAGE_SAVE_STATUS_EVENT =
+  "msh-android-image-save-status";
 
 const OAUTH_TIMEOUT_MS = 6 * 60_000;
 const HTTP_TIMEOUT_MS = 2 * 60_000;
 const APP_UPDATE_TIMEOUT_MS = 15 * 60_000;
+const IMAGE_SAVE_TIMEOUT_MS = 2 * 60_000;
+const MAX_NATIVE_IMAGE_BYTES = 24 * 1024 * 1024;
 
 export function isAndroidHostBridge(
   value: unknown,
@@ -126,6 +154,63 @@ export function getAndroidAppUpdateBridge(): AndroidAppUpdateBridge | null {
     return null;
   }
   return bridge as AndroidAppUpdateBridge;
+}
+
+export function getAndroidImageSaveBridge(): AndroidImageSaveBridge | null {
+  const bridge = getAndroidHostBridge();
+  if (!bridge || bridge.getBridgeApiVersion() < 3) {
+    return null;
+  }
+  return typeof bridge.saveImage === "function"
+    ? (bridge as AndroidImageSaveBridge)
+    : null;
+}
+
+export async function saveAndroidImage(
+  blob: Blob,
+  fileName: string,
+): Promise<AndroidImageSaveStatus> {
+  const bridge = getAndroidImageSaveBridge();
+  if (!bridge) {
+    throw new Error("当前 Android 版本尚未提供图片保存能力");
+  }
+  if (blob.size <= 0 || blob.size > MAX_NATIVE_IMAGE_BYTES) {
+    throw new Error("导出图片大小无效");
+  }
+  const mimeType = normalizeImageMimeType(blob.type, fileName);
+  const encodedImage = await blobToBase64(blob);
+  const requestId = crypto.randomUUID();
+  return new Promise<AndroidImageSaveStatus>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("等待 Android 保存图片超时"));
+    }, IMAGE_SAVE_TIMEOUT_MS);
+    const handler = (event: Event) => {
+      const status = parseAndroidImageSaveStatus(
+        (event as CustomEvent<unknown>).detail,
+      );
+      if (!status || status.requestId !== requestId || !status.terminal) {
+        return;
+      }
+      cleanup();
+      if (status.success) {
+        resolve(status);
+      } else {
+        reject(new Error(status.error || status.message));
+      }
+    };
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener(ANDROID_IMAGE_SAVE_STATUS_EVENT, handler);
+    };
+    window.addEventListener(ANDROID_IMAGE_SAVE_STATUS_EVENT, handler);
+    try {
+      bridge.saveImage(requestId, fileName, mimeType, encodedImage);
+    } catch (error) {
+      cleanup();
+      reject(toError(error));
+    }
+  });
 }
 
 export async function startAndroidAppUpdate(
@@ -330,6 +415,31 @@ export function parseAndroidAppUpdateStatus(
   };
 }
 
+export function parseAndroidImageSaveStatus(
+  value: unknown,
+): AndroidImageSaveStatus | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Partial<AndroidImageSaveStatus>;
+  if (
+    typeof candidate.requestId !== "string" ||
+    typeof candidate.message !== "string" ||
+    typeof candidate.terminal !== "boolean" ||
+    typeof candidate.success !== "boolean"
+  ) {
+    return null;
+  }
+  return {
+    requestId: candidate.requestId,
+    message: candidate.message,
+    terminal: candidate.terminal,
+    success: candidate.success,
+    ...(typeof candidate.uri === "string" ? { uri: candidate.uri } : {}),
+    ...(typeof candidate.error === "string" ? { error: candidate.error } : {}),
+  };
+}
+
 export type AndroidNativeOAuthStatus = {
   requestId: string;
   message: string;
@@ -418,6 +528,45 @@ function requireBridge(): AndroidHostBridge {
 
 function isOperationMode(value: unknown): value is AndroidOperationMode {
   return value === "recent" || value === "full" || value === "login";
+}
+
+function normalizeImageMimeType(rawMimeType: string, fileName: string): string {
+  const mimeType = rawMimeType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  if (
+    mimeType === "image/png" ||
+    mimeType === "image/jpeg" ||
+    mimeType === "image/webp"
+  ) {
+    return mimeType;
+  }
+  const lowerName = fileName.toLowerCase();
+  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+  if (lowerName.endsWith(".webp")) {
+    return "image/webp";
+  }
+  if (lowerName.endsWith(".png")) {
+    return "image/png";
+  }
+  throw new Error("导出图片格式无效");
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("读取导出图片失败"));
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const separator = result.indexOf(",");
+      if (separator < 0 || !result.slice(0, separator).includes(";base64")) {
+        reject(new Error("导出图片编码失败"));
+        return;
+      }
+      resolve(result.slice(separator + 1));
+    };
+    reader.readAsDataURL(blob);
+  });
 }
 
 function toError(value: unknown): Error {

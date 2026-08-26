@@ -8,17 +8,16 @@ import {
   Text,
 } from "@mantine/core";
 import { IconDownload, IconRefresh } from "@tabler/icons-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { AppCard } from "../../components/AppCard";
 import { SettingsSectionHeader } from "../../components/SettingsSectionHeader";
-import { getLatestAndroidAppRelease } from "./androidAppReleaseClient";
+import { useAndroidAppUpdate } from "./AndroidAppUpdateContext";
 import {
   getAndroidAppUpdateBridge,
   startAndroidAppUpdate,
   type AndroidAppUpdateStatus,
 } from "./androidUpdateBridge";
-import type { AndroidAppReleaseInfo } from "@maimai-score-hub/shared";
 
 function formatBytes(value: number): string {
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
@@ -26,38 +25,21 @@ function formatBytes(value: number): string {
 
 export function AndroidAppUpdatePanel() {
   const bridge = getAndroidAppUpdateBridge();
-  const [release, setRelease] = useState<AndroidAppReleaseInfo | null>(null);
-  const [checking, setChecking] = useState(true);
+  const {
+    release,
+    checking,
+    error: checkError,
+    checkForUpdate,
+  } = useAndroidAppUpdate();
   const [running, setRunning] = useState(
     () => bridge?.isAppUpdateRunning() ?? false,
   );
   const [status, setStatus] = useState<AndroidAppUpdateStatus | null>(null);
-  const [error, setError] = useState("");
-
-  const check = useCallback(async () => {
-    const currentBridge = getAndroidAppUpdateBridge();
-    if (!currentBridge) {
-      return;
-    }
-    setChecking(true);
-    setError("");
-    try {
-      const result = await getLatestAndroidAppRelease(currentBridge);
-      setRelease(result.updateAvailable ? result.release : null);
-    } catch (value) {
-      setError(value instanceof Error ? value.message : String(value));
-    } finally {
-      setChecking(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void check();
-  }, [check]);
+  const [installError, setInstallError] = useState("");
 
   const start = useCallback(async (releaseId: string) => {
     setRunning(true);
-    setError("");
+    setInstallError("");
     setStatus({
       requestId: "pending",
       message: "正在启动应用更新…",
@@ -69,7 +51,7 @@ export function AndroidAppUpdatePanel() {
     try {
       await startAndroidAppUpdate(releaseId, setStatus);
     } catch (value) {
-      setError(value instanceof Error ? value.message : String(value));
+      setInstallError(value instanceof Error ? value.message : String(value));
     } finally {
       setRunning(false);
     }
@@ -124,7 +106,7 @@ export function AndroidAppUpdatePanel() {
               variant="subtle"
               loading={checking}
               leftSection={<IconRefresh size={14} />}
-              onClick={() => void check()}
+              onClick={() => void checkForUpdate(true)}
             >
               检查更新
             </Button>
@@ -143,9 +125,9 @@ export function AndroidAppUpdatePanel() {
           </Stack>
         )}
 
-        {error && (
+        {(installError || checkError) && (
           <Alert color="red" title="应用更新失败">
-            {error}
+            {installError || checkError}
           </Alert>
         )}
       </Stack>

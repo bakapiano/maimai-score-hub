@@ -12,12 +12,12 @@ on:
         description: Monotonically increasing Android versionCode
         required: true
         type: number
-        default: 4
+        default: 5
       version_name:
         description: User-facing stable version
         required: true
         type: string
-        default: 0.2.2
+        default: 0.3.0
       mandatory:
         description: Mark this release as an important update
         required: true

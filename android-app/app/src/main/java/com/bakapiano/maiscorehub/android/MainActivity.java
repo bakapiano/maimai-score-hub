@@ -31,6 +31,7 @@ import com.bakapiano.maiscorehub.android.update.AppUpdateManager;
 import com.bakapiano.maiscorehub.android.vpn.ProxyUpdateVpnService;
 import com.bakapiano.maiscorehub.android.web.InsetWebViewContainer;
 import com.bakapiano.maiscorehub.android.web.WebFileChooser;
+import com.bakapiano.maiscorehub.android.web.WebImageSaver;
 import com.bakapiano.maiscorehub.android.wechat.WechatWebViewLauncher;
 
 import org.json.JSONException;
@@ -51,6 +52,7 @@ public final class MainActivity extends Activity {
     private InsetWebViewContainer webViewContainer;
     private WebView webView;
     private WebFileChooser webFileChooser;
+    private WebImageSaver webImageSaver;
     private AppUpdateManager appUpdateManager;
     private String pendingOAuthRequestId = "";
     private String pendingAppUpdateRequestId = "";
@@ -123,6 +125,11 @@ public final class MainActivity extends Activity {
         webViewContainer = new InsetWebViewContainer(this);
         webView = webViewContainer.getWebView();
         webFileChooser = new WebFileChooser(this);
+        webImageSaver = new WebImageSaver(
+                this,
+                requestExecutor,
+                this::emitImageSaveStatus
+        );
         appUpdateManager = new AppUpdateManager(
                 this,
                 requestExecutor,
@@ -377,6 +384,9 @@ public final class MainActivity extends Activity {
         if (webFileChooser.handleActivityResult(requestCode, resultCode, data)) {
             return;
         }
+        if (webImageSaver.handleActivityResult(requestCode, resultCode, data)) {
+            return;
+        }
         if (requestCode == WECHAT_SHARE_REQUEST) {
             emitOAuthStatus(
                     pendingOAuthRequestId,
@@ -526,6 +536,53 @@ public final class MainActivity extends Activity {
                             .put("success", false)
                             .put("error", error)
             );
+        } catch (JSONException ignored) {
+            // Primitive values are JSON-safe.
+        }
+    }
+
+    private void beginImageSave(
+            String requestId,
+            String fileName,
+            String mimeType,
+            String encodedImage
+    ) {
+        if (!isValidRequestId(requestId)) {
+            return;
+        }
+        if (!isTrustedWebPage()) {
+            emitImageSaveStatus(
+                    requestId,
+                    false,
+                    "当前网页来源无法保存图片",
+                    null,
+                    "当前网页来源无法保存图片"
+            );
+            return;
+        }
+        webImageSaver.save(requestId, fileName, mimeType, encodedImage);
+    }
+
+    private void emitImageSaveStatus(
+            String requestId,
+            boolean success,
+            String message,
+            String uri,
+            String error
+    ) {
+        try {
+            JSONObject detail = new JSONObject()
+                    .put("requestId", requestId)
+                    .put("message", message)
+                    .put("terminal", true)
+                    .put("success", success);
+            if (uri != null && !uri.isBlank()) {
+                detail.put("uri", uri);
+            }
+            if (error != null && !error.isBlank()) {
+                detail.put("error", error);
+            }
+            dispatchEvent("msh-android-image-save-status", detail);
         } catch (JSONException ignored) {
             // Primitive values are JSON-safe.
         }
@@ -718,6 +775,7 @@ public final class MainActivity extends Activity {
             unregisterReceiver(appUpdateReceiver);
             appUpdateReceiverRegistered = false;
         }
+        webImageSaver.cancel();
         requestExecutor.shutdownNow();
         webFileChooser.cancel();
         webView.removeJavascriptInterface("MaiScoreHubAndroid");
@@ -797,6 +855,21 @@ public final class MainActivity extends Activity {
         @JavascriptInterface
         public void startAppUpdate(String requestId, String releaseId) {
             runOnUiThread(() -> beginAppUpdate(requestId, releaseId));
+        }
+
+        @JavascriptInterface
+        public void saveImage(
+                String requestId,
+                String fileName,
+                String mimeType,
+                String encodedImage
+        ) {
+            runOnUiThread(() -> beginImageSave(
+                    requestId,
+                    fileName,
+                    mimeType,
+                    encodedImage
+            ));
         }
     }
 }

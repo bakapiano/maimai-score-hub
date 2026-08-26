@@ -1,8 +1,8 @@
 import { Badge, Button, Indicator, Modal } from "@mantine/core";
 import { IconDownload } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import { getLatestAndroidAppRelease } from "./androidAppReleaseClient";
+import { useAndroidAppUpdate } from "./AndroidAppUpdateContext";
 import { AndroidAppUpdatePanel } from "./AndroidAppUpdatePanel";
 import {
   getAndroidAppUpdateBridge,
@@ -13,27 +13,7 @@ export function AndroidAppUpdateBadge() {
   const hostBridge = getAndroidHostBridge();
   const bridge = getAndroidAppUpdateBridge();
   const [opened, setOpened] = useState(false);
-  const [updateAvailable, setUpdateAvailable] = useState(false);
-
-  useEffect(() => {
-    const currentBridge = getAndroidAppUpdateBridge();
-    if (!currentBridge) {
-      return;
-    }
-    let active = true;
-    void getLatestAndroidAppRelease(currentBridge)
-      .then((result) => {
-        if (active) {
-          setUpdateAvailable(result.updateAvailable);
-        }
-      })
-      .catch(() => {
-        // The detailed error remains available after the user opens the panel.
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const { updateAvailable } = useAndroidAppUpdate();
 
   if (!bridge) {
     return hostBridge ? (

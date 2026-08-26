@@ -1,4 +1,18 @@
-export function downloadBlob(blob: Blob, filename: string) {
+import {
+  getAndroidHostBridge,
+  getAndroidImageSaveBridge,
+  saveAndroidImage,
+} from "../features/android-update/androidUpdateBridge";
+
+export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
+  if (blob.type.startsWith("image/") && getAndroidHostBridge()) {
+    if (!getAndroidImageSaveBridge()) {
+      throw new Error("请更新 MaiScoreHub 后再导出图片");
+    }
+    await saveAndroidImage(blob, filename);
+    return;
+  }
+
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
 

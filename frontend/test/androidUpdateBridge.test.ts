@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   getAndroidHostBridge,
+  getAndroidImageSaveBridge,
   getAndroidLoginBridge,
   getAndroidUpdateBridge,
   parseAndroidAppUpdateStatus,
+  parseAndroidImageSaveStatus,
   isAndroidHostBridge,
   parseAndroidUpdateStatus,
 } from "../src/features/android-update/androidUpdateBridge.ts";
@@ -79,6 +81,54 @@ test("normalizes native application update progress", () => {
       releaseId: "android-beta-4-deadbeef",
     },
   );
+});
+
+test("normalizes native image save completion", () => {
+  assert.deepEqual(
+    parseAndroidImageSaveStatus({
+      requestId: "image-request-123",
+      message: "图片已保存到相册的 MaiScoreHub 文件夹",
+      terminal: true,
+      success: true,
+      uri: "content://media/external/images/media/123",
+    }),
+    {
+      requestId: "image-request-123",
+      message: "图片已保存到相册的 MaiScoreHub 文件夹",
+      terminal: true,
+      success: true,
+      uri: "content://media/external/images/media/123",
+    },
+  );
+  assert.equal(parseAndroidImageSaveStatus({ message: "missing flags" }), null);
+});
+
+test("exposes native image saving only for Bridge v3", () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const bridge = {
+    isAvailable: () => true,
+    getVersion: () => "0.2.3-beta",
+    getBridgeApiVersion: () => 3,
+    isOAuthRunning: () => false,
+    startOAuth: () => undefined,
+    dxnetRequest: () => undefined,
+    saveImage: () => undefined,
+  };
+  try {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { MaiScoreHubAndroid: bridge },
+    });
+    assert.equal(getAndroidImageSaveBridge(), bridge);
+    bridge.getBridgeApiVersion = () => 2;
+    assert.equal(getAndroidImageSaveBridge(), null);
+  } finally {
+    if (previousWindow) {
+      Object.defineProperty(globalThis, "window", previousWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+  }
 });
 
 test("computes the workflow SHA-256 digest used by the manifest", async () => {

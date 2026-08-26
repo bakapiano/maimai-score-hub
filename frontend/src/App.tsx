@@ -10,6 +10,7 @@ import { MusicProvider } from "./providers/MusicProvider";
 import { Notifications } from "@mantine/notifications";
 import { ObservabilityReporter } from "./components/ObservabilityReporter";
 import { AndroidAppUpdateE2EBridge } from "./features/android-update/AndroidAppUpdateE2EBridge";
+import { AndroidAppUpdateProvider } from "./features/android-update/AndroidAppUpdateProvider";
 import { PwaInstallProvider } from "./providers/PwaInstallProvider";
 import { appTheme } from "./theme";
 
@@ -57,27 +58,29 @@ function App() {
         <MusicProvider>
           <BrowserRouter>
             <AuthProvider>
-              <ObservabilityReporter />
-              <AndroidAppUpdateE2EBridge />
-              <Suspense fallback={<PageLoader />}>
-                <Routes>
-                  <Route path="/login" element={<LoginRoute />} />
-                  <Route
-                    element={
-                      <RequireAuth>
-                        <AuthedLayout />
-                      </RequireAuth>
-                    }
-                  >
-                    <Route path="/app" element={<HomePage />} />
-                    <Route path="/app/sync" element={<SyncPage />} />
-                    <Route path="/app/scores" element={<ScorePage />} />
-                    <Route path="/app/settings" element={<SettingsPage />} />
-                  </Route>
-                  <Route path="/about" element={<AboutPage />} />
-                  <Route path="*" element={<DefaultRedirect />} />
-                </Routes>
-              </Suspense>
+              <AndroidAppUpdateProvider>
+                <ObservabilityReporter />
+                <AndroidAppUpdateE2EBridge />
+                <Suspense fallback={<PageLoader />}>
+                  <Routes>
+                    <Route path="/login" element={<LoginRoute />} />
+                    <Route
+                      element={
+                        <RequireAuth>
+                          <AuthedLayout />
+                        </RequireAuth>
+                      }
+                    >
+                      <Route path="/app" element={<HomePage />} />
+                      <Route path="/app/sync" element={<SyncPage />} />
+                      <Route path="/app/scores" element={<ScorePage />} />
+                      <Route path="/app/settings" element={<SettingsPage />} />
+                    </Route>
+                    <Route path="/about" element={<AboutPage />} />
+                    <Route path="*" element={<DefaultRedirect />} />
+                  </Routes>
+                </Suspense>
+              </AndroidAppUpdateProvider>
             </AuthProvider>
           </BrowserRouter>
         </MusicProvider>

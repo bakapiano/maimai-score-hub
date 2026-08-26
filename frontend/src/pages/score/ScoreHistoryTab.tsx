@@ -438,7 +438,10 @@ export function ScoreHistoryTab() {
       if (!response.ok) {
         throw new Error(`导出失败 (HTTP ${response.status})`);
       }
-      downloadBlob(await response.blob(), `score-history-${selectedDay}.png`);
+      await downloadBlob(
+        await response.blob(),
+        `score-history-${selectedDay}.png`,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "导出失败");
     } finally {

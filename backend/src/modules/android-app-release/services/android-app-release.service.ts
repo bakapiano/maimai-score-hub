@@ -281,6 +281,35 @@ export class AndroidAppReleaseService {
       : { updateAvailable: false, release: null };
   }
 
+  async getLatestApkUrl(channelInput: string): Promise<string> {
+    let channel: string;
+    try {
+      channel = AndroidAppReleaseChannelSchema.parse(channelInput);
+    } catch (error) {
+      throw badRequest(error);
+    }
+    const policy = await this.policyModel
+      .findOne({ channel, enabled: true })
+      .lean()
+      .exec();
+    if (!policy) {
+      throw new NotFoundException('Android release channel is unavailable');
+    }
+    const release = await this.releaseModel
+      .findOne({
+        channel,
+        packageName: policy.packageName,
+        revoked: false,
+      })
+      .sort({ versionCode: -1, publishedAt: -1 })
+      .lean()
+      .exec();
+    if (!release) {
+      throw new NotFoundException('Android release not found');
+    }
+    return release.apkUrl;
+  }
+
   async getManifest(
     releaseIdInput: string,
   ): Promise<AndroidAppReleaseEnvelope> {

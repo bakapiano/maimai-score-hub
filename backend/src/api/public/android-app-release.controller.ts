@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Header,
+  HttpStatus,
   Param,
   Query,
   Res,
@@ -28,6 +29,13 @@ export class AndroidAppReleaseController {
         error instanceof Error ? error.message : String(error),
       );
     }
+  }
+
+  @Get('stable/apk')
+  async getLatestStableApk(@Res() response: Response) {
+    const apkUrl = await this.releases.getLatestApkUrl('stable');
+    response.setHeader('Cache-Control', 'no-store');
+    return response.redirect(HttpStatus.FOUND, apkUrl);
   }
 
   @Get(':releaseId/manifest')

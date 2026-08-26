@@ -26,8 +26,8 @@ if ($TargetVersionCode -le 0) {
     $TargetVersionCode = 100000 + [int]$minutes
 }
 $baselineVersionCode = $TargetVersionCode - 1
-$targetVersionName = "0.2.2-e2e.$TargetVersionCode"
-$baselineVersionName = "0.2.2-e2e.$baselineVersionCode"
+$targetVersionName = "0.3.0-e2e.$TargetVersionCode"
+$baselineVersionName = "0.3.0-e2e.$baselineVersionCode"
 
 New-Item -ItemType Directory -Force -Path $artifactDirectory | Out-Null
 Set-Content -LiteralPath $statusPath -Value '' -Encoding utf8
