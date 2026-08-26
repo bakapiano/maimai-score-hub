@@ -65,6 +65,22 @@ jobs:
             install -d -m 755 "$INCOMING"
             tar -xzf "$ARCHIVE" -C "$INCOMING"
             test -s "$INCOMING/index.html"
+
+            # Keep several generations of content-hashed chunks reachable so
+            # WebViews that were already open during the atomic switch can
+            # finish lazy imports from their original main bundle.
+            install -d -m 755 "$INCOMING/assets"
+            find "$WEB_ROOT/frontend-releases" \
+              -mindepth 1 -maxdepth 1 -type d \
+              ! -name '.incoming-*' -printf '%T@ %p\n' \
+              | sort -rn \
+              | head -n 5 \
+              | cut -d' ' -f2- \
+              | while IFS= read -r PREVIOUS_DIR; do
+                  if [ -d "$PREVIOUS_DIR/assets" ]; then
+                    cp -an "$PREVIOUS_DIR/assets/." "$INCOMING/assets/"
+                  fi
+                done
             chmod -R a+rX "$INCOMING"
 
             if [ -d "$RELEASE_DIR" ]; then

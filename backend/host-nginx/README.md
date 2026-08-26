@@ -17,6 +17,11 @@ with the OS nginx service. The backend application remains in Docker behind
 Frontend and Admin GitHub Actions workflows build on GitHub-hosted runners and
 only upload static release archives to Server 5.
 
+Frontend activation merges the content-hashed assets from the five most recent
+releases into the incoming release. This compatibility window lets already-open
+WebViews finish lazy imports while `index.html` and SPA routes use no-cache
+headers to discover the new entry bundle.
+
 ## Compression
 
 The host uses the OpenCloudOS nginx 1.26.3 package with gzip and the official
