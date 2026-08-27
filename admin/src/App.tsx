@@ -9,6 +9,7 @@ const SyncPage = lazy(() => import("./pages/SyncPage"));
 const JobDebugPage = lazy(() => import("./pages/JobDebugPage"));
 const UsersPage = lazy(() => import("./pages/UsersPage"));
 const WorkerLogsPage = lazy(() => import("./pages/WorkerLogsPage"));
+const AutoUpdatePage = lazy(() => import("./pages/AutoUpdatePage"));
 
 function PageLoader() {
   return (
@@ -63,6 +64,7 @@ export default function App() {
                 <Route path="sync" element={<SyncPage />} />
                 <Route path="job-debug" element={<JobDebugPage />} />
                 <Route path="users" element={<UsersPage />} />
+                <Route path="auto-update" element={<AutoUpdatePage />} />
                 <Route path="live-logs" element={<WorkerLogsPage />} />
                 <Route
                   path="history/logs"

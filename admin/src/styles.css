@@ -194,6 +194,11 @@ select {
   min-width: 0;
 }
 
+.auto-update-metric-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px);
+}
+
 .metric-card-title {
   display: flex;
   align-items: center;

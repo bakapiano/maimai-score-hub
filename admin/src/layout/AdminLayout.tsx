@@ -6,6 +6,7 @@ import {
   MenuOutlined,
   OrderedListOutlined,
   ReloadOutlined,
+  SyncOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
 import {
@@ -106,6 +107,12 @@ const adminPages: AdminPageMeta[] = [
     label: "用户列表",
     to: "/admin/users",
     icon: <TeamOutlined />,
+  },
+  {
+    key: "/admin/auto-update",
+    label: "Auto Update",
+    to: "/admin/auto-update",
+    icon: <SyncOutlined />,
   },
   {
     key: "/admin/live-logs",

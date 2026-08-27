@@ -45,6 +45,7 @@ describe('ObservabilityQueryService worker history', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     const since = new Date('2026-08-25T00:00:00.000Z');
     const result = await service.getClickHouseWorkerHistory(
@@ -78,5 +79,76 @@ describe('ObservabilityQueryService worker history', () => {
       expect.objectContaining({ errorClass: 'timeout', count: 3 }),
     ]);
     expect(result.sdgb.successRateTrend).toHaveLength(1);
+  });
+});
+
+describe('ObservabilityQueryService auto-update overview', () => {
+  it('returns normalized auto-update pressure and queue latency trends', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          project: 'fcfs',
+          pending: '92',
+          p50Ms: '1066267',
+          p95Ms: '2266477',
+          completePerMinute: '7.8',
+          drainEtaMinutes: '11.8',
+          recentFailures: '0',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          bucket: '2026-08-27T12:15:00.000Z',
+          project: 'fcfs',
+          pending: '92',
+          p50Ms: '1066267',
+          p95Ms: '2266477',
+          completePerMinute: '7.8',
+          drainEtaMinutes: '11.8',
+          recentFailures: '0',
+        },
+      ]);
+    const countDocuments = jest.fn(() => ({
+      exec: jest.fn().mockResolvedValue(259),
+    }));
+    const service = new ObservabilityQueryService(
+      { query } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { countDocuments } as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.getAutoUpdateOverview('prod', '6h');
+
+    expect(countDocuments).toHaveBeenCalledWith({ enabled: true });
+    expect(result.enabledUsers).toBe(259);
+    expect(result.projects).toEqual([
+      expect.objectContaining({
+        project: 'fcfs',
+        pending: 92,
+        p50Ms: 1066267,
+        p95Ms: 2266477,
+        completePerMinute: 7.8,
+        drainEtaMinutes: 11.8,
+      }),
+      expect.objectContaining({ project: 'settled', pending: 0 }),
+      expect.objectContaining({ project: 'daily', pending: 0 }),
+    ]);
+    expect(result.trend).toEqual([
+      expect.objectContaining({
+        project: 'fcfs',
+        bucket: '2026-08-27T12:15:00.000Z',
+        p50Ms: 1066267,
+      }),
+    ]);
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('INTERVAL 5 MINUTE'),
+      { environment: 'prod', sinceMinutes: 360 },
+    );
   });
 });

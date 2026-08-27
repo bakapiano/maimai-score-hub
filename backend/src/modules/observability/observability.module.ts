@@ -6,6 +6,10 @@ import {
   BotStatusEntity,
   BotStatusSchema,
 } from '../bots/schemas/bot-status.schema';
+import {
+  AutoUpdateProbeStateEntity,
+  AutoUpdateProbeStateSchema,
+} from '../auto-update/schemas/auto-update-probe-state.schema';
 import { HttpObservabilityInterceptor } from './interceptors/http-observability.interceptor';
 import { JobEntity, JobSchema } from '../job/schemas/job.schema';
 import {
@@ -28,6 +32,10 @@ import { ObservabilityQueryService } from './services/observability-query.servic
       { name: JobEntity.name, schema: JobSchema },
       { name: SdgbJobEntity.name, schema: SdgbJobSchema },
       { name: BotStatusEntity.name, schema: BotStatusSchema },
+      {
+        name: AutoUpdateProbeStateEntity.name,
+        schema: AutoUpdateProbeStateSchema,
+      },
       { name: ProberExportJobEntity.name, schema: ProberExportJobSchema },
     ]),
   ],

@@ -29,6 +29,14 @@ export class AdminObservabilityController {
     return this.observability.getRealtimeWorkerGroups(env, window);
   }
 
+  @Get('auto-update/overview')
+  getAutoUpdateOverview(
+    @Query('env') env?: string,
+    @Query('window') window?: string,
+  ) {
+    return this.observability.getAutoUpdateOverview(env, window);
+  }
+
   @Get('history/api')
   getApiHistory(@Query('env') env?: string, @Query('window') window?: string) {
     return this.observability.getApiHistory(env, window);

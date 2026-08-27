@@ -24,6 +24,7 @@ import { AutoUpdateSchedulerTimingService } from './services/auto-update-schedul
 import { AutoUpdateActivityService } from './services/auto-update-activity.service';
 import { AutoUpdateDailyFullUpdateService } from './services/auto-update-daily-full-update.service';
 import { AutoUpdateFcfsWindowService } from './services/auto-update-fcfs-window.service';
+import { AutoUpdateMetricsService } from './services/auto-update-metrics.service';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { AutoUpdateFcfsWindowService } from './services/auto-update-fcfs-window.
     AutoUpdateActivityService,
     AutoUpdateDailyFullUpdateService,
     AutoUpdateFcfsWindowService,
+    AutoUpdateMetricsService,
     AutoUpdateSchedulerService,
     AutoUpdateSchedulerTimingService,
   ],

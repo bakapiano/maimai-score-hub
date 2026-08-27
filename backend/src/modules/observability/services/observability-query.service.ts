@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 
+import { AutoUpdateProbeStateEntity } from '../../auto-update/schemas/auto-update-probe-state.schema';
 import { BotStatusEntity } from '../../bots/schemas/bot-status.schema';
 import { JobEntity } from '../../job/schemas/job.schema';
 import { ProberExportJobEntity } from '../../prober-export/schemas/prober-export-job.schema';
@@ -17,6 +18,8 @@ import {
 type HistoryWindow = '24h' | '7d' | '30d';
 type WorkerKind = 'dxnet' | 'sdgb' | 'prober_export';
 type RealtimeWorkerWindow = '15m' | '1h' | '6h' | '24h';
+type AutoUpdateWindow = '6h' | '24h' | '7d';
+type AutoUpdateProject = 'fcfs' | 'settled' | 'daily';
 
 type TerminalJob = {
   jobType: string;
@@ -104,6 +107,29 @@ type ClickHouseWorkerErrorRow = {
   count: number | string;
 };
 
+type ClickHouseAutoUpdateRow = {
+  project: string;
+  pending: number | string;
+  p50Ms: number | string;
+  p95Ms: number | string;
+  completePerMinute: number | string;
+  drainEtaMinutes: number | string;
+  recentFailures: number | string;
+};
+
+type ClickHouseAutoUpdateTrendRow = ClickHouseAutoUpdateRow & {
+  bucket: string;
+};
+
+const AUTO_UPDATE_PROJECTS: Array<{
+  key: AutoUpdateProject;
+  label: string;
+}> = [
+  { key: 'fcfs', label: 'FC/FS' },
+  { key: 'settled', label: 'Settled' },
+  { key: 'daily', label: 'Daily' },
+];
+
 @Injectable()
 export class ObservabilityQueryService {
   constructor(
@@ -114,6 +140,8 @@ export class ObservabilityQueryService {
     private readonly sdgbJobModel: Model<SdgbJobEntity>,
     @InjectModel(BotStatusEntity.name)
     private readonly botStatusModel: Model<BotStatusEntity>,
+    @InjectModel(AutoUpdateProbeStateEntity.name)
+    private readonly autoUpdateStateModel: Model<AutoUpdateProbeStateEntity>,
     @InjectModel(ProberExportJobEntity.name)
     private readonly proberExportJobModel: Model<ProberExportJobEntity>,
     private readonly redis: RedisService,
@@ -233,6 +261,77 @@ export class ObservabilityQueryService {
         attachWorkerHistory(sdgb, clickhouseHistory.sdgb),
         attachWorkerHistory(proberExport, pickWorkerHistory(proberExport)),
       ],
+    };
+  }
+
+  async getAutoUpdateOverview(environmentInput: unknown, windowInput: unknown) {
+    const environment = parseObservabilityEnvironment(environmentInput);
+    const window = parseAutoUpdateWindow(windowInput);
+    const { minutes, bucketMinutes } = autoUpdateWindowConfig(window);
+    const rawRowsSql = autoUpdateRawRowsSql();
+    const [enabledUsers, currentRows, trendRows] = await Promise.all([
+      this.autoUpdateStateModel.countDocuments({ enabled: true }).exec(),
+      this.clickhouse.query<ClickHouseAutoUpdateRow>(
+        `
+        SELECT
+          project,
+          argMax(pending, (sourcePriority, ts)) AS pending,
+          argMax(p50Ms, (sourcePriority, ts)) AS p50Ms,
+          argMax(p95Ms, (sourcePriority, ts)) AS p95Ms,
+          argMax(completePerMinute, (sourcePriority, ts)) AS completePerMinute,
+          argMax(drainEtaMinutes, (sourcePriority, ts)) AS drainEtaMinutes,
+          argMax(recentFailures, (sourcePriority, ts)) AS recentFailures
+        FROM (${rawRowsSql})
+        GROUP BY project
+        ORDER BY project ASC
+        `,
+        { environment, sinceMinutes: 2 * 24 * 60 },
+      ),
+      this.clickhouse.query<ClickHouseAutoUpdateTrendRow>(
+        `
+        SELECT
+          formatDateTime(
+            toTimeZone(
+              toStartOfInterval(ts, INTERVAL ${bucketMinutes} MINUTE),
+              'UTC'
+            ),
+            '%Y-%m-%dT%H:%i:%S.000Z'
+          ) AS bucket,
+          project,
+          argMax(pending, (sourcePriority, ts)) AS pending,
+          argMax(p50Ms, (sourcePriority, ts)) AS p50Ms,
+          argMax(p95Ms, (sourcePriority, ts)) AS p95Ms,
+          argMax(completePerMinute, (sourcePriority, ts)) AS completePerMinute,
+          argMax(drainEtaMinutes, (sourcePriority, ts)) AS drainEtaMinutes,
+          argMax(recentFailures, (sourcePriority, ts)) AS recentFailures
+        FROM (${rawRowsSql})
+        GROUP BY bucket, project
+        ORDER BY bucket ASC, project ASC
+        `,
+        { environment, sinceMinutes: minutes },
+      ),
+    ]);
+
+    const currentByProject = new Map(
+      currentRows.map((row) => [row.project, normalizeAutoUpdateRow(row)]),
+    );
+    return {
+      environment,
+      generatedAt: new Date().toISOString(),
+      window,
+      enabledUsers,
+      projects: AUTO_UPDATE_PROJECTS.map(({ key, label }) => ({
+        project: key,
+        label,
+        ...(currentByProject.get(key) ?? emptyAutoUpdateMetrics()),
+      })),
+      trend: trendRows
+        .filter((row) => isAutoUpdateProject(row.project))
+        .map((row) => ({
+          bucket: row.bucket,
+          project: row.project,
+          ...normalizeAutoUpdateRow(row),
+        })),
     };
   }
 
@@ -1211,4 +1310,102 @@ function clampRecentMinutes(input: unknown): number {
   return Number.isFinite(parsed)
     ? Math.min(24 * 60, Math.max(1, Math.floor(parsed)))
     : 15;
+}
+
+function parseAutoUpdateWindow(input: unknown): AutoUpdateWindow {
+  if (input === '24h' || input === '7d') {
+    return input;
+  }
+  return '6h';
+}
+
+function autoUpdateWindowConfig(window: AutoUpdateWindow) {
+  if (window === '7d') {
+    return { minutes: 7 * 24 * 60, bucketMinutes: 60 };
+  }
+  if (window === '24h') {
+    return { minutes: 24 * 60, bucketMinutes: 15 };
+  }
+  return { minutes: 6 * 60, bucketMinutes: 5 };
+}
+
+function autoUpdateRawRowsSql(): string {
+  return `
+    SELECT
+      ts,
+      if(eventName = 'auto_update_pressure_snapshot', 1, 0) AS sourcePriority,
+      if(
+        eventName = 'auto_update_fcfs_backlog_snapshot',
+        'fcfs',
+        attrs['project']
+      ) AS project,
+      toUInt64OrZero(if(
+        eventName = 'auto_update_fcfs_backlog_snapshot',
+        attrs['dueUsers'],
+        attrs['pending']
+      )) AS pending,
+      toUInt64OrZero(if(
+        eventName = 'auto_update_fcfs_backlog_snapshot',
+        attrs['p50DueAgeMs'],
+        attrs['queueP50Ms']
+      )) AS p50Ms,
+      toUInt64OrZero(if(
+        eventName = 'auto_update_fcfs_backlog_snapshot',
+        attrs['p95DueAgeMs'],
+        attrs['queueP95Ms']
+      )) AS p95Ms,
+      toFloat64OrZero(if(
+        eventName = 'auto_update_fcfs_backlog_snapshot',
+        '0',
+        attrs['completePerMinute']
+      )) AS completePerMinute,
+      toFloat64OrZero(if(
+        eventName = 'auto_update_fcfs_backlog_snapshot',
+        '-1',
+        attrs['drainEtaMinutes']
+      )) AS drainEtaMinutes,
+      toUInt64OrZero(if(
+        eventName = 'auto_update_fcfs_backlog_snapshot',
+        '0',
+        attrs['recentFailures']
+      )) AS recentFailures
+    FROM structured_logs
+    WHERE environment = {environment:String}
+      AND ts >= now() - toIntervalMinute({sinceMinutes:UInt32})
+      AND eventName IN (
+        'auto_update_pressure_snapshot',
+        'auto_update_fcfs_backlog_snapshot'
+      )
+      AND (
+        eventName = 'auto_update_fcfs_backlog_snapshot'
+        OR attrs['project'] IN ('fcfs', 'settled', 'daily')
+      )
+  `;
+}
+
+function normalizeAutoUpdateRow(row: ClickHouseAutoUpdateRow) {
+  const rawEta = numericValue(row.drainEtaMinutes);
+  return {
+    pending: numericValue(row.pending),
+    p50Ms: numericValue(row.p50Ms),
+    p95Ms: numericValue(row.p95Ms),
+    completePerMinute: numericValue(row.completePerMinute),
+    drainEtaMinutes: rawEta < 0 ? null : rawEta,
+    recentFailures: numericValue(row.recentFailures),
+  };
+}
+
+function emptyAutoUpdateMetrics() {
+  return {
+    pending: 0,
+    p50Ms: 0,
+    p95Ms: 0,
+    completePerMinute: 0,
+    drainEtaMinutes: 0,
+    recentFailures: 0,
+  };
+}
+
+function isAutoUpdateProject(value: string): value is AutoUpdateProject {
+  return value === 'fcfs' || value === 'settled' || value === 'daily';
 }
