@@ -46,6 +46,7 @@ describe('AutoUpdateMetricsService', () => {
       stateModel as never,
       taskModel as never,
       observability as never,
+      {} as never,
     );
 
     await service.recordSnapshot(new Date('2026-08-27T12:15:00.000Z'));
@@ -85,5 +86,33 @@ describe('AutoUpdateMetricsService', () => {
         }),
       ],
     });
+  });
+
+  it('uses a minute Redis fence across backend replicas', async () => {
+    const countDocuments = jest.fn();
+    const redis = {
+      key: jest.fn((key: string) => `maimai:${key}`),
+      setNx: jest.fn().mockResolvedValue(false),
+    };
+    const service = new AutoUpdateMetricsService(
+      { countDocuments } as never,
+      {} as never,
+      {} as never,
+      redis as never,
+    );
+
+    await (
+      service as unknown as { recordSnapshotOnce(): Promise<void> }
+    ).recordSnapshotOnce();
+
+    expect(redis.key).toHaveBeenCalledWith(
+      expect.stringMatching(/^observability:auto-update-pressure:/),
+    );
+    expect(redis.setNx).toHaveBeenCalledWith(
+      expect.stringMatching(/^maimai:observability:auto-update-pressure:/),
+      '1',
+      120_000,
+    );
+    expect(countDocuments).not.toHaveBeenCalled();
   });
 });

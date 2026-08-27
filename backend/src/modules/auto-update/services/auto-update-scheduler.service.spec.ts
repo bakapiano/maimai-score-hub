@@ -95,7 +95,6 @@ function createService(overrides?: {
       fcfsWindow as any,
       dailyFullUpdate as any,
       {} as any,
-      { recordSnapshot: jest.fn().mockResolvedValue(undefined) } as any,
     ),
     timing,
     stateModel,

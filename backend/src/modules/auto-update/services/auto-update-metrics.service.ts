@@ -1,7 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { CronJob } from 'cron';
 import type { Model, PipelineStage } from 'mongoose';
 
+import { RedisService } from '../../../common/redis/redis.service';
 import { ObservabilityIngestService } from '../../observability/services/observability-ingest.service';
 import { AutoUpdateProbeStateEntity } from '../schemas/auto-update-probe-state.schema';
 import {
@@ -10,6 +17,7 @@ import {
 } from '../schemas/auto-update-task.schema';
 
 const RATE_WINDOW_MINUTES = 15;
+const SNAPSHOT_FENCE_TTL_MS = 120_000;
 const PROJECT_TASK_TYPES = {
   fcfs: 'fcfs_enrichment',
   settled: 'settled_full_update',
@@ -24,14 +32,40 @@ type QueueSnapshot = {
 type TaskCountRow = { _id: AutoUpdateTaskType; count: number };
 
 @Injectable()
-export class AutoUpdateMetricsService {
+export class AutoUpdateMetricsService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(AutoUpdateMetricsService.name);
+  private cron: CronJob | null = null;
+
   constructor(
     @InjectModel(AutoUpdateProbeStateEntity.name)
     private readonly stateModel: Model<AutoUpdateProbeStateEntity>,
     @InjectModel(AutoUpdateTaskEntity.name)
     private readonly taskModel: Model<AutoUpdateTaskEntity>,
     private readonly observability: ObservabilityIngestService,
+    private readonly redis: RedisService,
   ) {}
+
+  onModuleInit(): void {
+    this.cron = new CronJob(
+      '* * * * *',
+      () => {
+        this.recordSnapshotOnce().catch((error) =>
+          this.logger.warn(
+            `failed to record auto-update pressure snapshot: ${
+              error instanceof Error ? error.message : error
+            }`,
+          ),
+        );
+      },
+      null,
+      true,
+    );
+  }
+
+  onModuleDestroy(): void {
+    this.cron?.stop();
+    this.cron = null;
+  }
 
   async recordSnapshot(now: Date): Promise<void> {
     const since = new Date(now.getTime() - RATE_WINDOW_MINUTES * 60_000);
@@ -89,6 +123,19 @@ export class AutoUpdateMetricsService {
         },
       ),
     });
+  }
+
+  private async recordSnapshotOnce(): Promise<void> {
+    const now = new Date();
+    const minute = now.toISOString().slice(0, 16);
+    const won = await this.redis.setNx(
+      this.redis.key(`observability:auto-update-pressure:${minute}`),
+      '1',
+      SNAPSHOT_FENCE_TTL_MS,
+    );
+    if (won) {
+      await this.recordSnapshot(now);
+    }
   }
 
   private aggregateStateQueue(pipeline: PipelineStage[]) {

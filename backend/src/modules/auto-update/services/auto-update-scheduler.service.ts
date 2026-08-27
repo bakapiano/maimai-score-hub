@@ -32,7 +32,6 @@ import {
 import { AutoUpdateActivityService } from './auto-update-activity.service';
 import { AutoUpdateDailyFullUpdateService } from './auto-update-daily-full-update.service';
 import { AutoUpdateFcfsWindowService } from './auto-update-fcfs-window.service';
-import { AutoUpdateMetricsService } from './auto-update-metrics.service';
 
 const SCHEDULER_VERSION = 'rival-first-v1';
 const SETTLED_FULL_UPDATE_SOURCE = 'auto_update_settled_full_update';
@@ -93,7 +92,6 @@ export class AutoUpdateSchedulerService
     private readonly fcfsWindow: AutoUpdateFcfsWindowService,
     private readonly dailyFullUpdate: AutoUpdateDailyFullUpdateService,
     private readonly leases: RedisLeaseService,
-    private readonly metrics: AutoUpdateMetricsService,
   ) {}
 
   onModuleInit() {
@@ -313,8 +311,6 @@ export class AutoUpdateSchedulerService
         results.filter((r) => r.action === 'failed').length +
         mapResults.filter((r) => r.action === 'failed').length;
 
-      await this.recordMetricsSnapshot(now);
-
       this.logger.log(
         `rival-first auto-update sweep done: ${triggered} changed, ${skippedNoChange} unchanged, ${failed} failed (rivalDue=${due.length}, mapDue=${mapDue.length}, fcfsWindow=${fcfsWindow?.windowKey ?? '-'}, fcfsChangedUsers=${fcfsWindow?.changedUsers ?? 0}, pendingFullReconciled=${pendingFullReconciled}, pendingFullActive=${pendingFullActive}, pendingFullLimit=${pendingFullDispatchLimit}, pendingFullDue=${pendingFullUpdate.due}, pendingFullCreated=${pendingFullUpdate.created}, pendingFullCovered=${pendingFullUpdate.coveredByActive}, pendingFullDeferred=${pendingFullUpdate.deferred}, pendingFullFailed=${pendingFullUpdate.failed}, dailyDate=${dailyFullUpdate?.businessDate ?? '-'}, dailyStaged=${dailyFullUpdate?.staged ?? 0}, dailyReconciled=${dailyFullUpdate?.reconciled ?? 0}, dailyDispatched=${dailyFullUpdate?.dispatched ?? 0}, dailyActive=${dailyFullUpdate?.activeUpdateScores ?? 0}, dailyLimit=${dailyFullUpdate?.dispatchLimit ?? 0})`,
       );
@@ -328,18 +324,6 @@ export class AutoUpdateSchedulerService
       };
     } finally {
       this.running = false;
-    }
-  }
-
-  private async recordMetricsSnapshot(now: Date): Promise<void> {
-    try {
-      await this.metrics.recordSnapshot(now);
-    } catch (err) {
-      this.logger.warn(
-        `failed to record auto-update pressure snapshot: ${
-          err instanceof Error ? err.message : err
-        }`,
-      );
     }
   }
 
