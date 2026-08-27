@@ -47,7 +47,7 @@ function createHarness(input?: {
     updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
   };
   const jobs = {
-    countActiveUpdateScores: jest
+    countActiveUpdateScoreBySource: jest
       .fn()
       .mockResolvedValue(input?.activeCount ?? 0),
     findById: jest.fn().mockResolvedValue(null),
@@ -66,7 +66,8 @@ function createHarness(input?: {
   };
   const timing = {
     dailyFullUpdateHour: 2,
-    dailyFullUpdateBatchLimit: 4,
+    dailyFullUpdateDrainIntervalMs: 5_000,
+    dailyFullUpdateBatchLimit: 8,
     dailyFullUpdateMaxActive: 8,
     dailyFullUpdateRetryMs: 10 * 60_000,
     dailyFullUpdateMaxAttempts: 3,
@@ -76,7 +77,7 @@ function createHarness(input?: {
     sweepHardTimeoutMs: 10 * 60_000,
     sweepAbortGraceMs: 3 * 60_000,
     dailyFullUpdateDispatchLimit: jest.fn((active: number) =>
-      Math.min(4, Math.max(0, 8 - active)),
+      Math.min(8, Math.max(0, 8 - active)),
     ),
   };
   const leases = {
@@ -206,7 +207,7 @@ describe('AutoUpdateDailyFullUpdateService staging', () => {
 });
 
 describe('AutoUpdateDailyFullUpdateService dispatch', () => {
-  it('dispatches only the free portion of the global update-score waterline', async () => {
+  it('fills only the free portion of its independent eight-job waterline', async () => {
     const tasks = [
       {
         id: 'daily-full-update:2026-08-16:friend-a',
@@ -234,6 +235,9 @@ describe('AutoUpdateDailyFullUpdateService dispatch', () => {
 
     expect(result.dispatchLimit).toBe(2);
     expect(result.dispatched).toBe(2);
+    expect(jobs.countActiveUpdateScoreBySource).toHaveBeenCalledWith(
+      'auto_update_daily_full_update',
+    );
     expect(queuedQuery.limit).toHaveBeenCalledWith(2);
     expect(jobs.create).toHaveBeenCalledTimes(2);
     expect(jobs.create).toHaveBeenCalledWith(

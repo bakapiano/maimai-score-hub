@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { DXNET_ALL_DIFFICULTIES } from '@maimai-score-hub/shared';
@@ -17,6 +22,7 @@ const DAY_MS = 24 * 60 * 60_000;
 const DAILY_TASK_TYPE = 'daily_full_update' as const;
 const DAILY_JOB_SOURCE = 'auto_update_daily_full_update';
 const DAILY_RUN_PREFIX = 'daily-full-update';
+const DAILY_DRAIN_LEASE_NAME = 'auto-update-daily-drain';
 const TASK_STAGE_CHUNK_SIZE = 500;
 
 export type DailyFullUpdateWindow = {
@@ -30,7 +36,7 @@ export type DailyFullUpdateSummary = {
   staged: number;
   reconciled: number;
   dispatched: number;
-  activeUpdateScores: number;
+  activeDailyUpdateScores: number;
   dispatchLimit: number;
 };
 
@@ -60,8 +66,12 @@ export function dailyFullUpdateWindow(
 }
 
 @Injectable()
-export class AutoUpdateDailyFullUpdateService {
+export class AutoUpdateDailyFullUpdateService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(AutoUpdateDailyFullUpdateService.name);
+  private drainTimer: NodeJS.Timeout | null = null;
+  private drainRunning = false;
 
   constructor(
     @InjectModel(AutoUpdateProbeStateEntity.name)
@@ -76,26 +86,97 @@ export class AutoUpdateDailyFullUpdateService {
     private readonly leases: RedisLeaseService,
   ) {}
 
+  onModuleInit(): void {
+    this.drainTimer = setInterval(() => {
+      void this.runScheduledDrain();
+    }, this.timing.dailyFullUpdateDrainIntervalMs);
+    this.drainTimer.unref?.();
+    this.logger.log(
+      `Daily full-update drain started (interval=${this.timing.dailyFullUpdateDrainIntervalMs}ms, maxActive=${this.timing.dailyFullUpdateMaxActive})`,
+    );
+  }
+
+  onModuleDestroy(): void {
+    if (this.drainTimer) {
+      clearInterval(this.drainTimer);
+      this.drainTimer = null;
+    }
+  }
+
   async run(now: Date, signal?: AbortSignal): Promise<DailyFullUpdateSummary> {
     const window = dailyFullUpdateWindow(now, this.timing.dailyFullUpdateHour);
     const staged = window
       ? await this.stageDailyTasksLeased(window, now, signal)
       : 0;
-    signal?.throwIfAborted();
-    const reconciled = await this.reconcileProcessingTasks(now, signal);
-    signal?.throwIfAborted();
-    const activeUpdateScores = await this.jobs.countActiveUpdateScores();
-    const dispatchLimit =
-      this.timing.dailyFullUpdateDispatchLimit(activeUpdateScores);
-    const dispatched = dispatchLimit
-      ? await this.dispatchQueuedTasks(now, dispatchLimit, signal)
-      : 0;
+    const drain = await this.runDrainOnce(now, signal);
     return {
       businessDate: window?.businessDate ?? null,
       staged,
+      reconciled: drain?.reconciled ?? 0,
+      dispatched: drain?.dispatched ?? 0,
+      activeDailyUpdateScores: drain?.activeDailyUpdateScores ?? 0,
+      dispatchLimit: drain?.dispatchLimit ?? 0,
+    };
+  }
+
+  async runDrainOnce(
+    now = new Date(),
+    outerSignal?: AbortSignal,
+  ): Promise<Omit<DailyFullUpdateSummary, 'businessDate' | 'staged'> | null> {
+    const result = await this.leases.run(
+      {
+        name: DAILY_DRAIN_LEASE_NAME,
+        ttlMs: this.timing.leaseTtlMs,
+        renewEveryMs: this.timing.leaseRenewEveryMs,
+        hardTimeoutMs: this.timing.sweepHardTimeoutMs,
+        abortGraceMs: this.timing.sweepAbortGraceMs,
+      },
+      ({ signal }) => this.runDrain(now, outerSignal, signal),
+    );
+    return result.acquired ? result.value : null;
+  }
+
+  private async runScheduledDrain(): Promise<void> {
+    if (this.drainRunning) {
+      return;
+    }
+    this.drainRunning = true;
+    try {
+      const summary = await this.runDrainOnce();
+      if (summary && (summary.dispatched > 0 || summary.reconciled > 0)) {
+        this.logger.log(
+          `daily full-update drain: active=${summary.activeDailyUpdateScores}, limit=${summary.dispatchLimit}, dispatched=${summary.dispatched}, reconciled=${summary.reconciled}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `daily full-update drain failed: ${this.errorMessage(error)}`,
+      );
+    } finally {
+      this.drainRunning = false;
+    }
+  }
+
+  private async runDrain(
+    now: Date,
+    outerSignal?: AbortSignal,
+    leaseSignal?: AbortSignal,
+  ): Promise<Omit<DailyFullUpdateSummary, 'businessDate' | 'staged'>> {
+    this.assertActive(outerSignal, leaseSignal);
+    const reconciled = await this.reconcileProcessingTasks(now, leaseSignal);
+    this.assertActive(outerSignal, leaseSignal);
+    const activeDailyUpdateScores =
+      await this.jobs.countActiveUpdateScoreBySource(DAILY_JOB_SOURCE);
+    const dispatchLimit = this.timing.dailyFullUpdateDispatchLimit(
+      activeDailyUpdateScores,
+    );
+    const dispatched = dispatchLimit
+      ? await this.dispatchQueuedTasks(now, dispatchLimit, leaseSignal)
+      : 0;
+    return {
       reconciled,
       dispatched,
-      activeUpdateScores,
+      activeDailyUpdateScores,
       dispatchLimit,
     };
   }

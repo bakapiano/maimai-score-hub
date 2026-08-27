@@ -74,7 +74,7 @@ function createService(overrides?: {
       staged: 0,
       reconciled: 0,
       dispatched: 0,
-      activeUpdateScores: 0,
+      activeDailyUpdateScores: 0,
       dispatchLimit: 0,
     }),
   };

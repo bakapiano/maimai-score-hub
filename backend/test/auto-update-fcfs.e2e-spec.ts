@@ -44,7 +44,7 @@ function createJobDouble(created: CreatedJob[]) {
     findById: jest.fn().mockResolvedValue(null),
     findLatestFcfsUpdate: jest.fn().mockResolvedValue(null),
     findLatestDailyFullUpdate: jest.fn().mockResolvedValue(null),
-    countActiveUpdateScores: jest.fn().mockResolvedValue(0),
+    countActiveUpdateScoreBySource: jest.fn().mockResolvedValue(0),
     create: jest.fn((input: CreatedJob) => {
       created.push(input);
       return Promise.resolve({ jobId: `job-${created.length}` });
@@ -125,6 +125,8 @@ describe('auto-update FC/FS producer (local Mongo + Redis e2e)', () => {
       AUTO_UPDATE_FCFS_DRAIN_SCAN_LIMIT: '32',
       AUTO_UPDATE_FCFS_MAX_MUSIC_IDS_PER_JOB: '32',
       AUTO_UPDATE_FCFS_CONTINUATION_DELAY_MS: '300000',
+      AUTO_UPDATE_DAILY_FULL_UPDATE_DRAIN_INTERVAL_MS: '3600000',
+      AUTO_UPDATE_DAILY_FULL_UPDATE_BATCH_LIMIT: '8',
     });
 
     moduleA = await createModule(createdA);
@@ -220,5 +222,41 @@ describe('auto-update FC/FS producer (local Mongo + Redis e2e)', () => {
         status: 'completed',
       }),
     ).toBe(1);
+  });
+
+  it('fills an independent eight-job daily waterline in one drain tick', async () => {
+    await taskModel.insertMany(
+      Array.from({ length: 10 }, (_, index) => ({
+        id: `daily-full-update:2026-08-17:daily-${index}`,
+        type: 'daily_full_update',
+        friendCode: `daily-${index}`,
+        cabinetUserId: 10_000 + index,
+        status: 'queued',
+        runAt: testNow,
+        attempts: 0,
+        metrics: { businessDate: '2026-08-17' },
+      })),
+    );
+    const daily = moduleA.get(AutoUpdateDailyFullUpdateService);
+
+    const result = await daily.runDrainOnce(testNow);
+
+    expect(result).toMatchObject({
+      activeDailyUpdateScores: 0,
+      dispatchLimit: 8,
+      dispatched: 8,
+    });
+    expect(
+      await taskModel.countDocuments({
+        type: 'daily_full_update',
+        status: 'processing',
+      }),
+    ).toBe(8);
+    expect(
+      await taskModel.countDocuments({
+        type: 'daily_full_update',
+        status: 'queued',
+      }),
+    ).toBe(2);
   });
 });

@@ -66,7 +66,7 @@ function getDailyFullUpdateConfig(config: ConfigService) {
     batchLimit: getPositiveInt(
       config,
       'AUTO_UPDATE_DAILY_FULL_UPDATE_BATCH_LIMIT',
-      4,
+      8,
     ),
     maxActive: getPositiveInt(
       config,
@@ -147,6 +147,7 @@ export class AutoUpdateSchedulerTimingService {
   readonly settledFullUpdateRetryMs: number;
   readonly settledFullUpdateClaimTimeoutMs: number;
   readonly dailyFullUpdateHour: number;
+  readonly dailyFullUpdateDrainIntervalMs: number;
   readonly dailyFullUpdateBatchLimit: number;
   readonly dailyFullUpdateMaxActive: number;
   readonly dailyFullUpdateRetryMs: number;
@@ -300,6 +301,11 @@ export class AutoUpdateSchedulerTimingService {
     );
     const dailyFullUpdate = getDailyFullUpdateConfig(config);
     this.dailyFullUpdateHour = dailyFullUpdate.hour;
+    this.dailyFullUpdateDrainIntervalMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_DAILY_FULL_UPDATE_DRAIN_INTERVAL_MS',
+      5_000,
+    );
     this.dailyFullUpdateBatchLimit = dailyFullUpdate.batchLimit;
     this.dailyFullUpdateMaxActive = dailyFullUpdate.maxActive;
     this.dailyFullUpdateRetryMs = dailyFullUpdate.retryMs;

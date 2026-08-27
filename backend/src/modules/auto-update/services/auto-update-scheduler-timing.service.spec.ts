@@ -25,9 +25,10 @@ describe('AutoUpdateSchedulerTimingService', () => {
     expect(timing.fcfsRateForHealthyBots(2)).toBe(3);
     expect(timing.fcfsRateForHealthyBots(1)).toBe(0);
     expect(timing.settledFullUpdateClaimTimeoutMs).toBe(5 * 60_000);
-    expect(timing.dailyFullUpdateBatchLimit).toBe(4);
+    expect(timing.dailyFullUpdateDrainIntervalMs).toBe(5_000);
+    expect(timing.dailyFullUpdateBatchLimit).toBe(8);
     expect(timing.dailyFullUpdateMaxActive).toBe(8);
-    expect(timing.dailyFullUpdateDispatchLimit(0)).toBe(4);
+    expect(timing.dailyFullUpdateDispatchLimit(0)).toBe(8);
     expect(timing.dailyFullUpdateDispatchLimit(6)).toBe(2);
     expect(timing.dailyFullUpdateDispatchLimit(8)).toBe(0);
   });
