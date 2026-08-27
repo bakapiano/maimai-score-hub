@@ -50,6 +50,7 @@ export async function getCookieByAuthUrl(authUrl: string): Promise<CookieJar> {
   const authResponse = await fetchWithCookie(authUrl, {
     headers: OAUTH_CALLBACK_HEADERS,
   });
+  await logOAuthResponse("callback", authResponse, cj);
   void reportMaimaiAuthCall({
     urlGroup: "maimai.oauth.callback",
     method: "GET",
@@ -61,6 +62,7 @@ export async function getCookieByAuthUrl(authUrl: string): Promise<CookieJar> {
   const homeResponse = await fetchWithCookie(`${MAIMAI_URLS.home}`, {
     headers: MAIMAI_HOME_HEADERS,
   });
+  await logOAuthResponse("home", homeResponse, cj);
   void reportMaimaiAuthCall({
     urlGroup: "maimai.home",
     method: "GET",
@@ -69,6 +71,22 @@ export async function getCookieByAuthUrl(authUrl: string): Promise<CookieJar> {
   });
 
   return cj;
+}
+
+async function logOAuthResponse(
+  step: string,
+  response: Response,
+  cookieJar: CookieJar,
+): Promise<void> {
+  const finalUrl = new URL(response.url);
+  const cookieNames = (
+    await cookieJar.getCookies(`${finalUrl.origin}${finalUrl.pathname}`)
+  )
+    .map((cookie) => cookie.key)
+    .sort();
+  console.log(
+    `[OAuth] ${step} status=${response.status} final=${finalUrl.origin}${finalUrl.pathname} cookies=[${cookieNames.join(",")}]`,
+  );
 }
 
 function reportMaimaiAuthCall(input: {
