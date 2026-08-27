@@ -32,7 +32,7 @@ services:
       - DXNET_WORKER_REVISION=${DXNET_WORKER_REVISION:-dev}
       - DXNET_LANE_INTERACTIVE_CONCURRENCY=8
       - DXNET_LANE_USER_SYNC_CONCURRENCY=16
-      - DXNET_LANE_BACKGROUND_CONCURRENCY=16
+      - DXNET_LANE_BACKGROUND_CONCURRENCY=4
     volumes:
       - ./debug-html:/app/worker/debug-html
       - worker-data:/app/worker/data

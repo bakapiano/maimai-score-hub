@@ -198,7 +198,6 @@ export class AutoUpdateDailyFullUpdateService {
                   outcome: 'staged',
                 },
                 createdAt: now,
-                updatedAt: now,
               },
             },
             upsert: true,

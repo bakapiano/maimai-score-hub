@@ -7,6 +7,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createClient, type RedisClientType } from 'redis';
 
+export interface RedisLeakyBucketResult {
+  allowed: boolean;
+  retryAfterMs: number;
+}
+
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
@@ -94,6 +99,44 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async increment(key: string): Promise<number> {
     return this.client.incr(key);
+  }
+
+  async tryAcquireLeakyBucket(
+    key: string,
+    intervalMs: number,
+    burst: number,
+  ): Promise<RedisLeakyBucketResult> {
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+      throw new Error('Leaky bucket intervalMs must be positive');
+    }
+    if (!Number.isInteger(burst) || burst <= 0) {
+      throw new Error('Leaky bucket burst must be a positive integer');
+    }
+    const result = await this.client.eval(
+      [
+        "local t = redis.call('TIME')",
+        'local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)',
+        'local interval = tonumber(ARGV[1])',
+        'local burst = tonumber(ARGV[2])',
+        "local tat = tonumber(redis.call('GET', KEYS[1])) or now",
+        'if tat < now then tat = now end',
+        'local allow_at = tat - ((burst - 1) * interval)',
+        'if now < allow_at then return {0, math.ceil(allow_at - now)} end',
+        'local next_tat = tat + interval',
+        'local ttl = math.ceil(math.max(interval * burst * 2, 1000))',
+        "redis.call('PSETEX', KEYS[1], ttl, tostring(next_tat))",
+        'return {1, 0}',
+      ].join('\n'),
+      {
+        keys: [key],
+        arguments: [String(intervalMs), String(burst)],
+      },
+    );
+    const values = Array.isArray(result) ? result : [0, intervalMs];
+    return {
+      allowed: Number(values[0]) === 1,
+      retryAfterMs: Math.max(0, Number(values[1]) || 0),
+    };
   }
 
   async compareAndDelete(key: string, expectedValue: string): Promise<boolean> {

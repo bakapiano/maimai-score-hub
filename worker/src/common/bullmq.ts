@@ -53,7 +53,7 @@ export function getDxnetLaneConcurrency(
       : lane === "user_sync"
         ? "DXNET_LANE_USER_SYNC_CONCURRENCY"
         : "DXNET_LANE_BACKGROUND_CONCURRENCY";
-  const fallback = lane === "interactive" ? 8 : 16;
+  const fallback = lane === "interactive" ? 8 : lane === "user_sync" ? 16 : 4;
   return Math.max(1, getInt(envName, fallback));
 }
 

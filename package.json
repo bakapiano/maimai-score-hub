@@ -8,6 +8,7 @@
     "dev:local:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/status-local.ps1",
     "dev:local:logs": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/logs-local.ps1",
     "test:e2e:sdgb": "npm --prefix e2e run test:local",
+    "test:e2e:auto-update": "npm --prefix backend run test:e2e:auto-update",
     "test:e2e:ocr": "npm --prefix e2e run test:ocr:local",
     "test:e2e:sdgb:containers": "npm --prefix e2e run test:containers"
   },

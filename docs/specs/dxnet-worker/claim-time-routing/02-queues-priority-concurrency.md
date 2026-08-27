@@ -12,15 +12,15 @@ queue 内排序；跨 queue 的 DXNet request 仍由共享 request scheduler 按
 
 ## 2. DXNet lane
 
-| lane | 目标 | 典型来源 | 每个 queue 的 concurrency |
-| --- | --- | --- | ---: |
-| `interactive` | 登录、好友关系、QR 等短交互 | 用户登录、QR login、好友申请 | 8 |
-| `user_sync` | 用户主动发起的长查分 | 手动 `update_score` | 16 |
-| `background` | 可排队、可退避的后台任务 | targeted FC/FS、自动 full update、维护刷新 | 16 |
+| lane          | 目标                        | 典型来源                                   | 每个 queue 的 concurrency |
+| ------------- | --------------------------- | ------------------------------------------ | ------------------------: |
+| `interactive` | 登录、好友关系、QR 等短交互 | 用户登录、QR login、好友申请               |                         8 |
+| `user_sync`   | 用户主动发起的长查分        | 手动 `update_score`                        |                        16 |
+| `background`  | 可排队、可退避的后台任务    | targeted FC/FS、自动 full update、维护刷新 |                         4 |
 
-`8/16/16` 是 **每个 BullMQ queue consumer 各自的 concurrency**。同一 lane 的 shared 与
+`8/16/4` 是 **每个 BullMQ queue consumer 各自的 concurrency**。同一 lane 的 shared 与
 pinned consumer 不合并计数；二者同时满载时可以分别执行到该值。一个 v2 Bot 进程六个 queue
-的理论 active 上限因此是 `2 × (8 + 16 + 16) = 80`。好友容量仍由 backend 的 per-Bot assignment
+的理论 active 上限因此是 `2 × (8 + 16 + 4) = 56`。好友容量仍由 backend 的 per-Bot assignment
 mutex 和 hard limit 80 防守，不在 worker 内再维护第二套预算。
 
 线上继续保持一个 Bot、一个 Node 进程、一套 CookieJar/MaimaiClient。目标态只是在同一进程
@@ -32,8 +32,8 @@ one Bot process
   pinned-<bot>-interactive consumer concurrency=8
   shared-user-sync consumer concurrency=16
   pinned-<bot>-user-sync consumer concurrency=16
-  shared-background consumer concurrency=16
-  pinned-<bot>-background consumer concurrency=16
+  shared-background consumer concurrency=4
+  pinned-<bot>-background consumer concurrency=4
 ```
 
 不做 shared/pinned 借用、动态拆分或进程级二次排队。某个 route 空闲不会把 concurrency 转给
@@ -46,7 +46,7 @@ priority-aware request throttle，因此 queue concurrency 增加的是并发 jo
 ```text
 DXNET_LANE_INTERACTIVE_CONCURRENCY=8
 DXNET_LANE_USER_SYNC_CONCURRENCY=16
-DXNET_LANE_BACKGROUND_CONCURRENCY=16
+DXNET_LANE_BACKGROUND_CONCURRENCY=4
 ```
 
 ### 2.1 线上容量基线（2026-07-17 回看）
@@ -54,19 +54,19 @@ DXNET_LANE_BACKGROUND_CONCURRENCY=16
 关闭自动 recent-event producer 后的当前队列很空，因此不能用当前瞬时 depth 判断恢复后的
 容量。本设计回看了关闭前 ClickHouse `job_timeline_events`：
 
-| 指标 | 观测值 |
-| --- | ---: |
-| 2026-07-04 recent-event created | 2,048 |
-| 2026-07-05 recent-event created | 2,596 |
-| 全局 5 分钟创建峰值 | 151（约 30/min） |
-| 单 Bot 5 分钟创建峰值 | 104-110（约 21-22/min） |
-| 单 Bot 5 分钟创建 p95 | 48-75 |
-| 2026-07-04 单 Bot runtime 平均 | 19-25s |
-| 2026-07-04 单 Bot runtime p95 | 75-125s |
-| 2026-07-04 全局 queue wait p95 | 747.5s |
+| 指标                            |                  观测值 |
+| ------------------------------- | ----------------------: |
+| 2026-07-04 recent-event created |                   2,048 |
+| 2026-07-05 recent-event created |                   2,596 |
+| 全局 5 分钟创建峰值             |        151（约 30/min） |
+| 单 Bot 5 分钟创建峰值           | 104-110（约 21-22/min） |
+| 单 Bot 5 分钟创建 p95           |                   48-75 |
+| 2026-07-04 单 Bot runtime 平均  |                  19-25s |
+| 2026-07-04 单 Bot runtime p95   |                 75-125s |
+| 2026-07-04 全局 queue wait p95  |                  747.5s |
 
 这说明 background queue 不能把全部任务压成单路串行。shared/pinned background consumer
-各自 concurrency=16，但最终请求吞吐仍由每 Bot request throttle 限制；因此 concurrency 调整
+各自 concurrency=4，但最终请求吞吐仍由每 Bot request throttle 限制；因此 concurrency 调整
 主要缩短 BullMQ queue wait，不应被解释成 16 倍上游 QPS。
 
 因此 concurrency 调整必须和 producer smoothing 一起上线：scheduler 不应在短时间把数百个
@@ -77,13 +77,13 @@ due user 同时 enqueue；应按全局/per-Bot 速率均匀释放。不要单纯
 
 最近 7 天 manual `update_score` 的线上分布：
 
-| 指标 | Bot 336 | Bot 413 | Bot 848 |
-| --- | ---: | ---: | ---: |
-| 5 分钟 created p95 | 6 | 7 | 7 |
-| 5 分钟 created max | 14 | 18 | 20 |
-| 同时 active p95 | 9 | 13 | 13 |
-| 同时 active p99 | 14 | 16 | 16 |
-| 最近 24h queue wait p95 | 4.14s | 4.13s | 4.11s |
+| 指标                    | Bot 336 | Bot 413 | Bot 848 |
+| ----------------------- | ------: | ------: | ------: |
+| 5 分钟 created p95      |       6 |       7 |       7 |
+| 5 分钟 created max      |      14 |      18 |      20 |
+| 同时 active p95         |       9 |      13 |      13 |
+| 同时 active p99         |      14 |      16 |      16 |
+| 最近 24h queue wait p95 |   4.14s |   4.13s |   4.11s |
 
 全局 5 分钟创建峰值为 37 个。固定 `user_sync=16` 对齐历史 active p99，目标是让大部分
 手动同步无需等待 background job 或同 lane slot。interactive 当前 queue wait p95 低于
@@ -148,16 +148,16 @@ type DxnetJobSource =
 
 固定映射：
 
-| source / jobType | lane | priority | assignment |
-| --- | --- | ---: | --- |
-| `user_interaction/send_friend_request` | interactive | 3 | pinned |
-| `user_interaction/accept_friend_request` | interactive | 3 | pinned |
-| `qr_login/get_full_friend_list` | interactive | 4 | claim + cabinet prerequisite |
-| `cabinet_binding/get_full_friend_list` | interactive | 4 | profile fallback only；claim + prerequisite |
-| `user_sync/update_score` | user_sync | 2 | existing friend 时 pinned，否则 claim |
-| `auto_update/update_score`（targeted FC/FS） | background | 1 | claim + cabinet prerequisite |
-| `auto_update/update_score` | background | 1 | existing friend 时 pinned，否则 claim |
-| `maintenance/get_full_friend_list` | background | 0 | pinned |
+| source / jobType                             | lane        | priority | assignment                                  |
+| -------------------------------------------- | ----------- | -------: | ------------------------------------------- |
+| `user_interaction/send_friend_request`       | interactive |        3 | pinned                                      |
+| `user_interaction/accept_friend_request`     | interactive |        3 | pinned                                      |
+| `qr_login/get_full_friend_list`              | interactive |        4 | claim + cabinet prerequisite                |
+| `cabinet_binding/get_full_friend_list`       | interactive |        4 | profile fallback only；claim + prerequisite |
+| `user_sync/update_score`                     | user_sync   |        2 | existing friend 时 pinned，否则 claim       |
+| `auto_update/update_score`（targeted FC/FS） | background  |        1 | claim + cabinet prerequisite                |
+| `auto_update/update_score`                   | background  |        1 | existing friend 时 pinned，否则 claim       |
+| `maintenance/get_full_friend_list`           | background  |        0 | pinned                                      |
 
 `lane` 在创建时物化到 Mongo，不能在 worker 端按 context 临时猜测。
 
@@ -166,13 +166,13 @@ type DxnetJobSource =
 系统只保留现有 `job.priority` 一个业务优先级字段，不再定义第二套字段或 50-400 标度。
 `job.priority` 范围固定为 0-4，数值越大越优先：
 
-| `job.priority` | 含义 | 示例 |
-| ---: | --- | --- |
-| 4 | immediate | `qr_login_resolution`；OAuth request 也使用同一 request priority |
-| 3 | interactive | send/accept friend request |
-| 2 | user_sync | 用户手动 update_score |
-| 1 | background | targeted FC/FS、auto update_score |
-| 0 | maintenance | periodic snapshot |
+| `job.priority` | 含义        | 示例                                                             |
+| -------------: | ----------- | ---------------------------------------------------------------- |
+|              4 | immediate   | `qr_login_resolution`；OAuth request 也使用同一 request priority |
+|              3 | interactive | send/accept friend request                                       |
+|              2 | user_sync   | 用户手动 update_score                                            |
+|              1 | background  | targeted FC/FS、auto update_score                                |
+|              0 | maintenance | periodic snapshot                                                |
 
 这些值只在 `shared` 定义一次：
 
@@ -231,7 +231,7 @@ jobType 增加 semaphore，也不在 active 后等待本地 permit。processor a
 登记 execution 并执行；只有 snapshot/capacity、Bot eligibility 或基础设施错误才使用
 `moveToDelayed` 退避。
 
-因此同一 background queue 内的 recent-event、update_score 和 maintenance 共用 concurrency=16；
+因此同一 background queue 内的 recent-event、update_score 和 maintenance 共用 concurrency=4；
 QR full-list、send/accept 也共用 interactive queue 的 concurrency=8。上游保护由现有 request
 priority、2.5 秒 throttle、producer smoothing、deadline 和 backend 好友容量 mutex 负责。
 
@@ -267,7 +267,7 @@ queue 时统一调用同一个 `5-priority` 转换；Probe lane 的现有调度�
   超过 deadline。
 - snapshot/capacity 拒绝固定使用 5-10s jitter；对应 Bot 同时暂停 shared consumers，不能
   busy loop 抢回同一 job。
-- recent-event producer 初始固定为全局 12 jobs/min、burst 6。该值低于历史常见总吞吐
+- recent-event producer 使用 Redis leaky bucket，base 8 jobs/min、burst 2，并按健康 Bot 数动态降速。该值低于历史常见总吞吐
   14-28/min，又能覆盖约 1.8/min 的历史日均；后续只能根据 queue wait 和 oldest age
   调整，不能在单次 sweep 批量释放数百个任务。
 - 每个 queue 记录 depth、active、oldest waiting 和 queue wait；不能只看六条 queue 的总和。

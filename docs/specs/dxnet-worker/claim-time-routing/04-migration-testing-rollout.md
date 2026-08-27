@@ -77,7 +77,7 @@ Mongo singleton `dxnet_routing_control` 只保留运行期放量配置：
 - snapshot 只有在 5 分钟内才可作为 pinned 依据。
 - QR identity 两种 internal purpose 可以初始使用 null friendCode，普通 public job 不允许。
 - priority 固定为 0-4，BullMQ 转换严格为 `5-priority`，所有值都是非零 1-5。
-- 六个 queue 分别使用 interactive=8、user_sync=16、background=16。
+- 六个 queue 分别使用 interactive=8、user_sync=16、background=4。
 - 不存在 per-type cap、进程级 semaphore 或 active 后本地 waiter。
 
 ### Execution fencing
@@ -155,7 +155,7 @@ sdgb_add_rival_rate_wait_seconds{priority}
 
 ## 7. 上线门槛
 
-- 六个 queue 各自 active 不突破 8/16/16；不要求同 lane shared+pinned 合并后仍为该值。
+- 六个 queue 各自 active 不突破 8/16/4；不要求同 lane shared+pinned 合并后仍为该值。
 - generation 冲突和旧 generation 写入均被拒绝。
 - Bot friendCount < 80；超过 soft limit 50 的持续时间不超过两个 cleanup 周期。
 - background 超时 job 已 canceled，且没有超过 deadline 的非终态 row。

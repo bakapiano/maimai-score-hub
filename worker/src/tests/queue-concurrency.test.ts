@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { getDxnetLaneConcurrency } from "../common/bullmq.ts";
 
-test("DXNet queues use the unified 8/16/16 concurrency defaults", () => {
+test("DXNet queues use the 8/16/4 concurrency defaults", () => {
   const names = [
     "DXNET_LANE_INTERACTIVE_CONCURRENCY",
     "DXNET_LANE_USER_SYNC_CONCURRENCY",
@@ -14,7 +14,7 @@ test("DXNet queues use the unified 8/16/16 concurrency defaults", () => {
     for (const name of names) delete process.env[name];
     assert.equal(getDxnetLaneConcurrency("interactive"), 8);
     assert.equal(getDxnetLaneConcurrency("user_sync"), 16);
-    assert.equal(getDxnetLaneConcurrency("background"), 16);
+    assert.equal(getDxnetLaneConcurrency("background"), 4);
   } finally {
     names.forEach((name, index) => {
       const value = previous[index];

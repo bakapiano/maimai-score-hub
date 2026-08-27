@@ -6,37 +6,37 @@
 
 一人一行。
 
-| 字段                            | 含义                                                       |
-| ------------------------------- | ---------------------------------------------------------- |
-| `friendCode`                    | 用户好友码                                                 |
-| `cabinetUserId`                 | 机台用户 ID                                                |
-| `enabled`                       | 当前是否仍开启自动更新                                     |
-| `tier`                          | `hot` / `warm` / `cold`                                    |
-| `lastRivalHash`                 | 最近一次成功写入成绩对应的 rival hash                      |
-| `lastRivalProbeAt`              | 最近一次 rival score probe 时间                            |
-| `nextRivalProbeAt`              | 下一次允许 rival score probe 的时间                        |
-| `lastScoreChangedAt`            | 最近一次 rival hash 变化时间                               |
-| `mapFingerprint`                | 最近一次 `GetUserMapApi` 计算出的 fingerprint              |
-| `mapDistanceSum`                | 可选，所有 map distance 聚合值                             |
-| `lastMapProbeAt`                | 最近一次 map auxiliary 时间                                |
-| `lastMapDeltaAt`                | 最近一次 map 变化时间                                      |
-| `nextMapProbeAt`                | 下一次允许 map auxiliary 的时间                            |
-| `lastAutoUpdateActivityAt`      | 最近一次通过 rival/map 观测到活动信号的时间                |
-| `pendingFullUpdateAt`           | 稳定后全量 `update_score` 的预约执行时间                   |
-| `lastFcfsUpdateAt`              | 最近一次定向 FC/FS job 创建时间                            |
-| `nextFcfsUpdateAt`              | 下一次允许定向 FC/FS job 的时间                            |
-| `pendingFcfsMusicIds`           | cooldown / producer 限流期间合并的谱面 CID                 |
-| `pendingFcfsWindowStart/End`    | pending CID 最近对应的半小时窗口                           |
-| `pendingFcfsRequestedAt`        | 最近一次 pending 合并时间                                  |
-| `pendingFcfsCount`              | 已合并的半小时窗口数                                       |
-| `fcfsErrorCount`                | 定向 FC/FS job 创建连续错误数                              |
-| `rivalErrorCount`               | rival score probe 连续错误数                               |
-| `mapErrorCount`                 | map auxiliary 连续错误数                                   |
-| `backoffUntil`                  | 当前主链路退避到期时间                                     |
-| `habitMultiplier`               | Phase 2 预留，用户习惯画像给出的调度倍率；Phase 1 固定为 1 |
-| `loadMultiplier`                | 全局负载给出的调度倍率；可选                               |
-| `schedulerVersion`              | 调度策略版本，用于统计、排查和后续策略迁移                 |
-| `createdAt` / `updatedAt`       | Mongoose timestamps                                        |
+| 字段                         | 含义                                                       |
+| ---------------------------- | ---------------------------------------------------------- |
+| `friendCode`                 | 用户好友码                                                 |
+| `cabinetUserId`              | 机台用户 ID                                                |
+| `enabled`                    | 当前是否仍开启自动更新                                     |
+| `tier`                       | `hot` / `warm` / `cold`                                    |
+| `lastRivalHash`              | 最近一次成功写入成绩对应的 rival hash                      |
+| `lastRivalProbeAt`           | 最近一次 rival score probe 时间                            |
+| `nextRivalProbeAt`           | 下一次允许 rival score probe 的时间                        |
+| `lastScoreChangedAt`         | 最近一次 rival hash 变化时间                               |
+| `mapFingerprint`             | 最近一次 `GetUserMapApi` 计算出的 fingerprint              |
+| `mapDistanceSum`             | 可选，所有 map distance 聚合值                             |
+| `lastMapProbeAt`             | 最近一次 map auxiliary 时间                                |
+| `lastMapDeltaAt`             | 最近一次 map 变化时间                                      |
+| `nextMapProbeAt`             | 下一次允许 map auxiliary 的时间                            |
+| `lastAutoUpdateActivityAt`   | 最近一次通过 rival/map 观测到活动信号的时间                |
+| `pendingFullUpdateAt`        | 稳定后全量 `update_score` 的预约执行时间                   |
+| `lastFcfsUpdateAt`           | 最近一次定向 FC/FS job 创建时间                            |
+| `nextFcfsUpdateAt`           | 下一次允许定向 FC/FS job 的时间                            |
+| `pendingFcfsMusicIds`        | cooldown / producer 限流期间合并的谱面 CID                 |
+| `pendingFcfsWindowStart/End` | pending CID 最近对应的半小时窗口                           |
+| `pendingFcfsRequestedAt`     | 最近一次 pending 合并时间                                  |
+| `pendingFcfsCount`           | 已合并的半小时窗口数                                       |
+| `fcfsErrorCount`             | 定向 FC/FS job 创建连续错误数                              |
+| `rivalErrorCount`            | rival score probe 连续错误数                               |
+| `mapErrorCount`              | map auxiliary 连续错误数                                   |
+| `backoffUntil`               | 当前主链路退避到期时间                                     |
+| `habitMultiplier`            | Phase 2 预留，用户习惯画像给出的调度倍率；Phase 1 固定为 1 |
+| `loadMultiplier`             | 全局负载给出的调度倍率；可选                               |
+| `schedulerVersion`           | 调度策略版本，用于统计、排查和后续策略迁移                 |
+| `createdAt` / `updatedAt`    | Mongoose timestamps                                        |
 
 当前索引：
 
@@ -78,20 +78,20 @@ Phase 2 示例：
 用于短期任务日志。Rival/Map/FCFS 任务直接进入 `processing`；每日收尾全量更新使用
 `daily_full_update` 作为持久化 staging queue，并通过 `queued/runAt` 分批投递。
 
-| 字段            | 含义                                                                |
-| --------------- | ------------------------------------------------------------------- |
-| `id`            | 任务 ID                                                             |
+| 字段            | 含义                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------- |
+| `id`            | 任务 ID                                                                                                       |
 | `type`          | `rival_score_probe` / `map_auxiliary_probe` / `fcfs_enrichment` / `settled_full_update` / `daily_full_update` |
-| `friendCode`    | 用户好友码                                                          |
-| `cabinetUserId` | 机台用户 ID                                                         |
-| `status`        | `queued` / `processing` / `completed` / `failed` / `canceled`       |
-| `priority`      | 任务优先级                                                          |
-| `runAt`         | 每日任务首次投递或失败重试时间                                      |
-| `attempts`      | 尝试次数                                                            |
-| `lastError`     | 最近错误                                                            |
-| `metrics`       | 任务耗时、job id、musicIds、返回条数、触发原因与 reconciliation outcome |
-| `createdAt`     | 创建时间                                                            |
-| `updatedAt`     | 更新时间                                                            |
+| `friendCode`    | 用户好友码                                                                                                    |
+| `cabinetUserId` | 机台用户 ID                                                                                                   |
+| `status`        | `queued` / `processing` / `completed` / `failed` / `canceled`                                                 |
+| `priority`      | 任务优先级                                                                                                    |
+| `runAt`         | 每日任务首次投递或失败重试时间                                                                                |
+| `attempts`      | 尝试次数                                                                                                      |
+| `lastError`     | 最近错误                                                                                                      |
+| `metrics`       | 任务耗时、job id、musicIds、返回条数、触发原因与 reconciliation outcome                                       |
+| `createdAt`     | 创建时间                                                                                                      |
+| `updatedAt`     | 更新时间                                                                                                      |
 
 当前 TTL 为 3 天。
 
@@ -211,12 +211,12 @@ Rival probe 不是每次都写 sync，只有 hash 变化才合并写入。当前
 
 ### FC/FS enrichment 写入压力
 
-Targeted FC/FS 设计为半小时 change window，并使用全局 12 jobs/min、burst 6/5s：
+Targeted FC/FS 使用半小时 change window 与独立 drain，并通过 Redis leaky
+bucket 维持 base 8 jobs/min、burst 2；实际速率按健康 Bot 数动态计算：
 
-| 限流   |             调用量 |
-| ------ | -----------------: |
-| 30/min | 4.32 万/天理论上限 |
-| 36/min | 5.18 万/天理论上限 |
+| 限流  |             调用量 |
+| ----- | -----------------: |
+| 8/min | 1.15 万/天理论上限 |
 
 实际会低于上限，因为有单用户 30min cooldown，且只由 rival hash change、map score-silent change、手动触发产生。cooldown 内的多次触发会合并为 `auto_update_probe_states` 上的一次 pending FC/FS enrichment，到期后补跑一次。
 

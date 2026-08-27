@@ -23,7 +23,33 @@
 | `queue_lag_seconds`                   | 各队列排队延迟                     |
 | `tier_user_count`                     | hot / warm / cold 用户分布         |
 | `scheduler_due_count`                 | 每轮到期用户数                     |
-| `rate_limit_deferred_count`           | 目标指标；当前 Phase 1 未实现      |
+| `rate_limit_deferred_count`           | leaky bucket 延后次数              |
+
+## Targeted FC/FS ClickHouse 事件
+
+评估数据进入 ClickHouse；Mongo 只保存调度、fencing 和失败恢复所需状态。
+
+`structured_logs`：
+
+| `eventName`                         | 主要 attrs                                                                                                              |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `auto_update_fcfs_window_staged`    | `windowKey`, `changedUsers`                                                                                             |
+| `auto_update_fcfs_drain_tick`       | `healthyBots`, `ratePerMinute`, `reconciled`, `due`, `dispatched`, `deferred`, `rateLimited`, `failed`                  |
+| `auto_update_fcfs_backlog_snapshot` | `pendingUsers`, `dueUsers`, `pendingCidCount`, `oldestDueAgeMs`, `p50DueAgeMs`, `p95DueAgeMs`, `effectiveRatePerMinute` |
+| `auto_update_fcfs_rate_limited`     | `healthyBots`, `effectiveRatePerMinute`, `retryAfterMs`                                                                 |
+
+`job_timeline_events`：
+
+| `eventName`                   | 主要 attrs                                                                                                     |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `auto_update_fcfs_dispatched` | `taskId`, `cidCount`, `remainingCidCount`, `effectiveRatePerMinute`, `healthyBots`, `dueAgeMs`, `pendingAgeMs` |
+| `auto_update_fcfs_completed`  | `taskId`, `cidCount`, `durationMs`                                                                             |
+| `auto_update_fcfs_requeued`   | `taskId`, `cidCount`, `failureCount`, `retryAt`, `errorClass`                                                  |
+
+backlog 快照由 Redis minute fence 保证每分钟全局一条。drain tick 每 5 秒记录一条，
+用于复原实际 permit/dispatch 节奏。DXNet 页面请求继续从 `external_api_calls` 按
+`jobId` 关联，读取 `botFriendCode`、`urlGroup`、`throttleWaitMs`、
+`sessionQueueWaitMs` 和错误信息。
 
 ## 关键评估问题
 
@@ -32,7 +58,7 @@
 3. RivalMusic list 直接合并当前成绩后，成绩写入量、Mongo 压力是否稳定。
 4. Map auxiliary 能发现多少 score-silent 活跃。
 5. Targeted genre/level 页面对 FC/FS 的命中率是否足够高。
-6. 12 jobs/min producer 上限下是否出现 DXNet 567 / 空响应。
+6. 8 jobs/min 平滑 producer 下是否出现 DXNet 567 / 空响应。
 
 ## 上线阶段
 
@@ -73,7 +99,7 @@ AUTO_UPDATE_SETTLED_FULL_UPDATE_RETRY_MS = 10min
 ```text
 target rival probe = 8 qps sustained / 10-12 qps burst
 target map auxiliary = 2-3 qps
-targeted FC/FS producer = 12 jobs/min, burst 6/5s
+targeted FC/FS producer = base 8 jobs/min, burst 2
 ```
 
 ### Phase 2: 用户习惯调度

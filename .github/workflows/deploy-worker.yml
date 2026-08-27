@@ -157,7 +157,7 @@ jobs:
             upsert_env DXNET_WORKER_REVISION "${{ github.sha }}"
             upsert_env DXNET_LANE_INTERACTIVE_CONCURRENCY "8"
             upsert_env DXNET_LANE_USER_SYNC_CONCURRENCY "16"
-            upsert_env DXNET_LANE_BACKGROUND_CONCURRENCY "16"
+            upsert_env DXNET_LANE_BACKGROUND_CONCURRENCY "4"
             if [ "${{ matrix.instance }}" = "4" ]; then
               upsert_env WORKER_ID "dxnet-worker-azure-bot4"
               upsert_env API_BIND_ADDRESS "127.0.0.1"

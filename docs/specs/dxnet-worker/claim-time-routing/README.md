@@ -40,7 +40,7 @@ enrichment 都会先在 backend 选择一个 Bot，再同步调用 sdgb `addRiva
    请求，继续进入该 Bot 的 queue；不强行改成 shared claim。
 6. **lane 隔离优先于单队列 priority。** 保持一个 Bot 一个进程；用户交互、用户手动同步、
    后台自动更新使用独立 BullMQ lane。shared/pinned 的每个 queue 独立使用
-   `8/16/16` concurrency，不再叠加进程级 admission。
+   `8/16/4` concurrency，不再叠加进程级 admission。
 7. **全系统只使用现有 `job.priority`。** 固定 0-4、大数优先；request scheduler
    直接使用，BullMQ 映射为 `5-priority`，不再引入第二套优先级标度。
 8. **不新增 friendship cleanup 子系统。** claim 临时关系统一交给现有每 5 分钟

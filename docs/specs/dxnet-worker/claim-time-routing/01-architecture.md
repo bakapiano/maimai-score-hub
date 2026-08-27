@@ -38,10 +38,10 @@ BullMQ lock 是唯一执行权；Mongo 不再复制一套 claim lease。backend 
 
 job 增加显式 `assignmentMode`：
 
-| assignmentMode | 创建时 `botUserFriendCode` | 投递位置 | 使用场景 |
-| --- | --- | --- | --- |
-| `claim` | `null` | shared lane queue | cabinet-assisted update、targeted FC/FS、可由任一 Bot 执行的工作 |
-| `pinned` | 必填 | 对应 Bot queue | 已知好友关系、用户必须看到指定 Bot、刷新指定 Bot 自己的好友列表 |
+| assignmentMode | 创建时 `botUserFriendCode` | 投递位置          | 使用场景                                                         |
+| -------------- | -------------------------- | ----------------- | ---------------------------------------------------------------- |
+| `claim`        | `null`                     | shared lane queue | cabinet-assisted update、targeted FC/FS、可由任一 Bot 执行的工作 |
+| `pinned`       | 必填                       | 对应 Bot queue    | 已知好友关系、用户必须看到指定 Bot、刷新指定 Bot 自己的好友列表  |
 
 这里的 `claim` 表示由 BullMQ shared queue 竞争取得 active delivery，不表示 backend 还要执行
 第二轮抢占。
@@ -114,7 +114,7 @@ worker processor 收到 BullMQ job 后，可读取：
 worker 应先检查 `runAt`；尚未到时间的 delivery 在登记 execution 前直接
 `moveToDelayed`。可执行 job 直接复用现有 worker PATCH 登记 execution；不再进入本地 waiter 或
 申请第二层 permit。shared/pinned 六个 consumer 各自使用 queue-level concurrency：interactive=8、
-user_sync=16、background=16。
+user_sync=16、background=4。
 
 ```http
 PATCH /api/v1/workers/dxnet/jobs/:jobId
@@ -297,16 +297,16 @@ QR login slow path，以及 cabinet binding 在本地成绩少于 4 条时的 pr
 get_full_friend_list job type，并增加显式 purpose：
 
 ```ts
-jobType: "get_full_friend_list"
+jobType: "get_full_friend_list";
 context: {
-  purpose: "qr_login_resolution" | "cabinet_binding_resolution",
-  identityAttemptId
+  purpose: ("qr_login_resolution" | "cabinet_binding_resolution",
+    identityAttemptId);
 }
-friendCode: null
-assignmentMode: "claim"
-cabinetFriendship: "pending"
-lane: "interactive"
-cancelActiveJobs: false
+friendCode: null;
+assignmentMode: "claim";
+cabinetFriendship: "pending";
+lane: "interactive";
+cancelActiveJobs: false;
 ```
 
 worker 被 BullMQ 激活并通过首次 PATCH 绑定 Bot 后执行 addRival，再抓取自己 Bot 的 friend

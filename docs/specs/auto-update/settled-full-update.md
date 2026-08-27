@@ -41,8 +41,8 @@ FC: null < fc < fcp < ap < app
 FS: null < fs < fsp < fdx < fdxp
 ```
 
-执行控制沿用原链路水位：单用户 30 分钟 cooldown、全局 12 jobs/min、
-5 秒 burst 6。Job 使用 background lane、priority 1。
+执行控制沿用原链路水位：单用户 30 分钟 cooldown、全局 base 8 jobs/min、
+burst 2。Job 使用 background lane、priority 1。
 
 `fcfs_enrichment` task 在 DXNet job 创建后保持 `processing` 并记录 job id。
 只有 job 进入 `completed` 才更新 `lastFcfsUpdateAt` 并完成 task；job
@@ -237,10 +237,10 @@ Mongo staging task 按 `runAt/createdAt` 从旧到新原子 claim，随后创建
 
 `auto_update_probe_states` 字段：
 
-| 字段                         | 含义                                                      |
-| ---------------------------- | --------------------------------------------------------- |
-| `lastAutoUpdateActivityAt`   | 最近一次通过 rival/map 观测到活动信号的时间               |
-| `pendingFullUpdateAt`        | 稳定后全量 `update_score` 的预约执行时间                  |
+| 字段                       | 含义                                        |
+| -------------------------- | ------------------------------------------- |
+| `lastAutoUpdateActivityAt` | 最近一次通过 rival/map 观测到活动信号的时间 |
+| `pendingFullUpdateAt`      | 稳定后全量 `update_score` 的预约执行时间    |
 
 索引：
 
@@ -269,7 +269,6 @@ recordActivitySignal({
   friendCode,
   at,
 });
-
 ```
 
 ### AutoUpdateSchedulerService

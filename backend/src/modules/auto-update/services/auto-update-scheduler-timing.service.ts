@@ -19,6 +19,16 @@ function getPositiveInt(config: ConfigService, key: string, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
+function getPositiveNumber(
+  config: ConfigService,
+  key: string,
+  fallback: number,
+) {
+  const raw = config.get<string | number>(key);
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function getHour(config: ConfigService, key: string, fallback: number): number {
   const raw = config.get<string | number>(key);
   const parsed = Number(raw);
@@ -123,6 +133,16 @@ export class AutoUpdateSchedulerTimingService {
   readonly fcfsCooldownMs: number;
   readonly fcfsClaimTimeoutMs: number;
   readonly fcfsEnabled: boolean;
+  readonly fcfsRatePerMinute: number;
+  readonly fcfsBurst: number;
+  readonly fcfsDrainIntervalMs: number;
+  readonly fcfsDrainScanLimit: number;
+  readonly fcfsMaxMusicIdsPerJob: number;
+  readonly fcfsContinuationDelayMs: number;
+  readonly fcfsRequestsPerBotMinute: number;
+  readonly fcfsReservedRequestsPerMinute: number;
+  readonly fcfsP95RequestsPerJob: number;
+  readonly fcfsCapacityUtilization: number;
   readonly settledFullUpdateDelayMs: number;
   readonly settledFullUpdateRetryMs: number;
   readonly settledFullUpdateClaimTimeoutMs: number;
@@ -216,6 +236,53 @@ export class AutoUpdateSchedulerTimingService {
       'AUTO_UPDATE_FCFS_CLAIM_TIMEOUT_MS',
       5 * MINUTE,
     );
+    this.fcfsRatePerMinute = getPositiveInt(
+      config,
+      'AUTO_UPDATE_FCFS_RATE_PER_MINUTE',
+      8,
+    );
+    this.fcfsBurst = getPositiveInt(config, 'AUTO_UPDATE_FCFS_BURST', 2);
+    this.fcfsDrainIntervalMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_FCFS_DRAIN_INTERVAL_MS',
+      5_000,
+    );
+    this.fcfsDrainScanLimit = getPositiveInt(
+      config,
+      'AUTO_UPDATE_FCFS_DRAIN_SCAN_LIMIT',
+      32,
+    );
+    this.fcfsMaxMusicIdsPerJob = getPositiveInt(
+      config,
+      'AUTO_UPDATE_FCFS_MAX_MUSIC_IDS_PER_JOB',
+      32,
+    );
+    this.fcfsContinuationDelayMs = getPositiveInt(
+      config,
+      'AUTO_UPDATE_FCFS_CONTINUATION_DELAY_MS',
+      5 * MINUTE,
+    );
+    this.fcfsRequestsPerBotMinute = getPositiveNumber(
+      config,
+      'AUTO_UPDATE_FCFS_REQUESTS_PER_BOT_MINUTE',
+      24,
+    );
+    this.fcfsReservedRequestsPerMinute = getPositiveNumber(
+      config,
+      'AUTO_UPDATE_FCFS_RESERVED_REQUESTS_PER_MINUTE',
+      12,
+    );
+    this.fcfsP95RequestsPerJob = getPositiveNumber(
+      config,
+      'AUTO_UPDATE_FCFS_P95_REQUESTS_PER_JOB',
+      7.8,
+    );
+    const utilizationPercent = getPositiveNumber(
+      config,
+      'AUTO_UPDATE_FCFS_CAPACITY_UTILIZATION_PERCENT',
+      80,
+    );
+    this.fcfsCapacityUtilization = Math.min(1, utilizationPercent / 100);
     this.settledFullUpdateDelayMs = getPositiveInt(
       config,
       'AUTO_UPDATE_SETTLED_FULL_UPDATE_DELAY_MS',
@@ -293,6 +360,20 @@ export class AutoUpdateSchedulerTimingService {
       this.dailyFullUpdateBatchLimit,
       Math.max(0, this.dailyFullUpdateMaxActive - active),
     );
+  }
+
+  fcfsRateForHealthyBots(healthyBotCount: number): number {
+    const bots = Number.isFinite(healthyBotCount)
+      ? Math.max(0, Math.floor(healthyBotCount))
+      : 0;
+    const requestBudget =
+      bots * this.fcfsRequestsPerBotMinute * this.fcfsCapacityUtilization -
+      this.fcfsReservedRequestsPerMinute;
+    const capacityRate = Math.max(
+      0,
+      Math.floor(requestBudget / this.fcfsP95RequestsPerJob),
+    );
+    return Math.min(this.fcfsRatePerMinute, capacityRate);
   }
 
   initialRivalProbeAt(friendCode: string, now: Date): Date {

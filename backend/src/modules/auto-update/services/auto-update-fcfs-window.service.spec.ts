@@ -16,6 +16,17 @@ function queryResult<T>(value: T) {
 function createHarness() {
   const stateModel = {
     find: jest.fn(() => queryResult([])),
+    aggregate: jest.fn(() => ({
+      exec: jest.fn().mockResolvedValue([
+        {
+          pendingUsers: 12,
+          dueUsers: 8,
+          pendingCidCount: 40,
+          oldestDueAgeMs: 120_000,
+          dueAgePercentilesMs: [30_000, 90_000],
+        },
+      ]),
+    })),
     bulkWrite: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
     updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
   };
@@ -42,12 +53,31 @@ function createHarness() {
         { friendCode: 'friend-a', musicIds: ['17_3', '18_4'] },
       ]),
   };
+  const botStatus = {
+    getHealthyBots: jest
+      .fn()
+      .mockResolvedValue([
+        { friendCode: 'bot-a' },
+        { friendCode: 'bot-b' },
+        { friendCode: 'bot-c' },
+        { friendCode: 'bot-d' },
+      ]),
+  };
+  const observability = {
+    recordStructuredLogs: jest.fn(),
+    recordJobTimelineEvent: jest.fn(),
+  };
   const timing = {
     fcfsEnabled: true,
-    mapBatchLimit: 120,
-    mapConcurrency: 2,
     fcfsCooldownMs: 30 * 60_000,
     fcfsClaimTimeoutMs: 5 * 60_000,
+    fcfsRatePerMinute: 8,
+    fcfsBurst: 2,
+    fcfsDrainIntervalMs: 5_000,
+    fcfsDrainScanLimit: 32,
+    fcfsMaxMusicIdsPerJob: 32,
+    fcfsContinuationDelayMs: 5 * 60_000,
+    fcfsRateForHealthyBots: jest.fn(() => 8),
     fcfsRetryDelayMs: jest.fn((count: number) => count * 30 * 60_000),
     leaseTtlMs: 90_000,
     leaseRenewEveryMs: 30_000,
@@ -62,7 +92,10 @@ function createHarness() {
   };
   const redis = {
     key: jest.fn((key: string) => key),
-    incrementWithExpiry: jest.fn().mockResolvedValue(1),
+    setNx: jest.fn().mockResolvedValue(false),
+    tryAcquireLeakyBucket: jest
+      .fn()
+      .mockResolvedValue({ allowed: true, retryAfterMs: 0 }),
   };
   return {
     service: new AutoUpdateFcfsWindowService(
@@ -71,6 +104,8 @@ function createHarness() {
       runsModel as any,
       jobs as any,
       scoreChanges as any,
+      botStatus as any,
+      observability as any,
       timing as any,
       leases as any,
       redis as any,
@@ -80,6 +115,8 @@ function createHarness() {
     runsModel,
     jobs,
     scoreChanges,
+    botStatus,
+    observability,
     timing,
     leases,
     redis,
@@ -107,12 +144,10 @@ describe('AutoUpdateFcfsWindowService', () => {
       service.run(new Date('2026-08-18T02:47:00.000Z')),
     ).resolves.toMatchObject({
       changedUsers: 0,
-      due: 0,
-      dispatched: 0,
     });
     expect(leases.run).not.toHaveBeenCalled();
     expect(stateModel.find).not.toHaveBeenCalled();
-    expect(taskModel.find).toHaveBeenCalled();
+    expect(taskModel.find).not.toHaveBeenCalled();
   });
 
   it('stages exact-chart ids from score and DX score changes', async () => {
@@ -167,7 +202,7 @@ describe('AutoUpdateFcfsWindowService', () => {
   });
 
   it('dispatches a background targeted fcfsOnly update_score', async () => {
-    const { service, jobs, stateModel } = createHarness();
+    const { service, jobs, stateModel, observability } = createHarness();
     const now = new Date('2026-08-18T02:47:00.000Z');
     const state = {
       friendCode: 'friend-a',
@@ -178,9 +213,9 @@ describe('AutoUpdateFcfsWindowService', () => {
       fcfsErrorCount: 0,
     };
 
-    await expect((service as any).dispatchState(state, now)).resolves.toBe(
-      'dispatched',
-    );
+    await expect(
+      (service as any).dispatchState(state, now, 8, 4),
+    ).resolves.toBe('dispatched');
     expect(jobs.create).toHaveBeenCalledWith(
       expect.objectContaining({
         friendCode: 'friend-a',
@@ -209,10 +244,56 @@ describe('AutoUpdateFcfsWindowService', () => {
         $set: expect.objectContaining({ lastFcfsUpdateAt: now }),
       }),
     );
+    expect(observability.recordJobTimelineEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: 'fcfs-job',
+        eventName: 'auto_update_fcfs_dispatched',
+        attrs: expect.objectContaining({
+          cidCount: 2,
+          remainingCidCount: 0,
+          effectiveRatePerMinute: 8,
+          healthyBots: 4,
+        }),
+      }),
+    );
+  });
+
+  it('limits each job to 32 music ids and schedules the next chunk soon', async () => {
+    const { service, jobs, stateModel } = createHarness();
+    const now = new Date('2026-08-18T02:47:00.000Z');
+    const pendingFcfsMusicIds = Array.from(
+      { length: 40 },
+      (_, index) => `${index}_3`,
+    );
+    const state = {
+      friendCode: 'friend-a',
+      cabinetUserId: 42,
+      pendingFcfsMusicIds,
+      fcfsErrorCount: 0,
+    };
+
+    await expect(
+      (service as any).dispatchState(state, now, 8, 4),
+    ).resolves.toBe('dispatched');
+    expect(jobs.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        musicIds: pendingFcfsMusicIds.slice(0, 32),
+      }),
+    );
+    expect(stateModel.updateOne).toHaveBeenCalledWith(
+      { friendCode: 'friend-a' },
+      expect.objectContaining({
+        $pullAll: { pendingFcfsMusicIds: pendingFcfsMusicIds.slice(0, 32) },
+        $set: {
+          nextFcfsUpdateAt: new Date('2026-08-18T02:52:00.000Z'),
+        },
+      }),
+    );
   });
 
   it('marks the task completed only after its DXNet job completes', async () => {
-    const { service, taskModel, jobs, stateModel } = createHarness();
+    const { service, taskModel, jobs, stateModel, observability } =
+      createHarness();
     const now = new Date('2026-08-18T03:20:00.000Z');
     const task = {
       id: 'fcfs-task',
@@ -245,6 +326,13 @@ describe('AutoUpdateFcfsWindowService', () => {
       { id: 'fcfs-task', status: 'processing' },
       expect.objectContaining({
         $set: expect.objectContaining({ status: 'completed' }),
+      }),
+    );
+    expect(observability.recordJobTimelineEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: 'fcfs-job',
+        eventName: 'auto_update_fcfs_completed',
+        attrs: expect.objectContaining({ cidCount: 1 }),
       }),
     );
   });
@@ -298,15 +386,57 @@ describe('AutoUpdateFcfsWindowService', () => {
     );
   });
 
-  it('preserves the old burst limit before consuming minute quota', async () => {
+  it('uses the shared leaky bucket for producer pacing', async () => {
     const { service, redis } = createHarness();
-    redis.incrementWithExpiry.mockResolvedValueOnce(7);
+    redis.tryAcquireLeakyBucket.mockResolvedValueOnce({
+      allowed: false,
+      retryAfterMs: 7_500,
+    });
 
-    await expect(
-      (service as any).acquireProducerSlot(
-        new Date('2026-08-18T02:47:00.000Z'),
-      ),
-    ).resolves.toBe(false);
-    expect(redis.incrementWithExpiry).toHaveBeenCalledTimes(1);
+    await expect((service as any).acquireProducerSlot(8)).resolves.toEqual({
+      allowed: false,
+      retryAfterMs: 7_500,
+    });
+    expect(redis.tryAcquireLeakyBucket).toHaveBeenCalledWith(
+      'dxnet:auto-fcfs:leaky-bucket',
+      7_500,
+      2,
+    );
+  });
+
+  it('records the minute backlog snapshot through ClickHouse observability', async () => {
+    const { service, redis, observability } = createHarness();
+    redis.setNx.mockResolvedValueOnce(true);
+    const now = new Date('2026-08-18T02:47:00.000Z');
+
+    await (service as any).recordBacklogSnapshotOnce(now, {
+      healthyBots: 4,
+      ratePerMinute: 8,
+      reconciled: 1,
+      due: 12,
+      dispatched: 1,
+      deferred: 2,
+      rateLimited: 1,
+      failed: 0,
+    });
+
+    expect(observability.recordStructuredLogs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'backend',
+        entries: [
+          expect.objectContaining({
+            eventName: 'auto_update_fcfs_backlog_snapshot',
+            attrs: expect.objectContaining({
+              pendingUsers: 12,
+              dueUsers: 8,
+              pendingCidCount: 40,
+              p95DueAgeMs: 90_000,
+              healthyBots: 4,
+              effectiveRatePerMinute: 8,
+            }),
+          }),
+        ],
+      }),
+    );
   });
 });
