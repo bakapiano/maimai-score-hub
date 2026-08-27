@@ -27,11 +27,11 @@ val hasProductionSigning = listOf(
 val appVersionCode = providers.gradleProperty("mshVersionCode")
     .orNull
     ?.toIntOrNull()
-    ?: 6
+    ?: 7
 val appVersionName = providers.gradleProperty("mshVersionName")
     .orNull
     ?.takeIf { it.isNotBlank() }
-    ?: "0.3.0"
+    ?: "0.3.1"
 val deviceTestWebUrl = providers.gradleProperty("mshDeviceTestWebUrl")
     .orNull
     ?.takeIf { it.isNotBlank() }

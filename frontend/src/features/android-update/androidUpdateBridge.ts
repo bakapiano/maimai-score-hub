@@ -58,6 +58,7 @@ export interface AndroidHostBridge {
   getReleaseChannel?(): "debug" | "beta" | "stable";
   isAppUpdateRunning?(): boolean;
   startAppUpdate?(requestId: string, releaseId: string): void;
+  setStatusBarStyle?(backgroundColor: string, darkIcons: boolean): void;
   saveImage?(
     requestId: string,
     fileName: string,
@@ -81,6 +82,10 @@ export interface AndroidImageSaveBridge extends AndroidHostBridge {
     mimeType: string,
     encodedImage: string,
   ): void;
+}
+
+export interface AndroidSystemBarBridge extends AndroidHostBridge {
+  setStatusBarStyle(backgroundColor: string, darkIcons: boolean): void;
 }
 
 declare global {
@@ -163,6 +168,16 @@ export function getAndroidImageSaveBridge(): AndroidImageSaveBridge | null {
   }
   return typeof bridge.saveImage === "function"
     ? (bridge as AndroidImageSaveBridge)
+    : null;
+}
+
+export function getAndroidSystemBarBridge(): AndroidSystemBarBridge | null {
+  const bridge = getAndroidHostBridge();
+  if (!bridge || bridge.getBridgeApiVersion() < 4) {
+    return null;
+  }
+  return typeof bridge.setStatusBarStyle === "function"
+    ? (bridge as AndroidSystemBarBridge)
     : null;
 }
 

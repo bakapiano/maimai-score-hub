@@ -35,10 +35,10 @@ Score Hub API clients and score upload logic.
 
 ## Bridge contract
 
-Bridge API v3 retains the v2 surface, adds `saveImage`, and keeps the v2
+Bridge API v4 retains the v3 surface, adds `setStatusBarStyle`, and keeps the v2
 application-update additions `getVersionCode`,
 `getPackageName`, `getReleaseChannel`, `isAppUpdateRunning` and
-`startAppUpdate(requestId, releaseId)`.
+`startAppUpdate(requestId, releaseId)`. Bridge v3 added `saveImage`.
 
 Increment `BRIDGE_API_VERSION` only when the native capability contract changes.
 Set the new minimum in the Workflow Manifest. Preserve request IDs and terminal

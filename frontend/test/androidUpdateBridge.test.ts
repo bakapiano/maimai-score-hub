@@ -5,6 +5,7 @@ import {
   getAndroidHostBridge,
   getAndroidImageSaveBridge,
   getAndroidLoginBridge,
+  getAndroidSystemBarBridge,
   getAndroidUpdateBridge,
   parseAndroidAppUpdateStatus,
   parseAndroidImageSaveStatus,
@@ -122,6 +123,34 @@ test("exposes native image saving only for Bridge v3", () => {
     assert.equal(getAndroidImageSaveBridge(), bridge);
     bridge.getBridgeApiVersion = () => 2;
     assert.equal(getAndroidImageSaveBridge(), null);
+  } finally {
+    if (previousWindow) {
+      Object.defineProperty(globalThis, "window", previousWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+  }
+});
+
+test("exposes native status-bar styling only for Bridge v4", () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const bridge = {
+    isAvailable: () => true,
+    getVersion: () => "0.3.1-beta",
+    getBridgeApiVersion: () => 4,
+    isOAuthRunning: () => false,
+    startOAuth: () => undefined,
+    dxnetRequest: () => undefined,
+    setStatusBarStyle: () => undefined,
+  };
+  try {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { MaiScoreHubAndroid: bridge },
+    });
+    assert.equal(getAndroidSystemBarBridge(), bridge);
+    bridge.getBridgeApiVersion = () => 3;
+    assert.equal(getAndroidSystemBarBridge(), null);
   } finally {
     if (previousWindow) {
       Object.defineProperty(globalThis, "window", previousWindow);

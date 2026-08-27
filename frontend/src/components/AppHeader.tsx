@@ -1,7 +1,15 @@
-import { Badge, Box, Group, Image, Text } from "@mantine/core";
-import { type ReactNode } from "react";
+import {
+  Badge,
+  Box,
+  Group,
+  Image,
+  Text,
+  useComputedColorScheme,
+} from "@mantine/core";
+import { type ReactNode, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { syncAndroidStatusBar } from "../features/android-update/androidSystemBar";
 import { HeaderProfileCard, type MiniProfile } from "./MiniProfileCard";
 
 type AppHeaderProps = {
@@ -22,10 +30,25 @@ export function AppHeader({
   offline,
 }: AppHeaderProps) {
   const navigate = useNavigate();
+  const colorScheme = useComputedColorScheme("light");
+  const headerAnchorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const header = headerAnchorRef.current?.closest<HTMLElement>(
+        ".msh-safe-header",
+      );
+      if (header) {
+        syncAndroidStatusBar(header, colorScheme === "light");
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [colorScheme]);
 
   return (
     <>
       <Group
+        ref={headerAnchorRef}
         h="100%"
         px="md"
         justify="space-between"

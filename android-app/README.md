@@ -72,7 +72,7 @@ maimai.wahlap.com
 - Own release channels, package policies, dynamic download Host allowlists,
   deterministic rollout and immutable signed APK storage.
 
-## Native bridge v3
+## Native bridge v4
 
 The website receives `window.MaiScoreHubAndroid`:
 
@@ -86,6 +86,7 @@ interface MaiScoreHubAndroid {
   getReleaseChannel(): "debug" | "beta" | "stable";
   isAppUpdateRunning(): boolean;
   startAppUpdate(requestId: string, releaseId: string): void;
+  setStatusBarStyle(backgroundColor: string, darkIcons: boolean): void;
   saveImage(
     requestId: string,
     fileName: string,
@@ -226,9 +227,10 @@ Changing five-difficulty requests to genre/category requests, updating selectors
 changing batch sizes or revising upload payloads requires a new Workflow version
 and Backend deployment. The APK bridge version changes only when a new native
 capability is required.
-The score Workflow currently declares minimum Bridge v1 because Bridge v3
+The score Workflow currently declares minimum Bridge v1 because Bridge v4
 retains the v1 transport surface. Application-release UI independently requires
-v2, while native image export is feature-detected and requires v3.
+v2, native image export requires v3, and Header/status-bar theme sync requires
+v4. The website feature-detects both optional adapters.
 
 ## Security boundary
 
@@ -287,13 +289,13 @@ publish to the Backend registry and GitHub Releases:
 
 ```bash
 gh workflow run build-android-release.yml --ref main \
-  -f publish=false -f version_code=6 -f version_name=0.3.0 \
+  -f publish=false -f version_code=7 -f version_name=0.3.1 \
   -f mandatory=false -f rollout_percent=100
 
 gh workflow run build-android-release.yml --ref main \
-  -f publish=true -f version_code=6 -f version_name=0.3.0 \
+  -f publish=true -f version_code=7 -f version_name=0.3.1 \
   -f mandatory=false -f rollout_percent=100 \
-  -f notes='修复了图片导出'
+  -f notes='状态栏颜色跟随网站 Header'
 ```
 
 `publish=true` writes the stable channel policy, immutable Manifest/APK and a

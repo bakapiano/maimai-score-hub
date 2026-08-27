@@ -878,6 +878,15 @@ public final class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void setStatusBarStyle(String backgroundColor, boolean darkIcons) {
+            runOnUiThread(() -> {
+                if (isTrustedWebPage()) {
+                    webViewContainer.setStatusBarStyle(backgroundColor, darkIcons);
+                }
+            });
+        }
+
+        @JavascriptInterface
         public void saveImage(
                 String requestId,
                 String fileName,

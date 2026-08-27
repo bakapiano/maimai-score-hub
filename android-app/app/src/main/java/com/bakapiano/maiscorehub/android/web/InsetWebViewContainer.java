@@ -20,11 +20,12 @@ import androidx.core.view.WindowInsetsControllerCompat;
  * display cutouts and the on-screen keyboard.
  */
 public final class InsetWebViewContainer extends FrameLayout {
-    private static final int STATUS_BAR_COLOR = Color.rgb(34, 139, 230);
+    private static final int DEFAULT_STATUS_BAR_COLOR = Color.WHITE;
 
     private final WebView webView;
     private final View statusBarScrim;
     private final View navigationBarScrim;
+    private final WindowInsetsControllerCompat systemBarController;
 
     public InsetWebViewContainer(Activity activity) {
         super(activity);
@@ -40,7 +41,7 @@ public final class InsetWebViewContainer extends FrameLayout {
         );
 
         statusBarScrim = new View(activity);
-        statusBarScrim.setBackgroundColor(STATUS_BAR_COLOR);
+        statusBarScrim.setBackgroundColor(DEFAULT_STATUS_BAR_COLOR);
         addView(statusBarScrim, scrimLayoutParams(Gravity.TOP));
 
         navigationBarScrim = new View(activity);
@@ -53,12 +54,12 @@ public final class InsetWebViewContainer extends FrameLayout {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             activity.getWindow().setNavigationBarContrastEnforced(false);
         }
-        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(
+        systemBarController = WindowCompat.getInsetsController(
                 activity.getWindow(),
                 this
         );
-        controller.setAppearanceLightStatusBars(false);
-        controller.setAppearanceLightNavigationBars(true);
+        systemBarController.setAppearanceLightStatusBars(true);
+        systemBarController.setAppearanceLightNavigationBars(true);
 
         ViewCompat.setOnApplyWindowInsetsListener(this, (view, windowInsets) -> {
             Insets safe = windowInsets.getInsets(
@@ -80,6 +81,17 @@ public final class InsetWebViewContainer extends FrameLayout {
 
     public WebView getWebView() {
         return webView;
+    }
+
+    /** Applies the website Header's resolved color to the native status-bar inset. */
+    public boolean setStatusBarStyle(String backgroundColor, boolean darkIcons) {
+        Integer color = SystemBarStyle.parseOpaqueHexColor(backgroundColor);
+        if (color == null) {
+            return false;
+        }
+        statusBarScrim.setBackgroundColor(color);
+        systemBarController.setAppearanceLightStatusBars(darkIcons);
+        return true;
     }
 
     @Override

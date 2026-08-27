@@ -7,6 +7,10 @@
   --msh-mobile-bottom-nav-height: 0px;
 }
 
+.msh-safe-header {
+  background-color: var(--mantine-color-body);
+}
+
 @media (max-width: 48em) {
   :root {
     --msh-mobile-safe-area-top: env(safe-area-inset-top, 0px);
