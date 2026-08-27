@@ -160,6 +160,8 @@ jobs:
             upsert_env DXNET_LANE_BACKGROUND_CONCURRENCY "16"
             if [ "${{ matrix.instance }}" = "4" ]; then
               upsert_env WORKER_ID "dxnet-worker-azure-bot4"
+              upsert_env API_BIND_ADDRESS "127.0.0.1"
+              upsert_env HTTP_PROXY_BIND_ADDRESS "127.0.0.1"
             fi
             printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
 

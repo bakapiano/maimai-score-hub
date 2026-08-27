@@ -6,8 +6,8 @@ services:
     restart: unless-stopped
     stop_grace_period: 90s
     ports:
-      - "${API_PORT:-3999}:3999"
-      - "${HTTP_PROXY_PORT:-2222}:2222"
+      - "${API_BIND_ADDRESS:-0.0.0.0}:${API_PORT:-3999}:3999"
+      - "${HTTP_PROXY_BIND_ADDRESS:-0.0.0.0}:${HTTP_PROXY_PORT:-2222}:2222"
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - API_PORT=3999

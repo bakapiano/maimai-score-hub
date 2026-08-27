@@ -26,6 +26,8 @@ console.log("proxy lifecycle: refused upstream HTTP");
 await testHttpUpstreamFailureIsReleased();
 console.log("proxy lifecycle: established tunnel cleanup");
 await testEstablishedTunnelClosesBothSides();
+console.log("proxy lifecycle: OAuth callback inside CONNECT");
+await testOAuthCallbackInsideConnect();
 
 console.log("Pinned proxy socket lifecycle cleanup under half-closed peers.");
 
@@ -142,7 +144,41 @@ async function testHttpUpstreamFailureIsReleased(): Promise<void> {
   }
 }
 
-async function startProxyFixture(): Promise<{
+async function testOAuthCallbackInsideConnect(): Promise<void> {
+  let interceptedUrl = "";
+  const fixture = await startProxyFixture({
+    oauthConnectHost: "tgk-wcaime.wahlap.com:80",
+    isOAuthCallbackRequest: (method, requestUrl) =>
+      method === "GET" &&
+      requestUrl.startsWith(
+        "http://tgk-wcaime.wahlap.com/wc_auth/oauth/callback",
+      ),
+    onOAuthCallback: async (requestUrl) => {
+      interceptedUrl = requestUrl;
+      return "http://127.0.0.1:3999/";
+    },
+  });
+  let client: net.Socket | null = null;
+  try {
+    const result = await requestOAuthCallbackThroughConnect(fixture.port);
+    client = result.socket;
+    assert.ok(result.response.startsWith("HTTP/1.1 200"));
+    assert.match(result.response, /HTTP\/1\.1 302 Found/);
+    assert.match(result.response, /Location: http:\/\/127\.0\.0\.1:3999\//);
+    assert.equal(
+      interceptedUrl,
+      "http://tgk-wcaime.wahlap.com/wc_auth/oauth/callback?code=test",
+    );
+    await waitFor(() => fixture.sockets.size === 0);
+  } finally {
+    client?.destroy();
+    await fixture.close();
+  }
+}
+
+async function startProxyFixture(
+  options: Parameters<typeof attachConnectTunnelHandler>[1] = {},
+): Promise<{
   port: number;
   sockets: Set<net.Socket>;
   close: () => Promise<void>;
@@ -152,7 +188,7 @@ async function startProxyFixture(): Promise<{
   // side-effect-free HTTP server so leaked sockets are the only possible
   // reason this test process would stay alive.
   const server = http.createServer();
-  attachConnectTunnelHandler(server);
+  attachConnectTunnelHandler(server, options);
   attachClientErrorHandler(server);
   const sockets = trackSockets(server);
   await listen(server);
@@ -166,6 +202,62 @@ async function startProxyFixture(): Promise<{
       await closeServer(server);
     },
   };
+}
+
+function requestOAuthCallbackThroughConnect(
+  port: number,
+): Promise<{ socket: net.Socket; response: string }> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host: "127.0.0.1", port });
+    let response = "";
+    let callbackSent = false;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ socket, response });
+    };
+    const timer = setTimeout(() => {
+      settled = true;
+      socket.destroy();
+      reject(new Error("Timed out waiting for OAuth CONNECT callback"));
+    }, 3_000);
+    socket.once("connect", () => {
+      const encoded = Buffer.from(`admin:${TEST_PROXY_PASSWORD}`).toString(
+        "base64",
+      );
+      socket.write(
+        "CONNECT tgk-wcaime.wahlap.com:80 HTTP/1.1\r\n" +
+          "Host: tgk-wcaime.wahlap.com:80\r\n" +
+          `Proxy-Authorization: Basic ${encoded}\r\n\r\n`,
+      );
+    });
+    socket.on("data", (chunk) => {
+      response += chunk.toString("utf8");
+      if (!callbackSent && response.includes("\r\n\r\n")) {
+        callbackSent = true;
+        socket.write(
+          "GET /wc_auth/oauth/callback?code=test HTTP/1.1\r\n" +
+            "Host: tgk-wcaime.wahlap.com\r\n" +
+            "Connection: close\r\n\r\n",
+        );
+      }
+    });
+    socket.once("end", () => {
+      finish();
+    });
+    socket.once("error", (error) => {
+      if (response.includes("HTTP/1.1 302 Found")) {
+        finish();
+        return;
+      }
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
 }
 
 function trackSockets(server: http.Server): Set<net.Socket> {

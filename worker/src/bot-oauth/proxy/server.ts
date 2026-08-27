@@ -12,6 +12,11 @@ import {
   findHttpRequestCase,
   type ProxyHttpRequestContext,
 } from "./http/index.ts";
+import {
+  isOAuthCallbackGetRequest,
+  OAUTH_CONNECT_HOST,
+  onAuthHook,
+} from "./http/oauth.ts";
 import { destroySocket } from "./socket-lifecycle.ts";
 
 export const PROXY_HTTP_IDLE_TIMEOUT_MS = 60_000;
@@ -26,7 +31,11 @@ export function createProxyServer(): http.Server {
     destroySocket(socket),
   );
 
-  attachConnectTunnelHandler(server);
+  attachConnectTunnelHandler(server, {
+    oauthConnectHost: OAUTH_CONNECT_HOST,
+    isOAuthCallbackRequest: isOAuthCallbackGetRequest,
+    onOAuthCallback: onAuthHook,
+  });
   attachClientErrorHandler(server);
   return server;
 }
