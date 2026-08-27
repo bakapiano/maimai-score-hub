@@ -147,7 +147,7 @@ async function testHttpUpstreamFailureIsReleased(): Promise<void> {
 async function testOAuthCallbackInsideConnect(): Promise<void> {
   let interceptedUrl = "";
   const fixture = await startProxyFixture({
-    oauthConnectHost: "tgk-wcaime.wahlap.com:80",
+    inspectHttpConnectPort: 80,
     isOAuthCallbackRequest: (method, requestUrl) =>
       method === "GET" &&
       requestUrl.startsWith(
@@ -228,8 +228,8 @@ function requestOAuthCallbackThroughConnect(
         "base64",
       );
       socket.write(
-        "CONNECT tgk-wcaime.wahlap.com:80 HTTP/1.1\r\n" +
-          "Host: tgk-wcaime.wahlap.com:80\r\n" +
+        "CONNECT 43.129.255.246:80 HTTP/1.1\r\n" +
+          "Host: 43.129.255.246:80\r\n" +
           `Proxy-Authorization: Basic ${encoded}\r\n\r\n`,
       );
     });

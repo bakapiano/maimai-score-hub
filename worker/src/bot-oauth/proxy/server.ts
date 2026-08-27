@@ -14,7 +14,6 @@ import {
 } from "./http/index.ts";
 import {
   isOAuthCallbackGetRequest,
-  OAUTH_CONNECT_HOST,
   onAuthHook,
 } from "./http/oauth.ts";
 import { destroySocket } from "./socket-lifecycle.ts";
@@ -32,7 +31,7 @@ export function createProxyServer(): http.Server {
   );
 
   attachConnectTunnelHandler(server, {
-    oauthConnectHost: OAUTH_CONNECT_HOST,
+    inspectHttpConnectPort: 80,
     isOAuthCallbackRequest: isOAuthCallbackGetRequest,
     onOAuthCallback: onAuthHook,
   });

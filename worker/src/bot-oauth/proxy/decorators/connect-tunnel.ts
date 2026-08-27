@@ -17,7 +17,7 @@ export const PROXY_TUNNEL_IDLE_TIMEOUT_MS = 5 * 60_000;
 const CONNECTED_HTTP_HEADER_LIMIT_BYTES = 64 * 1024;
 
 export interface ConnectTunnelOptions {
-  oauthConnectHost?: string;
+  inspectHttpConnectPort?: number;
   isOAuthCallbackRequest?: (method: string, requestUrl: string) => boolean;
   onOAuthCallback?: (requestUrl: string) => Promise<string>;
 }
@@ -54,31 +54,33 @@ function handleConnectRequest(
     return;
   }
 
-  if (shouldInterceptOAuthConnect(clientReq.url, options)) {
-    interceptOAuthConnect(clientReq, clientSocket, head, options);
+  if (shouldInspectHttpConnect(clientReq.url, options)) {
+    inspectHttpConnect(clientReq, clientSocket, head, reqUrl, options);
     return;
   }
 
   forwardConnectRequest(clientReq, clientSocket, head, reqUrl);
 }
 
-function shouldInterceptOAuthConnect(
+function shouldInspectHttpConnect(
   authority: string | undefined,
   options: ConnectTunnelOptions,
 ): boolean {
+  const parsed = authority ? url.parse(`http://${authority}`) : null;
   return Boolean(
-    authority &&
-      options.oauthConnectHost &&
+    parsed?.port &&
+      options.inspectHttpConnectPort &&
       options.isOAuthCallbackRequest &&
       options.onOAuthCallback &&
-      authority.toLowerCase() === options.oauthConnectHost.toLowerCase(),
+      Number(parsed.port) === options.inspectHttpConnectPort,
   );
 }
 
-function interceptOAuthConnect(
+function inspectHttpConnect(
   clientReq: http.IncomingMessage,
   clientSocket: net.Socket,
   head: Buffer,
+  reqUrl: url.UrlWithStringQuery,
   options: ConnectTunnelOptions,
 ): void {
   // Process-scoped TCP proxifiers wrap even plain HTTP destinations in
@@ -86,6 +88,20 @@ function interceptOAuthConnect(
   // login can stay isolated from the machine-wide proxy configuration.
   let buffered = head.length ? Buffer.from(head) : Buffer.alloc(0);
   let processing = false;
+
+  const forwardBufferedRequest = () => {
+    processing = true;
+    clientSocket.removeListener("data", onData);
+    clientSocket.removeAllListeners("timeout");
+    clientSocket.setTimeout(0);
+    forwardConnectRequest(
+      clientReq,
+      clientSocket,
+      buffered,
+      reqUrl,
+      true,
+    );
+  };
 
   const closeWithStatus = (status: string) => {
     endSocketAndDestroy(
@@ -117,7 +133,7 @@ function interceptOAuthConnect(
     const hostLine = lines.find((line) => /^host\s*:/i.test(line));
     const host = hostLine?.replace(/^host\s*:\s*/i, "").trim();
     if (!requestLine || !host) {
-      closeWithStatus("400 Bad Request");
+      forwardBufferedRequest();
       return;
     }
 
@@ -127,7 +143,7 @@ function interceptOAuthConnect(
       ? target
       : `http://${host}${target.startsWith("/") ? target : `/${target}`}`;
     if (!options.isOAuthCallbackRequest?.(method, requestUrl)) {
-      closeWithStatus("404 Not Found");
+      forwardBufferedRequest();
       return;
     }
 
@@ -173,6 +189,7 @@ function forwardConnectRequest(
   clientSocket: net.Socket,
   head: Buffer,
   reqUrl: url.UrlWithStringQuery,
+  tunnelEstablished = false,
 ): void {
   const options = {
     port: reqUrl.port ? parseInt(reqUrl.port, 10) : 443,
@@ -207,12 +224,17 @@ function forwardConnectRequest(
     established = true;
     clientSocket.setTimeout(PROXY_TUNNEL_IDLE_TIMEOUT_MS);
     serverSocket.setTimeout(PROXY_TUNNEL_IDLE_TIMEOUT_MS);
-    writeConnectionEstablished(clientReq, clientSocket, () => {
+    const startPiping = () => {
       if (clientSocket.destroyed || serverSocket.destroyed) return;
       serverSocket.write(head);
       serverSocket.pipe(clientSocket, { end: false });
       clientSocket.pipe(serverSocket, { end: false });
-    });
+    };
+    if (tunnelEstablished) {
+      startPiping();
+      return;
+    }
+    writeConnectionEstablished(clientReq, clientSocket, startPiping);
   });
 
   serverSocket.on("error", (e) => {

@@ -10,7 +10,6 @@ import type { ProxyHttpRequestCase, ProxyHttpRequestContext } from "./index.ts";
 const AUTH_EXCHANGE_FRIEND_CODE_TIMEOUT_MS = 90_000;
 const OAUTH_CALLBACK_PREFIX =
   "http://tgk-wcaime.wahlap.com/wc_auth/oauth/callback";
-export const OAUTH_CONNECT_HOST = "tgk-wcaime.wahlap.com:80";
 const OAUTH_CALLBACK_HOSTNAME = "tgk-wcaime.wahlap.com";
 const OAUTH_CALLBACK_PATH_PREFIX = "/wc_auth/oauth/callback";
 
