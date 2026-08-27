@@ -8,7 +8,7 @@ on:
         required: true
         type: choice
         default: all
-        options: [all, "1", "2", "3"]
+        options: [all, "1", "2", "3", "4"]
 
 jobs:
   build:
@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        instance: ${{ fromJSON(inputs.target == 'all' && '[1,2,3]' || format('[{0}]', inputs.target)) }}
+        instance: ${{ fromJSON(inputs.target == 'all' && '[1,2,3,4]' || format('[{0}]', inputs.target)) }}
       fail-fast: false # 一个失败不影响其他部署
-      max-parallel: 3 # 同时部署的最大数量
+      max-parallel: 4 # 同时部署的最大数量
     concurrency:
       group: deploy-worker-${{ matrix.instance }}
       cancel-in-progress: false
@@ -158,6 +158,9 @@ jobs:
             upsert_env DXNET_LANE_INTERACTIVE_CONCURRENCY "8"
             upsert_env DXNET_LANE_USER_SYNC_CONCURRENCY "16"
             upsert_env DXNET_LANE_BACKGROUND_CONCURRENCY "16"
+            if [ "${{ matrix.instance }}" = "4" ]; then
+              upsert_env WORKER_ID "dxnet-worker-azure-bot4"
+            fi
             printf '%s\n' "${{ github.sha }}" > "$DEPLOY_PATH/.deploy-revision"
 
             # Worker 3 (101) has no public IP and goes through a great-firewall
