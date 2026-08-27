@@ -19,7 +19,10 @@ const CONNECTED_HTTP_HEADER_LIMIT_BYTES = 64 * 1024;
 export interface ConnectTunnelOptions {
   inspectHttpConnectPort?: number;
   isOAuthCallbackRequest?: (method: string, requestUrl: string) => boolean;
-  onOAuthCallback?: (requestUrl: string) => Promise<string>;
+  onOAuthCallback?: (
+    requestUrl: string,
+    requestHeaders: Readonly<Record<string, string>>,
+  ) => Promise<string>;
 }
 
 export function attachConnectTunnelHandler(
@@ -130,8 +133,8 @@ function inspectHttpConnect(
     const requestLine = /^(\S+)\s+(\S+)\s+HTTP\/\d(?:\.\d)?$/.exec(
       lines[0] ?? "",
     );
-    const hostLine = lines.find((line) => /^host\s*:/i.test(line));
-    const host = hostLine?.replace(/^host\s*:\s*/i, "").trim();
+    const requestHeaders = parseConnectedRequestHeaders(lines.slice(1));
+    const host = requestHeaders.host;
     if (!requestLine || !host) {
       forwardBufferedRequest();
       return;
@@ -148,7 +151,10 @@ function inspectHttpConnect(
     }
 
     try {
-      const redirect = await options.onOAuthCallback?.(requestUrl);
+      const redirect = await options.onOAuthCallback?.(
+        requestUrl,
+        requestHeaders,
+      );
       if (!redirect) {
         closeWithStatus("502 Bad Gateway");
         return;
@@ -182,6 +188,35 @@ function inspectHttpConnect(
     void processBufferedRequest();
     clientSocket.resume();
   });
+}
+
+function parseConnectedRequestHeaders(
+  lines: readonly string[],
+): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const sensitiveHeaders = new Set([
+    "authorization",
+    "cookie",
+    "proxy-authorization",
+    "set-cookie",
+  ]);
+
+  for (const line of lines) {
+    const separator = line.indexOf(":");
+    if (separator <= 0) continue;
+
+    const name = line.slice(0, separator).trim().toLowerCase();
+    if (!name || sensitiveHeaders.has(name)) continue;
+
+    const value = line.slice(separator + 1).trim();
+    if (!value) continue;
+
+    headers[name] = headers[name]
+      ? `${headers[name]}, ${value}`
+      : value;
+  }
+
+  return headers;
 }
 
 function forwardConnectRequest(

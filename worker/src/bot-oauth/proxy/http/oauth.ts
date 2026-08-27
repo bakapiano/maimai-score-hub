@@ -51,7 +51,7 @@ async function handleOAuthCallbackRequest({
       return;
     }
 
-    const redirectResult = await onAuthHook(requestUrl);
+    const redirectResult = await onAuthHook(requestUrl, clientReq.headers);
     clientRes.writeHead(302, { location: redirectResult });
     clientRes.end();
   } catch (err) {
@@ -59,19 +59,31 @@ async function handleOAuthCallbackRequest({
   }
 }
 
-export async function onAuthHook(href: string): Promise<string> {
+export async function onAuthHook(
+  href: string,
+  requestHeaders: Readonly<
+    Record<string, string | readonly string[] | undefined>
+  > = {},
+): Promise<string> {
   console.log("[Proxy] Successfully hook auth request!");
 
   const target = href.replace(/^http:/, "https:");
   console.log("[Proxy] Starting background bot auth exchange...");
 
   runtimeState.startAuth();
-  void exchangeBotAuthUrl(target).finally(() => runtimeState.finishAuth());
+  void exchangeBotAuthUrl(target, requestHeaders).finally(() =>
+    runtimeState.finishAuth(),
+  );
 
   return runtimeState.redirectUrl || `http://127.0.0.1:${config.port}/`;
 }
 
-async function exchangeBotAuthUrl(authUrl: string): Promise<void> {
+async function exchangeBotAuthUrl(
+  authUrl: string,
+  requestHeaders: Readonly<
+    Record<string, string | readonly string[] | undefined>
+  >,
+): Promise<void> {
   const timeoutSentinel: unique symbol = Symbol(
     "auth-exchange-timeout",
   ) as never;
@@ -84,7 +96,7 @@ async function exchangeBotAuthUrl(authUrl: string): Promise<void> {
   });
 
   try {
-    const cookieJar = await getCookieByAuthUrl(authUrl);
+    const cookieJar = await getCookieByAuthUrl(authUrl, requestHeaders);
     const client = new MaimaiClient(cookieJar);
     const friendCodeResult = await Promise.race([
       runWithRequestContext(

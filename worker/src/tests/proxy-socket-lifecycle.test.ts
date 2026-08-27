@@ -146,6 +146,7 @@ async function testHttpUpstreamFailureIsReleased(): Promise<void> {
 
 async function testOAuthCallbackInsideConnect(): Promise<void> {
   let interceptedUrl = "";
+  let interceptedUserAgent = "";
   const fixture = await startProxyFixture({
     inspectHttpConnectPort: 80,
     isOAuthCallbackRequest: (method, requestUrl) =>
@@ -153,8 +154,9 @@ async function testOAuthCallbackInsideConnect(): Promise<void> {
       requestUrl.startsWith(
         "http://tgk-wcaime.wahlap.com/wc_auth/oauth/callback",
       ),
-    onOAuthCallback: async (requestUrl) => {
+    onOAuthCallback: async (requestUrl, requestHeaders) => {
       interceptedUrl = requestUrl;
+      interceptedUserAgent = requestHeaders["user-agent"] ?? "";
       return "http://127.0.0.1:3999/";
     },
   });
@@ -169,6 +171,7 @@ async function testOAuthCallbackInsideConnect(): Promise<void> {
       interceptedUrl,
       "http://tgk-wcaime.wahlap.com/wc_auth/oauth/callback?code=test",
     );
+    assert.equal(interceptedUserAgent, "WindowsWechat-Test/1.0");
     await waitFor(() => fixture.sockets.size === 0);
   } finally {
     client?.destroy();
@@ -240,6 +243,7 @@ function requestOAuthCallbackThroughConnect(
         socket.write(
           "GET /wc_auth/oauth/callback?code=test HTTP/1.1\r\n" +
             "Host: tgk-wcaime.wahlap.com\r\n" +
+            "User-Agent: WindowsWechat-Test/1.0\r\n" +
             "Connection: close\r\n\r\n",
         );
       }
