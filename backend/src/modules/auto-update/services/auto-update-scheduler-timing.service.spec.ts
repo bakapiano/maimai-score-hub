@@ -14,7 +14,7 @@ describe('AutoUpdateSchedulerTimingService', () => {
     expect(timing.settledFullUpdateDispatchLimit(5)).toBe(7);
     expect(timing.settledFullUpdateDispatchLimit(12)).toBe(0);
     expect(timing.settledFullUpdateDispatchLimit(20)).toBe(0);
-    expect(timing.dailyFullUpdateHour).toBe(2);
+    expect(timing.dailyFullUpdateHour).toBe(1);
     expect(timing.fcfsEnabled).toBe(false);
     expect(timing.fcfsClaimTimeoutMs).toBe(5 * 60_000);
     expect(timing.fcfsRatePerMinute).toBe(8);

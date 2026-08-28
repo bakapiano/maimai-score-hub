@@ -62,7 +62,7 @@ function getSettledFullUpdateLimits(config: ConfigService) {
 
 function getDailyFullUpdateConfig(config: ConfigService) {
   return {
-    hour: getHour(config, 'AUTO_UPDATE_DAILY_FULL_UPDATE_HOUR', 2),
+    hour: getHour(config, 'AUTO_UPDATE_DAILY_FULL_UPDATE_HOUR', 1),
     batchLimit: getPositiveInt(
       config,
       'AUTO_UPDATE_DAILY_FULL_UPDATE_BATCH_LIMIT',

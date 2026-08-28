@@ -65,7 +65,7 @@ function createHarness(input?: {
       .mockResolvedValue(['friend-a', 'friend-b']),
   };
   const timing = {
-    dailyFullUpdateHour: 2,
+    dailyFullUpdateHour: 1,
     dailyFullUpdateDrainIntervalMs: 5_000,
     dailyFullUpdateBatchLimit: 8,
     dailyFullUpdateMaxActive: 8,
@@ -120,12 +120,12 @@ function createHarness(input?: {
 }
 
 describe('dailyFullUpdateWindow', () => {
-  it('opens at 02:00 China time for the previous UTC+8 calendar day', () => {
+  it('opens at 01:00 China time for the previous UTC+8 calendar day', () => {
     expect(
-      dailyFullUpdateWindow(new Date('2026-08-17T17:59:59.000Z'), 2),
+      dailyFullUpdateWindow(new Date('2026-08-17T16:59:59.000Z'), 1),
     ).toBeNull();
     expect(
-      dailyFullUpdateWindow(new Date('2026-08-17T18:00:00.000Z'), 2),
+      dailyFullUpdateWindow(new Date('2026-08-17T17:00:00.000Z'), 1),
     ).toEqual({
       businessDate: '2026-08-17',
       start: new Date('2026-08-16T16:00:00.000Z'),
