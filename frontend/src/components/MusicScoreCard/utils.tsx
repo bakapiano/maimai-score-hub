@@ -59,11 +59,12 @@ export function renderRank(
 
   if (asset) {
     const width = opts?.width ?? (isCompact ? 42 : 72);
+    const height = isCompact ? 24 : 32;
     const imageStyle = {
       display: "inline-block",
       width,
-      maxHeight: isCompact ? 24 : 32,
-      height: "auto",
+      height,
+      objectFit: "contain",
       verticalAlign: "middle",
     } as const;
 
@@ -71,6 +72,7 @@ export function renderRank(
       return (
         <svg
           viewBox="0 0 256 120"
+          preserveAspectRatio="xMidYMid meet"
           role="img"
           aria-label={r}
           style={imageStyle}
@@ -100,6 +102,7 @@ export function renderRank(
             href={`/mai/pic/${asset}`}
             width="256"
             height="120"
+            preserveAspectRatio="xMidYMid meet"
             filter="url(#rank-outline)"
           />
         </svg>

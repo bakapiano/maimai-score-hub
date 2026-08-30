@@ -359,10 +359,14 @@ function AchievementRow({
       </Group>
       <Group gap={0} wrap="nowrap" className={classes.statusGroup}>
         <Box className={classes.statusIcon}>
-          {scoreData.fc ? <Image src={getIconUrl(scoreData.fc)} w={32} h={32} /> : null}
+          {scoreData.fc ? (
+            <Image src={getIconUrl(scoreData.fc)} w={32} h={32} fit="contain" />
+          ) : null}
         </Box>
         <Box className={classes.statusIcon}>
-          {scoreData.fs ? <Image src={getIconUrl(scoreData.fs)} w={32} h={32} /> : null}
+          {scoreData.fs ? (
+            <Image src={getIconUrl(scoreData.fs)} w={32} h={32} fit="contain" />
+          ) : null}
         </Box>
       </Group>
     </Group>
