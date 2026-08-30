@@ -69,8 +69,8 @@ export function ScoreDisplayFilterContent({
                     update({ scoreDisplayMode: v as ScoreDisplayMode })
                   }
                   data={[
-                    { value: "rank", label: "字母" },
-                    { value: "score", label: "具体分数" },
+                    { value: "rank", label: "评级（SSS+ / SSS）" },
+                    { value: "score", label: "分数（100.5 / 100.0）" },
                   ]}
                 />
                 {value.scoreDisplayMode === "score" && (

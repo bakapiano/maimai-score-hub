@@ -475,7 +475,7 @@ function ChartDetails({
 }) {
   const [opened, setOpened] = useState(false);
   const [calculatorTableMode, setCalculatorTableMode] =
-    useState<CalculatorTableMode>("budget");
+    useState<CalculatorTableMode>("legacy");
   const [calculatorMode, setCalculatorMode] =
     useState<CalculatorMode>("101-");
   const [targetAchievement, setTargetAchievement] = useState("100.5");
