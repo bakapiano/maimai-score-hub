@@ -139,15 +139,17 @@ export function renderMusicIcon(
   const alt = opts?.alt ?? icon.toUpperCase();
 
   if (asset) {
+    const compact = opts?.compact === true;
+
     return (
       <img
         src={`/mai/pic/${asset}`}
         alt={alt}
         style={{
           display: "inline-block",
-          width: opts?.compact ? 28 : 38,
-          maxHeight: opts?.compact ? 24 : 32,
-          height: "auto",
+          width: compact ? 28 : 38,
+          height: compact ? 24 : 32,
+          objectFit: "contain",
           verticalAlign: "middle",
         }}
       />
@@ -168,6 +170,7 @@ export function renderScoreStatusIcon(
     return (
       <svg
         viewBox="0 0 42 47"
+        preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label={icon.toUpperCase()}
         width={size}
@@ -205,6 +208,7 @@ export function renderScoreStatusIcon(
           href={src}
           width="42"
           height="47"
+          preserveAspectRatio="xMidYMid meet"
           filter="url(#status-icon-outline)"
         />
       </svg>
@@ -217,7 +221,7 @@ export function renderScoreStatusIcon(
       alt={icon.toUpperCase()}
       width={size}
       height={size}
-      style={{ display: "block" }}
+      style={{ display: "block", objectFit: "contain" }}
     />
   );
 }

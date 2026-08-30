@@ -5,7 +5,6 @@ import {
   Checkbox,
   Divider,
   Group,
-  Image,
   Loader,
   LoadingOverlay,
   MultiSelect,
@@ -48,8 +47,8 @@ import type { MusicChartPayload, MusicRow } from "../../types/music";
 import { DeferredImage } from "../../components/DeferredImage";
 import {
   getCoverUrl,
-  getIconUrl,
   renderRank,
+  renderScoreStatusIcon,
   type DetailedMusicScoreCardProps,
 } from "../../components/MusicScoreCard";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
@@ -1189,12 +1188,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                     {showFc && (
                       <Table.Td style={{ padding: 4 }}>
                         {score.fc ? (
-                          <Image
-                            src={getIconUrl(score.fc)}
-                            w={24}
-                            h={24}
-                            referrerPolicy="no-referrer"
-                          />
+                          renderScoreStatusIcon(score.fc, { size: 24 })
                         ) : (
                           <Box
                             w={20}
@@ -1213,12 +1207,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                     {showFs && (
                       <Table.Td style={{ padding: 4 }}>
                         {score.fs ? (
-                          <Image
-                            src={getIconUrl(score.fs)}
-                            w={24}
-                            h={24}
-                            referrerPolicy="no-referrer"
-                          />
+                          renderScoreStatusIcon(score.fs, { size: 24 })
                         ) : (
                           <Box
                             w={20}

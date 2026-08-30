@@ -5,7 +5,6 @@ import {
   Card,
   Divider,
   Group,
-  Image,
   Stack,
   Text,
   ThemeIcon,
@@ -26,7 +25,12 @@ import {
   IconUser,
   IconVersions,
 } from "@tabler/icons-react";
-import { getCoverUrl, getIconUrl, getRankFromScore, renderRank } from "./utils";
+import {
+  getCoverUrl,
+  getRankFromScore,
+  renderRank,
+  renderScoreStatusIcon,
+} from "./utils";
 
 import { DeferredImage } from "../DeferredImage";
 import type { DetailedMusicScoreCardProps } from "./types";
@@ -261,7 +265,7 @@ function StatusIcon({ icon }: { icon: string | null }) {
       }}
     >
       {icon ? (
-        <Image src={getIconUrl(icon)} w={48} referrerPolicy="no-referrer" />
+        renderScoreStatusIcon(icon, { size: 48 })
       ) : (
         <Box
           w={40}

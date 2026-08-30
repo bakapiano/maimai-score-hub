@@ -1,11 +1,16 @@
-import { Badge, Box, Card, Group, Image, Stack, Text } from "@mantine/core";
+import { Badge, Box, Card, Group, Stack, Text } from "@mantine/core";
 import {
   COVER_SIZE,
   DIFFICULTY_NAMES,
   LEVEL_COLORS,
   WHITE_TEXT_STROKE,
 } from "./constants";
-import { getCoverUrl, getIconUrl, getRankFromScore, renderRank } from "./utils";
+import {
+  getCoverUrl,
+  getRankFromScore,
+  renderRank,
+  renderScoreStatusIcon,
+} from "./utils";
 
 import { DeferredImage } from "../DeferredImage";
 import type { MusicScoreCardProps } from "./types";
@@ -236,11 +241,7 @@ export function MusicScoreCard({
                 p={0}
               >
                 {fc ? (
-                  <Image
-                    src={getIconUrl(fc)}
-                    w={32}
-                    referrerPolicy="no-referrer"
-                  />
+                  renderScoreStatusIcon(fc, { size: 32 })
                 ) : (
                   <Box
                     w={24}
@@ -263,11 +264,7 @@ export function MusicScoreCard({
                 p={0}
               >
                 {fs ? (
-                  <Image
-                    src={getIconUrl(fs)}
-                    w={32}
-                    referrerPolicy="no-referrer"
-                  />
+                  renderScoreStatusIcon(fs, { size: 32 })
                 ) : (
                   <Box
                     w={24}
