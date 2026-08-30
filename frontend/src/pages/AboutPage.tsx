@@ -6,6 +6,8 @@ import {
   Container,
   Divider,
   Group,
+  Image,
+  SimpleGrid,
   Stack,
   Text,
   ThemeIcon,
@@ -257,28 +259,69 @@ export default function AboutPage() {
 
                   <Divider />
 
-                  <Group gap="sm">
-                    <ThemeIcon
-                      size={28}
-                      radius="md"
-                      color="cyan"
-                      variant="light"
-                    >
-                      <IconBrandQq size={18} />
-                    </ThemeIcon>
-                    <Text size="sm">QQ 4群：1078979790</Text>
-                  </Group>
-                  <Group gap="sm">
-                    <ThemeIcon
-                      size={28}
-                      radius="md"
-                      color="cyan"
-                      variant="light"
-                    >
-                      <IconBrandQq size={18} />
-                    </ThemeIcon>
-                    <Text size="sm">QQ 5群：1098992498</Text>
-                  </Group>
+                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
+                    <Stack gap="sm" align="center">
+                      <Group gap="xs">
+                        <ThemeIcon
+                          size={28}
+                          radius="md"
+                          color="cyan"
+                          variant="light"
+                        >
+                          <IconBrandQq size={18} />
+                        </ThemeIcon>
+                        <div>
+                          <Text fw={600}>用户交流群</Text>
+                          <Text size="sm" c="dimmed">
+                            QQ 群：1098992498
+                          </Text>
+                        </div>
+                      </Group>
+                      <Anchor
+                        href="/community/user-group-qr.jpg"
+                        target="_blank"
+                        aria-label="查看用户交流群二维码原图"
+                      >
+                        <Image
+                          src="/community/user-group-qr.jpg"
+                          maw={320}
+                          radius="md"
+                          alt="maimai Score Hub 用户交流群二维码"
+                        />
+                      </Anchor>
+                    </Stack>
+
+                    <Stack gap="sm" align="center">
+                      <Group gap="xs">
+                        <ThemeIcon
+                          size={28}
+                          radius="md"
+                          color="orange"
+                          variant="light"
+                        >
+                          <IconBrandQq size={18} />
+                        </ThemeIcon>
+                        <div>
+                          <Text fw={600}>开发交流群</Text>
+                          <Text size="sm" c="dimmed">
+                            QQ 群：850526534
+                          </Text>
+                        </div>
+                      </Group>
+                      <Anchor
+                        href="/community/developer-group-qr.jpg"
+                        target="_blank"
+                        aria-label="查看开发交流群二维码原图"
+                      >
+                        <Image
+                          src="/community/developer-group-qr.jpg"
+                          maw={320}
+                          radius="md"
+                          alt="maimai Score Hub 开发交流群二维码"
+                        />
+                      </Anchor>
+                    </Stack>
+                  </SimpleGrid>
                 </Stack>
               </AppCard>
             </Stack>
