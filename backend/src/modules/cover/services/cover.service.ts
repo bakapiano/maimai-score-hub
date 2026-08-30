@@ -474,63 +474,82 @@ export class CoverService {
     signal?: AbortSignal,
   ): Promise<Buffer | null> {
     signal?.throwIfAborted();
-    const dfId = toDivingFishId(dbId);
-    if (dfId) {
-      const url = this.buildDivingFishUrl(dfId);
-      try {
-        const res = await observeFetch(
-          {
-            target: 'diving_fish',
-            apiGroup: 'cover',
-            method: 'GET',
-            urlGroup: 'diving_fish.cover',
-            statusCode: 0,
-            durationMs: 0,
-            attrs: { dbId },
-          },
-          () => fetch(url, { signal }),
-        );
-        if (res.ok) {
-          return Buffer.from(await res.arrayBuffer());
-        }
-      } catch {
-        signal?.throwIfAborted();
-        // fall through
-      }
-    }
+    const sourceDbIds = buildCoverSourceDbIds(dbId);
+    const attempts: string[] = [];
 
-    const lxId = toLxnsId(dbId);
-    if (lxId) {
-      signal?.throwIfAborted();
-      const url = this.buildLxnsUrl(lxId);
-      try {
-        const res = await observeFetch(
-          {
-            target: 'lxns',
-            apiGroup: 'cover',
-            method: 'GET',
-            urlGroup: 'lxns.cover',
-            statusCode: 0,
-            durationMs: 0,
-            attrs: { dbId },
-          },
-          () => fetch(url, { signal }),
-        );
-        const cacheControl = res.headers.get('cache-control');
-        if (res.ok && cacheControl !== 'no-cache') {
-          return Buffer.from(await res.arrayBuffer());
+    for (const sourceDbId of sourceDbIds) {
+      const dfId = toDivingFishId(sourceDbId);
+      if (dfId) {
+        attempts.push(`diving-fish:${dfId}`);
+        const url = this.buildDivingFishUrl(dfId);
+        try {
+          const res = await observeFetch(
+            {
+              target: 'diving_fish',
+              apiGroup: 'cover',
+              method: 'GET',
+              urlGroup: 'diving_fish.cover',
+              statusCode: 0,
+              durationMs: 0,
+              attrs: { dbId, sourceDbId },
+            },
+            () => fetch(url, { signal }),
+          );
+          if (res.ok) {
+            return Buffer.from(await res.arrayBuffer());
+          }
+        } catch {
+          signal?.throwIfAborted();
         }
-      } catch {
+      }
+
+      const mappedLxnsId = toLxnsId(sourceDbId);
+      const lxId = mappedLxnsId ?? (sourceDbId === dbId ? null : sourceDbId);
+      if (lxId) {
         signal?.throwIfAborted();
-        // fall through
+        attempts.push(`lxns:${lxId}`);
+        const url = this.buildLxnsUrl(lxId);
+        try {
+          const res = await observeFetch(
+            {
+              target: 'lxns',
+              apiGroup: 'cover',
+              method: 'GET',
+              urlGroup: 'lxns.cover',
+              statusCode: 0,
+              durationMs: 0,
+              attrs: { dbId, sourceDbId },
+            },
+            () => fetch(url, { signal }),
+          );
+          const cacheControl = res.headers.get('cache-control');
+          if (res.ok && cacheControl !== 'no-cache') {
+            return Buffer.from(await res.arrayBuffer());
+          }
+        } catch {
+          signal?.throwIfAborted();
+        }
       }
     }
 
     this.logger.warn(
-      `Cover not found for dbId=${dbId} (dfId=${dfId ?? '?'}, lxId=${lxId ?? '?'})`,
+      `Cover not found for dbId=${dbId} (attempts=${attempts.join(',') || '?'})`,
     );
     return null;
   }
+}
+
+function buildCoverSourceDbIds(dbId: string): string[] {
+  const numericId = Number(dbId);
+  if (!Number.isSafeInteger(numericId) || numericId < 100_000) {
+    return [dbId];
+  }
+
+  const suffix = numericId % 10_000;
+  const standardId = String(suffix);
+  const dxId = String(10_000 + suffix);
+  const regularIds = suffix >= 1_000 ? [dxId, standardId] : [standardId, dxId];
+  return [dbId, ...regularIds.filter((id) => id !== dbId)];
 }
 
 async function runWithConcurrency<T>(

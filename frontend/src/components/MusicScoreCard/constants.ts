@@ -1,20 +1,22 @@
 // Constants for Music Score Card components
 
-export const LEVEL_COLORS = [
-  "#6fe163", // Basic
-  "#f8df3a", // Advanced
-  "#fc4255ff", // Expert
-  "#9a15ffff", // Master
-  "#dc9fffff", // Re:Master
-];
+export const LEVEL_COLORS: Record<number, string> = {
+  0: "#6fe163", // Basic
+  1: "#f8df3a", // Advanced
+  2: "#fc4255ff", // Expert
+  3: "#9a15ffff", // Master
+  4: "#dc9fffff", // Re:Master
+  10: "#ff69b4", // Utage
+};
 
-export const DIFFICULTY_NAMES = [
-  "Basic",
-  "Advanced",
-  "Expert",
-  "Master",
-  "Re:Master",
-];
+export const DIFFICULTY_NAMES: Record<number, string> = {
+  0: "Basic",
+  1: "Advanced",
+  2: "Expert",
+  3: "Master",
+  4: "Re:Master",
+  10: "Utage",
+};
 
 export const WHITE_TEXT_STROKE =
   "-1px 0 0 black, 0 1px 0 black, 1px 0 0 black, 0 -1px 0 black, -1px -1px 0 black, 1px -1px 0 black, -1px 1px 0 black, 1px 1px 0 black";
