@@ -325,6 +325,7 @@ export class UsersService {
           },
         },
       ],
+      { updatePipeline: true },
     );
     return (result.matchedCount ?? 0) > 0;
   }

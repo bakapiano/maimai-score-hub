@@ -51,6 +51,7 @@ describe('UsersService score-derived profile rating', () => {
           },
         },
       ],
+      { updatePipeline: true },
     );
   });
 });
