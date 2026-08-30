@@ -1,4 +1,5 @@
 /* eslint-disable max-lines */
+import { GetMusicScoreResultSchema } from '@maimai-score-hub/shared';
 import { Types } from 'mongoose';
 
 import { getRating } from '../../../common/rating';
@@ -312,6 +313,41 @@ describe('SyncService initial score commit', () => {
       'rating',
     ]);
   });
+
+  it.each([-1, 6, 12])(
+    'imports scores while ignoring unknown syncStatus=%i',
+    async (syncStatus) => {
+      const musicDetails = [
+        cabinetDetail({
+          musicId: 17,
+          achievement: 1005000,
+          dxScore: 1234,
+          syncStatus,
+        }),
+      ];
+      const parsed = GetMusicScoreResultSchema.parse({
+        cabinetUserId: 12345678,
+        musicDetails,
+      });
+      const harness = createHarness({ current: null });
+
+      const result = await harness.service.createFromUserMusic({
+        friendCode: '634142510810999',
+        sourceId: `cabinet-unknown-sync-${syncStatus}`,
+        musicDetails: parsed.musicDetails,
+      });
+
+      expect(result).toMatchObject({
+        commitOutcome: 'created',
+        changedChartCount: 1,
+      });
+      expect(result?.scores[0]).toMatchObject({
+        score: '100.5000%',
+        dxScore: '1234',
+        fs: null,
+      });
+    },
+  );
 });
 
 // eslint-disable-next-line max-lines-per-function

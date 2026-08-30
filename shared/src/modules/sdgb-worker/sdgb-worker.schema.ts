@@ -98,7 +98,9 @@ export const UserMusicDetailSchema = z.object({
   playCount: z.number().int().nonnegative(),
   achievement: z.number().int().nonnegative(),
   comboStatus: z.number().int().min(0).max(4),
-  syncStatus: z.number().int().min(0).max(5),
+  // Preserve forward-compatible wire values. Score mapping recognizes the
+  // known 0..5 enum and treats every other integer as an absent FS status.
+  syncStatus: z.number().int(),
   deluxscoreMax: z.number().int().nonnegative(),
   scoreRank: z.number().int(),
   extNum1: z.number().int().optional(),
