@@ -15,15 +15,14 @@ import {
   Stack,
   Table,
   Text,
-  TextInput,
   Title,
   Tooltip,
 } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 import {
   IconAlertCircle,
   IconChevronDown,
   IconChevronUp,
-  IconSearch,
   IconSelector,
   IconX,
 } from "@tabler/icons-react";
@@ -52,6 +51,7 @@ import {
   type DetailedMusicScoreCardProps,
 } from "../../components/MusicScoreCard";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
+import { ScoreSearchInput } from "../../components/ScoreSearchInput";
 import {
   DesktopFilterCard,
   MobileFilterModalButton,
@@ -61,6 +61,10 @@ import {
   getRatingFloorByIsNew,
   getRatingFloors,
 } from "../../utils/ratingFloors";
+import {
+  buildScoreSearchIndex,
+  ScoreSearchEngine,
+} from "../../utils/scoreSearch";
 
 const FALLBACK_COVER =
   "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'><rect width='100%25' height='100%25' fill='%23222931'/><text x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%238a8f98' font-size='10'>Cover</text></svg>";
@@ -218,21 +222,6 @@ function matchesDetailLevelFilter(
   return true;
 }
 
-function scoreMatchesSearch(
-  score: SyncScore,
-  query: string,
-  musicMap: Map<string, MusicRow>,
-) {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) {
-    return true;
-  }
-  const music = musicMap.get(score.musicId);
-  const title = (music?.title || "").toLowerCase();
-  const musicId = (score.musicId || "").toLowerCase();
-  return title.includes(normalized) || musicId.includes(normalized);
-}
-
 function scoreMatchesFilters(
   score: SyncScore,
   filters: ScoreFilterState,
@@ -351,7 +340,8 @@ function SortableHeader({
 }
 
 export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
-  const { musicMap, chartMap } = useMusic();
+  const { musicMap, aliasMap, chartMap } = useMusic();
+  const isMobile = useMediaQuery("(max-width: 47.99em)");
   const ratingFloors = useMemo(() => getRatingFloors(scores), [scores]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -407,6 +397,10 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedSearchMusicId, setSelectedSearchMusicId] = useState<
+    string | null
+  >(null);
+  const [searchInputVersion, setSearchInputVersion] = useState(0);
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [versionFilter, setVersionFilter] = useState<string[]>([]);
   const [difficultyFilter, setDifficultyFilter] = useState<string[]>([]);
@@ -457,6 +451,36 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
     [scores, musicMap, chartMap],
   );
 
+  const scoreSearchIndex = useMemo(() => {
+    const seen = new Set<string>();
+    return buildScoreSearchIndex(
+      scores.flatMap((score) => {
+        const musicId = score.musicId;
+        if (seen.has(musicId)) {
+          return [];
+        }
+        seen.add(musicId);
+        const music = musicMap.get(musicId);
+        return [
+          {
+            musicId,
+            title: music?.title || musicId,
+            type: music?.type || score.type,
+            aliases: aliasMap.get(musicId) ?? [],
+          },
+        ];
+      }),
+    );
+  }, [aliasMap, musicMap, scores]);
+  const scoreSearchEngine = useMemo(
+    () => new ScoreSearchEngine(scoreSearchIndex),
+    [scoreSearchIndex],
+  );
+  const matchedSearchMusicIds = useMemo(
+    () => scoreSearchEngine.matchingMusicIds(searchQuery),
+    [scoreSearchEngine, searchQuery],
+  );
+
   // Filtered scores
   const filters: ScoreFilterState = useMemo(
     () => ({
@@ -482,10 +506,19 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
     () =>
       scores.filter(
         (score) =>
-          scoreMatchesSearch(score, searchQuery, musicMap) &&
+          (selectedSearchMusicId
+            ? score.musicId === selectedSearchMusicId
+            : matchedSearchMusicIds.has(score.musicId)) &&
           scoreMatchesFilters(score, filters, musicMap, chartMap),
       ),
-    [scores, searchQuery, musicMap, chartMap, filters],
+    [
+      scores,
+      selectedSearchMusicId,
+      matchedSearchMusicIds,
+      filters,
+      musicMap,
+      chartMap,
+    ],
   );
 
   // Sorted scores
@@ -522,6 +555,14 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
   const scoreEntries = useMemo(
     () => filteredScores.map((s) => ({ score: s })),
     [filteredScores]
+  );
+  const scoreSummary = useMemo(
+    () => ({
+      ranks: summarizeRanks(scoreEntries),
+      statuses: summarizeStatuses(scoreEntries),
+      average: calculateAverageScore(scoreEntries),
+    }),
+    [scoreEntries],
   );
 
   const handleSort = useCallback(
@@ -564,6 +605,8 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
 
   const clearAllFilters = () => {
     setSearchQuery("");
+    setSelectedSearchMusicId(null);
+    setSearchInputVersion((version) => version + 1);
     setCategoryFilter([]);
     setVersionFilter([]);
     setDifficultyFilter([]);
@@ -849,25 +892,25 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
   );
 
   const searchInput = (
-    <TextInput
-      placeholder="搜索曲名"
-      leftSection={<IconSearch size={16} />}
-      value={searchQuery}
-      onChange={(event) => setSearchQuery(event.currentTarget.value)}
-      rightSection={
-        searchQuery ? (
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="sm"
-            aria-label="清除搜索"
-            onClick={() => setSearchQuery("")}
-          >
-            <IconX size={14} />
-          </ActionIcon>
-        ) : null
-      }
-      size="sm"
+    <ScoreSearchInput
+      key={searchInputVersion}
+      initialValue={searchQuery}
+      searchEngine={scoreSearchEngine}
+      onChange={(value) => {
+        setSearchQuery(value);
+        setSelectedSearchMusicId(null);
+        setPage(1);
+      }}
+      onSelect={(musicId, title) => {
+        setSelectedSearchMusicId(musicId);
+        setSearchQuery(title);
+        setPage(1);
+      }}
+      onClear={() => {
+        setSearchQuery("");
+        setSelectedSearchMusicId(null);
+        setPage(1);
+      }}
     />
   );
 
@@ -901,28 +944,32 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
             )}
           </Text>
         </Group>
-        <MobileFilterModalButton active={hasActiveFilters}>
-          {filterPanelContent}
-        </MobileFilterModalButton>
+        {isMobile ? (
+          <MobileFilterModalButton active={hasActiveFilters}>
+            {filterPanelContent}
+          </MobileFilterModalButton>
+        ) : null}
       </Group>
 
       {/* Mobile: search stays outside the filter modal */}
-      <Box hiddenFrom="sm">{searchInput}</Box>
+      {isMobile ? <Box>{searchInput}</Box> : null}
 
-      <DesktopFilterCard>
-        <Stack gap="md">
-          {filterPanelContent}
-          <Divider />
-          {searchInput}
-        </Stack>
-      </DesktopFilterCard>
+      {isMobile ? null : (
+        <DesktopFilterCard>
+          <Stack gap="md">
+            {filterPanelContent}
+            <Divider />
+            {searchInput}
+          </Stack>
+        </DesktopFilterCard>
+      )}
 
       {/* Score Summary */}
       {filteredScores.length > 0 && (
         <ScoreSummaryCard
-          rankSummary={summarizeRanks(scoreEntries)}
-          statusSummary={summarizeStatuses(scoreEntries)}
-          averageScore={calculateAverageScore(scoreEntries)}
+          rankSummary={scoreSummary.ranks}
+          statusSummary={scoreSummary.statuses}
+          averageScore={scoreSummary.average}
         />
       )}
 

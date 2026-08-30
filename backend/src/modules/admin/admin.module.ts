@@ -16,6 +16,7 @@ import { CoverModule } from '../cover/cover.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JobModule } from '../job/job.module';
+import { MusicAliasModule } from '../music-alias/music-alias.module';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { UsersModule } from '../users/users.module';
 
@@ -31,6 +32,7 @@ import { UsersModule } from '../users/users.module';
     CatalogModule,
     CoverModule,
     JobModule,
+    MusicAliasModule,
     SdgbWorkerModule,
     UsersModule,
   ],

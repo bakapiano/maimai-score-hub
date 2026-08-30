@@ -20,6 +20,7 @@
 | `SyncEntity`                 | `syncs`                                    | sync          | 永久      | 每用户唯一 current score 物化视图                  |
 | `ScoreChangeEntity`          | `score_changes`                            | sync          | 永久      | 功能上线后的单谱面 best-effort 成绩变化历史         |
 | `MusicEntity`                | `musics`                                   | music         | 永久      | 乐曲与谱面元数据                                   |
+| `MusicAliasEntity`           | `music_aliases`                            | music-alias   | 永久      | 柚子/LXNS 曲目别名来源快照与内部曲目映射           |
 | `JobEntity`                  | `jobs`                                     | job           | 7 天 TTL  | DXNet worker 任务                                  |
 | `ProberExportJobEntity`      | `prober_export_jobs`                       | prober-export | 永久      | Diving-Fish / LXNS 导出任务与结果                  |
 | `ProberExportStateEntity`    | `prober_export_states`                     | prober-export | 永久      | 每用户/provider 最后成功导出版本与执行 claim       |
@@ -133,6 +134,27 @@ type SyncScore = {
 - `friendCode`：唯一索引。
 - `{ friendCode: 1, __v: 1, id: 1 }`：export reconciliation 覆盖索引。
 - `ownerUserId`：ObjectId partial index；Phase 1 可非唯一。
+
+### `MusicAliasEntity`
+
+来源：`backend/src/modules/music-alias/schemas/music-alias.schema.ts`
+
+| 字段                  | 类型                   | 约束 / 默认值 | 说明                                                              |
+| --------------------- | ---------------------- | ------------- | ----------------------------------------------------------------- |
+| `source`              | `"yuzuchan" \| "lxns"` | required      | 别名来源                                                          |
+| `sourceMusicId`       | `string`               | required      | 来源侧曲目 ID                                                     |
+| `musicIds`            | `string[]`             | default `[]`  | 映射后的本地 Diving-Fish 曲目 ID；LXNS 同一 ID 可映射标准/DX 两条 |
+| `alias`               | `string`               | required      | 保留展示形式的别名                                                |
+| `normalizedAlias`     | `string`               | required      | NFKC、trim、小写后的去重键                                        |
+| `syncRunId`           | `string`               | required      | 来源快照轮次，用于安全清理旧记录                                  |
+| `syncedAt`            | `Date`                 | required      | 本轮观察时间                                                      |
+| `createdAt/updatedAt` | `Date`                 | timestamps    | 时间戳                                                            |
+
+索引：
+
+- `{ source: 1, sourceMusicId: 1, normalizedAlias: 1 }` unique。
+- `{ musicIds: 1 }` 支持按本地曲目聚合公开别名列表。
+- `{ source: 1, syncRunId: 1 }` 支持每个来源独立清理上一版快照。
 
 ### `ScoreChangeEntity`
 

@@ -179,6 +179,28 @@
   padding-inline: 0;
 }
 
+.aliasInlineList {
+  min-width: 0;
+}
+
+.aliasBadgeList {
+  max-height: 132px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.aliasBadge {
+  max-width: 100%;
+  height: auto;
+  padding-block: 4px;
+  text-transform: none;
+}
+
+.aliasBadge :global(.mantine-Badge-label) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .historySection {
   padding: var(--modal-section-padding);
   border-top: 1px solid light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));

@@ -1,4 +1,8 @@
 import { musicApi } from "../api/appClient";
+import {
+  MusicAliasListResponseSchema,
+  type MusicAliasEntry,
+} from "@maimai-score-hub/shared";
 import type { MusicChartPayload, MusicRow } from "../types/music";
 import {
   useCallback,
@@ -15,6 +19,7 @@ import {
 import { runWhenIdle, scheduleIdleTask } from "../utils/idle";
 
 let musicListRequest: Promise<MusicRow[]> | null = null;
+let musicAliasListRequest: Promise<MusicAliasEntry[]> | null = null;
 
 function areMusicRowsEqual(a: MusicRow | undefined, b: MusicRow | undefined) {
   return (
@@ -68,8 +73,31 @@ async function requestMusicList() {
   return musicListRequest;
 }
 
+async function requestMusicAliasList() {
+  if (!musicAliasListRequest) {
+    const nextRequest: Promise<MusicAliasEntry[]> = musicApi
+      .listAliases({})
+      .then((res: { status: number; body?: unknown }) => {
+        if (res.status !== 200 || !res.body || typeof res.body !== "object") {
+          throw new Error(`获取曲目别名失败 (HTTP ${res.status})`);
+        }
+        return MusicAliasListResponseSchema.parse(res.body).aliases;
+      })
+      .finally(() => {
+        if (musicAliasListRequest === nextRequest) {
+          musicAliasListRequest = null;
+        }
+      });
+
+    musicAliasListRequest = nextRequest;
+  }
+
+  return musicAliasListRequest;
+}
+
 export function MusicProvider({ children }: { children: React.ReactNode }) {
   const [musics, setMusics] = useState<MusicRow[]>([]);
+  const [aliases, setAliases] = useState<MusicAliasEntry[]>([]);
   const musicsRef = useRef<MusicRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -116,9 +144,21 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const loadAliases = useCallback(async () => {
+    try {
+      setAliases(await requestMusicAliasList());
+    } catch {
+      return;
+    }
+  }, []);
+
   useEffect(() => {
     loadMusics();
   }, [loadMusics]);
+
+  useEffect(() => {
+    loadAliases();
+  }, [loadAliases]);
 
   // Build lookup maps
   const { musicMap, chartMap } = useMemo(() => {
@@ -147,16 +187,33 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     return { musicMap: mMap, chartMap: cMap };
   }, [musics]);
 
+  const aliasMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const entry of aliases) {
+      map.set(
+        entry.musicId,
+        entry.aliases,
+      );
+    }
+    return map;
+  }, [aliases]);
+
+  const reload = useCallback(async () => {
+    await Promise.all([loadMusics(), loadAliases()]);
+  }, [loadAliases, loadMusics]);
+
   const value = useMemo(
     () => ({
       musics,
       musicMap,
+      aliases,
+      aliasMap,
       chartMap,
       loading,
       error,
-      reload: loadMusics,
+      reload,
     }),
-    [musics, musicMap, chartMap, loading, error, loadMusics],
+    [musics, musicMap, aliases, aliasMap, chartMap, loading, error, reload],
   );
 
   return (

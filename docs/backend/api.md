@@ -109,10 +109,11 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 
 ## 曲库与封面
 
-| 方法 | 路径                  | 认证   | 入参       | 说明                                                                                                               |
-| ---- | --------------------- | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------ |
-| GET  | `/catalog/music`      | Public | -          | 返回当前曲库列表。                                                                                                 |
-| GET  | `/catalog/covers/:id` | Public | path: `id` | 返回本地封面图片。根据 `Accept: image/webp` 优先选择 webp；设置长缓存；找不到返回 404。`id` 可以包含 `.jpg` 后缀。 |
+| 方法 | 路径                     | 认证   | 入参       | 说明                                                                                                               |
+| ---- | ------------------------ | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------ |
+| GET  | `/catalog/music`         | Public | -          | 返回当前曲库列表。                                                                                                 |
+| GET  | `/catalog/music/aliases` | Public | -          | 返回按本地 `musicId` 聚合、跨柚子/LXNS 去重后的曲目别名列表与 revision。                                           |
+| GET  | `/catalog/covers/:id`    | Public | path: `id` | 返回本地封面图片。根据 `Accept: image/webp` 优先选择 webp；设置长缓存；找不到返回 404。`id` 可以包含 `.jpg` 后缀。 |
 
 ## Worker API
 
@@ -202,6 +203,7 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | POST | `/admin/catalog/covers/force-sync`        | -    | 强制同步封面，返回 `{ ok: true, ...result }`。 |
 | POST | `/admin/catalog/covers/backfill-variants` | -    | 补齐封面变体，返回 `{ ok: true, ...result }`。 |
 | POST | `/admin/catalog/music/sync`               | -    | 同步曲库数据，返回 `{ ok: true, ...result }`。 |
+| POST | `/admin/catalog/aliases/sync`             | -    | 使用独立 lease 同步柚子/LXNS 别名快照，返回各来源结果。 |
 
 ### Bot 管理
 

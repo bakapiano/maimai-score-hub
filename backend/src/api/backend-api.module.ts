@@ -33,6 +33,7 @@ import { MeScoreChangesController } from './me/me-score-changes.controller';
 import { MeScoreHistoryController } from './me/me-score-history.controller';
 import { MeSyncController } from './me/me-sync.controller';
 import { MusicCatalogController } from './catalog/music-catalog.controller';
+import { MusicAliasModule } from '../modules/music-alias/music-alias.module';
 import { MusicModule } from '../modules/music/music.module';
 import { ObservabilityController } from './observability/observability.controller';
 import { ObservabilityModule } from '../modules/observability/observability.module';
@@ -67,6 +68,7 @@ import { DxnetBotAssignmentBusyFilter } from '../modules/job/dxnet-job.exception
     CatalogModule,
     CoverModule,
     JobModule,
+    MusicAliasModule,
     MusicModule,
     ObservabilityModule,
     OcrModule,

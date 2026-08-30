@@ -31,6 +31,7 @@
 | `CoverModule`         | `backend/src/modules/cover`         | `CoverService`                                                                 | 本地封面文件查找、同步、格式变体生成和封面数量统计。                                                    |
 | `JobModule`           | `backend/src/modules/job`           | `JobService`、`JobFriendshipService`、`JobQueueService` 等                     | DXNet worker 任务队列与任务生命周期。                                                                   |
 | `MusicModule`         | `backend/src/modules/music`         | `MusicService`                                                                 | 曲库数据、曲库来源配置、曲库定时同步和曲库缓存。                                                        |
+| `MusicAliasModule`    | `backend/src/modules/music-alias`   | `MusicAliasService`、`MusicAliasSyncService`                                   | 柚子/LXNS 别名快照、跨来源 ID 映射、公开列表缓存与独立定时同步。                                        |
 | `ProberExportModule`  | `backend/src/modules/prober-export` | `ProberExportService`、reconciliation/worker service                           | Provider 版本游标、自动对账补投、手动导出与 per-user 串行执行。                                         |
 | `ScoreExportModule`   | `backend/src/modules/score-export`  | `ScoreExportService`                                                           | 将 B50、等级、版本及指定业务日的合并成绩历史渲染为 PNG 图片。                                             |
 | `SdgbWorkerModule`    | `backend/src/modules/sdgb-worker`   | `SdgbJobService`、`SdgbJobDispatcher`                                          | 机台协议 worker 的任务队列、调度和同步调用封装。                                                        |
@@ -112,6 +113,14 @@
 - `findAll()` 使用 Nest cache 缓存完整曲库列表，曲库同步后清除缓存。
 - 管理后台可手动触发曲库同步。
 
+### `MusicAliasModule`
+
+- 分别拉取柚子和 LXNS 别名，按来源快照写入 `music_aliases`；单源失败保留该源上一版。
+- LXNS 曲目 ID 通过跨来源映射展开成本地标准/DX 曲目 ID，供成绩页按别名筛选。
+- `MusicAliasSyncService` 使用独立的 `ALIAS_SYNC_CRON` 和 `alias-sync` Redis lease，生命周期与曲库/封面同步分离。
+- 公共别名列表按 `musicId` 聚合并写入共享 Redis 缓存；成功同步后清除缓存。
+- 管理后台可通过独立接口手动触发别名同步。
+
 ### `ScoreExportModule`
 
 - 根据最新同步成绩和曲库数据生成图片，输出 `image/png`。
@@ -192,6 +201,7 @@
 | 用户二维码更新成绩、Login/Logout cleanup、sync finalization | `CabinetScoreSyncModule`、`SdgbWorkerModule`、`SyncModule`         |
 | 自动更新、Rival-first probe、Map auxiliary、FC/FS enrichment | `AutoUpdateModule`、`SdgbWorkerModule`、`SyncModule`、`JobModule` |
 | 曲库同步                                                     | `MusicModule`                                                     |
+| 曲目别名同步与搜索目录                                       | `MusicAliasModule`                                                |
 | 封面同步和封面静态返回                                       | `CoverModule`                                                     |
 | 成绩图导出                                                   | `ScoreExportModule`、`SyncModule`、`CoverModule`                  |
 | sdgb-worker 通用机台协议任务                                 | `SdgbWorkerModule`                                                |

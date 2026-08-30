@@ -1,10 +1,13 @@
 import { createContext, useContext } from "react";
+import type { MusicAliasEntry } from "@maimai-score-hub/shared";
 
 import type { MusicChartPayload, MusicRow } from "../types/music";
 
 export type MusicContextValue = {
   musics: MusicRow[];
   musicMap: Map<string, MusicRow>;
+  aliases: MusicAliasEntry[];
+  aliasMap: Map<string, string[]>;
   chartMap: Map<
     number,
     MusicChartPayload & { musicId: string; chartIndex: number }

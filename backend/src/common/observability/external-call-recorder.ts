@@ -1,6 +1,7 @@
 export type BackendExternalTarget =
   | 'diving_fish'
   | 'lxns'
+  | 'yuzuchan'
   | 'maimai_dxnet'
   | 'sdgb'
   | 'asset'

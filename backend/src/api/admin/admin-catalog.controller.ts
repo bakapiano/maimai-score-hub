@@ -31,4 +31,10 @@ export class AdminCatalogController {
     const result = await this.adminCatalogService.syncMusic();
     return { ok: true, ...result };
   }
+
+  @Post('aliases/sync')
+  async syncAliases() {
+    const result = await this.adminCatalogService.syncAliases();
+    return { ok: true, ...result };
+  }
 }

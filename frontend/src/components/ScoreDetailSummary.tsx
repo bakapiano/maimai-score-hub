@@ -19,6 +19,7 @@ import {
   IconCategory,
   IconClock,
   IconHash,
+  IconTags,
   IconUser,
   IconVersions,
 } from "@tabler/icons-react";
@@ -41,6 +42,7 @@ import {
 } from "./MusicScoreCard";
 import { DeferredImage } from "./DeferredImage";
 import { getDxStar, parseDxScore } from "../utils/dxScore";
+import { useMusic } from "../providers/MusicContext";
 import classes from "./ScoreDetailModal.module.css";
 
 const FALLBACK_COVER =
@@ -535,6 +537,8 @@ export function ScoreSummary({
   scoreData: DetailedMusicScoreCardProps;
   maxDxScore: number | null;
 }) {
+  const { aliasMap } = useMusic();
+  const aliases = aliasMap.get(scoreData.musicId) ?? [];
   const { coverSize, songInfoRef } = useMeasuredCoverSize([
     scoreData.musicId,
     scoreData.chartIndex,
@@ -575,6 +579,30 @@ export function ScoreSummary({
         scoreData={scoreData}
       />
       <MetadataGrid items={getVisibleMetadataItems(scoreData)} />
+      {aliases.length > 0 ? (
+        <Stack gap={6} className={classes.aliasInlineList}>
+          <Group gap="xs" wrap="nowrap">
+            <ThemeIcon size="sm" variant="light" color="gray">
+              <IconTags size={14} />
+            </ThemeIcon>
+            <Text size="xs" c="dimmed">
+              曲目别名
+            </Text>
+          </Group>
+          <Group gap={6} wrap="wrap" className={classes.aliasBadgeList}>
+            {aliases.map((alias) => (
+              <Badge
+                key={`${scoreData.musicId}:${alias}`}
+                variant="default"
+                size="sm"
+                className={classes.aliasBadge}
+              >
+                {alias}
+              </Badge>
+            ))}
+          </Group>
+        </Stack>
+      ) : null}
     </Box>
   );
 }
