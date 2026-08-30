@@ -59,6 +59,7 @@
 | `divingFishImportToken` | `string \| null`         | default `null`               | Diving Fish 导入 token                   |
 | `lxnsImportToken`       | `string \| null`         | default `null`               | LXNS 导入 token                          |
 | `profile`               | `UserNetProfile \| null` | `Mixed`, default `undefined` | DXNet 用户资料缓存                       |
+| `profileRatingScoreVersion` | `number \| null`      | default `null`, select false | `profile.rating` 对应的成绩 CAS 版本     |
 | `lastActiveAt`          | `Date \| null`           | default `null`               | 最近活跃时间                             |
 | `cabinetUserId`         | `number \| null`         | default `null`               | 机台侧数字 userId，`null` 表示未绑定     |
 | `autoUpdate`            | `boolean`                | default `false`              | 是否参与自动更新                         |

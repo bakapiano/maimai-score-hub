@@ -206,17 +206,22 @@ function createHarness(input?: {
       ),
     }),
   };
+  const users = {
+    updateProfileRatingFromScores: jest.fn().mockResolvedValue(true),
+  };
   const service = new SyncService(
     syncModel as never,
     scoreChangeModel as never,
     musicModel as never,
     {} as never,
+    users as never,
   );
 
   return {
     service,
     syncModel,
     scoreChangeModel,
+    users,
     current: () => cloneCurrent(current),
     armReadBarrier(count: number) {
       barrierRemaining = count;
@@ -284,6 +289,11 @@ describe('SyncService initial score commit', () => {
     });
     expect(result?.scores[0].observedAt).toBeInstanceOf(Date);
     expect(harness.scoreChangeModel.bulkWrite).toHaveBeenCalledTimes(1);
+    expect(harness.users.updateProfileRatingFromScores).toHaveBeenCalledWith({
+      friendCode: '634142510810999',
+      rating: getRating(13.5, 100.5),
+      scoreVersion: 0,
+    });
     const [operations, options] = scoreChangeCalls(harness)[0];
     const inserted = operations[0].updateOne.update.$setOnInsert;
     expect(options).toEqual({ ordered: false });
@@ -543,6 +553,11 @@ describe('SyncService manual score updates', () => {
     });
     expect(harness.current()?.__v).toBe(0);
     expect(harness.scoreChangeModel.bulkWrite).not.toHaveBeenCalled();
+    expect(harness.users.updateProfileRatingFromScores).toHaveBeenCalledWith({
+      friendCode: '634142510810999',
+      rating: getRating(13.5, 100.5),
+      scoreVersion: 0,
+    });
   });
 });
 

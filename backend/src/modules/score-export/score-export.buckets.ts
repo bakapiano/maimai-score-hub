@@ -9,34 +9,13 @@ import type {
 import type { ChartPayload } from '../music/schemas/music.schema';
 import type { SyncScore } from '../sync/schemas/sync.schema';
 import { VERSION_ORDER } from './rendering/score-export.constants';
+import { buildB50RatingSummary } from '../../common/rating';
 
 export function buildRatingSummary(scores: SyncScore[]): RatingSummary | null {
   if (!Array.isArray(scores)) {
     return null;
   }
-  const withRating = scores.filter(
-    (s) => typeof s.rating === 'number' && s.type !== 'utage',
-  );
-  const newScores = withRating
-    .filter((s) => s.isNew === true)
-    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
-  const oldScores = withRating
-    .filter((s) => s.isNew === false)
-    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
-
-  const newTop = newScores.slice(0, 15);
-  const oldTop = oldScores.slice(0, 35);
-
-  const newSum = newTop.reduce((sum, s) => sum + (s.rating ?? 0), 0);
-  const oldSum = oldTop.reduce((sum, s) => sum + (s.rating ?? 0), 0);
-
-  return {
-    newTop,
-    oldTop,
-    newSum,
-    oldSum,
-    totalSum: newSum + oldSum,
-  };
+  return buildB50RatingSummary(scores);
 }
 
 export function buildLevelBuckets(

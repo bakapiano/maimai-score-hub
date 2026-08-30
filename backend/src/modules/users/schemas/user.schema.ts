@@ -27,6 +27,10 @@ export class UserEntity {
   @Prop({ type: MongooseSchema.Types.Mixed, default: undefined })
   profile?: UserNetProfile | null;
 
+  /** Sync CAS version used to fence profile.rating materialization writes. */
+  @Prop({ type: Number, default: null, select: false })
+  profileRatingScoreVersion!: number | null;
+
   @Prop({ type: Date, default: null })
   lastActiveAt!: Date | null;
 

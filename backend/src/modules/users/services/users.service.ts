@@ -43,6 +43,17 @@ const FRIEND_LIST_PROFILE_FIELDS: Array<
   ['classRankUrl', 'classRankUrl'],
   ['awakeningCount', 'awakeningCount'],
 ];
+const EMPTY_USER_NET_PROFILE: UserNetProfile = {
+  avatarUrl: null,
+  title: null,
+  titleColor: null,
+  username: null,
+  rating: null,
+  ratingBgUrl: null,
+  courseRankUrl: null,
+  classRankUrl: null,
+  awakeningCount: null,
+};
 
 @Injectable()
 export class UsersService {
@@ -274,6 +285,48 @@ export class UsersService {
     const field =
       provider === 'divingFish' ? 'divingFishImportToken' : 'lxnsImportToken';
     await this.userModel.updateOne({ friendCode }, { $set: { [field]: null } });
+  }
+
+  /**
+   * Materialize the B50 derived from a committed score snapshot into profile.
+   * The score version fence prevents concurrent commits from publishing an
+   * older rating after a newer commit has already completed its user update.
+   */
+  async updateProfileRatingFromScores(input: {
+    friendCode: string;
+    rating: number;
+    scoreVersion: number;
+  }): Promise<boolean> {
+    const result = await this.userModel.updateOne(
+      {
+        friendCode: input.friendCode,
+        $or: [
+          { profileRatingScoreVersion: null },
+          { profileRatingScoreVersion: { $lte: input.scoreVersion } },
+        ],
+      },
+      [
+        {
+          $set: {
+            profile: {
+              $mergeObjects: [
+                EMPTY_USER_NET_PROFILE,
+                {
+                  $cond: [
+                    { $eq: [{ $type: '$profile' }, 'object'] },
+                    '$profile',
+                    {},
+                  ],
+                },
+                { rating: input.rating },
+              ],
+            },
+            profileRatingScoreVersion: input.scoreVersion,
+          },
+        },
+      ],
+    );
+    return (result.matchedCount ?? 0) > 0;
   }
 
   async setAccountPassword(

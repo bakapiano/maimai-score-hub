@@ -24,7 +24,11 @@ import {
   type ScoreChangeValue,
 } from '../schemas/score-change.schema';
 import type { ScoreChangeDocument } from '../schemas/score-change.schema';
-import { getRating, normalizeAchievement } from '../../../common/rating';
+import {
+  buildB50RatingSummary,
+  getRating,
+  normalizeAchievement,
+} from '../../../common/rating';
 import { convertSyncScoresToDivingFishRecords } from '../../../common/prober/diving-fish/converter';
 import { uploadRecords as uploadDivingFishRecords } from '../../../common/prober/diving-fish/api';
 import { convertSyncScoresToLxnsPayload } from '../../../common/prober/lxns/converter';
@@ -36,6 +40,7 @@ import type {
   SdgbWorkerMusicEntry,
   SdgbWorkerUserMusicDetail,
 } from '@maimai-score-hub/shared';
+import { UsersService } from '../../users/services/users.service';
 
 type JobLike = {
   id: string;
@@ -231,6 +236,7 @@ export class SyncService {
     @InjectModel(MusicEntity.name)
     private readonly musicModel: Model<MusicDocument>,
     private readonly proberExportMap: ProberExportMapService,
+    private readonly users: UsersService,
   ) {}
 
   async createFromJob(job: JobLike) {
@@ -420,6 +426,7 @@ export class SyncService {
             observedAt,
             changes,
           });
+          await this.refreshProfileRating(sync);
           return {
             sync,
             outcome: 'created',
@@ -466,6 +473,7 @@ export class SyncService {
           )
           .lean<CurrentSync | null>();
         if (touched) {
+          await this.refreshProfileRating(touched);
           return {
             sync: touched,
             outcome: 'no_change',
@@ -508,6 +516,7 @@ export class SyncService {
         observedAt,
         changes,
       });
+      await this.refreshProfileRating(updated);
       return {
         sync: updated,
         outcome: 'updated',
@@ -521,6 +530,15 @@ export class SyncService {
     throw new ServiceUnavailableException({
       code: 'SYNC_COMMIT_CONTENTION',
       message: '成绩正在被其他任务更新，请稍后重试',
+    });
+  }
+
+  private async refreshProfileRating(sync: CurrentSync): Promise<void> {
+    const summary = buildB50RatingSummary(sync.scores ?? []);
+    await this.users.updateProfileRatingFromScores({
+      friendCode: sync.friendCode,
+      rating: Math.round(summary.totalSum),
+      scoreVersion: sync.__v,
     });
   }
 
