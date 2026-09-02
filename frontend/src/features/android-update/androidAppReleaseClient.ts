@@ -4,6 +4,7 @@ import {
 } from "@maimai-score-hub/shared";
 
 import { apiUrl } from "../../api/baseUrl";
+import { createUuid } from "../../utils/uuid.ts";
 import type { AndroidAppUpdateBridge } from "./androidUpdateBridge";
 
 const INSTALLATION_ID_KEY = "msh_android_installation_id";
@@ -32,7 +33,7 @@ function getInstallationId(): string {
   if (existing && /^[A-Za-z0-9._-]{8,128}$/.test(existing)) {
     return existing;
   }
-  const created = crypto.randomUUID();
+  const created = createUuid();
   localStorage.setItem(INSTALLATION_ID_KEY, created);
   return created;
 }

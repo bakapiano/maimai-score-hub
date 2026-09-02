@@ -21,6 +21,10 @@ export default defineConfig({
     },
   },
   build: {
+    // QQ's embedded browser still reaches production with a Chrome 77 WebView.
+    // Keep the entry bundle parseable there so users see the app instead of a
+    // blank screen before React and frontend observability can start.
+    target: "chrome77",
     rollupOptions: {
       output: {
         manualChunks: {

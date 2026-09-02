@@ -101,7 +101,9 @@ function groupHistoryItems(
   const groups: HistoryGroup[] = [];
   for (const item of items) {
     const key = businessDayKey(item.change.observedAt, dayStartHour);
-    const last = groups.at(-1);
+    // Array.prototype.at is unavailable in the Chrome 77 QQ WebView observed
+    // in production, while direct indexing provides the same result here.
+    const last = groups[groups.length - 1];
     if (last?.key === key) {
       last.items.push(item);
     } else {

@@ -1,3 +1,5 @@
+import { createUuid } from "../../utils/uuid.ts";
+
 export type AndroidUpdateMode = "recent" | "full";
 export type AndroidOperationMode = AndroidUpdateMode | "login";
 
@@ -194,7 +196,7 @@ export async function saveAndroidImage(
   }
   const mimeType = normalizeImageMimeType(blob.type, fileName);
   const encodedImage = await blobToBase64(blob);
-  const requestId = crypto.randomUUID();
+  const requestId = createUuid();
   return new Promise<AndroidImageSaveStatus>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       cleanup();
@@ -236,7 +238,7 @@ export async function startAndroidAppUpdate(
   if (!bridge) {
     throw new Error("当前 Android 版本尚未提供应用更新安装器");
   }
-  const requestId = crypto.randomUUID();
+  const requestId = createUuid();
   return new Promise<void>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       cleanup();
@@ -278,7 +280,7 @@ export async function startAndroidOAuth(
   onStatus?: (status: AndroidNativeOAuthStatus) => void,
 ): Promise<void> {
   const bridge = requireBridge();
-  const requestId = crypto.randomUUID();
+  const requestId = createUuid();
   return new Promise<void>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       cleanup();
@@ -318,7 +320,7 @@ export async function requestAndroidDxnet(
   request: AndroidDxnetRequest,
 ): Promise<AndroidDxnetResponse> {
   const bridge = requireBridge();
-  const requestId = crypto.randomUUID();
+  const requestId = createUuid();
   return new Promise<AndroidDxnetResponse>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       cleanup();

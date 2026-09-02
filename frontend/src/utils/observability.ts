@@ -1,4 +1,5 @@
 import { apiUrl } from "../api/baseUrl";
+import { createUuid } from "./uuid.ts";
 
 type AttrValue = string | number | boolean | null;
 type Attrs = Record<string, AttrValue | AttrValue[]>;
@@ -294,7 +295,7 @@ function getSessionId(): string {
     if (existing) {
       return existing;
     }
-    const next = crypto.randomUUID();
+    const next = createUuid();
     sessionStorage.setItem(SESSION_KEY, next);
     return next;
   } catch {
