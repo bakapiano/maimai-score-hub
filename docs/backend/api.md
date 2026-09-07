@@ -214,6 +214,13 @@ HTTP controller 统一放在 `backend/src/api` 下，按调用方分层；`backe
 | PATCH  | `/admin/bots/:friendCode/cabinet-user-id` | body: `cabinetUserId: number \| null` | 配置 bot 的机台 userId。                                                       |
 | DELETE | `/admin/bots/:friendCode`                 | path: numeric `friendCode`            | 删除 bot 状态行；内嵌好友快照随状态行一起删除。worker 仍在线时下次心跳会重建。 |
 | POST   | `/admin/bots/:friendCode/cabinet/bind-qr` | body: `qrCode: string`                | 通过 sdgb-worker 扫码绑定 bot 的 `cabinetUserId`。                             |
+| GET    | `/admin/bots/:friendCode/device-status`   | path: numeric `friendCode`            | 返回 Android Companion 使用的精简 Cookie 状态和 90 秒 freshness fence。       |
+| POST   | `/admin/bots/:friendCode/player-qr/request` | -                                   | 创建 10 分钟有效的玩家二维码获取请求并返回 requestId。                         |
+| GET    | `/admin/bots/:friendCode/player-qr`       | path: numeric `friendCode`            | 返回 Redis 中的二维码请求、执行、结果或失败状态。                              |
+| PATCH  | `/admin/bots/:friendCode/player-qr`       | body: `requestId/status/...`          | Android Companion 回报 processing/completed/failed；二维码在 Redis 中加密。    |
+
+二维码状态更新通过 Redis 原子比较并写入校验当前记录，保护跨副本的请求替换和过期。
+重复 processing 回报沿用创建请求时的过期时间；completed 结果最长保留 10 分钟。
 
 ## OpenAPI 覆盖差异
 

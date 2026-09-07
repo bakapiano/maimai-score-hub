@@ -81,6 +81,31 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client.del(key);
   }
 
+  async compareAndSetJson(
+    key: string,
+    expected: unknown,
+    value: unknown,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    if (!Number.isInteger(ttlSeconds) || ttlSeconds <= 0) {
+      throw new Error(
+        'compareAndSetJson ttlSeconds must be a positive integer',
+      );
+    }
+    const result = await this.client.eval(
+      "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]); return 1 else return 0 end",
+      {
+        keys: [key],
+        arguments: [
+          JSON.stringify(expected),
+          JSON.stringify(value),
+          String(ttlSeconds),
+        ],
+      },
+    );
+    return Number(result) === 1;
+  }
+
   async setNx(key: string, value: string, ttlMs: number): Promise<boolean> {
     const result = await this.client.set(key, value, {
       condition: 'NX',

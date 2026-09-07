@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { BotFriendSnapshotService } from './services/bot-friend-snapshot.service';
 import { BotStatusEntity, BotStatusSchema } from './schemas/bot-status.schema';
 import { BotStatusService } from './services/bot-status.service';
+import { BotPlayerQrControlService } from './services/bot-player-qr-control.service';
 import { JobEntity, JobSchema } from '../job/schemas/job.schema';
 import { SdgbWorkerModule } from '../sdgb-worker/sdgb-worker.module';
 import { UserEntity, UserSchema } from '../users/schemas/user.schema';
@@ -19,7 +20,15 @@ import { UsersModule } from '../users/users.module';
     SdgbWorkerModule,
     forwardRef(() => UsersModule),
   ],
-  providers: [BotStatusService, BotFriendSnapshotService],
-  exports: [BotStatusService, BotFriendSnapshotService],
+  providers: [
+    BotStatusService,
+    BotFriendSnapshotService,
+    BotPlayerQrControlService,
+  ],
+  exports: [
+    BotStatusService,
+    BotFriendSnapshotService,
+    BotPlayerQrControlService,
+  ],
 })
 export class BotsModule {}

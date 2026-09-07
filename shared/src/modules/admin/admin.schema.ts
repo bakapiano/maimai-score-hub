@@ -66,6 +66,62 @@ export const UpdateBotCabinetUserIdBodySchema = z.object({
   cabinetUserId: z.number().int().positive().nullable(),
 });
 
+export const BotDeviceStatusSchema = z.object({
+  friendCode: z.string(),
+  workerId: z.string().nullable(),
+  available: z.boolean(),
+  cookieState: z.enum(["valid", "expired", "unknown"]),
+  lastReportedAt: z.string().nullable(),
+  stale: z.boolean(),
+});
+
+export const BotPlayerQrControlStatusSchema = z.enum([
+  "idle",
+  "requested",
+  "processing",
+  "completed",
+  "failed",
+]);
+
+export const BotPlayerQrControlSchema = z.object({
+  friendCode: z.string(),
+  requested: z.boolean(),
+  requestId: z.string().nullable(),
+  status: BotPlayerQrControlStatusSchema,
+  requestedAt: z.string().nullable(),
+  requestExpiresAt: z.string().nullable(),
+  processingAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  qrCode: z.string().nullable(),
+  qrExpiresAt: z.string().nullable(),
+  errorCode: z.string().nullable(),
+});
+
+export const UpdateBotPlayerQrControlBodySchema = z
+  .object({
+    requestId: z.string().uuid(),
+    status: z.enum(["processing", "completed", "failed"]),
+    qrCode: z.string().min(1).max(1024).optional(),
+    qrExpiresAt: z.string().datetime().optional(),
+    errorCode: z.string().min(1).max(100).optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.status === "completed" && !value.qrCode) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["qrCode"],
+        message: "qrCode is required when status is completed",
+      });
+    }
+    if (value.status === "failed" && !value.errorCode) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["errorCode"],
+        message: "errorCode is required when status is failed",
+      });
+    }
+  });
+
 export const DxnetClaimFlowSchema = z.enum(["manual_update", "qr_identity"]);
 
 const DxnetClaimCanaryByFlowSchema = z
@@ -128,6 +184,11 @@ export type ReportBotStatusBody = z.infer<typeof ReportBotStatusBodySchema>;
 export type UpdateBotRemarkBody = z.infer<typeof UpdateBotRemarkBodySchema>;
 export type UpdateBotCabinetUserIdBody = z.infer<
   typeof UpdateBotCabinetUserIdBodySchema
+>;
+export type BotDeviceStatus = z.infer<typeof BotDeviceStatusSchema>;
+export type BotPlayerQrControl = z.infer<typeof BotPlayerQrControlSchema>;
+export type UpdateBotPlayerQrControlBody = z.infer<
+  typeof UpdateBotPlayerQrControlBodySchema
 >;
 export type SearchJobsQuery = z.infer<typeof SearchJobsQuerySchema>;
 export type DxnetRoutingControl = z.infer<typeof DxnetRoutingControlSchema>;

@@ -4892,7 +4892,7 @@ paths:
                   - success
   /catalog/music:
     get:
-      tags:
+      tags: &a7
         - music
       parameters: []
       operationId: music.listAll
@@ -4915,18 +4915,70 @@ paths:
                   required:
                     - id
                   additionalProperties: true
+  /catalog/music/aliases:
+    get:
+      tags: *a7
+      parameters: []
+      operationId: music.listAliases
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revision:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  aliases:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        musicId:
+                          type: string
+                        aliases:
+                          type: array
+                          items:
+                            type: string
+                      required:
+                        - musicId
+                        - aliases
+                required:
+                  - revision
+                  - aliases
   /admin/catalog/music/sync:
     post:
-      tags: &a7
+      tags: &a8
         - admin
       parameters: []
       operationId: admin.syncMusic
       responses:
         "201":
           description: "201"
+  /admin/catalog/aliases/sync:
+    post:
+      tags: *a7
+      parameters: []
+      operationId: music.forceAliasSync
+      responses:
+        "201":
+          description: "201"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required:
+                  - ok
+                additionalProperties: true
   /admin/dashboard/stats:
     get:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.getStats
       responses:
@@ -4948,7 +5000,7 @@ paths:
                 additionalProperties: true
   /admin/dashboard/job-stats:
     get:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.getJobStats
       responses:
@@ -4960,7 +5012,7 @@ paths:
                 nullable: true
   /admin/dashboard/job-trend:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: hours
           in: query
@@ -4976,7 +5028,7 @@ paths:
                 nullable: true
   /admin/dashboard/job-error-stats:
     get:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.getJobErrorStats
       responses:
@@ -4988,7 +5040,7 @@ paths:
                 nullable: true
   /admin/dxnet-jobs:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: friendCode
           in: query
@@ -5021,7 +5073,7 @@ paths:
                 nullable: true
   /admin/users:
     get:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.getAllUsers
       responses:
@@ -5035,7 +5087,7 @@ paths:
                   nullable: true
   /admin/dxnet-jobs/active:
     get:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.getActiveJobs
       responses:
@@ -5047,7 +5099,7 @@ paths:
                 nullable: true
   /workers/bots/status:
     post:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.reportBotStatus
       requestBody:
@@ -5130,7 +5182,7 @@ paths:
           description: "201"
   /admin/bots:
     get:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.getBotStatus
       responses:
@@ -5178,7 +5230,7 @@ paths:
                   additionalProperties: true
   /admin/bots/{friendCode}/remark:
     patch:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: friendCode
           in: path
@@ -5203,7 +5255,7 @@ paths:
           description: "200"
   /admin/bots/{friendCode}/cabinet-user-id:
     patch:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: friendCode
           in: path
@@ -5228,9 +5280,279 @@ paths:
       responses:
         "200":
           description: "200"
+  /admin/bots/{friendCode}/device-status:
+    get:
+      tags: *a8
+      parameters:
+        - name: friendCode
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: admin.getBotDeviceStatus
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  friendCode:
+                    type: string
+                  workerId:
+                    type: string
+                    nullable: true
+                  available:
+                    type: boolean
+                  cookieState:
+                    type: string
+                    enum:
+                      - valid
+                      - expired
+                      - unknown
+                  lastReportedAt:
+                    type: string
+                    nullable: true
+                  stale:
+                    type: boolean
+                required:
+                  - friendCode
+                  - workerId
+                  - available
+                  - cookieState
+                  - lastReportedAt
+                  - stale
+  /admin/bots/{friendCode}/player-qr/request:
+    post:
+      tags: *a8
+      parameters:
+        - name: friendCode
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: admin.requestBotPlayerQr
+      responses:
+        "201":
+          description: "201"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  friendCode:
+                    type: string
+                  requested:
+                    type: boolean
+                  requestId:
+                    type: string
+                    nullable: true
+                  status:
+                    type: string
+                    enum:
+                      - idle
+                      - requested
+                      - processing
+                      - completed
+                      - failed
+                  requestedAt:
+                    type: string
+                    nullable: true
+                  requestExpiresAt:
+                    type: string
+                    nullable: true
+                  processingAt:
+                    type: string
+                    nullable: true
+                  completedAt:
+                    type: string
+                    nullable: true
+                  qrCode:
+                    type: string
+                    nullable: true
+                  qrExpiresAt:
+                    type: string
+                    nullable: true
+                  errorCode:
+                    type: string
+                    nullable: true
+                required:
+                  - friendCode
+                  - requested
+                  - requestId
+                  - status
+                  - requestedAt
+                  - requestExpiresAt
+                  - processingAt
+                  - completedAt
+                  - qrCode
+                  - qrExpiresAt
+                  - errorCode
+  /admin/bots/{friendCode}/player-qr:
+    get:
+      tags: *a8
+      parameters:
+        - name: friendCode
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: admin.getBotPlayerQrControl
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  friendCode:
+                    type: string
+                  requested:
+                    type: boolean
+                  requestId:
+                    type: string
+                    nullable: true
+                  status:
+                    type: string
+                    enum:
+                      - idle
+                      - requested
+                      - processing
+                      - completed
+                      - failed
+                  requestedAt:
+                    type: string
+                    nullable: true
+                  requestExpiresAt:
+                    type: string
+                    nullable: true
+                  processingAt:
+                    type: string
+                    nullable: true
+                  completedAt:
+                    type: string
+                    nullable: true
+                  qrCode:
+                    type: string
+                    nullable: true
+                  qrExpiresAt:
+                    type: string
+                    nullable: true
+                  errorCode:
+                    type: string
+                    nullable: true
+                required:
+                  - friendCode
+                  - requested
+                  - requestId
+                  - status
+                  - requestedAt
+                  - requestExpiresAt
+                  - processingAt
+                  - completedAt
+                  - qrCode
+                  - qrExpiresAt
+                  - errorCode
+    patch:
+      tags: *a8
+      parameters:
+        - name: friendCode
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: admin.updateBotPlayerQrControl
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                requestId:
+                  type: string
+                  format: uuid
+                status:
+                  type: string
+                  enum:
+                    - processing
+                    - completed
+                    - failed
+                qrCode:
+                  type: string
+                  minLength: 1
+                  maxLength: 1024
+                qrExpiresAt:
+                  type: string
+                  format: date-time
+                errorCode:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+              required:
+                - requestId
+                - status
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  friendCode:
+                    type: string
+                  requested:
+                    type: boolean
+                  requestId:
+                    type: string
+                    nullable: true
+                  status:
+                    type: string
+                    enum:
+                      - idle
+                      - requested
+                      - processing
+                      - completed
+                      - failed
+                  requestedAt:
+                    type: string
+                    nullable: true
+                  requestExpiresAt:
+                    type: string
+                    nullable: true
+                  processingAt:
+                    type: string
+                    nullable: true
+                  completedAt:
+                    type: string
+                    nullable: true
+                  qrCode:
+                    type: string
+                    nullable: true
+                  qrExpiresAt:
+                    type: string
+                    nullable: true
+                  errorCode:
+                    type: string
+                    nullable: true
+                required:
+                  - friendCode
+                  - requested
+                  - requestId
+                  - status
+                  - requestedAt
+                  - requestExpiresAt
+                  - processingAt
+                  - completedAt
+                  - qrCode
+                  - qrExpiresAt
+                  - errorCode
   /admin/bots/{friendCode}:
     delete:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: friendCode
           in: path
@@ -5243,7 +5565,7 @@ paths:
           description: "200"
   /admin/catalog/covers/sync:
     post:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.syncCovers
       responses:
@@ -5251,7 +5573,7 @@ paths:
           description: "201"
   /admin/catalog/covers/force-sync:
     post:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.forceSyncCovers
       responses:
@@ -5259,7 +5581,7 @@ paths:
           description: "201"
   /admin/dxnet-jobs/cleanup:
     post:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.cleanupJobs
       responses:
@@ -5267,7 +5589,7 @@ paths:
           description: "201"
   /admin/dxnet-routing-control:
     get:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.getDxnetRoutingControl
       responses:
@@ -5294,7 +5616,7 @@ paths:
                         - manual_update
                         - qr_identity
                   claimCanaryByFlow:
-                    default: &a8 {}
+                    default: &a9 {}
                     type: object
                     properties:
                       manual_update:
@@ -5307,7 +5629,7 @@ paths:
                   - botAllowlist
                   - enabledClaimFlows
     patch:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.patchDxnetRoutingControl
       requestBody:
@@ -5333,7 +5655,7 @@ paths:
                       - manual_update
                       - qr_identity
                 claimCanaryByFlow:
-                  default: *a8
+                  default: *a9
                   type: object
                   properties:
                     manual_update:
@@ -5367,7 +5689,7 @@ paths:
                         - manual_update
                         - qr_identity
                   claimCanaryByFlow:
-                    default: *a8
+                    default: *a9
                     type: object
                     properties:
                       manual_update:
@@ -5394,7 +5716,7 @@ paths:
                   - code
   /admin/observability/status:
     get:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: admin.getObservabilityStatus
       responses:
@@ -5406,7 +5728,7 @@ paths:
                 nullable: true
   /admin/realtime/overview:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: env
           in: query
@@ -5429,7 +5751,7 @@ paths:
                 nullable: true
   /admin/realtime/worker-groups:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: env
           in: query
@@ -5457,7 +5779,7 @@ paths:
                 nullable: true
   /admin/history/api:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: env
           in: query
@@ -5486,7 +5808,7 @@ paths:
                   nullable: true
   /admin/history/rum:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: env
           in: query
@@ -5515,7 +5837,7 @@ paths:
                   nullable: true
   /admin/history/analytics:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: env
           in: query
@@ -5544,7 +5866,7 @@ paths:
                   nullable: true
   /admin/history/workers:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: env
           in: query
@@ -5573,7 +5895,7 @@ paths:
                   nullable: true
   /admin/history/logs:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: env
           in: query
@@ -5631,7 +5953,7 @@ paths:
                   nullable: true
   /admin/history/log-workers:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: env
           in: query
@@ -5667,7 +5989,7 @@ paths:
                     - lastSeenAt
   /admin/jobs/{jobId}/debug:
     get:
-      tags: *a7
+      tags: *a8
       parameters:
         - name: jobId
           in: path
@@ -5691,7 +6013,7 @@ paths:
                 nullable: true
   /catalog/covers/{songId}:
     get:
-      tags: &a9
+      tags: &a10
         - cover
       parameters:
         - name: songId
@@ -5707,7 +6029,7 @@ paths:
           description: "404"
   /catalog/covers/{songId}.jpg:
     get:
-      tags: *a9
+      tags: *a10
       parameters:
         - name: songId
           in: path
@@ -5722,7 +6044,7 @@ paths:
           description: "404"
   /admin/catalog/covers/backfill-variants:
     post:
-      tags: *a9
+      tags: *a10
       parameters: []
       operationId: cover.backfillVariants
       responses:
@@ -5730,7 +6052,7 @@ paths:
           description: "201"
   /me/score-exports/best50:
     get:
-      tags: &a10
+      tags: &a11
         - scoreExport
       parameters: []
       operationId: scoreExport.best50
@@ -5739,7 +6061,7 @@ paths:
           description: "200"
   /me/score-exports/level:
     get:
-      tags: *a10
+      tags: *a11
       parameters: []
       operationId: scoreExport.level
       responses:
@@ -5747,7 +6069,7 @@ paths:
           description: "200"
   /me/score-exports/version:
     get:
-      tags: *a10
+      tags: *a11
       parameters: []
       operationId: scoreExport.version
       responses:
@@ -5755,7 +6077,7 @@ paths:
           description: "200"
   /me/score-exports/history:
     get:
-      tags: *a10
+      tags: *a11
       parameters:
         - name: date
           in: query
@@ -5808,7 +6130,7 @@ paths:
           description: "200"
   /workers/sdgb/jobs/heartbeat:
     post:
-      tags: &a11
+      tags: &a12
         - sdgbWorker
       parameters: []
       operationId: sdgbWorker.heartbeat
@@ -6007,7 +6329,7 @@ paths:
                   - desiredLaneMemberships
   /workers/sdgb/incidents:
     post:
-      tags: *a11
+      tags: *a12
       parameters: []
       operationId: sdgbWorker.incident
       requestBody:
@@ -6090,7 +6412,7 @@ paths:
           description: "200"
   /workers/sdgb/jobs/{jobId}:
     get:
-      tags: *a11
+      tags: *a12
       parameters:
         - name: jobId
           in: path
@@ -6261,7 +6583,7 @@ paths:
         "404":
           description: "404"
     patch:
-      tags: *a11
+      tags: *a12
       parameters:
         - name: jobId
           in: path
@@ -6528,7 +6850,7 @@ paths:
           description: "404"
   /observability/rum:
     post:
-      tags: &a12
+      tags: &a13
         - observability
       parameters: []
       operationId: observability.ingestRum
@@ -6634,7 +6956,7 @@ paths:
                   - accepted
   /observability/events:
     post:
-      tags: *a12
+      tags: *a13
       parameters: []
       operationId: observability.ingestEvents
       requestBody:
@@ -6708,7 +7030,7 @@ paths:
                   - accepted
   /workers/logs/{kind}/batches:
     post:
-      tags: *a12
+      tags: *a13
       parameters:
         - name: kind
           in: path
@@ -6802,7 +7124,7 @@ paths:
                   - accepted
   /workers/dxnet/jobs/{jobId}/api-calls:
     post:
-      tags: *a12
+      tags: *a13
       parameters:
         - name: jobId
           in: path
@@ -6910,7 +7232,7 @@ paths:
                   - accepted
   /workers/{kind}/external-api-calls:
     post:
-      tags: *a12
+      tags: *a13
       parameters:
         - name: kind
           in: path

@@ -19,6 +19,9 @@ import {
   SearchJobsQuerySchema,
   SearchJobsResponseSchema,
   UpdateBotCabinetUserIdBodySchema,
+  BotDeviceStatusSchema,
+  BotPlayerQrControlSchema,
+  UpdateBotPlayerQrControlBodySchema,
   UpdateBotRemarkBodySchema,
   DxnetRoutingControlSchema,
   PatchDxnetRoutingControlBodySchema,
@@ -96,6 +99,32 @@ export const adminContract = c.router({
     headers: c.type<{ "x-api-secret": string }>(),
     body: UpdateBotCabinetUserIdBodySchema,
     responses: { 200: c.type<{ ok: true }>() },
+  },
+  getBotDeviceStatus: {
+    method: "GET",
+    path: "/admin/bots/:friendCode/device-status",
+    headers: c.type<{ "x-api-secret": string }>(),
+    responses: { 200: BotDeviceStatusSchema },
+  },
+  requestBotPlayerQr: {
+    method: "POST",
+    path: "/admin/bots/:friendCode/player-qr/request",
+    headers: c.type<{ "x-api-secret": string }>(),
+    body: c.noBody(),
+    responses: { 201: BotPlayerQrControlSchema },
+  },
+  getBotPlayerQrControl: {
+    method: "GET",
+    path: "/admin/bots/:friendCode/player-qr",
+    headers: c.type<{ "x-api-secret": string }>(),
+    responses: { 200: BotPlayerQrControlSchema },
+  },
+  updateBotPlayerQrControl: {
+    method: "PATCH",
+    path: "/admin/bots/:friendCode/player-qr",
+    headers: c.type<{ "x-api-secret": string }>(),
+    body: UpdateBotPlayerQrControlBodySchema,
+    responses: { 200: BotPlayerQrControlSchema },
   },
   removeBot: {
     method: "DELETE",
@@ -228,7 +257,9 @@ export const adminContract = c.router({
     query: z.object({
       env: z.enum(["prod", "dev"]).optional(),
       service: z.string().optional(),
-      workerKind: z.enum(["backend", "dxnet", "sdgb", "prober_export"]).optional(),
+      workerKind: z
+        .enum(["backend", "dxnet", "sdgb", "prober_export"])
+        .optional(),
       workerId: z.string().optional(),
       level: z.string().optional(),
       jobId: z.string().optional(),
