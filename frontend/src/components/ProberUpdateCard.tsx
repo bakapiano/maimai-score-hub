@@ -23,6 +23,7 @@ import { type ReactNode, useState } from "react";
 import type { AuthProfile } from "../providers/AuthContext";
 import { fetchSyncPageJson } from "../pages/syncPageApi";
 import { recordAnalyticsEvent } from "../utils/observability";
+import { getProberExportCreateError } from "../utils/proberExportError";
 import { AppCard } from "./AppCard";
 import styles from "./ProberUpdateCard.module.css";
 
@@ -553,10 +554,7 @@ export function ProberUpdateCard({
       );
 
       if (!res.ok || !res.data?.exportJobId) {
-        const data = res.data as { message?: string } | null;
-        throw new Error(
-          (data?.message || `HTTP ${res.status}`) + " 请检查 Token 是否正确！",
-        );
+        throw new Error(getProberExportCreateError(res.status, res.data));
       }
 
       notifications.show({
