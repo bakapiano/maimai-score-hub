@@ -7,6 +7,12 @@ import org.junit.Test;
 
 public final class WechatWebViewLauncherTest {
     @Test
+    public void decodesUtf8UsingLegacyCompatibleOverload() {
+        assertEquals("授权 callback+", WechatWebViewLauncher.decodeUtf8("%E6%8E%88%E6%9D%83+callback%2B"));
+        assertThrows(IllegalArgumentException.class, () -> WechatWebViewLauncher.decodeUtf8("%GG"));
+    }
+
+    @Test
     public void buildsRestrictedStartUiParams() {
         assertEquals(
                 "<start_ui_params>"

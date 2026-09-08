@@ -4,6 +4,7 @@ import android.content.Intent;
 
 import java.net.URI;
 import java.net.URLDecoder;
+import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -95,13 +96,22 @@ public final class WechatWebViewLauncher {
         for (String pair : rawQuery.split("&")) {
             int separator = pair.indexOf('=');
             String rawName = separator < 0 ? pair : pair.substring(0, separator);
-            if (!name.equals(URLDecoder.decode(rawName, StandardCharsets.UTF_8))) {
+            if (!name.equals(decodeUtf8(rawName))) {
                 continue;
             }
             String rawValue = separator < 0 ? "" : pair.substring(separator + 1);
-            return URLDecoder.decode(rawValue, StandardCharsets.UTF_8);
+            return decodeUtf8(rawValue);
         }
         return null;
+    }
+
+    static String decodeUtf8(String value) {
+        try {
+            // The Charset overload was added in Android 13; this overload is available on all supported SDKs.
+            return URLDecoder.decode(value, StandardCharsets.UTF_8.name());
+        } catch (UnsupportedEncodingException error) {
+            throw new IllegalStateException("UTF-8 decoder unavailable", error);
+        }
     }
 
     private static IllegalArgumentException unexpectedLaunchUrl() {

@@ -122,7 +122,7 @@ public final class AppUpdateManager {
     }
 
     private String fetchManifest(String releaseId) throws Exception {
-        String encoded = URLEncoder.encode(releaseId, StandardCharsets.UTF_8);
+        String encoded = URLEncoder.encode(releaseId, StandardCharsets.UTF_8.name());
         String url = BuildConfig.APP_RELEASE_API_BASE_URL
                 + "/android/app/releases/" + encoded + "/manifest";
         try (Response response = client.newCall(new Request.Builder().url(url).get().build()).execute()) {
@@ -363,7 +363,7 @@ public final class AppUpdateManager {
                 }
                 output.write(buffer, 0, count);
             }
-            return output.toString(StandardCharsets.UTF_8);
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
         }
     }
 

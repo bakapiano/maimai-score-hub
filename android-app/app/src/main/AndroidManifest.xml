@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <permission
         android:name="${applicationId}.permission.INTERNAL_STATUS"
@@ -25,6 +26,7 @@
     </queries>
 
     <application
+        android:name=".MaiScoreHubApplication"
         android:allowBackup="false"
         android:icon="@drawable/maiscorehub_icon"
         android:label="${appLabel}"
@@ -47,11 +49,14 @@
             </intent-filter>
         </activity>
 
+        <!-- User-approved VpnService is a documented systemExempted eligibility category.
+             The lint alarm-permission heuristic omits VPN eligibility; runtime rejection is guarded. -->
         <service
             android:name=".vpn.ProxyUpdateVpnService"
             android:exported="false"
             android:foregroundServiceType="systemExempted"
-            android:permission="android.permission.BIND_VPN_SERVICE">
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            tools:ignore="ForegroundServicePermission">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>

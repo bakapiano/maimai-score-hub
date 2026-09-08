@@ -39,7 +39,7 @@ function Save-PhoneArtifact([string]$RemotePath, [string]$LocalName) {
 function Wait-ForTerminal([string]$Mode, [int]$TimeoutSeconds) {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
-        $log = Invoke-Adb logcat -d -s 'MshWebView:I' 'MshOAuthVpn:I' 'MshHttpProxy:I' 'MshDxnetTransport:I' '*:S'
+        $log = Invoke-Adb logcat -d -s 'MshNative:I' 'MshWebView:I' 'MshOAuthVpn:I' 'MshHttpProxy:I' 'MshDxnetTransport:I' '*:S'
         Set-Content -LiteralPath (Join-Path $artifactDirectory "$Mode-logcat.txt") -Value $log -Encoding utf8
         $events = [regex]::Matches($log, '\[MaiScoreHubWorkflow\]\s+(\{[^\r\n]+\})')
         for ($index = $events.Count - 1; $index -ge 0; $index--) {

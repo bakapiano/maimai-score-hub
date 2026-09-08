@@ -289,18 +289,21 @@ publish to the Backend registry and GitHub Releases:
 
 ```bash
 gh workflow run build-android-release.yml --ref main \
-  -f publish=false -f version_code=7 -f version_name=0.3.1 \
+  -f publish=false -f version_code=8 -f version_name=0.3.2 \
   -f mandatory=false -f rollout_percent=100
 
 gh workflow run build-android-release.yml --ref main \
-  -f publish=true -f version_code=7 -f version_name=0.3.1 \
+  -f publish=true -f version_code=8 -f version_name=0.3.2 \
   -f mandatory=false -f rollout_percent=100 \
-  -f notes='状态栏颜色跟随网站 Header'
+  -f notes='修复微信授权兼容问题，新增本地诊断日志导出'
 ```
 
 `publish=true` writes the stable channel policy, immutable Manifest/APK and a
 matching GitHub Release. The public Backend download URL is the APK URL carried
 by the signed Manifest.
+
+The workflow also retains the matching release R8 mapping in the separate
+`MaiScoreHub-production-symbols-<version>` Actions artifact for 90 days.
 
 Stable clears the hosted-frontend cache once after each app version upgrade.
 This keeps the login data while ensuring the first post-upgrade launch loads
@@ -422,12 +425,83 @@ Beta uses `com.bakapiano.maiscorehub.android.beta` and can coexist with Stable.
 
 ### 5. Inspect logs and mirror the screen
 
+Native VPN diagnostics are also recorded under the application's private
+`files/diagnostics/` directory. `native.log` and `native.previous.log` each
+have a 128 KiB limit. Entries include request IDs, native stages, Android/APK
+versions, and sanitized exception causes/stacks. Java uncaught exceptions get
+a separate bounded crash snapshot and are passed to Android's original crash
+handler. URLs, authentication headers and credential fields are redacted.
+
+When VPN permission preparation, foreground-service startup, or the native
+OAuth operation fails, the app offers **导出诊断日志**. The user chooses a
+destination using Android's document picker and can send the exported text
+with the request ID shown in the dialog. After a Java crash, the next launch
+offers the saved diagnostics. The export uses local files; it contains no
+server-side upload step.
+
+The VPN permission result queues startup until the Activity is resumed.
+Foreground promotion and executor dispatch each have a guarded failure path;
+terminal OAuth status delivery runs independently of notification updates.
+This preserves the existing Bridge v4/Workflow contract.
+
+The WeChat handoff uses the legacy UTF-8 URL-decoding overload, which covers
+Android 10–12 as well as newer devices. App-update URL encoding and UTF-8 body
+decoding follow the same compatibility policy. Run `./gradlew.bat lintDebug`
+alongside the unit tests to detect accidental platform API-level increases.
+
+Physical acceptance on **2026-09-07**, using OnePlus 8 / Android 13 and the
+isolated `.devicetest` package against the production website/Workflow:
+
+- VPN cancellation settled normally; VPN approval reached foreground startup,
+  WeChat handoff, callback exchange and successful quick login.
+- Recent/full updates completed with 8/145 submitted records and server-version
+  verification.
+- A controlled Java crash persisted a report; the next launch offered diagnostics,
+  and the system document picker exported a 6880-byte report containing stages,
+  request IDs and the exception stack. URL/header redaction checks passed.
+- Drony and the bound 101 Worker's production Cookie were restored. Runtime
+  evidence is retained under ignored `app/build/vpn-defense-device-e2e/`.
+- Direct foreground-denial injection requires AppOps management privileges on
+  this phone. The emulator regression below covers that denial on Android 10/12.
+
+Emulator acceptance on **2026-09-07** passed on Android 10 / API 29 and
+Android 12 / API 31, using isolated AOSP x86_64 AVDs:
+
+- Both platforms reproduced `NoSuchMethodError` from the old
+  `URLDecoder.decode(String, Charset)` call. The fixed WeChat launch-Intent
+  construction, update-response UTF-8 decoding and diagnostic file I/O passed.
+- With foreground startup allowed, the service promoted successfully and then
+  returned the expected missing-WeChat preflight failure on the empty AVD.
+- With `START_FOREGROUND=deny`, the real platform threw `SecurityException` at
+  `startForegroundService`. The app returned the matching terminal failure to
+  the WebView, persisted diagnostics and released its running state. The
+  12-second post-failure observation completed, and service-destruction logs
+  were verified for the allowed-start case.
+- This suite uses a localhost HTML fixture and synthetic data. The physical
+  OnePlus acceptance above covers the full WeChat and production Workflow flow.
+
+The AVDs live under `D:\Android\avd` as `msh-native-api29` and
+`msh-native-api31`. Set `ANDROID_AVD_HOME` to that directory when launching
+them. To rebuild and rerun the device-side suite against an already booted AVD:
+
+```powershell
+.\gradlew.bat assembleDeviceTest assembleDeviceTestAndroidTest `
+  -PmshTestBuildType=deviceTest `
+  -PmshDeviceTestWebUrl=http://localhost:19310/
+.\scripts\run-native-emulator-smoke.ps1 -DeviceSerial emulator-5554
+```
+
+The harness validates the emulator and AVD name before resetting the isolated
+test package, starts a loopback-only fixture, and restores its AppOps/reverse
+settings on exit. Per-API results and logs are saved under ignored
+`app/build/native-emulator-e2e/`. The instrumentation runner is test-only.
+
 Clear logs immediately before a test, then filter the native/WebView tags:
 
 ```powershell
 & $AdbPath -s $DeviceSerial logcat -c
 & $AdbPath -s $DeviceSerial logcat -v time `
-  -s MshWebView:I MshOAuthVpn:I MshHttpProxy:I MshDxnetTransport:I '*:S'
+  -s MshNative:I MshWebView:I MshOAuthVpn:I MshHttpProxy:I MshDxnetTransport:I '*:S'
 ```
 
 For interactive testing, select the device with scrcpy's `-s` flag. Display

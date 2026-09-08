@@ -12,12 +12,12 @@ on:
         description: Monotonically increasing Android versionCode
         required: true
         type: number
-        default: 7
+        default: 8
       version_name:
         description: User-facing stable version
         required: true
         type: string
-        default: 0.3.1
+        default: 0.3.2
       mandatory:
         description: Mark this release as an important update
         required: true
@@ -183,6 +183,14 @@ jobs:
             --rollout-percent "${INPUT_ROLLOUT_PERCENT:-100}" \
             --published-at "$PUBLISHED_AT" \
             --notes-file "$NOTES_FILE"
+
+      - name: Preserve production R8 mapping
+        uses: actions/upload-artifact@v7
+        with:
+          name: MaiScoreHub-production-symbols-${{ inputs.version_name }}
+          path: android-app/app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Publish stable release to Backend
         if: inputs.publish

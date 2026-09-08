@@ -22,6 +22,8 @@ import android.util.Base64;
 import com.bakapiano.maiscorehub.android.BuildConfig;
 import com.bakapiano.maiscorehub.android.MainActivity;
 import com.bakapiano.maiscorehub.android.R;
+import com.bakapiano.maiscorehub.android.diagnostics.DiagnosticLogStore;
+import com.bakapiano.maiscorehub.android.diagnostics.NativeDiagnostics;
 import com.bakapiano.maiscorehub.android.net.DxnetTransport;
 
 import java.io.ByteArrayOutputStream;
@@ -45,6 +47,7 @@ public final class ProxyUpdateVpnService extends VpnService {
     public static final String EXTRA_TERMINAL = "terminal";
     public static final String EXTRA_SUCCESS = "success";
     public static final String EXTRA_ERROR = "error";
+    public static final String EXTRA_DIAGNOSTIC_STAGE = "diagnosticStage";
     public static final String ACTION_OAUTH_STATUS =
             BuildConfig.APPLICATION_ID + ".OAUTH_STATUS";
     public static final String INTERNAL_STATUS_PERMISSION =
@@ -61,6 +64,9 @@ public final class ProxyUpdateVpnService extends VpnService {
     private ParcelFileDescriptor vpnInterface;
     private HttpProxyServer proxyServer;
     private String activeRequestId = "";
+    private volatile String currentStage = "service_created";
+    private volatile boolean foregroundStarted;
+    private final AtomicBoolean ownsRunning = new AtomicBoolean(false);
 
     public static boolean isRunning() {
         return RUNNING.get();
@@ -69,17 +75,22 @@ public final class ProxyUpdateVpnService extends VpnService {
     @Override
     public void onCreate() {
         super.onCreate();
-        createNotificationChannel();
+        NativeDiagnostics.event("service_created", "", "");
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String requestId = intent == null ? "" : intent.getStringExtra(EXTRA_REQUEST_ID);
         if (!isValidRequestId(requestId)) {
+            NativeDiagnostics.event("service_invalid_request", "", "");
             stopSelf();
             return START_NOT_STICKY;
         }
         if (!RUNNING.compareAndSet(false, true)) {
+            if (requestId.equals(activeRequestId)) {
+                NativeDiagnostics.event("service_duplicate_start", requestId, "");
+                return START_NOT_STICKY;
+            }
             broadcast(
                     requestId,
                     "已有微信授权正在进行",
@@ -90,20 +101,36 @@ public final class ProxyUpdateVpnService extends VpnService {
             );
             return START_NOT_STICKY;
         }
+        ownsRunning.set(true);
         activeRequestId = requestId;
-        startForeground(NOTIFICATION_ID, notification("正在准备微信授权…"));
-        executor.execute(this::runOAuth);
+        OAuthStartupGuard.start(
+                () -> {
+                    stage("foreground_start");
+                    createNotificationChannel();
+                    startForeground(NOTIFICATION_ID, notification("正在准备微信授权…"));
+                    foregroundStarted = true;
+                    stage("foreground_started");
+                },
+                () -> executor.execute(this::runOAuth),
+                (failedStage, error) -> {
+                    reportFailure(failedStage, error);
+                    finishOAuth();
+                }
+        );
         return START_NOT_STICKY;
     }
 
     private void runOAuth() {
         try {
+            stage("preflight");
             requireProxyApi();
             callbackUrl.set(null);
             callbackLatch = new CountDownLatch(1);
             DxnetTransport transport = DxnetTransport.shared();
             transport.resetSession();
+            stage("resolve_authorization");
             String directAuthUrl = transport.resolveAuthorizationUrl();
+            stage("proxy_start");
             proxyServer = new HttpProxyServer(
                     this::protect,
                     url -> {
@@ -112,25 +139,29 @@ public final class ProxyUpdateVpnService extends VpnService {
                         }
                     },
                     transport::resolveAuthorizationUrl,
-                    host -> Log.i(TAG, "Proxy CONNECT " + host),
+                    host -> NativeDiagnostics.event("proxy_connect", activeRequestId, "host=" + host),
                     createSuccessIconDataUri()
             );
             int proxyPort = proxyServer.start();
             String manualAuthUrl = "http://10.77.0.2:" + proxyPort
                     + "/launch?nonce=" + System.currentTimeMillis();
-            copyManualAuthUrl(manualAuthUrl);
+            boolean manualLinkCopied = copyManualAuthUrl(manualAuthUrl);
+            stage("vpn_establish");
             establishVpn(proxyPort);
+            stage("vpn_established");
             Log.i(TAG, "Prepared direct HTTPS OAuth with local HTTP fallback");
             broadcast(
                     activeRequestId,
-                    "临时 VPN 已启动，备用链接已复制，正在微信打开授权页…",
+                    manualLinkCopied
+                            ? "临时 VPN 已启动，备用链接已复制，正在微信打开授权页…"
+                            : "临时 VPN 已启动，正在微信打开授权页…",
                     false,
                     false,
                     null,
                     directAuthUrl,
                     manualAuthUrl
             );
-
+            stage("wait_callback");
             if (!callbackLatch.await(5, TimeUnit.MINUTES)) {
                 throw new IOException("等待微信授权超时");
             }
@@ -143,7 +174,9 @@ public final class ProxyUpdateVpnService extends VpnService {
                     null,
                     null
             );
+            stage("exchange_callback");
             transport.exchangeCallback(callbackUrl.get());
+            stage("oauth_completed");
             broadcast(
                     activeRequestId,
                     "微信授权完成，DXNET 会话已建立",
@@ -154,6 +187,7 @@ public final class ProxyUpdateVpnService extends VpnService {
             );
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
+            NativeDiagnostics.event("oauth_cancelled", activeRequestId, "stage=" + currentStage);
             broadcast(
                     activeRequestId,
                     "微信授权已取消",
@@ -162,22 +196,35 @@ public final class ProxyUpdateVpnService extends VpnService {
                     "微信授权已取消",
                     null
             );
-        } catch (Exception error) {
-            String message = safeMessage(error);
-            broadcast(
-                    activeRequestId,
-                    "微信授权失败：" + message,
-                    true,
-                    false,
-                    message,
-                    null
-            );
+        } catch (Exception | LinkageError error) {
+            reportFailure(currentStage, error);
         } finally {
-            closeVpnTransport();
-            RUNNING.set(false);
-            stopForeground(STOP_FOREGROUND_REMOVE);
-            stopSelf();
+            finishOAuth();
         }
+    }
+
+    private void stage(String stage) {
+        currentStage = stage;
+        NativeDiagnostics.event(stage, activeRequestId, "");
+    }
+
+    private void reportFailure(String stage, Throwable error) {
+        NativeDiagnostics.failure(stage, activeRequestId, error);
+        String message = "微信授权失败：" + safeMessage(error);
+        broadcast(activeRequestId, message, true, false, message, null, null, stage);
+    }
+
+    private void finishOAuth() {
+        closeVpnTransport();
+        if (ownsRunning.compareAndSet(true, false)) {
+            RUNNING.set(false);
+        }
+        OAuthStartupGuard.run("foreground_stop", () -> {
+            stopForeground(STOP_FOREGROUND_REMOVE);
+            foregroundStarted = false;
+        }, (stage, error) -> NativeDiagnostics.failure(stage, activeRequestId, error));
+        OAuthStartupGuard.run("service_stop", this::stopSelf,
+                (stage, error) -> NativeDiagnostics.failure(stage, activeRequestId, error));
     }
 
     private String createSuccessIconDataUri() throws IOException {
@@ -204,6 +251,9 @@ public final class ProxyUpdateVpnService extends VpnService {
     }
 
     private void establishVpn(int proxyPort) throws Exception {
+        if (Build.VERSION.SDK_INT < 29) {
+            throw new IOException("手机系统版本需要 Android 10 或更高版本");
+        }
         Builder builder = new Builder()
                 .setSession("MaiScoreHub OAuth")
                 .setMtu(1500)
@@ -253,9 +303,13 @@ public final class ProxyUpdateVpnService extends VpnService {
         }
     }
 
-    private void copyManualAuthUrl(String authUrl) {
-        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-        clipboard.setPrimaryClip(ClipData.newPlainText("maimai DXNET 授权", authUrl));
+    private boolean copyManualAuthUrl(String authUrl) {
+        // A ROM clipboard restriction should still allow the direct OAuth path.
+        return OAuthStartupGuard.run("clipboard_copy", () -> {
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (clipboard == null) throw new IllegalStateException("Clipboard service unavailable");
+            clipboard.setPrimaryClip(ClipData.newPlainText("maimai DXNET 授权", authUrl));
+        }, (stage, error) -> NativeDiagnostics.failure(stage, activeRequestId, error));
     }
 
     private void broadcast(
@@ -278,13 +332,24 @@ public final class ProxyUpdateVpnService extends VpnService {
             String authUrl,
             String manualAuthUrl
     ) {
+        broadcast(requestId, message, terminal, success, error, authUrl, manualAuthUrl, null);
+    }
+
+    private void broadcast(
+            String requestId,
+            String message,
+            boolean terminal,
+            boolean success,
+            String error,
+            String authUrl,
+            String manualAuthUrl,
+            String diagnosticStage
+    ) {
         Log.i(
                 TAG,
                 "oauth requestId=" + requestId + " terminal=" + terminal
-                        + " success=" + success + " message=" + message
+                        + " success=" + success + " message=" + DiagnosticLogStore.sanitize(message)
         );
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        manager.notify(NOTIFICATION_ID, notification(message));
         Intent status = new Intent(ACTION_OAUTH_STATUS)
                 .setPackage(getPackageName())
                 .putExtra(EXTRA_REQUEST_ID, requestId)
@@ -300,7 +365,17 @@ public final class ProxyUpdateVpnService extends VpnService {
         if (manualAuthUrl != null && !manualAuthUrl.isBlank()) {
             status.putExtra(EXTRA_MANUAL_AUTH_URL, manualAuthUrl);
         }
-        sendBroadcast(status, INTERNAL_STATUS_PERMISSION);
+        if (diagnosticStage != null) status.putExtra(EXTRA_DIAGNOSTIC_STAGE, diagnosticStage);
+        // Deliver the terminal result independently of optional notification updates.
+        OAuthStartupGuard.run("status_broadcast",
+                () -> sendBroadcast(status, INTERNAL_STATUS_PERMISSION),
+                (stage, failure) -> NativeDiagnostics.failure(stage, requestId, failure));
+        if (foregroundStarted) {
+            OAuthStartupGuard.run("notification_update", () -> {
+                NotificationManager manager = getSystemService(NotificationManager.class);
+                manager.notify(NOTIFICATION_ID, notification(message));
+            }, (stage, failure) -> NativeDiagnostics.failure(stage, requestId, failure));
+        }
     }
 
     private Notification notification(String message) {
@@ -333,21 +408,25 @@ public final class ProxyUpdateVpnService extends VpnService {
 
     private synchronized void closeVpnTransport() {
         if (proxyServer != null) {
-            proxyServer.close();
+            HttpProxyServer previous = proxyServer;
             proxyServer = null;
+            OAuthStartupGuard.run("proxy_close", previous::close,
+                    (stage, error) -> NativeDiagnostics.failure(stage, activeRequestId, error));
         }
         if (vpnInterface != null) {
-            try {
-                vpnInterface.close();
-            } catch (IOException ignored) {
-                // Best-effort cleanup.
-            }
+            ParcelFileDescriptor previous = vpnInterface;
             vpnInterface = null;
+            try {
+                previous.close();
+            } catch (IOException | RuntimeException error) {
+                NativeDiagnostics.failure("vpn_close", activeRequestId, error);
+            }
         }
     }
 
     @Override
     public void onRevoke() {
+        NativeDiagnostics.event("vpn_revoked", activeRequestId, "stage=" + currentStage);
         broadcast(
                 activeRequestId,
                 "临时 VPN 权限已撤销",
@@ -362,9 +441,12 @@ public final class ProxyUpdateVpnService extends VpnService {
 
     @Override
     public void onDestroy() {
+        NativeDiagnostics.event("service_destroyed", activeRequestId, "stage=" + currentStage);
         closeVpnTransport();
         executor.shutdownNow();
-        RUNNING.set(false);
+        if (ownsRunning.compareAndSet(true, false)) {
+            RUNNING.set(false);
+        }
         super.onDestroy();
     }
 
@@ -377,10 +459,10 @@ public final class ProxyUpdateVpnService extends VpnService {
         return value != null && value.matches("^[A-Za-z0-9-]{8,80}$");
     }
 
-    private static String safeMessage(Exception error) {
+    private static String safeMessage(Throwable error) {
         String message = error.getMessage();
         return message == null || message.isBlank()
                 ? error.getClass().getSimpleName()
-                : message;
+                : DiagnosticLogStore.sanitize(message);
     }
 }

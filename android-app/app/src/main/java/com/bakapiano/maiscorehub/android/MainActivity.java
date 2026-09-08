@@ -2,6 +2,7 @@ package com.bakapiano.maiscorehub.android;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -21,14 +22,19 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebChromeClient;
+import android.widget.Toast;
 
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewFeature;
+import androidx.core.content.ContextCompat;
 
 import com.bakapiano.maiscorehub.android.net.DxnetTransport;
+import com.bakapiano.maiscorehub.android.diagnostics.DiagnosticLogStore;
+import com.bakapiano.maiscorehub.android.diagnostics.NativeDiagnostics;
 import com.bakapiano.maiscorehub.android.update.AppUpdateInstallReceiver;
 import com.bakapiano.maiscorehub.android.update.AppUpdateManager;
 import com.bakapiano.maiscorehub.android.vpn.ProxyUpdateVpnService;
+import com.bakapiano.maiscorehub.android.vpn.OAuthStartupGuard;
 import com.bakapiano.maiscorehub.android.web.InsetWebViewContainer;
 import com.bakapiano.maiscorehub.android.web.WebFileChooser;
 import com.bakapiano.maiscorehub.android.web.WebImageSaver;
@@ -45,6 +51,7 @@ public final class MainActivity extends Activity {
     private static final int NOTIFICATION_PERMISSION_REQUEST = 4102;
     private static final int WECHAT_SHARE_REQUEST = 4103;
     private static final int APP_UPDATE_PERMISSION_REQUEST = 4104;
+    private static final int DIAGNOSTICS_EXPORT_REQUEST = 4110;
     private static final int MAX_REQUEST_JSON_CHARS = 64 * 1024;
     private static final String TAG_WEBVIEW = "MshWebView";
     private static final String WEB_CACHE_PREFERENCES = "web_cache";
@@ -65,6 +72,12 @@ public final class MainActivity extends Activity {
     private boolean receiverRegistered;
     private boolean appUpdateReceiverRegistered;
     private boolean e2eDispatched;
+    private boolean activityResumed;
+    private boolean oauthServiceStartPending;
+    private boolean awaitingOAuthPermission;
+    private String pendingDiagnosticOffer;
+    private String visibleDiagnosticOffer;
+    private AlertDialog diagnosticDialog;
 
     private final BroadcastReceiver oauthReceiver = new BroadcastReceiver() {
         @Override
@@ -90,7 +103,12 @@ public final class MainActivity extends Activity {
             if (isValidRequestId(requestId) && message != null) {
                 emitOAuthStatus(requestId, message, terminal, success, error);
                 if (terminal && success) {
-                    bringWebViewToFront();
+                    OAuthStartupGuard.run("webview_foreground", MainActivity.this::bringWebViewToFront,
+                            (stage, failure) -> NativeDiagnostics.failure(stage, requestId, failure));
+                }
+                if (terminal && !success
+                        && intent.hasExtra(ProxyUpdateVpnService.EXTRA_DIAGNOSTIC_STAGE)) {
+                    showDiagnosticOffer("授权失败，诊断日志已记录。\n请求编号：" + requestId);
                 }
             }
             if (authUrl != null && !authUrl.isBlank()) {
@@ -138,6 +156,10 @@ public final class MainActivity extends Activity {
                 this::emitAppUpdateStatus
         );
         if (savedInstanceState != null) {
+            pendingOAuthRequestId = savedInstanceState.getString("pending_oauth_request_id", "");
+            oauthServiceStartPending = savedInstanceState.getBoolean("oauth_service_start_pending", false);
+            awaitingOAuthPermission = savedInstanceState.getBoolean("awaiting_oauth_permission", false);
+            pendingDiagnosticOffer = savedInstanceState.getString("pending_diagnostic_offer");
             pendingAppUpdateRequestId = savedInstanceState.getString(
                     "pending_app_update_request_id",
                     ""
@@ -158,6 +180,9 @@ public final class MainActivity extends Activity {
         registerOAuthReceiver();
         registerAppUpdateReceiver();
         requestNotificationPermission();
+        NativeDiagnostics.checkPreviousCrash(found -> {
+            if (found) runOnUiThread(() -> showDiagnosticOffer("检测到上次运行的异常退出记录，可导出诊断日志用于排查。"));
+        });
     }
 
     private void bringWebViewToFront() {
@@ -324,30 +349,50 @@ public final class MainActivity extends Activity {
             return;
         }
         pendingOAuthRequestId = requestId;
-        emitOAuthStatus(requestId, "正在申请临时 VPN…", false, false, null);
-        Intent permissionIntent = VpnService.prepare(this);
-        if (permissionIntent != null) {
-            startActivityForResult(permissionIntent, VPN_PERMISSION_REQUEST);
+        if (Build.VERSION.SDK_INT < 29) {
+            emitOAuthStatus(requestId, "微信授权需要 Android 10 或更高版本", true, false,
+                    "微信授权需要 Android 10 或更高版本");
             return;
         }
-        startOAuthService();
+        emitOAuthStatus(requestId, "正在申请临时 VPN…", false, false, null);
+        NativeDiagnostics.event("vpn_permission_prepare", requestId, "resumed=" + activityResumed);
+        OAuthStartupGuard.run("vpn_permission_prepare", () -> {
+            Intent permissionIntent = VpnService.prepare(this);
+            if (permissionIntent != null) {
+                awaitingOAuthPermission = true;
+                NativeDiagnostics.event("vpn_permission_prompt", requestId, "");
+                startActivityForResult(permissionIntent, VPN_PERMISSION_REQUEST);
+            } else {
+                startOAuthService();
+            }
+        }, this::handleOAuthStartupFailure);
     }
 
     private void startOAuthService() {
+        if (!isValidRequestId(pendingOAuthRequestId) || isFinishing() || isDestroyed()) return;
+        oauthServiceStartPending = true;
+        if (!activityResumed) {
+            NativeDiagnostics.event("service_waiting_for_resume", pendingOAuthRequestId, "");
+            return;
+        }
+        oauthServiceStartPending = false;
         Intent service = new Intent(this, ProxyUpdateVpnService.class)
                 .putExtra(ProxyUpdateVpnService.EXTRA_REQUEST_ID, pendingOAuthRequestId);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(service);
-        } else {
-            startService(service);
+        NativeDiagnostics.event("service_start", pendingOAuthRequestId, "resumed=" + activityResumed);
+        if (OAuthStartupGuard.run("service_start", () -> startForegroundService(service),
+                this::handleOAuthStartupFailure)) {
+            emitOAuthStatus(pendingOAuthRequestId, "正在启动微信授权…", false, false, null);
         }
-        emitOAuthStatus(
-                pendingOAuthRequestId,
-                "正在启动微信授权…",
-                false,
-                false,
-                null
-        );
+    }
+
+    private void handleOAuthStartupFailure(String stage, Throwable error) {
+        oauthServiceStartPending = false;
+        awaitingOAuthPermission = false;
+        NativeDiagnostics.failure(stage, pendingOAuthRequestId, error);
+        String message = "系统未能启动微信授权（" + error.getClass().getSimpleName()
+                + "），请返回应用前台后重试。";
+        emitOAuthStatus(pendingOAuthRequestId, message, true, false, message);
+        showDiagnosticOffer("授权启动失败，诊断日志已记录。\n请求编号：" + pendingOAuthRequestId);
     }
 
     private void beginAppUpdate(String requestId, String releaseId) {
@@ -401,6 +446,17 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == DIAGNOSTICS_EXPORT_REQUEST) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                NativeDiagnostics.export(this, data.getData(), success -> runOnUiThread(() -> {
+                    if (!isFinishing() && !isDestroyed()) {
+                        Toast.makeText(this, success ? "诊断日志已导出" : "导出失败，请重试",
+                                Toast.LENGTH_LONG).show();
+                    }
+                }));
+            }
+            return;
+        }
         if (webFileChooser.handleActivityResult(requestCode, resultCode, data)) {
             return;
         }
@@ -433,9 +489,13 @@ public final class MainActivity extends Activity {
         if (requestCode != VPN_PERMISSION_REQUEST) {
             return;
         }
+        awaitingOAuthPermission = false;
+        NativeDiagnostics.event("vpn_permission_result", pendingOAuthRequestId,
+                "granted=" + (resultCode == RESULT_OK) + " resumed=" + activityResumed);
         if (resultCode == RESULT_OK) {
             startOAuthService();
         } else {
+            oauthServiceStartPending = false;
             emitOAuthStatus(
                     pendingOAuthRequestId,
                     "临时 VPN 授权已取消",
@@ -450,6 +510,50 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumePendingAppUpdateIfAuthorized();
+    }
+
+    @Override
+    protected void onPostResume() {
+        super.onPostResume();
+        activityResumed = true;
+        if (oauthServiceStartPending && !awaitingOAuthPermission) startOAuthService();
+        if (pendingDiagnosticOffer != null) showDiagnosticOffer(pendingDiagnosticOffer);
+    }
+
+    @Override
+    protected void onPause() {
+        activityResumed = false;
+        super.onPause();
+    }
+
+    private void showDiagnosticOffer(String message) {
+        if (isFinishing() || isDestroyed()) return;
+        pendingDiagnosticOffer = message;
+        if (!activityResumed || (diagnosticDialog != null && diagnosticDialog.isShowing())) return;
+        pendingDiagnosticOffer = null;
+        visibleDiagnosticOffer = message;
+        OAuthStartupGuard.run("diagnostic_dialog", () -> {
+            diagnosticDialog = new AlertDialog.Builder(this)
+                    .setTitle("授权诊断")
+                    .setMessage(message + "\n日志包含脱敏异常、运行阶段和应用/系统版本。")
+                    .setPositiveButton("导出诊断日志", (dialog, which) -> exportDiagnostics())
+                    .setNegativeButton("关闭", null)
+                    .create();
+            diagnosticDialog.show();
+        }, (stage, error) -> NativeDiagnostics.failure(stage, pendingOAuthRequestId, error));
+    }
+
+    private void exportDiagnostics() {
+        OAuthStartupGuard.run("diagnostic_export_picker", () -> {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                    .addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("text/plain")
+                    .putExtra(Intent.EXTRA_TITLE, "MaiScoreHub-diagnostics-" + System.currentTimeMillis() + ".txt");
+            startActivityForResult(intent, DIAGNOSTICS_EXPORT_REQUEST);
+        }, (stage, error) -> {
+            NativeDiagnostics.failure(stage, pendingOAuthRequestId, error);
+            Toast.makeText(this, "无法打开保存位置，请重试", Toast.LENGTH_LONG).show();
+        });
     }
 
     private void resumePendingAppUpdateIfAuthorized() {
@@ -480,6 +584,7 @@ public final class MainActivity extends Activity {
                 && "manual".equals(getIntent().getStringExtra("e2e_oauth_path"));
         String launchTarget = exerciseManualFallback ? manualAuthUrl : directAuthUrl;
         try {
+            NativeDiagnostics.event("wechat_launch", requestId, "manual=" + exerciseManualFallback);
             startActivity(WechatWebViewLauncher.createIntent(launchTarget));
             emitOAuthStatus(
                     requestId,
@@ -491,6 +596,7 @@ public final class MainActivity extends Activity {
                     null
             );
         } catch (Exception directLaunchError) {
+            NativeDiagnostics.failure("wechat_direct_launch", requestId, directLaunchError);
             if (manualAuthUrl == null || manualAuthUrl.isBlank()) {
                 emitOAuthStatus(
                         requestId,
@@ -508,6 +614,7 @@ public final class MainActivity extends Activity {
             try {
                 startActivityForResult(share, WECHAT_SHARE_REQUEST);
             } catch (Exception error) {
+                NativeDiagnostics.failure("wechat_fallback_launch", requestId, error);
                 emitOAuthStatus(
                         requestId,
                         "微信授权页启动失败",
@@ -615,6 +722,10 @@ public final class MainActivity extends Activity {
             boolean success,
             String error
     ) {
+        if (terminal && pendingOAuthRequestId.equals(requestId)) {
+            oauthServiceStartPending = false;
+            awaitingOAuthPermission = false;
+        }
         try {
             JSONObject detail = new JSONObject()
                     .put("requestId", requestId)
@@ -704,22 +815,8 @@ public final class MainActivity extends Activity {
 
     private void registerOAuthReceiver() {
         IntentFilter filter = new IntentFilter(ProxyUpdateVpnService.ACTION_OAUTH_STATUS);
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(
-                    oauthReceiver,
-                    filter,
-                    ProxyUpdateVpnService.INTERNAL_STATUS_PERMISSION,
-                    null,
-                    Context.RECEIVER_NOT_EXPORTED
-            );
-        } else {
-            registerReceiver(
-                    oauthReceiver,
-                    filter,
-                    ProxyUpdateVpnService.INTERNAL_STATUS_PERMISSION,
-                    null
-            );
-        }
+        ContextCompat.registerReceiver(this, oauthReceiver, filter,
+                ProxyUpdateVpnService.INTERNAL_STATUS_PERMISSION, null, ContextCompat.RECEIVER_NOT_EXPORTED);
         receiverRegistered = true;
     }
 
@@ -727,22 +824,8 @@ public final class MainActivity extends Activity {
         IntentFilter filter = new IntentFilter(
                 AppUpdateInstallReceiver.ACTION_UPDATE_STATUS
         );
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(
-                    appUpdateReceiver,
-                    filter,
-                    AppUpdateInstallReceiver.INTERNAL_STATUS_PERMISSION,
-                    null,
-                    Context.RECEIVER_NOT_EXPORTED
-            );
-        } else {
-            registerReceiver(
-                    appUpdateReceiver,
-                    filter,
-                    AppUpdateInstallReceiver.INTERNAL_STATUS_PERMISSION,
-                    null
-            );
-        }
+        ContextCompat.registerReceiver(this, appUpdateReceiver, filter,
+                AppUpdateInstallReceiver.INTERNAL_STATUS_PERMISSION, null, ContextCompat.RECEIVER_NOT_EXPORTED);
         appUpdateReceiverRegistered = true;
     }
 
@@ -759,6 +842,12 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
+        outState.putString("pending_oauth_request_id", pendingOAuthRequestId);
+        outState.putBoolean("oauth_service_start_pending", oauthServiceStartPending);
+        outState.putBoolean("awaiting_oauth_permission", awaitingOAuthPermission);
+        outState.putString("pending_diagnostic_offer",
+                diagnosticDialog != null && diagnosticDialog.isShowing()
+                        ? visibleDiagnosticOffer : pendingDiagnosticOffer);
         outState.putString(
                 "pending_app_update_request_id",
                 pendingAppUpdateRequestId
@@ -787,6 +876,11 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        activityResumed = false;
+        if (diagnosticDialog != null) {
+            diagnosticDialog.dismiss();
+            diagnosticDialog = null;
+        }
         if (receiverRegistered) {
             unregisterReceiver(oauthReceiver);
             receiverRegistered = false;

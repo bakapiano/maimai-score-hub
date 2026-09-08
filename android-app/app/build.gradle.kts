@@ -27,11 +27,11 @@ val hasProductionSigning = listOf(
 val appVersionCode = providers.gradleProperty("mshVersionCode")
     .orNull
     ?.toIntOrNull()
-    ?: 7
+    ?: 8
 val appVersionName = providers.gradleProperty("mshVersionName")
     .orNull
     ?.takeIf { it.isNotBlank() }
-    ?: "0.3.1"
+    ?: "0.3.2"
 val deviceTestWebUrl = providers.gradleProperty("mshDeviceTestWebUrl")
     .orNull
     ?.takeIf { it.isNotBlank() }
@@ -40,6 +40,7 @@ val deviceTestWebUrl = providers.gradleProperty("mshDeviceTestWebUrl")
 android {
     namespace = "com.bakapiano.maiscorehub.android"
     compileSdk = 35
+    testBuildType = providers.gradleProperty("mshTestBuildType").orNull ?: "debug"
 
     signingConfigs {
         if (hasProductionSigning) {
@@ -69,6 +70,7 @@ android {
         versionCode = appVersionCode
         versionName = appVersionName
         manifestPlaceholders["appLabel"] = "MaiScoreHub"
+        testInstrumentationRunner = "com.bakapiano.maiscorehub.android.tests.NativeSmokeInstrumentation"
     }
 
     buildTypes {
