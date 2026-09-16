@@ -137,8 +137,8 @@ export class ScoreAggregator {
           entry.score = song.score ?? null;
         }
 
-        entry.fs = song.fs ?? null;
-        entry.fc = song.fc ?? null;
+        if (song.fs !== undefined) entry.fs = song.fs;
+        if (song.fc !== undefined) entry.fc = song.fc;
       }
     }
 

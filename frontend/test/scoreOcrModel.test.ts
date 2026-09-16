@@ -97,6 +97,31 @@ test("DX score is checked against the selected chart maximum", () => {
   assert.match(result.errors[0].message, /谱面上限/);
 });
 
+test("blank manual fields stay omitted while an explicit zero is submitted", () => {
+  const drafts = buildScoreOcrDrafts([recognition], musics);
+  Object.assign(drafts[0], { achievement: "", dxScore: 0, fc: null, fs: null });
+  const result = buildManualScoreUpdates(drafts, musics);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.scores, [
+    { musicId: "1001", chartIndex: 3, dxScore: 0 },
+  ]);
+});
+
+test("a badge-only manual edit leaves both numeric scores omitted", () => {
+  const drafts = buildScoreOcrDrafts([recognition], musics);
+  Object.assign(drafts[0], {
+    achievement: "",
+    dxScore: "",
+    fc: "fc",
+    fs: null,
+  });
+  const result = buildManualScoreUpdates(drafts, musics);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.scores, [
+    { musicId: "1001", chartIndex: 3, fc: "fc" },
+  ]);
+});
+
 test("OCR result uses the score detail DX star thresholds", () => {
   assert.equal(getDxStarForScore(2_116, 2_295), 2);
   assert.equal(getDxStarForScore(2_575, 2_775), 2);

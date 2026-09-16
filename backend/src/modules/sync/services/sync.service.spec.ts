@@ -424,7 +424,7 @@ describe('SyncService manual score updates', () => {
     });
   });
 
-  it('keeps the best value for each field across duplicate submitted charts', async () => {
+  it('uses the last provided value for each field across duplicate charts', async () => {
     const harness = createHarness({
       current: {
         scores: [
@@ -474,7 +474,7 @@ describe('SyncService manual score updates', () => {
     });
     expect(harness.current()?.scores[0]).toMatchObject({
       score: '100.5000%',
-      dxScore: '1200',
+      dxScore: '1100',
       fc: 'app',
       fs: 'fdxp',
       rating: getRating(13.5, 100.5),
@@ -510,7 +510,7 @@ describe('SyncService manual score updates', () => {
     expect(harness.syncModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
-  it('returns no_change for a lower repeated submission', async () => {
+  it('accepts lower submitted values and records signed changes', async () => {
     const harness = createHarness({
       current: {
         scores: [
@@ -547,16 +547,28 @@ describe('SyncService manual score updates', () => {
     });
 
     expect(result).toMatchObject({
-      outcome: 'no_change',
-      changedChartCount: 0,
-      scoreVersion: 0,
+      outcome: 'updated',
+      changedChartCount: 1,
+      scoreVersion: 1,
     });
-    expect(harness.current()?.__v).toBe(0);
-    expect(harness.scoreChangeModel.bulkWrite).not.toHaveBeenCalled();
+    expect(harness.current()?.scores[0]).toMatchObject({
+      score: '99.0000%',
+      dxScore: '1000',
+      fc: 'fcp',
+      fs: 'fdx',
+    });
+    expect(
+      scoreChangeCalls(harness)[0][0][0].updateOne.update.$setOnInsert,
+    ).toMatchObject({
+      achievementDelta: -1.5,
+      dxScoreDelta: -200,
+      fcRankDelta: -2,
+      fsRankDelta: -1,
+    });
     expect(harness.users.updateProfileRatingFromScores).toHaveBeenCalledWith({
       friendCode: '634142510810999',
-      rating: getRating(13.5, 100.5),
-      scoreVersion: 0,
+      rating: getRating(13.5, 99),
+      scoreVersion: 1,
     });
   });
 });
@@ -575,7 +587,7 @@ describe('SyncService targeted FC/FS update_score results', () => {
             score: '100.7833%',
             fs: null,
             fc: null,
-            rating: 292,
+            rating: getRating(13.5, 100.7833),
             isNew: false,
           },
         ],
@@ -619,7 +631,7 @@ describe('SyncService targeted FC/FS update_score results', () => {
             score: '100.7833%',
             fs: null,
             fc: null,
-            rating: 292,
+            rating: getRating(13.5, 100.7833),
             isNew: false,
           },
         ],
@@ -642,7 +654,7 @@ describe('SyncService targeted FC/FS update_score results', () => {
     expect(harness.current()?.scores[0]).toMatchObject({
       dxScore: '1019',
       score: '100.7833%',
-      rating: 292,
+      rating: getRating(13.5, 100.7833),
       fc: 'ap',
       fs: 'fdx',
     });
@@ -713,7 +725,7 @@ describe('SyncService CAS conflict handling', () => {
 
 // eslint-disable-next-line max-lines-per-function
 describe('SyncService score change details', () => {
-  it('treats a repeated source delta as a no-op without incrementing __v', async () => {
+  it('refreshes repeated observations with a CAS version and no score diff', async () => {
     const harness = createHarness();
     const payload = {
       friendCode: '634142510810999',
@@ -729,8 +741,10 @@ describe('SyncService score change details', () => {
     const repeated = await harness.service.createFromUserMusic(payload);
 
     expect(repeated?.commitOutcome).toBe('no_change');
-    expect(harness.current()?.__v).toBe(version);
-    expect(harness.current()?.scores[0].observedAt).toEqual(observedAt);
+    expect(harness.current()?.__v).toBe(version! + 1);
+    expect(
+      harness.current()?.scores[0].observedAt!.getTime(),
+    ).toBeGreaterThanOrEqual(observedAt!.getTime());
     expect(harness.scoreChangeModel.bulkWrite).toHaveBeenCalledTimes(
       diffWrites,
     );
@@ -801,7 +815,7 @@ describe('SyncService score change details', () => {
     ]);
   });
 
-  it('preserves observedAt when only the derived rating changes', async () => {
+  it('refreshes observedAt when an observation also corrects derived rating', async () => {
     const observedAt = new Date('2026-07-19T00:00:00.000Z');
     const harness = createHarness({
       current: {
@@ -833,10 +847,12 @@ describe('SyncService score change details', () => {
 
     expect(result?.commitOutcome).toBe('updated');
     expect(harness.current()?.scores[0].rating).not.toBe(-1);
-    expect(harness.current()?.scores[0].observedAt).toEqual(observedAt);
+    expect(harness.current()?.scores[0].observedAt!.getTime()).toBeGreaterThan(
+      observedAt.getTime(),
+    );
   });
 
-  it('backfills a missing observedAt exactly once without a score diff', async () => {
+  it('backfills and refreshes observedAt on every observation without score diffs', async () => {
     jest.useFakeTimers();
     const firstObservation = new Date('2026-07-20T06:00:00.000Z');
     jest.setSystemTime(firstObservation);
@@ -868,8 +884,8 @@ describe('SyncService score change details', () => {
       };
 
       const first = await harness.service.createFromUserMusic(payload);
-      expect(first?.commitOutcome).toBe('updated');
-      expect(first?.changedChartCount).toBe(1);
+      expect(first?.commitOutcome).toBe('no_change');
+      expect(first?.changedChartCount).toBe(0);
       expect(harness.current()?.__v).toBe(1);
       expect(harness.current()?.scores[0].observedAt).toEqual(firstObservation);
       expect(harness.scoreChangeModel.bulkWrite).not.toHaveBeenCalled();
@@ -880,11 +896,230 @@ describe('SyncService score change details', () => {
         sourceId: 'legacy-observation-backfill-repeat',
       });
       expect(repeated?.commitOutcome).toBe('no_change');
-      expect(harness.current()?.__v).toBe(1);
-      expect(harness.current()?.scores[0].observedAt).toEqual(firstObservation);
+      expect(harness.current()?.__v).toBe(2);
+      expect(harness.current()?.scores[0].observedAt).toEqual(
+        new Date('2026-07-20T07:00:00.000Z'),
+      );
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+function storedScore(): SyncScore {
+  return {
+    musicId: '17',
+    cid: '17_3',
+    chartIndex: 3,
+    type: 'standard',
+    score: '100.5000%',
+    dxScore: '1500',
+    fc: 'app',
+    fs: 'fdxp',
+    rating: getRating(13.5, 100.5),
+    isNew: false,
+    observedAt: new Date('2026-09-01T00:00:00Z'),
+  };
+}
+
+// eslint-disable-next-line max-lines-per-function
+describe('SyncService last-submitted partial observations', () => {
+  it('preserves every omitted manual field, including across duplicate rows', async () => {
+    const harness = createHarness({ current: { scores: [storedScore()] } });
+    await harness.service.createFromManualScores({
+      friendCode: '634142510810999',
+      ownerUserId: String(new Types.ObjectId()),
+      scores: [
+        { musicId: '17', chartIndex: 3, achievement: 98 },
+        { musicId: '17', chartIndex: 3, dxScore: 0 },
+      ],
+    });
+    expect(harness.current()?.scores[0]).toMatchObject({
+      score: '98.0000%',
+      dxScore: '0',
+      fc: 'app',
+      fs: 'fdxp',
+      rating: getRating(13.5, 98),
+    });
+    await harness.service.createFromManualScores({
+      friendCode: '634142510810999',
+      ownerUserId: String(new Types.ObjectId()),
+      scores: [{ musicId: '17', chartIndex: 3, fc: 'fc' }],
+    });
+    expect(harness.current()?.scores[0]).toMatchObject({
+      score: '98.0000%',
+      dxScore: '0',
+      fc: 'fc',
+      fs: 'fdxp',
+    });
+  });
+
+  it('replaces lower Rival scores while preserving flags and untouched charts', async () => {
+    const untouched = { ...storedScore(), musicId: '18', cid: '18_3' };
+    const harness = createHarness({
+      current: { scores: [storedScore(), untouched] },
+    });
+    await harness.service.createFromRivalMusic({
+      friendCode: '634142510810999',
+      sourceId: 'lower-rival',
+      music: [
+        {
+          musicId: 17,
+          userRivalMusicDetailList: [
+            {
+              level: 3,
+              achievement: 970000,
+              deluxscoreMax: 100,
+            },
+          ],
+        },
+      ],
+    });
+    expect(harness.current()?.scores[0]).toMatchObject({
+      score: '97.0000%',
+      dxScore: '100',
+      fc: 'app',
+      fs: 'fdxp',
+      rating: getRating(13.5, 97),
+    });
+    expect(harness.current()?.scores[1]).toEqual(untouched);
+  });
+
+  it.each(['targeted', 'full'])(
+    'accepts explicit empty FC/FS from %s sweeps',
+    async (mode) => {
+      const harness = createHarness({ current: { scores: [storedScore()] } });
+      await harness.service.createFromJob({
+        id: `clear-${mode}`,
+        friendCode: '634142510810999',
+        jobType: 'update_score',
+        result:
+          mode === 'targeted'
+            ? { targetedScores: [{ musicId: '17_3', fc: null, fs: null }] }
+            : {
+                舞萌: {
+                  standard: { 'test-17': { 3: { fc: null, fs: null } } },
+                },
+              },
+      });
+      expect(harness.current()?.scores[0]).toMatchObject({
+        score: '100.5000%',
+        dxScore: '1500',
+        fc: null,
+        fs: null,
+        rating: getRating(13.5, 100.5),
+      });
+      expect(
+        scoreChangeCalls(harness)[0][0][0].updateOne.update.$setOnInsert,
+      ).toMatchObject({
+        changedFields: ['fc', 'fs'],
+        fcRankDelta: -4,
+        fsRankDelta: -4,
+      });
+    },
+  );
+
+  it('accepts full DXNet score decreases and preserves missing or unknown flags', async () => {
+    const harness = createHarness({ current: { scores: [storedScore()] } });
+    await harness.service.createFromJob({
+      id: 'dxnet-lower',
+      friendCode: '634142510810999',
+      jobType: 'update_score',
+      result: {
+        舞萌: {
+          standard: {
+            'test-17': {
+              3: { score: '96.0000%', dxScore: '0', fs: 'future-status' },
+            },
+          },
+        },
+      },
+    });
+    expect(harness.current()?.scores[0]).toMatchObject({
+      score: '96.0000%',
+      dxScore: '0',
+      fc: 'app',
+      fs: 'fdxp',
+      rating: getRating(13.5, 96),
+    });
+  });
+
+  it('imports cabinet resets while keeping brand-new unplayed placeholders out', async () => {
+    const harness = createHarness({ current: { scores: [storedScore()] } });
+    await harness.service.createFromUserMusic({
+      friendCode: '634142510810999',
+      sourceId: 'cabinet-reset',
+      musicDetails: [17, 18].map((musicId) => ({
+        ...cabinetDetail({ musicId, achievement: 0, dxScore: 0 }),
+        playCount: 0,
+      })),
+    });
+    expect(harness.current()?.scores).toHaveLength(1);
+    expect(harness.current()?.scores[0]).toMatchObject({
+      score: '0.0000%',
+      dxScore: '0',
+      fc: null,
+      fs: null,
+      rating: 0,
+    });
+  });
+
+  it.each([-1, 6, 12])(
+    'preserves an existing FS for unknown cabinet syncStatus=%i',
+    async (syncStatus) => {
+      const harness = createHarness({ current: { scores: [storedScore()] } });
+      await harness.service.createFromUserMusic({
+        friendCode: '634142510810999',
+        sourceId: `unknown-${syncStatus}`,
+        musicDetails: [
+          cabinetDetail({
+            musicId: 17,
+            achievement: 950000,
+            dxScore: 700,
+            syncStatus,
+          }),
+        ],
+      });
+      expect(harness.current()?.scores[0]).toMatchObject({
+        score: '95.0000%',
+        dxScore: '700',
+        fc: null,
+        fs: 'fdxp',
+      });
+    },
+  );
+
+  it('rebuilds disjoint same-chart observations on CAS conflict', async () => {
+    const harness = createHarness({ current: { scores: [storedScore()] } });
+    harness.armReadBarrier(2);
+    await Promise.all([
+      harness.service.createFromRivalMusic({
+        friendCode: '634142510810999',
+        sourceId: 'concurrent-rival',
+        music: [
+          {
+            musicId: 17,
+            userRivalMusicDetailList: [
+              { level: 3, achievement: 940000, deluxscoreMax: 500 },
+            ],
+          },
+        ],
+      }),
+      harness.service.createFromJob({
+        id: 'concurrent-fcfs',
+        friendCode: '634142510810999',
+        jobType: 'update_score',
+        result: { targetedScores: [{ musicId: '17_3', fc: 'fc', fs: null }] },
+      }),
+    ]);
+    expect(harness.current()?.__v).toBe(2);
+    expect(harness.current()?.scores[0]).toMatchObject({
+      score: '94.0000%',
+      dxScore: '500',
+      fc: 'fc',
+      fs: null,
+      rating: getRating(13.5, 94),
+    });
   });
 });
 

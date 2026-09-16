@@ -70,8 +70,8 @@ export function parseFriendVsSongs(html: string): FriendVsSong[] {
 }
 
 function extractFsFcBadges(content: string): {
-  fs: string | null;
-  fc: string | null;
+  fs: string | null | undefined;
+  fc: string | null | undefined;
 } {
   const tdRegex = /<td class="t_r f_0">([\s\S]*?)<\/td>/gi;
   const iconRegex = /music_icon_([a-z0-9]+)\.png/gi;
@@ -87,7 +87,7 @@ function extractFsFcBadges(content: string): {
   }
 
   if (!rightCellInnerHtml) {
-    return { fs: null, fc: null };
+    return { fs: undefined, fc: undefined };
   }
 
   const iconsInDomOrder: (string | null)[] = [];
@@ -97,9 +97,18 @@ function extractFsFcBadges(content: string): {
     iconsInDomOrder.push(icon === "back" ? null : icon);
   }
 
+  // Pages also carry a third rank badge after the FS and FC slots.
+  if (iconsInDomOrder.length < 2) {
+    return { fs: undefined, fc: undefined };
+  }
+  const [fs, fc] = iconsInDomOrder;
   return {
-    fs: iconsInDomOrder[0] ?? null,
-    fc: iconsInDomOrder[1] ?? null,
+    fs:
+      fs === null || ["fs", "fsp", "fdx", "fdxp"].includes(fs!)
+        ? fs
+        : undefined,
+    fc:
+      fc === null || ["fc", "fcp", "ap", "app"].includes(fc!) ? fc : undefined,
   };
 }
 

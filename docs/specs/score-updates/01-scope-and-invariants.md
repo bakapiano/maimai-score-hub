@@ -59,11 +59,9 @@ S(next) = S(latest) ⊔ Delta(source)
 | `cabinet_qr_update`   | sdgb `get_music_score` finalizer | `SyncService.createFromUserMusic()`    | achievement、DX Score、FC、FS | cleanup 和身份校验成功后才提交      |
 | `manual_score_update` | 登录用户批量 API                 | `SyncService.createFromManualScores()` | achievement、DX Score、FC、FS | JWT 决定用户，整批曲库校验后提交    |
 
-每条 current score 还保存可选的 `observedAt`。所有来源使用 winning CAS attempt
-的当前时间。只有
-achievement、DX Score、FC、FS 的最终最佳值变化才更新，并取 `max(old, incoming)`。
-旧 score 缺少有效 `observedAt` 时是唯一例外：该谱面下一次被任一来源观察到便一次性
-补齐，推进 score version 并唤醒导出；之后的 no-op 不再刷新。
+每条 current score 保存可选的 `observedAt`。所有来源使用 winning CAS attempt
+的当前时间。2026-09-16 起，每次有效观测均刷新该谱面的时间，包括成绩值相同的提交；
+未观测谱面保留原时间。每次提交推进 CAS version，实际值变化才生成成绩历史。
 
 以下不是成绩写入：
 
@@ -73,7 +71,7 @@ achievement、DX Score、FC、FS 的最终最佳值变化才更新，并取 `max
 - 一次性迁移和经审计的管理员修复属于受控例外。
 
 未来新增来源必须登记 `ScoreSourceType`、只生成标准 delta、调用统一提交入口，并添加
-并发、幂等和单调性测试。不得直接注入 model 修改 `scores`。
+并发、字段缺省、重复观测和升降覆盖测试。不得直接注入 model 修改 `scores`。
 
 ## 数据不变量
 
@@ -95,18 +93,17 @@ K(before) ⊆ K(after)
 
 来源缺少某首歌、难度或字段，只表示本次没有观察到，不得解释为删除。
 
-### I3. 成绩字段单调不降
+### I3. 最后提交的明确字段生效
 
 对相同 `(musicId, chartIndex)`：
 
 ```text
-achievement(after) >= achievement(before)
-dxScore(after)     >= dxScore(before)
-fcRank(after)      >= fcRank(before)
-fsRank(after)      >= fsRank(before)
+field(after) = incoming[field]，当该字段被明确提供
+field(after) = field(before)，当该字段被省略
 ```
 
-`null` 表示没有信息，不得清空已有非空字段。
+`undefined` / 字段省略表示本次未观测；显式 `null` 表示已观测的空值。
+Rival 保留旧 FC/FS，FC/FS 专用任务保留旧数值成绩，手动/OCR 空白项保留原值。
 
 ### I4. 冲突必须基于最新状态重算
 
@@ -117,9 +114,9 @@ fsRank(after)      >= fsRank(before)
 
 - 映射后没有有效谱面时不得创建空 sync，也不得清空旧 sync。
 - 首次同步无有效数据时按来源业务规则失败。
-- 已有 sync 且没有提升时可以成功 no-op，但不得改写 `scores` 或增加 score version。
+- 已有 sync 且成绩值相同返回 `no_change`，仍写入谱面观测时间并推进 CAS version。
 
-### I6. 普通入口不得降级修复
+### I6. 真实升降通过统一入口记录
 
-降低、删除或回滚成绩必须使用独立管理员流程，包含授权、原因和审计，不得复用普通
-`commitScoreDelta()`。
+普通观测允许成绩下降、归零和明确的标记清除，统一保存 before/after 和有符号变化量。
+删除整张谱面仍属于独立的管理员或账号删除流程。

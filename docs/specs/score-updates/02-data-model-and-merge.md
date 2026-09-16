@@ -29,7 +29,7 @@ type SyncEntity = {
 };
 
 type SyncScore = {
-  // 真实游玩时间可用时使用真实值，否则为系统观察到该最佳值的时间。
+  // 本谱面最近一次成功提交的观测时间，由后端生成；各成绩字段共用。
   observedAt?: Date | null;
 };
 ```
@@ -51,7 +51,7 @@ type SyncScore = {
 - `scoreUpdatedAt` 只在成绩变化时更新；导出状态独立存放在
   `prober_export_states`。
 - `__v` 只用于成绩 CAS，不进入普通用户 API。
-- 非成绩字段更新不得自行递增 `__v`。
+- 每次成绩观测提交都递增 `__v`，包括仅刷新 `observedAt` 的提交，以保护并发写入。
 
 ## 统一提交接口
 
@@ -105,39 +105,39 @@ scoreKey = musicId + '::' + chartIndex
 
 | 字段 | 规则 |
 | --- | --- |
-| `score` | 解析 achievement 百分比后取数值更大者 |
-| `dxScore` | 解析整数后取数值更大者 |
-| `fc` | `null < fc < fcp < ap < app` |
-| `fs` | `null < fs < fsp < fdx < fdxp` |
+| `score` | 本次明确提供的值覆盖旧值，包含下降、归零 |
+| `dxScore` | 本次明确提供的值覆盖旧值，包含下降、归零 |
+| `fc` | 本次明确提供的已知标记或 `null` 覆盖旧值 |
+| `fs` | 本次明确提供的已知标记或 `null` 覆盖旧值 |
 | `rating` | 使用最终 achievement 和当前 catalog 定数重新计算 |
 | `cid/type/isNew` | 使用当前 catalog 生成或刷新 |
-| `observedAt` | 缺失时在下一次观察中补齐一次；此后仅四个最佳值变化时取 `max(old, incoming)` |
+| `observedAt` | 本次成功合并时的后端时间；数值相同也刷新，未观测谱面保留原时间 |
 
 补充规则：
 
-- 未知状态字符串视为没有可用提升，记录指标但不得覆盖已知状态。
-- cabinet 中 achievement 与 DX Score 同为 0 的占位记录过滤。
-- DXNet 中 achievement 与 DX Score 都缺失的记录过滤。
-- 同一 delta 内重复谱面先使用同一 join 规则归并。
+- `undefined` / 字段省略表示本次未提供，保留旧值；显式 `null` 表示观测到空值。
+- 未知状态或 DXNet 图标结构解析缺失按未观测处理，已知空图标按 `null` 处理。
+- Rival 只提供 achievement / DX Score；FC/FS 专用任务只提供 FC/FS。
+- 手动/OCR 四项均可独立省略；空白输入保持省略，数值 `0` 是有效提交值。
+- cabinet 的游玩次数和四项成绩均为 0 的占位记录，只更新已存在谱面；有游玩次数的归零成绩正常写入。
+- DXNet 全空观测只更新已存在谱面；双空 FC/FS 观测能够清除既有标记。
+- 同一 delta 内重复谱面按输入顺序逐字段覆盖，每条记录保持字段缺省语义直到合并。
 - 未映射 catalog 的记录跳过并计数，不影响 current 中的旧记录。
 - 完整来源列表缺项也不得删除 current 谱面。
-- `observedAt` 一次性补齐需要持久化、递增 `__v` 并唤醒导出，但不创建没有成绩字段
-  变化的 `score_changes` 记录。
+- 仅时间变化返回 `no_change` / `changedChartCount=0`，仍持久化并递增 `__v`。
+  `scoreUpdatedAt` 及 `score_changes` 仅记录成绩值的实际变化；导出版本对账能够发现新版本。
 
 ## Rating 语义
 
 `rating` 是派生字段，不直接从来源取最大值。它必须与最终保留的 achievement 一致。
-catalog 定数修正可能改变 rating，但 underlying achievement 仍必须单调不降。
+catalog 定数修正或 achievement 升降都会重新计算 rating。
 
-## 合并代数
+## 提交顺序与并发
 
-对成绩值字段，merge 必须满足：
+2026-09-16 起采用最后成功提交语义。通过 Mongo `__v` 做 CAS，冲突时重读 current
+并重新合并原始部分 delta。来自不同来源的字段可独立更新，未提供的字段始终取重读后的值。
 
-```text
-幂等：merge(merge(S, A), A) = merge(S, A)
-交换：merge(merge(S, A), B) = merge(merge(S, B), A)
-结合：merge(merge(S, A), B) = merge(S, merge(A, B))
-单调：S <= merge(S, A)
-```
+这是提交顺序语义，接受较早抓取、较晚返回的结果成为当前值。
+任务缓存继续保留未观测字段的省略状态。历史记录保留下降和标记清除的 before/after 及有符号变化量。
 
-元数据不参与交换性比较；它由同一 catalog 确定性生成。
+每谱面一个 `observedAt` 表示该谱面最近收到的部分或完整观测；字段级采集时间属于后续独立扩展。

@@ -21,10 +21,7 @@ import {
 } from "../../components/MusicScoreCard";
 import { ScoreSummary } from "../../components/ScoreDetailSummary";
 import { getMaxDxScoreFromNotes } from "../../utils/dxScore";
-import {
-  getOcrCandidateMusics,
-  type ScoreOcrDraft,
-} from "./scoreOcrModel";
+import { getOcrCandidateMusics, type ScoreOcrDraft } from "./scoreOcrModel";
 import classes from "./ScoreOcrResultEditor.module.css";
 
 type Option = { value: string; label: string };
@@ -175,7 +172,7 @@ function StatusIconSelector<T extends string>({
   onChange: (value: T | null) => void;
 }) {
   const choices: ReadonlyArray<{ value: T | null; label: string }> = [
-    { value: null, label: "无" },
+    { value: null, label: "未填写，保留原值" },
     ...options,
   ];
 
@@ -201,7 +198,7 @@ function StatusIconSelector<T extends string>({
                 onChange={() => onChange(option.value)}
               />
               {option.value === null ? (
-                <Text className={classes.statusNone}>无</Text>
+                <Text className={classes.statusNone}>留空</Text>
               ) : (
                 <Image
                   src={getIconUrl(option.value)}
@@ -234,6 +231,9 @@ function ResultFields({
     <Box className={classes.editSection}>
       <Text fw={700} mb="sm">
         确认识别结果
+      </Text>
+      <Text size="sm" c="dimmed" mb="sm">
+        已填写的项目将覆盖现有成绩，留空项目保留原值。
       </Text>
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         <Select

@@ -14,8 +14,9 @@ export const FriendVsSongSchema = z.object({
   score: z.string().nullable(),
   category: z.string().nullable(),
   type: ChartTypeSchema,
-  fs: z.string().nullable(),
-  fc: z.string().nullable(),
+  // Missing markup stays omitted across cache storage and recovery.
+  fs: z.string().nullable().optional(),
+  fc: z.string().nullable().optional(),
   diff: z.number().int().min(0).max(10).optional(),
 });
 

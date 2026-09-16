@@ -14,7 +14,7 @@ export type SyncScore = {
   fc: string | null;
   rating: number | null;
   isNew: boolean | null;
-  /** Real play time when available; otherwise when this best was observed. */
+  /** Backend time of the latest accepted observation of this chart. */
   observedAt?: Date | null;
 };
 

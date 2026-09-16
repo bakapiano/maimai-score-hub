@@ -23,9 +23,6 @@ type PageResult = {
   songs: FriendVsSong[];
 };
 
-const FC_RANK = ["fc", "fcp", "ap", "app"];
-const FS_RANK = ["fs", "fsp", "fdx", "fdxp"];
-
 export class TargetedScoreFetcher {
   private readonly client: MaimaiClient;
 
@@ -125,8 +122,8 @@ class TargetResultState {
       for (const target of matches) {
         if (song.category && song.category !== target.category) continue;
         const entry = this.result.get(target.musicId)!;
-        entry.fc = higherRank(FC_RANK, entry.fc, song.fc);
-        entry.fs = higherRank(FS_RANK, entry.fs, song.fs);
+        if (song.fc !== undefined) entry.fc = song.fc;
+        if (song.fs !== undefined) entry.fs = song.fs;
         if (!this.fcfsOnly && input.scoreType === 1) entry.dxScore = song.score;
         if (!this.fcfsOnly && input.scoreType === 2) entry.score = song.score;
         this.seen.get(input.scoreType)?.add(target.musicId);
@@ -154,16 +151,6 @@ class TargetResultState {
 
 function targetKey(title: string, type: string, diff: number): string {
   return `${title}\u0000${type}\u0000${diff}`;
-}
-
-function higherRank(
-  ranks: readonly string[],
-  left: string | null | undefined,
-  right: string | null | undefined,
-): string | null {
-  const leftRank = left ? ranks.indexOf(left) : -1;
-  const rightRank = right ? ranks.indexOf(right) : -1;
-  return rightRank > leftRank ? (right ?? null) : (left ?? null);
 }
 
 async function runWithConcurrency<T>(

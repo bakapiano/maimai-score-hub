@@ -250,7 +250,8 @@ describe('score update concurrency and export ownership (local e2e)', () => {
     expect(changes[0]?.changedFields).toContain('dxScore');
   });
 
-  it('accepts an authenticated batch score update and keeps repeated lower values settled', async () => {
+  // eslint-disable-next-line max-lines-per-function
+  it('accepts authenticated lower values and preserves every unfilled manual field', async () => {
     const owner = await userModel.create({ friendCode });
     const { token } = await moduleA
       .get(AuthService)
@@ -330,10 +331,42 @@ describe('score update concurrency and export ownership (local e2e)', () => {
       })
       .expect(200);
     expect(repeatedResponse.body).toMatchObject({
-      outcome: 'no_change',
-      changedChartCount: 0,
-      scoreVersion: 0,
+      outcome: 'updated',
+      changedChartCount: 1,
+      scoreVersion: 1,
     });
+    const lowered = await syncModel.findOne({ friendCode }).lean();
+    expect(lowered?.scores[0]).toMatchObject({
+      score: '99.0000%',
+      dxScore: '1000',
+      fc: 'fcp',
+    });
+    expect(lowered?.scores[1]).toEqual(current?.scores[1]);
+
+    await request(appA.getHttpServer())
+      .post('/me/sync/scores')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ scores: [{ musicId: '17', chartIndex: 3, fs: 'fdxp' }] })
+      .expect(200);
+    await request(appA.getHttpServer())
+      .post('/me/sync/scores')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ scores: [{ musicId: '17', chartIndex: 3, achievement: 98 }] })
+      .expect(200);
+    expect(
+      (await syncModel.findOne({ friendCode }).lean())?.scores[0],
+    ).toMatchObject({
+      score: '98.0000%',
+      dxScore: '1000',
+      fc: 'fcp',
+      fs: 'fdxp',
+      rating: getRating(13.5, 98),
+    });
+    await request(appA.getHttpServer())
+      .post('/me/sync/scores')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ scores: [{ musicId: '17', chartIndex: 3, fc: null }] })
+      .expect(400);
 
     await request(appA.getHttpServer())
       .post('/me/sync/scores')
@@ -348,12 +381,175 @@ describe('score update concurrency and export ownership (local e2e)', () => {
       .expect(({ body }) => {
         expect(body).toMatchObject({ code: 'INVALID_SCORE_TARGETS' });
       });
-    expect((await syncModel.findOne({ friendCode }).lean())?.__v).toBe(0);
+    expect((await syncModel.findOne({ friendCode }).lean())?.__v).toBe(3);
 
     await request(appA.getHttpServer())
       .post('/me/sync/scores')
       .send(payload)
       .expect(401);
+  });
+
+  // eslint-disable-next-line max-lines-per-function
+  it('commits every score source through real Mongo CAS and exposes decreases in HTTP history', async () => {
+    const owner = await userModel.create({ friendCode });
+    const { token } = await moduleA
+      .get(AuthService)
+      .issueTokenForUser({ _id: owner._id, friendCode });
+    const auth = `Bearer ${token}`;
+    await request(appA.getHttpServer())
+      .post('/me/sync/scores')
+      .set('Authorization', auth)
+      .send({
+        scores: [
+          {
+            musicId: '17',
+            chartIndex: 3,
+            achievement: 100.5,
+            dxScore: 1500,
+            fc: 'app',
+            fs: 'fdxp',
+          },
+        ],
+      })
+      .expect(200);
+    await Promise.all([
+      syncA.createFromRivalMusic({
+        friendCode,
+        sourceId: 'e2e-lower-rival',
+        music: [
+          {
+            musicId: 17,
+            userRivalMusicDetailList: [
+              { level: 3, achievement: 970000, deluxscoreMax: 600 },
+            ],
+          },
+        ],
+      }),
+      syncB.createFromJob({
+        id: 'e2e-targeted-fcfs',
+        friendCode,
+        jobType: 'update_score',
+        context: { autoUpdateFcfs: true },
+        result: { targetedScores: [{ musicId: '17_3', fc: 'fc', fs: null }] },
+      }),
+    ]);
+    const readScore = async () =>
+      (await syncModel.findOne({ friendCode }).lean())!.scores[0];
+    expect(await readScore()).toMatchObject({
+      score: '97.0000%',
+      dxScore: '600',
+      fc: 'fc',
+      fs: null,
+      rating: getRating(13.5, 97),
+    });
+
+    await syncA.createFromJob({
+      id: 'e2e-dxnet-full',
+      friendCode,
+      jobType: 'update_score',
+      result: {
+        舞萌: {
+          standard: {
+            'e2e-17': {
+              3: { score: '96.0000%', dxScore: '500', fc: 'ap', fs: 'fs' },
+            },
+          },
+        },
+      },
+    });
+    expect(await readScore()).toMatchObject({
+      score: '96.0000%',
+      dxScore: '500',
+      fc: 'ap',
+      fs: 'fs',
+    });
+    await syncB.createFromJob({
+      id: 'e2e-full-fcfs',
+      friendCode,
+      jobType: 'update_score',
+      result: {
+        舞萌: { standard: { 'e2e-17': { 3: { fc: null, fs: null } } } },
+      },
+    });
+    expect(await readScore()).toMatchObject({
+      score: '96.0000%',
+      dxScore: '500',
+      fc: null,
+      fs: null,
+    });
+
+    await syncA.createFromUserMusic({
+      friendCode,
+      sourceId: 'e2e-cabinet-reset',
+      musicDetails: [17, 18].map((musicId) => ({
+        ...cabinetDetail(musicId),
+        achievement: 0,
+        deluxscoreMax: 0,
+        playCount: 0,
+        comboStatus: 0,
+        syncStatus: 0,
+      })),
+    });
+    expect(
+      (await syncModel.findOne({ friendCode }).lean())?.scores,
+    ).toHaveLength(1);
+    expect(await readScore()).toMatchObject({
+      score: '0.0000%',
+      dxScore: '0',
+      fc: null,
+      fs: null,
+      rating: 0,
+    });
+
+    const history = await request(appA.getHttpServer())
+      .get('/me/score-changes')
+      .set('Authorization', auth)
+      .query({ musicId: '17', chartIndex: '3', type: 'standard', limit: '20' })
+      .expect(200);
+    const changes = ScoreChangeHistoryResponseSchema.parse(
+      history.body as unknown,
+    ).items;
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceType: 'auto_update_rival',
+          achievementDelta: -3.5,
+          dxScoreDelta: -900,
+        }),
+        expect.objectContaining({
+          sourceType: 'auto_update_fcfs',
+          fsRankDelta: -4,
+        }),
+        expect.objectContaining({
+          sourceType: 'cabinet_qr_update',
+          achievementDelta: -96,
+          dxScoreDelta: -500,
+        }),
+      ]),
+    );
+    expect(
+      changes.every((change) => Number.isFinite(Date.parse(change.observedAt))),
+    ).toBe(true);
+
+    const before = (await syncModel.findOne({ friendCode }).lean())!;
+    const diffCount = await scoreChangeModel.countDocuments({ friendCode });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const repeated = await request(appB.getHttpServer())
+      .post('/me/sync/scores')
+      .set('Authorization', auth)
+      .send({ scores: [{ musicId: '17', chartIndex: 3, dxScore: 0 }] })
+      .expect(200);
+    expect(repeated.body).toMatchObject({
+      outcome: 'no_change',
+      changedChartCount: 0,
+      scoreVersion: before.__v + 1,
+    });
+    expect((await readScore()).observedAt!.getTime()).toBeGreaterThan(
+      before.scores[0].observedAt!.getTime(),
+    );
+    expect(await scoreChangeModel.countDocuments({ friendCode })).toBe(
+      diffCount,
+    );
   });
 
   it('returns only the authenticated user exact-chart score history with cursor pagination', async () => {
@@ -969,7 +1165,7 @@ describe('score update concurrency and export ownership (local e2e)', () => {
     const backfilledAt = backfilled?.scores.find(
       (score) => score.musicId === '18',
     )?.observedAt;
-    expect(backfilled?.changedChartCount).toBe(1);
+    expect(backfilled?.changedChartCount).toBe(0);
     expect(backfilledAt).toBeInstanceOf(Date);
     await exportStateModel.create({
       friendCode: lxnsExportFriendCode,

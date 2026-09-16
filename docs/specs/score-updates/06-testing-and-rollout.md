@@ -5,18 +5,18 @@
 必须覆盖：
 
 - delta 缺少谱面时旧谱面保留；
-- delta 字段为 null 时旧字段保留；
-- 较低 achievement/DX/FC/FS 不覆盖较高值；
-- 较高字段分别独立提升；
-- 同一 delta 重放为 no-op；
-- A/B delta 不同顺序得到相同成绩值；
+- delta 省略字段时旧字段保留，明确空标记能够清除旧值；
+- 较低 achievement/DX/FC/FS 按新观测覆盖旧值；
+- 各字段分别独立更新，手动/OCR 留空保持省略；
+- 同一 delta 重放为成绩值 no-op，观测时间和 CAS version 更新；
+- A/B delta 按提交顺序合并，未提供字段始终保留；
 - 同一 delta 内重复谱面正确归并；
 - rating 与最终 achievement 一致；
 - unknown catalog/invalid row 不清除已有成绩；
 - 空首次结果不创建 sync；
 - 普通 commit 后 score key 集合只增不减。
 
-应使用 property-based tests 验证幂等、交换、结合和单调性质。
+验证部分 delta 的覆盖、缺省保留、归零及未观测谱面保留性质。
 
 ## CAS 并发测试
 
@@ -31,7 +31,7 @@
 7. 连续多次冲突后仍基于最新状态 merge。
 8. 达到重试上限时无 stale write、来源不 completed。
 
-每种完成顺序都必须断言最终 current sync 等于所有 delta 的 monotonic union。
+每种完成顺序都必须断言最终 current sync 等于按成功提交顺序逐字段覆盖的结果。
 
 ## Finalizer 测试
 
@@ -117,10 +117,10 @@ standalone sdgb-worker。
 - 四条成绩写入路径全部经过统一增量提交入口。
 - `syncs.friendCode` 唯一且不再 delete/create。
 - 任意 CAS 冲突都会读取最新 current 后重新 merge。
-- 任意完成顺序下，最终成绩包含所有来源观察到的最佳字段。
-- 普通同步不能删除谱面或降低成绩。
+- 任意完成顺序下，最终成绩包含最后成功提交的各项明确字段。
+- 普通同步保留谱面集合，允许观测值下降和清除标记。
 - 来源完成态不会早于 sync commit。
-- 重复来源请求幂等。
+- 相同值重复提交仅刷新观测时间和 CAS version，成绩历史保持原有条数。
 - 自动导出不会以旧 current 覆盖新 current。
 - 前端可以同时追踪 DXNet 与二维码任务。
 - `/me/score-changes` 只返回 JWT 用户、指定 `musicId + chartIndex + type` 的记录，游标
@@ -134,4 +134,4 @@ standalone sdgb-worker。
   失败重试、加载更多和离线提示；桌面与 390px 移动端无横向溢出。
 - 指定业务日的成绩历史导出会合并同谱面 diff，返回有效 PNG，并按每行四张卡片计算画布
   高度；E2E 必须读取 PNG 头与 IHDR 尺寸验证真实渲染结果。
-- 生产指标能够发现冲突耗尽、单调性违反和异常 score count 下降。
+- 生产指标能够发现冲突耗尽和异常 score count 下降；成绩升降可以在历史中追溯。

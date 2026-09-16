@@ -55,6 +55,15 @@ type MusicRow = MusicEntity & {
 };
 
 type ScoreSnapshot = SyncScore;
+type ObservedScoreField = 'score' | 'dxScore' | 'fc' | 'fs';
+// undefined means this source did not observe the field; null is an observed
+// empty value. Keep partial observations partial until the CAS merge.
+type ScoreObservation = Omit<SyncScore, ObservedScoreField | 'rating'> &
+  Partial<Pick<SyncScore, ObservedScoreField>> & {
+    detailLevel: number | null;
+    /** An unplayed/empty row can reset an existing chart without seeding one. */
+    onlyIfExisting?: boolean;
+  };
 type CurrentSync = SyncEntity & { _id: Types.ObjectId; __v: number };
 type ScoreCommitOutcome = 'created' | 'updated' | 'no_change';
 type ScoreChangeDraft = {
@@ -70,7 +79,7 @@ type ScoreChangeDraft = {
   fcRankDelta: number | null;
   fsRankDelta: number | null;
 };
-type ScoreCommitBuild<T> = { delta: ScoreSnapshot[]; meta: T };
+type ScoreCommitBuild<T> = { delta: ScoreObservation[]; meta: T };
 type ScoreCommitResult<T> = {
   sync: CurrentSync | null;
   outcome: ScoreCommitOutcome;
@@ -121,9 +130,7 @@ type TargetedVsScore = {
   fc?: unknown;
 };
 
-// Rank tables for FC / FS — higher index = better. null is below
-// everything. Used by mergeScoreKeepBest so re-attempts that didn't
-// improve a clear flag don't downgrade the user's PB.
+// Rank tables are used to validate observed flags and report signed changes.
 const FC_RANK = ['fc', 'fcp', 'ap', 'app'] as const;
 const FS_RANK = ['fs', 'fsp', 'fdx', 'fdxp'] as const;
 
@@ -134,12 +141,14 @@ function rankIdx(table: readonly string[], v: string | null): number {
   const i = table.indexOf(v);
   return i < 0 ? -1 : i;
 }
-function pickHigher(
+function observedFlag(
   table: readonly string[],
-  a: string | null,
-  b: string | null,
-): string | null {
-  return rankIdx(table, b) > rankIdx(table, a) ? b : a;
+  value: unknown,
+): string | null | undefined {
+  if (value === null) {
+    return null;
+  }
+  return typeof value === 'string' && table.includes(value) ? value : undefined;
 }
 /** Parse a numeric score string. dxScore is plain int, score is "100.3107%". */
 function numScore(v: string | null): number {
@@ -149,8 +158,11 @@ function numScore(v: string | null): number {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : -Infinity;
 }
-function pickHigherNumeric(a: string | null, b: string | null): string | null {
-  return numScore(b) > numScore(a) ? b : a;
+function observedNumeric(value: unknown): string | null | undefined {
+  if (value === null) {
+    return null;
+  }
+  return typeof value === 'string' && numScore(value) >= 0 ? value : undefined;
 }
 
 function validObservation(value: unknown): Date | null {
@@ -163,64 +175,43 @@ function validObservation(value: unknown): Date | null {
   return parsed && Number.isFinite(parsed.getTime()) ? parsed : null;
 }
 
-function latestObservation(
-  previous: Date | null,
-  incoming: Date | null,
-): Date | null {
-  if (!previous) {
-    return incoming;
-  }
-  if (!incoming) {
-    return previous;
-  }
-  return previous.getTime() >= incoming.getTime() ? previous : incoming;
-}
-
-function hasBestValueChange(
-  previous: ScoreSnapshot,
-  next: ScoreSnapshot,
-): boolean {
-  return (
-    previous.score !== next.score ||
-    previous.dxScore !== next.dxScore ||
-    previous.fc !== next.fc ||
-    previous.fs !== next.fs
-  );
+function observedVsFields(input: TargetedVsScore) {
+  return {
+    score: observedNumeric(input.score),
+    dxScore: observedNumeric(input.dxScore),
+    fc: observedFlag(FC_RANK, input.fc),
+    fs: observedFlag(FS_RANK, input.fs),
+  };
 }
 
 /**
- * Merge two score snapshots for the same (musicId, chartIndex), keeping
- * the better of each per-attempt field. Identity fields (musicId, cid,
- * chartIndex, type, rating, isNew) come from the newer snapshot since
- * those reflect the latest chart metadata.
+ * Last successful submission wins for each explicitly observed field.
+ * Partial sources preserve omitted fields, including during CAS retries.
+ * A chart timestamp represents the latest accepted observation of that chart.
  */
-function mergeScoreKeepBest(
-  old: ScoreSnapshot,
-  fresh: ScoreSnapshot,
+function mergeScoreObservation(
+  old: ScoreSnapshot | undefined,
+  fresh: ScoreObservation,
 ): ScoreSnapshot {
-  const score = pickHigherNumeric(old.score, fresh.score);
-  const merged: ScoreSnapshot = {
-    ...fresh,
-    dxScore: pickHigherNumeric(old.dxScore, fresh.dxScore),
+  const score = fresh.score === undefined ? (old?.score ?? null) : fresh.score;
+  const achievement = normalizeAchievement(score);
+  return {
+    musicId: fresh.musicId,
+    cid: fresh.cid,
+    chartIndex: fresh.chartIndex,
+    type: fresh.type,
+    isNew: fresh.isNew,
+    dxScore:
+      fresh.dxScore === undefined ? (old?.dxScore ?? null) : fresh.dxScore,
     score,
-    fc: pickHigher(FC_RANK, old.fc, fresh.fc),
-    fs: pickHigher(FS_RANK, old.fs, fresh.fs),
-    rating: score === fresh.score ? fresh.rating : old.rating,
+    fc: fresh.fc === undefined ? (old?.fc ?? null) : fresh.fc,
+    fs: fresh.fs === undefined ? (old?.fs ?? null) : fresh.fs,
+    rating:
+      fresh.detailLevel !== null && achievement !== null
+        ? getRating(fresh.detailLevel, achievement)
+        : null,
+    observedAt: fresh.observedAt,
   };
-  const previousObservedAt = validObservation(old.observedAt);
-  const freshObservedAt = validObservation(fresh.observedAt);
-  let observedAt = previousObservedAt;
-  if (!observedAt) {
-    observedAt = freshObservedAt;
-  } else if (hasBestValueChange(old, merged)) {
-    observedAt = latestObservation(previousObservedAt, freshObservedAt);
-  }
-  if (observedAt) {
-    merged.observedAt = observedAt;
-  } else {
-    delete merged.observedAt;
-  }
-  return merged;
 }
 
 @Injectable()
@@ -445,15 +436,8 @@ export class SyncService {
       }
 
       const previousScores = current.scores ?? [];
-      this.assertMonotonic(previousScores, merged);
       const changes = this.diffScores(previousScores, merged);
-      const changedChartKeys = new Set(
-        changes.map((change) => this.scoreKey(change)),
-      );
-      for (const key of this.observationBackfillKeys(previousScores, merged)) {
-        changedChartKeys.add(key);
-      }
-      const changedChartCount = changedChartKeys.size;
+      const changedChartCount = changes.length;
       const commonSet: Record<string, unknown> = {
         jobId: input.sourceId,
         lastSourceType: input.sourceType,
@@ -468,7 +452,9 @@ export class SyncService {
         const touched = await this.syncModel
           .findOneAndUpdate(
             { _id: current._id, __v: current.__v },
-            { $set: commonSet },
+            // Observation-only writes also advance the CAS version so a
+            // concurrent stale writer cannot roll back chart timestamps.
+            { $set: { ...commonSet, scores: merged }, $inc: { __v: 1 } },
             { new: true, runValidators: true },
           )
           .lean<CurrentSync | null>();
@@ -598,7 +584,7 @@ export class SyncService {
 
   private mergeWithPrevious(
     previousScores: SyncScore[] | undefined,
-    newScores: ScoreSnapshot[],
+    newScores: ScoreObservation[],
   ): ScoreSnapshot[] {
     const merged = new Map<string, ScoreSnapshot>();
     if (Array.isArray(previousScores)) {
@@ -609,7 +595,10 @@ export class SyncService {
     for (const s of newScores) {
       const key = `${s.musicId}::${s.chartIndex}`;
       const old = merged.get(key);
-      merged.set(key, old ? mergeScoreKeepBest(old, s) : s);
+      if (s.onlyIfExisting && !old) {
+        continue;
+      }
+      merged.set(key, mergeScoreObservation(old, s));
     }
     return [...merged.values()];
   }
@@ -679,53 +668,6 @@ export class SyncService {
       });
     }
     return changes;
-  }
-
-  private observationBackfillKeys(
-    beforeScores: readonly SyncScore[],
-    afterScores: readonly SyncScore[],
-  ): Set<string> {
-    const before = new Map(
-      beforeScores.map((score) => [this.scoreKey(score), score] as const),
-    );
-    const backfilled = new Set<string>();
-    for (const after of afterScores) {
-      const key = this.scoreKey(after);
-      const previous = before.get(key);
-      if (
-        previous &&
-        !validObservation(previous.observedAt) &&
-        validObservation(after.observedAt)
-      ) {
-        backfilled.add(key);
-      }
-    }
-    return backfilled;
-  }
-
-  private assertMonotonic(
-    beforeScores: readonly SyncScore[],
-    afterScores: readonly SyncScore[],
-  ): void {
-    const after = new Map(
-      afterScores.map((score) => [this.scoreKey(score), score] as const),
-    );
-    for (const previous of beforeScores) {
-      const next = after.get(this.scoreKey(previous));
-      if (!next) {
-        throw new Error(`score merge removed chart ${this.scoreKey(previous)}`);
-      }
-      if (
-        numScore(next.score) < numScore(previous.score) ||
-        numScore(next.dxScore) < numScore(previous.dxScore) ||
-        rankIdx(FC_RANK, next.fc) < rankIdx(FC_RANK, previous.fc) ||
-        rankIdx(FS_RANK, next.fs) < rankIdx(FS_RANK, previous.fs)
-      ) {
-        throw new Error(
-          `score merge regressed chart ${this.scoreKey(previous)}`,
-        );
-      }
-    }
   }
 
   private async recordScoreChangesBestEffort(input: {
@@ -834,7 +776,10 @@ export class SyncService {
     before: string | null | undefined,
     after: string | null | undefined,
   ): number | null {
-    if (after === null || after === undefined) {
+    if (
+      after === undefined ||
+      (after === null && (before === null || before === undefined))
+    ) {
       return null;
     }
     return rankIdx(table, after) - rankIdx(table, before ?? null);
@@ -901,7 +846,9 @@ export class SyncService {
     return this.musicCache;
   }
 
-  private async mapResultToScores(result: unknown): Promise<ScoreSnapshot[]> {
+  private async mapResultToScores(
+    result: unknown,
+  ): Promise<ScoreObservation[]> {
     if (!result || typeof result !== 'object') {
       return [];
     }
@@ -915,7 +862,7 @@ export class SyncService {
       });
     }
     const { byTitleKey: musicMap } = cache;
-    const scores: ScoreSnapshot[] = [];
+    const scores: ScoreObservation[] = [];
     for (const row of this.iterVsScoreRows(result)) {
       const score = this.mapVsScoreRow(row, musicMap);
       if (score) {
@@ -972,15 +919,9 @@ export class SyncService {
   private mapVsScoreRow(
     row: VsScoreRow,
     musicMap: Map<string, MusicRow>,
-  ): ScoreSnapshot | null {
-    const dxScoreFromVS = row.payload.dxScore ?? null;
-    const scoreFromVS = row.payload.score ?? null;
-    if (
-      dxScoreFromVS === null &&
-      scoreFromVS === null &&
-      (row.payload.fc === null || row.payload.fc === undefined) &&
-      (row.payload.fs === null || row.payload.fs === undefined)
-    ) {
+  ): ScoreObservation | null {
+    const fields = observedVsFields(row.payload);
+    if (Object.values(fields).every((value) => value === undefined)) {
       return null;
     }
     const resolvedTitle = row.title.length === 0 ? '\u3000' : row.title;
@@ -1000,13 +941,7 @@ export class SyncService {
       );
       return null;
     }
-    return this.buildScoreSnapshot(
-      row,
-      music,
-      chart,
-      dxScoreFromVS,
-      scoreFromVS,
-    );
+    return this.buildScoreObservation(row, music, chart, fields);
   }
 
   private mapTargetedVsScore(
@@ -1015,7 +950,7 @@ export class SyncService {
       string,
       { music: MusicRow; chart: ChartPayload; chartIndex: number }
     >,
-  ): ScoreSnapshot | null {
+  ): ScoreObservation | null {
     if (!input || typeof input !== 'object') {
       return null;
     }
@@ -1028,28 +963,20 @@ export class SyncService {
       this.logger.warn(`No chart found for targeted score: ${row.musicId}`);
       return null;
     }
-    const dxScore = typeof row.dxScore === 'string' ? row.dxScore : null;
-    const score = typeof row.score === 'string' ? row.score : null;
-    const fc = typeof row.fc === 'string' ? row.fc : null;
-    const fs = typeof row.fs === 'string' ? row.fs : null;
-    if (dxScore === null && score === null && fc === null && fs === null) {
+    const fields = observedVsFields(row);
+    if (Object.values(fields).every((value) => value === undefined)) {
       return null;
     }
-    const achievement = normalizeAchievement(score);
-    const detailLevel = reference.chart.detailLevel ?? null;
     return {
       musicId: reference.music.id,
       cid: row.musicId,
       chartIndex: reference.chartIndex,
       type: reference.music.type,
-      dxScore,
-      score,
-      fc,
-      fs,
-      rating:
-        detailLevel !== null && achievement !== null
-          ? getRating(detailLevel, achievement)
-          : null,
+      ...fields,
+      onlyIfExisting: Object.values(fields).every(
+        (value) => value === null || value === undefined,
+      ),
+      detailLevel: reference.chart.detailLevel ?? null,
       isNew: reference.music.isNew ?? null,
     };
   }
@@ -1065,42 +992,35 @@ export class SyncService {
       : undefined;
   }
 
-  private buildScoreSnapshot(
+  private buildScoreObservation(
     row: VsScoreRow,
     music: MusicRow,
     chart: ChartPayload,
-    dxScoreFromVS: string | null,
-    scoreFromVS: string | null,
-  ): ScoreSnapshot {
-    const achievement = normalizeAchievement(scoreFromVS);
-    const musicDetailLevel = chart.detailLevel ?? null;
-    const rating =
-      musicDetailLevel !== null && achievement !== null
-        ? getRating(musicDetailLevel, achievement)
-        : null;
+    fields: Partial<Pick<SyncScore, ObservedScoreField>>,
+  ): ScoreObservation {
     return {
       musicId: music.id,
       cid: music.id + '_' + (row.chartIndex === 10 ? 0 : row.chartIndex),
       chartIndex: row.chartIndex,
       type: row.type,
-      dxScore: dxScoreFromVS,
-      score: scoreFromVS,
-      fs: row.payload.fs ?? null,
-      fc: row.payload.fc ?? null,
-      rating,
+      ...fields,
+      onlyIfExisting: Object.values(fields).every(
+        (value) => value === null || value === undefined,
+      ),
+      detailLevel: chart.detailLevel ?? null,
       isNew: music.isNew ?? null,
     };
   }
 
   private async mapRivalMusicToScores(
     rivalMusic: SdgbWorkerMusicEntry[],
-  ): Promise<ScoreSnapshot[]> {
+  ): Promise<ScoreObservation[]> {
     if (!Array.isArray(rivalMusic) || !rivalMusic.length) {
       return [];
     }
 
     const { byId: musicMap } = await this.getMusicCache();
-    const scores: ScoreSnapshot[] = [];
+    const scores: ScoreObservation[] = [];
 
     for (const entry of rivalMusic) {
       const music = musicMap.get(String(entry.musicId));
@@ -1120,12 +1040,6 @@ export class SyncService {
         }
 
         const score = (detail.achievement / 10000).toFixed(4) + '%';
-        const achievement = normalizeAchievement(score);
-        const musicDetailLevel = chart.detailLevel ?? null;
-        const rating =
-          musicDetailLevel !== null && achievement !== null
-            ? getRating(musicDetailLevel, achievement)
-            : null;
 
         scores.push({
           musicId: music.id,
@@ -1134,9 +1048,7 @@ export class SyncService {
           type: music.type ?? '',
           dxScore: String(detail.deluxscoreMax),
           score,
-          fs: null,
-          fc: null,
-          rating,
+          detailLevel: chart.detailLevel ?? null,
           isNew: music.isNew ?? null,
         });
       }
@@ -1147,17 +1059,20 @@ export class SyncService {
 
   private async mapUserMusicToScores(
     details: SdgbWorkerUserMusicDetail[],
-  ): Promise<ScoreSnapshot[]> {
+  ): Promise<ScoreObservation[]> {
     if (!Array.isArray(details) || !details.length) {
       return [];
     }
 
     const { byId: musicMap } = await this.getMusicCache();
-    const scores: ScoreSnapshot[] = [];
+    const scores: ScoreObservation[] = [];
     for (const detail of details) {
-      if (detail.achievement === 0 && detail.deluxscoreMax === 0) {
-        continue;
-      }
+      const onlyIfExisting =
+        detail.playCount === 0 &&
+        detail.achievement === 0 &&
+        detail.deluxscoreMax === 0 &&
+        detail.comboStatus === 0 &&
+        detail.syncStatus === 0;
       const music = musicMap.get(String(detail.musicId));
       if (!music) {
         continue;
@@ -1168,13 +1083,6 @@ export class SyncService {
         continue;
       }
       const score = (detail.achievement / 10000).toFixed(4) + '%';
-      const normalized = normalizeAchievement(score);
-      const rating =
-        chart.detailLevel !== null &&
-        chart.detailLevel !== undefined &&
-        normalized !== null
-          ? getRating(chart.detailLevel, normalized)
-          : null;
       scores.push({
         musicId: music.id,
         cid: music.id + '_' + (chartIndex === 10 ? 0 : chartIndex),
@@ -1184,18 +1092,19 @@ export class SyncService {
         score,
         fc: this.mapComboStatus(detail.comboStatus),
         fs: this.mapSyncStatus(detail.syncStatus),
-        rating,
+        onlyIfExisting,
+        detailLevel: chart.detailLevel ?? null,
         isNew: music.isNew ?? null,
       });
     }
-    return this.mergeWithPrevious(undefined, scores);
+    return scores;
   }
 
   private async mapManualScores(
     inputs: readonly ManualScoreUpdateItem[],
-  ): Promise<ScoreSnapshot[]> {
+  ): Promise<ScoreObservation[]> {
     const { byId: musicMap } = await this.getMusicCache();
-    const scores: ScoreSnapshot[] = [];
+    const scores: ScoreObservation[] = [];
     const issues: Array<{
       index: number;
       musicId: string;
@@ -1233,24 +1142,19 @@ export class SyncService {
 
       const score =
         input.achievement === undefined
-          ? null
+          ? undefined
           : `${input.achievement.toFixed(4)}%`;
-      const achievement = normalizeAchievement(score);
       scores.push({
         musicId: music.id,
         cid: chart.cid,
         chartIndex: input.chartIndex,
         type: music.type,
-        dxScore: input.dxScore === undefined ? null : String(input.dxScore),
+        dxScore:
+          input.dxScore === undefined ? undefined : String(input.dxScore),
         score,
-        fc: input.fc ?? null,
-        fs: input.fs ?? null,
-        rating:
-          chart.detailLevel !== undefined &&
-          chart.detailLevel !== null &&
-          achievement !== null
-            ? getRating(chart.detailLevel, achievement)
-            : null,
+        fc: input.fc,
+        fs: input.fs,
+        detailLevel: chart.detailLevel ?? null,
         isNew: music.isNew ?? null,
       });
     });
@@ -1262,15 +1166,15 @@ export class SyncService {
         issues,
       });
     }
-    return this.mergeWithPrevious(undefined, scores);
+    return scores;
   }
 
   private mapComboStatus(value: number): string | null {
     return [null, 'fc', 'fcp', 'ap', 'app'][value] ?? null;
   }
 
-  private mapSyncStatus(value: number): string | null {
-    return [null, 'fs', 'fsp', 'fdx', 'fdxp', null][value] ?? null;
+  private mapSyncStatus(value: number): string | null | undefined {
+    return [null, 'fs', 'fsp', 'fdx', 'fdxp', null][value];
   }
 
   async exportToDivingFish(friendCode: string, importToken: string) {

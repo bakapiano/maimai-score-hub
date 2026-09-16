@@ -47,7 +47,11 @@ export interface UserProfile {
 // ============================================================================
 
 export type JobStatus =
-  "queued" | "processing" | "completed" | "failed" | "canceled";
+  | "queued"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "canceled";
 
 export type JobStage =
   | "send_request"
@@ -151,8 +155,9 @@ export interface FriendVsSong {
   score: string | null;
   category: string | null;
   type: ChartType;
-  fs: string | null;
-  fc: string | null;
+  /** undefined = unreadable/unobserved; null = an explicit empty badge. */
+  fs?: string | null;
+  fc?: string | null;
   diff?: number;
 }
 

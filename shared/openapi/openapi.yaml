@@ -4807,8 +4807,6 @@ paths:
                         - score
                         - category
                         - type
-                        - fs
-                        - fc
                 required:
                   - songs
     put:
@@ -4874,8 +4872,6 @@ paths:
                       - score
                       - category
                       - type
-                      - fs
-                      - fc
               required:
                 - songs
       responses:
