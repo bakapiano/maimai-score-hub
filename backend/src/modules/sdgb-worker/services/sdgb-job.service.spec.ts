@@ -5,6 +5,7 @@ import {
 } from '@maimai-score-hub/shared';
 
 import { SdgbJobService } from './sdgb-job.service';
+import { hashWorkerExecution } from './sdgb-job-patch';
 
 jest.mock('bullmq', () => ({
   Queue: jest.fn().mockImplementation((name: string) => ({
@@ -19,6 +20,110 @@ jest.mock('bullmq', () => ({
     close: jest.fn().mockResolvedValue(undefined),
   })),
 }));
+
+describe('SdgbJobService verified completion receipts', () => {
+  const execution = {
+    executionToken: 'secret-token',
+    executionWorkerId: 'worker',
+    executionMembershipEpoch: 7,
+    executionNetworkEpoch: 2,
+  };
+  function setup(overrides: Record<string, unknown> = {}) {
+    const row = {
+      id: 'job',
+      jobType: 'get_music_score',
+      status: 'completed',
+      lane: 'interactive',
+      cleanupStatus: 'succeeded',
+      payload: {},
+      result: { syncId: 'sync', scoreCount: 4390 },
+      completionExecutionHash: hashWorkerExecution(execution),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides,
+    };
+    const model = {
+      findOne: jest
+        .fn()
+        .mockReturnValue({ lean: jest.fn().mockResolvedValue(row) }),
+      findOneAndUpdate: jest.fn().mockResolvedValue({ toObject: () => row }),
+    };
+    const registry = { isMembershipActive: jest.fn().mockResolvedValue(true) };
+    const service = new SdgbJobService(
+      model as never,
+      {} as never,
+      registry as never,
+      {} as never,
+      { get: (_key: string, fallback?: unknown) => fallback } as never,
+    );
+    return { service, model, registry };
+  }
+
+  it('returns the same result for the original execution after membership changes', async () => {
+    const { service, registry } = setup();
+    await expect(
+      service.getMusicScoreCompletionForWorker('job', execution),
+    ).resolves.toMatchObject({
+      status: 'completed',
+      result: { syncId: 'sync', scoreCount: 4390 },
+    });
+    expect(registry.isMembershipActive).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'executionToken',
+    'executionWorkerId',
+    'executionMembershipEpoch',
+    'executionNetworkEpoch',
+  ] as const)('rejects a receipt with mismatched %s', async (field) => {
+    const { service } = setup();
+    const changed = {
+      ...execution,
+      [field]: typeof execution[field] === 'number' ? 99 : 'different',
+    };
+    await expect(
+      service.getMusicScoreCompletionForWorker('job', changed),
+    ).rejects.toThrow('another execution');
+  });
+
+  it('keeps legacy completed rows fenced when no verified receipt exists', async () => {
+    const { service } = setup({ completionExecutionHash: null });
+    await expect(
+      service.getMusicScoreCompletionForWorker('job', execution),
+    ).rejects.toThrow('another execution');
+  });
+
+  it('continues first-time completion through the active execution fence', async () => {
+    const { service } = setup({ status: 'processing' });
+    await expect(
+      service.getMusicScoreCompletionForWorker('job', execution),
+    ).resolves.toBeNull();
+  });
+
+  it('stores the hashed identity atomically with completion and clears the live token', async () => {
+    const { service, model } = setup();
+    await service.completeMusicScoreFinalization(
+      'job',
+      { syncId: 'sync', scoreCount: 4390 },
+      execution,
+    );
+    expect(model.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'processing',
+        cleanupStatus: 'succeeded',
+        ...execution,
+      }),
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          status: 'completed',
+          completionExecutionHash: hashWorkerExecution(execution),
+          executionToken: null,
+        }) as unknown,
+      }),
+      { new: true },
+    );
+  });
+});
 
 describe('SdgbJobService lane enqueueing', () => {
   const model = {

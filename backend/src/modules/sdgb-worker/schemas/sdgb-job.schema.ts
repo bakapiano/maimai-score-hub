@@ -124,6 +124,10 @@ export class SdgbJobEntity {
   @Prop({ type: Number, default: null })
   executionNetworkEpoch!: number | null;
 
+  /** Receipt for authenticated retries after the active execution is cleared. */
+  @Prop({ type: String, default: null })
+  completionExecutionHash!: string | null;
+
   @Prop({ type: Number, required: true, default: 0 })
   attempt!: number;
 

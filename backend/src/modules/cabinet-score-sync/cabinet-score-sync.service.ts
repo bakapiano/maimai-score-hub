@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import {
@@ -12,6 +13,7 @@ import {
 } from '@maimai-score-hub/shared';
 
 import { RedisService } from '../../common/redis/redis.service';
+import { RedisLeaseService } from '../../common/redis/redis-lease.service';
 import { ProberExportService } from '../prober-export/services/prober-export.service';
 import {
   SdgbJobService,
@@ -32,6 +34,7 @@ export class CabinetScoreSyncService {
     private readonly users: UsersService,
     private readonly syncs: SyncService,
     private readonly proberExports: ProberExportService,
+    private readonly leases: RedisLeaseService,
   ) {}
 
   async create(ownerUserId: string, qrCode: string) {
@@ -103,17 +106,58 @@ export class CabinetScoreSyncService {
 
   async patchFromWorker(jobId: string, body: SdgbJobPatchBody) {
     const job = await this.sdgbJobs.getEntity(jobId);
-    if (job.jobType !== 'get_music_score' || body.status !== 'completed') {
+    if (
+      job.jobType !== 'get_music_score' ||
+      (body.status !== 'completed' && body.status !== 'failed')
+    ) {
       return this.sdgbJobs.patchFromWorker(jobId, body);
     }
-    return this.finalize(jobId, body.result, body);
+    const finalized = await this.leases.run(
+      {
+        name: `cabinet-score-finalize:${jobId}`,
+        ttlMs: 30_000,
+        renewEveryMs: 10_000,
+        hardTimeoutMs: 90_000,
+        abortGraceMs: 15_000,
+      },
+      async ({ assertActive }) => {
+        if (body.status === 'completed') {
+          return this.finalize(jobId, body.result, body, assertActive);
+        }
+        // Serialize failure reports with commits as well: a lost response must
+        // never turn a successfully committed score result into a failure.
+        const receipt = await this.sdgbJobs.getMusicScoreCompletionForWorker(
+          jobId,
+          body,
+        );
+        if (receipt) {
+          return receipt;
+        }
+        assertActive();
+        return this.sdgbJobs.patchFromWorker(jobId, body);
+      },
+    );
+    if (!finalized.acquired) {
+      throw new ServiceUnavailableException(
+        'cabinet score finalization in progress',
+      );
+    }
+    return finalized.value;
   }
 
   private async finalize(
     jobId: string,
     rawResult: unknown,
     body: SdgbJobPatchBody,
+    assertActive: () => void,
   ) {
+    const receipt = await this.sdgbJobs.getMusicScoreCompletionForWorker(
+      jobId,
+      body,
+    );
+    if (receipt) {
+      return receipt;
+    }
     await this.sdgbJobs.assertWorkerExecution(jobId, body);
     const result = GetMusicScoreResultSchema.parse(rawResult);
     const job = await this.sdgbJobs.getEntity(jobId);
@@ -142,12 +186,15 @@ export class CabinetScoreSyncService {
     }
 
     try {
+      assertActive();
       const sync = await this.syncs.createFromUserMusic({
         friendCode: job.ownerFriendCode,
         sourceId: jobId,
         musicDetails: result.musicDetails,
         ownerUserId: job.ownerUserId,
       });
+      assertActive();
+      await this.sdgbJobs.assertWorkerExecution(jobId, body);
       if (!sync?.id) {
         return this.failFinalization(
           jobId,
@@ -175,6 +222,7 @@ export class CabinetScoreSyncService {
       }
       return completed;
     } catch (err) {
+      assertActive();
       return this.failFinalization(
         jobId,
         'SYNC_PERSIST_FAILED',

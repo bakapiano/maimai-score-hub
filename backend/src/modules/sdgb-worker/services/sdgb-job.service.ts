@@ -43,8 +43,10 @@ import {
   type SdgbJobView,
 } from './sdgb-job.view';
 import { SdgbJobAdminQueryService } from './sdgb-job-admin-query.service';
+import { verifiedMusicScoreCompletion } from './sdgb-completion-receipt';
 import {
   buildSdgbMongoPatch,
+  hashWorkerExecution,
   requireExecution,
   type WorkerExecutionGuard,
 } from './sdgb-job-patch';
@@ -571,6 +573,13 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
     return lane;
   }
 
+  async getMusicScoreCompletionForWorker(
+    jobId: string,
+    body: SdgbJobPatchBody,
+  ): Promise<SdgbJobView | null> {
+    return verifiedMusicScoreCompletion(await this.getEntity(jobId), body);
+  }
+
   async completeMusicScoreFinalization(
     jobId: string,
     result: { syncId: string; scoreCount: number },
@@ -598,6 +607,7 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
           error: null,
           errorCode: null,
           lastWorkerId: execution.executionWorkerId,
+          completionExecutionHash: hashWorkerExecution(execution),
           executionToken: null,
           executionWorkerId: null,
           executionMembershipEpoch: null,
@@ -609,9 +619,12 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
       { new: true },
     );
     if (!doc) {
-      const existing = await this.model.findOne({ id: jobId });
-      if (existing?.status === 'completed') {
-        return toView(existing.toObject() as SdgbJobEntity);
+      const completed = await this.getMusicScoreCompletionForWorker(
+        jobId,
+        body,
+      );
+      if (completed) {
+        return completed;
       }
       throw new BadRequestException(
         'music score job cannot complete before cleanup succeeds',

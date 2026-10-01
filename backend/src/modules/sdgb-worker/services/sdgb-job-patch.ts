@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import type { SdgbJobPatchBody } from '@maimai-score-hub/shared';
 
 import type { SdgbJobEntity } from '../schemas/sdgb-job.schema';
@@ -8,6 +9,19 @@ export interface WorkerExecutionGuard {
   executionWorkerId: string;
   executionMembershipEpoch: number;
   executionNetworkEpoch: number;
+}
+
+export function hashWorkerExecution(execution: WorkerExecutionGuard): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        execution.executionToken,
+        execution.executionWorkerId,
+        execution.executionMembershipEpoch,
+        execution.executionNetworkEpoch,
+      ]),
+    )
+    .digest('hex');
 }
 
 export function requireExecution(body: SdgbJobPatchBody): WorkerExecutionGuard {

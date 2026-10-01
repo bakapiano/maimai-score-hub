@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { json, urlencoded } from 'express';
+import { urlencoded } from 'express';
+import { createJsonBodyParser } from './common/http/json-body-parser';
 
 import type { AddressInfo } from 'net';
 import { AppModule } from './app.module';
@@ -72,7 +73,7 @@ async function bootstrap() {
     expressApp.set('trust proxy', trustProxyHops);
   }
   // Match the legacy job-service payload size expectations (job result can be large)
-  app.use(json({ limit: '100mb' }));
+  app.use(createJsonBodyParser());
   app.use(urlencoded({ extended: true, limit: '100mb' }));
   const defaultWebOrigin = production
     ? 'https://maiscorehub.bakapiano.com'
