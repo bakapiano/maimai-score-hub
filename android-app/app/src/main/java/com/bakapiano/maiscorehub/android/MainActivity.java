@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.net.VpnService;
 import android.os.Build;
@@ -185,6 +186,15 @@ public final class MainActivity extends Activity {
         });
     }
 
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        // Re-resolve the day/night theme before WebView receives the configuration.
+        // Keeping this Activity alive also preserves the website's running Workflows.
+        getTheme().applyStyle(R.style.AppTheme, true);
+        super.onConfigurationChanged(newConfig);
+        configureWebViewTheme();
+    }
+
     private void bringWebViewToFront() {
         Intent intent = new Intent(this, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
@@ -206,6 +216,7 @@ public final class MainActivity extends Activity {
         if (BuildConfig.DEBUG) {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         }
+        configureWebViewTheme();
         configureWebAuthentication(settings);
         webView.addJavascriptInterface(new NativeBridge(), "MaiScoreHubAndroid");
         webView.setWebChromeClient(new WebChromeClient() {
@@ -276,6 +287,26 @@ public final class MainActivity extends Activity {
                 .apply();
         Log.i(TAG_WEBVIEW, "Cleared WebView cache for app version " + BuildConfig.VERSION_CODE);
         return true;
+    }
+
+    @SuppressWarnings("deprecation") // Pre-105 WebViews expose color preference through ForceDark.
+    private void configureWebViewTheme() {
+        WebSettings settings = webView.getSettings();
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            // Modern WebViews read isLightTheme. Mantine owns all page colors,
+            // including an explicit light choice while the system is dark.
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, false);
+        } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)
+                && WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK_STRATEGY)) {
+            // Old WebViews need both settings to expose prefers-color-scheme
+            // without algorithmically inverting the website's own theme.
+            WebSettingsCompat.setForceDarkStrategy(
+                    settings, WebSettingsCompat.DARK_STRATEGY_WEB_THEME_DARKENING_ONLY);
+            boolean dark = (getResources().getConfiguration().uiMode
+                    & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+            WebSettingsCompat.setForceDark(settings, dark
+                    ? WebSettingsCompat.FORCE_DARK_ON : WebSettingsCompat.FORCE_DARK_OFF);
+        }
     }
 
     private void configureWebAuthentication(WebSettings settings) {

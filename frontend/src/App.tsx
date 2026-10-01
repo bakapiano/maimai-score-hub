@@ -11,6 +11,7 @@ import { Notifications } from "@mantine/notifications";
 import { ObservabilityReporter } from "./components/ObservabilityReporter";
 import { AndroidAppUpdateE2EBridge } from "./features/android-update/AndroidAppUpdateE2EBridge";
 import { AndroidAppUpdateProvider } from "./features/android-update/AndroidAppUpdateProvider";
+import { getAndroidHostBridge } from "./features/android-update/androidUpdateBridge";
 import { PwaInstallProvider } from "./providers/PwaInstallProvider";
 import { appTheme } from "./theme";
 
@@ -50,7 +51,7 @@ function DefaultRedirect() {
 function App() {
   return (
     <MantineProvider
-      // defaultColorScheme="dark"
+      defaultColorScheme={getAndroidHostBridge() ? "auto" : "light"}
       theme={appTheme}
     >
       <Notifications position="top-center" />

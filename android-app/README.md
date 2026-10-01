@@ -289,13 +289,13 @@ publish to the Backend registry and GitHub Releases:
 
 ```bash
 gh workflow run build-android-release.yml --ref main \
-  -f publish=false -f version_code=8 -f version_name=0.3.2 \
+  -f publish=false -f version_code=9 -f version_name=0.3.3 \
   -f mandatory=false -f rollout_percent=100
 
 gh workflow run build-android-release.yml --ref main \
-  -f publish=true -f version_code=8 -f version_name=0.3.2 \
+  -f publish=true -f version_code=9 -f version_name=0.3.3 \
   -f mandatory=false -f rollout_percent=100 \
-  -f notes='修复微信授权兼容问题，新增本地诊断日志导出'
+  -f notes='跟随系统实时切换深浅色主题，保留手动外观设置与页面运行状态'
 ```
 
 `publish=true` writes the stable channel policy, immutable Manifest/APK and a
@@ -520,6 +520,46 @@ wait for the native saved confirmation. Then inspect or pull the generated PNG:
   /sdcard/Pictures/MaiScoreHub `
   app\build\real-device-e2e\exported-images
 ```
+
+### System color scheme
+
+The Android website defaults to **跟随系统** when no appearance preference has
+been saved. Existing explicit light/dark choices keep their priority. The
+ordinary browser default stays light.
+
+The shell resolves `AppTheme` from day/night resources and handles `uiMode`
+changes in place, preserving the WebView document and its running JavaScript.
+Modern WebViews read the theme's inherited `isLightTheme` attribute. Older
+WebViews use the feature-gated ForceDark API with `WEB_THEME_DARKENING_ONLY`;
+the website owns the rendered colors in both cases. The Bridge remains v4.
+
+Appearance regression on **2026-09-30** passed 12 checks each on Android 12 /
+API 31 (WebView 91.0.4472.114) and Android 15 / API 35 (WebView 124.0.6367.219):
+
+- Fresh default follows a dark system; foreground switching works both ways.
+- Explicit light/dark choices survive system changes and page reloads.
+- Selecting auto restores following; auto also survives a page reload.
+- Background system changes apply on return to the app.
+- Native process, document marker and active JavaScript timer remain intact
+  across live system changes. Captured screenshots verify the page colors.
+
+Run against a fully booted, isolated `msh-native-api*` or `msh-theme-api*` AVD:
+
+```powershell
+npm --prefix ..\frontend run build
+.\gradlew.bat assembleDeviceTest `
+  -PmshDeviceTestWebUrl=http://localhost:19310/app/settings
+node .\scripts\run-theme-emulator-e2e.mjs emulator-5554
+```
+
+The runner serves the real built frontend on loopback, uses offline mode, and
+restricts page network requests to the fixture origin with CSP. It restores
+the appearance/offline keys, system night mode, temporary notification grant
+and ADB forwarding after the run. The second CLI argument overrides the result
+directory; `THEME_TEST_APK` and `ADB_PATH` override the APK and ADB executable.
+The default artifacts directory is ignored `app/build/theme-emulator-e2e/`.
+This suite exercises appearance and WebView lifetime; the harness below covers
+the separate real-device OAuth/update workflow.
 
 ### 6. Run the real-device E2E
 
