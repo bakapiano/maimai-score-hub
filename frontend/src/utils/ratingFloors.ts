@@ -1,4 +1,8 @@
 import type { SyncScore } from "../types/syncScore";
+import {
+  buildB50RatingSummary,
+  type B50MusicCatalog,
+} from "@maimai-score-hub/shared";
 
 export type RatingFloors = {
   newFloor: number | null;
@@ -19,16 +23,11 @@ function getTopFloor(scores: SyncScore[], limit: number) {
   return ratingOf(scores[limit - 1]) ?? 0;
 }
 
-export function getRatingFloors(scores: SyncScore[]): RatingFloors {
-  const withRating = scores.filter(
-    (score) => ratingOf(score) !== null && score.type !== "utage",
-  );
-  const newTop = withRating
-    .filter((score) => score.isNew === true)
-    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
-  const oldTop = withRating
-    .filter((score) => score.isNew === false)
-    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+export function getRatingFloors(
+  scores: SyncScore[],
+  musicCatalog: B50MusicCatalog,
+): RatingFloors {
+  const { newTop, oldTop } = buildB50RatingSummary(scores, musicCatalog);
 
   return {
     newFloor: getTopFloor(newTop, 15),

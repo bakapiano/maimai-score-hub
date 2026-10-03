@@ -99,68 +99,82 @@ describe('ScoreExportService rating headers', () => {
     jest.clearAllMocks();
   });
 
-  it('uses the latest score snapshot B50 for every exported image', async () => {
-    const syncQuery = {
-      sort: jest.fn(),
-      lean: jest.fn().mockResolvedValue({ scores }),
-    };
-    syncQuery.sort.mockReturnValue(syncQuery);
+  it.each([false, true])(
+    'uses current-catalog B50 for every image (deleted scores: %s)',
+    async (withDeleted) => {
+      const snapshot = withDeleted
+        ? [
+            ...scores,
+            { ...scores[0], musicId: 'deleted-new', rating: 999 },
+            { ...scores[1], musicId: 'deleted-old', rating: 999 },
+          ]
+        : scores;
+      const before = JSON.stringify(snapshot);
+      const syncQuery = {
+        sort: jest.fn(),
+        lean: jest.fn().mockResolvedValue({ scores: snapshot }),
+      };
+      syncQuery.sort.mockReturnValue(syncQuery);
 
-    const historyQuery = {
-      sort: jest.fn(),
-      lean: jest.fn().mockResolvedValue([
+      const historyQuery = {
+        sort: jest.fn(),
+        lean: jest.fn().mockResolvedValue([
+          {
+            id: 'change-1',
+            friendCode: FRIEND_CODE,
+            musicId: '1',
+            chartIndex: 0,
+            type: 'dx',
+            observedAt: new Date('2026-08-15T04:00:00.000Z'),
+            changedFields: ['rating'],
+            before: { score: '99.0000%', dxScore: '290', rating: 190 },
+            after: { score: '100.0000%', dxScore: '300', rating: 200 },
+          },
+        ]),
+      };
+      historyQuery.sort.mockReturnValue(historyQuery);
+
+      const service = new ScoreExportService(
+        { findOne: jest.fn().mockReturnValue(syncQuery) } as never,
         {
-          id: 'change-1',
-          friendCode: FRIEND_CODE,
-          musicId: '1',
-          chartIndex: 0,
-          type: 'dx',
-          observedAt: new Date('2026-08-15T04:00:00.000Z'),
-          changedFields: ['rating'],
-          before: { score: '99.0000%', dxScore: '290', rating: 190 },
-          after: { score: '100.0000%', dxScore: '300', rating: 200 },
-        },
-      ]),
-    };
-    historyQuery.sort.mockReturnValue(historyQuery);
+          find: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue(musics),
+          }),
+        } as never,
+        { find: jest.fn().mockReturnValue(historyQuery) } as never,
+        {} as never,
+        {
+          findByFriendCode: jest.fn().mockResolvedValue({ profile }),
+        } as never,
+      );
 
-    const service = new ScoreExportService(
-      { findOne: jest.fn().mockReturnValue(syncQuery) } as never,
-      {
-        find: jest.fn().mockReturnValue({
-          lean: jest.fn().mockResolvedValue(musics),
-        }),
-      } as never,
-      { find: jest.fn().mockReturnValue(historyQuery) } as never,
-      {} as never,
-      {
-        findByFriendCode: jest.fn().mockResolvedValue({ profile }),
-      } as never,
-    );
+      await service.generateBest50Image(FRIEND_CODE);
+      await service.generateLevelScoresImage(FRIEND_CODE, '13');
+      await service.generateVersionScoresImage(FRIEND_CODE, 'prism');
+      await service.generateScoreHistoryImage(FRIEND_CODE, {
+        date: '2026-08-15',
+        start: Date.parse('2026-08-14T22:00:00.000Z'),
+        end: Date.parse('2026-08-15T22:00:00.000Z'),
+        timeZone: 'Asia/Shanghai',
+        dayStartHour: 6,
+        keyChangesOnly: false,
+      });
 
-    await service.generateBest50Image(FRIEND_CODE);
-    await service.generateLevelScoresImage(FRIEND_CODE, '13');
-    await service.generateVersionScoresImage(FRIEND_CODE, 'prism');
-    await service.generateScoreHistoryImage(FRIEND_CODE, {
-      date: '2026-08-15',
-      start: Date.parse('2026-08-14T22:00:00.000Z'),
-      end: Date.parse('2026-08-15T22:00:00.000Z'),
-      timeZone: 'Asia/Shanghai',
-      dayStartHour: 6,
-      keyChangesOnly: false,
-    });
-
-    const best50Payload = jest.mocked(renderBest50Image).mock.calls[0][0];
-    expect(best50Payload.rating).toBe(CURRENT_RATING);
-    expect(best50Payload.profile?.rating).toBe(STALE_PROFILE_RATING);
-    expect(jest.mocked(renderLevelScoresImage).mock.calls[0][3]).toBe(
-      CURRENT_RATING,
-    );
-    expect(jest.mocked(renderVersionScoresImage).mock.calls[0][3]).toBe(
-      CURRENT_RATING,
-    );
-    expect(jest.mocked(renderScoreHistoryImage).mock.calls[0][0].rating).toBe(
-      CURRENT_RATING,
-    );
-  });
+      const best50Payload = jest.mocked(renderBest50Image).mock.calls[0][0];
+      expect(best50Payload.rating).toBe(CURRENT_RATING);
+      expect(best50Payload.newCards.map((card) => card.musicId)).toEqual(['1']);
+      expect(best50Payload.oldCards.map((card) => card.musicId)).toEqual(['2']);
+      expect(best50Payload.profile?.rating).toBe(STALE_PROFILE_RATING);
+      expect(jest.mocked(renderLevelScoresImage).mock.calls[0][3]).toBe(
+        CURRENT_RATING,
+      );
+      expect(jest.mocked(renderVersionScoresImage).mock.calls[0][3]).toBe(
+        CURRENT_RATING,
+      );
+      expect(jest.mocked(renderScoreHistoryImage).mock.calls[0][0].rating).toBe(
+        CURRENT_RATING,
+      );
+      expect(JSON.stringify(snapshot)).toBe(before);
+    },
+  );
 });

@@ -32,6 +32,10 @@ import {
 import { useMemo, useState } from "react";
 import { useAuth } from "../../providers/AuthContext";
 import { useMusic } from "../../providers/MusicContext";
+import {
+  buildB50RatingSummary,
+  type B50MusicCatalog,
+} from "@maimai-score-hub/shared";
 import classes from "./Best50Tab.module.css";
 
 type RatingSummary = {
@@ -46,25 +50,16 @@ type RatingSummary = {
   oldMin: number | null;
 };
 
-const buildRatingSummary = (scores: SyncScore[]): RatingSummary | null => {
+const buildRatingSummary = (
+  scores: SyncScore[],
+  musicCatalog: B50MusicCatalog,
+): RatingSummary | null => {
   if (!Array.isArray(scores)) {return null;}
 
-  const withRating = scores.filter(
-    (s) => typeof s.rating === "number" && s.type !== "utage",
+  const { newTop, oldTop, newSum, oldSum } = buildB50RatingSummary(
+    scores,
+    musicCatalog,
   );
-
-  const newScores = withRating
-    .filter((s) => s.isNew === true)
-    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
-  const oldScores = withRating
-    .filter((s) => s.isNew === false)
-    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
-
-  const newTop = newScores.slice(0, 15);
-  const oldTop = oldScores.slice(0, 35);
-
-  const newSum = newTop.reduce((sum, s) => sum + (s.rating ?? 0), 0);
-  const oldSum = oldTop.reduce((sum, s) => sum + (s.rating ?? 0), 0);
 
   const newMax = newTop.length > 0 ? (newTop[0].rating ?? null) : null;
   const newMin =
@@ -115,8 +110,14 @@ function persistViewMode(mode: Best50ViewMode) {
 export function Best50Tab({ scores, loading }: Best50TabProps) {
   const { musicMap, chartMap } = useMusic();
   const { token } = useAuth();
-  const ratingSummary = useMemo(() => buildRatingSummary(scores), [scores]);
-  const ratingFloors = useMemo(() => getRatingFloors(scores), [scores]);
+  const ratingSummary = useMemo(
+    () => buildRatingSummary(scores, musicMap),
+    [scores, musicMap],
+  );
+  const ratingFloors = useMemo(
+    () => getRatingFloors(scores, musicMap),
+    [scores, musicMap],
+  );
 
   // Modal state
   const [modalOpened, setModalOpened] = useState(false);

@@ -39,6 +39,9 @@ jobs:
       - name: Install dependencies
         run: npm install --install-links=true
 
+      - name: Test current-catalog B50
+        run: npm test -- --runInBand src/common/rating.spec.ts src/modules/sync/services/sync.service.spec.ts src/modules/score-export/services/score-export.service.spec.ts
+
       # - name: Lint
       #   run: npm run lint
 

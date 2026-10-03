@@ -342,7 +342,10 @@ function SortableHeader({
 export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
   const { musicMap, aliasMap, chartMap } = useMusic();
   const isMobile = useMediaQuery("(max-width: 47.99em)");
-  const ratingFloors = useMemo(() => getRatingFloors(scores), [scores]);
+  const ratingFloors = useMemo(
+    () => getRatingFloors(scores, musicMap),
+    [scores, musicMap],
+  );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [sortKey, setSortKey] = useState<SortKey>("rating");

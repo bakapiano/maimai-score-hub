@@ -91,7 +91,7 @@ export class ScoreExportService {
   async generateBest50Image(friendCode: string): Promise<Buffer> {
     ensureFontsLoaded();
     const { scores, musicMap, chartMap } = await this.loadData(friendCode);
-    const summary = buildRatingSummary(scores);
+    const summary = buildRatingSummary(scores, musicMap);
     if (!summary) {
       throw new NotFoundException('No rating data');
     }
@@ -131,7 +131,7 @@ export class ScoreExportService {
     levelKey?: string,
   ): Promise<Buffer> {
     ensureFontsLoaded();
-    const { scores, musics } = await this.loadData(friendCode, true);
+    const { scores, musics, musicMap } = await this.loadData(friendCode, true);
     const filteredMusics = musics.filter((m) => m.type !== 'utage');
     const filteredScores = scores.filter((s) => s.type !== 'utage');
     const buckets = buildLevelBuckets(filteredMusics, filteredScores);
@@ -150,7 +150,7 @@ export class ScoreExportService {
       // Profile is optional, continue without it
     }
 
-    const rating = this.calculateCurrentRating(scores);
+    const rating = this.calculateCurrentRating(scores, musicMap);
 
     return renderLevelScoresImage(
       current,
@@ -169,7 +169,7 @@ export class ScoreExportService {
     plan: PlatePlan = 'jiang',
   ): Promise<Buffer> {
     ensureFontsLoaded();
-    const { scores, musics } = await this.loadData(friendCode, true);
+    const { scores, musics, musicMap } = await this.loadData(friendCode, true);
     const filteredMusics = musics.filter((m) => m.type !== 'utage');
     const filteredScores = scores.filter((s) => s.type !== 'utage');
     const buckets = buildVersionBuckets(filteredMusics, filteredScores);
@@ -182,7 +182,7 @@ export class ScoreExportService {
     current = this.filterRemasterForVersion(current, versionKey);
     const profile = await this.loadOptionalProfile(friendCode);
 
-    const rating = this.calculateCurrentRating(scores);
+    const rating = this.calculateCurrentRating(scores, musicMap);
 
     return renderVersionScoresImage(
       current,
@@ -245,7 +245,7 @@ export class ScoreExportService {
         timeZone: query.timeZone,
         cards,
         profile,
-        rating: this.calculateCurrentRating(scores),
+        rating: this.calculateCurrentRating(scores, musicMap),
       },
       (musicId) => this.loadCoverImage(musicId),
       (url) => this.loadRemoteImage(url),
@@ -486,8 +486,11 @@ export class ScoreExportService {
     }
   }
 
-  private calculateCurrentRating(scores: SyncScore[]): number {
-    return Math.round(buildRatingSummary(scores)?.totalSum ?? 0);
+  private calculateCurrentRating(
+    scores: SyncScore[],
+    musicMap: ReadonlyMap<string, MusicRow>,
+  ): number {
+    return Math.round(buildRatingSummary(scores, musicMap)?.totalSum ?? 0);
   }
 
   async generateImagesForFriendCode(

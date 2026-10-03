@@ -229,7 +229,10 @@ export function LevelScoresTab({
   loading,
 }: LevelScoresTabProps) {
   const { token } = useAuth();
-  const ratingFloors = useMemo(() => getRatingFloors(scores), [scores]);
+  const ratingFloors = useMemo(
+    () => getRatingFloors(scores, new Set(musics.map((music) => music.id))),
+    [scores, musics],
+  );
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [exporting, setExporting] = useState(false);

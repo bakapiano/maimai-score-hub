@@ -221,6 +221,7 @@ function createHarness(input?: {
     service,
     syncModel,
     scoreChangeModel,
+    musicModel,
     users,
     current: () => cloneCurrent(current),
     armReadBarrier(count: number) {
@@ -258,6 +259,55 @@ function scoreChangeCalls(
   return harness.scoreChangeModel.bulkWrite.mock
     .calls as unknown as ScoreChangeBulkCall[];
 }
+
+describe('SyncService current-catalog rating', () => {
+  it.each([99, 100])(
+    'preserves deleted scores and refreshes profile from current IDs at %s%%',
+    async (achievement) => {
+      const harness = createHarness({ current: null });
+      await harness.service.createFromUserMusic({
+        friendCode: '634142510810999',
+        sourceId: 'before-catalog-removal',
+        musicDetails: [
+          cabinetDetail({ musicId: 17, achievement: 990000, dxScore: 100 }),
+          cabinetDetail({ musicId: 18, achievement: 1005000, dxScore: 200 }),
+        ],
+      });
+      const deleted = harness.current()!.scores.find((s) => s.musicId === '18');
+      // Import metadata is already cached; the rating refresh must use the
+      // updated catalog even when an observation leaves scores unchanged.
+      harness.musicModel.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{ id: '17' }]),
+      });
+      const result = await harness.service.createFromUserMusic({
+        friendCode: '634142510810999',
+        sourceId: 'after-catalog-removal',
+        musicDetails: [
+          cabinetDetail({
+            musicId: 17,
+            achievement: achievement * 10000,
+            dxScore: 100,
+          }),
+        ],
+      });
+
+      expect(result?.commitOutcome).toBe(
+        achievement === 99 ? 'no_change' : 'updated',
+      );
+      expect(
+        harness.users.updateProfileRatingFromScores,
+      ).toHaveBeenLastCalledWith({
+        friendCode: '634142510810999',
+        rating: getRating(13.5, achievement),
+        scoreVersion: 1,
+      });
+      const latest =
+        await harness.service.getLatestWithScores('634142510810999');
+      expect(latest.scores).toHaveLength(2);
+      expect(latest.scores.find((s) => s.musicId === '18')).toEqual(deleted);
+    },
+  );
+});
 
 describe('SyncService initial score commit', () => {
   it('creates one current document and maps cabinet fields', async () => {

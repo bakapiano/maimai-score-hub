@@ -520,7 +520,15 @@ export class SyncService {
   }
 
   private async refreshProfileRating(sync: CurrentSync): Promise<void> {
-    const summary = buildB50RatingSummary(sync.scores ?? []);
+    // Read current IDs directly: the score-import metadata cache can still
+    // contain a song removed by a recent catalog sync.
+    const musics = await this.musicModel
+      .find({}, { id: 1, _id: 0 })
+      .lean<Array<{ id: string }>>();
+    const summary = buildB50RatingSummary(
+      sync.scores ?? [],
+      new Set(musics.map((music) => music.id)),
+    );
     await this.users.updateProfileRatingFromScores({
       friendCode: sync.friendCode,
       rating: Math.round(summary.totalSum),

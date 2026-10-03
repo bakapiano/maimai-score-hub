@@ -9,13 +9,19 @@ import type {
 import type { ChartPayload } from '../music/schemas/music.schema';
 import type { SyncScore } from '../sync/schemas/sync.schema';
 import { VERSION_ORDER } from './rendering/score-export.constants';
-import { buildB50RatingSummary } from '../../common/rating';
+import {
+  buildB50RatingSummary,
+  type B50MusicCatalog,
+} from '../../common/rating';
 
-export function buildRatingSummary(scores: SyncScore[]): RatingSummary | null {
+export function buildRatingSummary(
+  scores: SyncScore[],
+  musicCatalog: B50MusicCatalog,
+): RatingSummary | null {
   if (!Array.isArray(scores)) {
     return null;
   }
-  return buildB50RatingSummary(scores);
+  return buildB50RatingSummary(scores, musicCatalog);
 }
 
 export function buildLevelBuckets(
