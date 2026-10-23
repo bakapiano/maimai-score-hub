@@ -9,7 +9,7 @@
         "start:dev": "cross-env NODE_ENV=dev node --watch --watch-path=.env --watch-path=src --watch-path=../shared/dist --enable-source-maps --experimental-strip-types src/index.ts"
     },
     "engines": {
-        "node": ">=22.6.0"
+        "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
     },
     "dependencies": {
         "@maimai-score-hub/shared": "file:../shared",
@@ -29,7 +29,7 @@
         "@types/lodash": "^4.14.191",
         "@types/node": "^18.11.18",
         "@types/tough-cookie": "^4.0.5",
-        "node": "^22.6.0",
+        "node": "22.23.4",
         "typescript": "^5.9.3"
     }
 }

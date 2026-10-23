@@ -1,4 +1,6 @@
-FROM node:22.16.0-slim
+FROM node:22.23.4-slim
+
+RUN node -e "if (!Number.isInteger(require('node:zlib').constants.BROTLI_DECODER_ERROR_FORMAT_BLOCK_SWITCH)) throw new Error('CVE-2026-111497 runtime patch required')"
 
 # Build shared package first
 WORKDIR /app/shared

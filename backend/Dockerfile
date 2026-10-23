@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:22.23.4-alpine AS builder
 
 # Build shared package first
 WORKDIR /app/shared
@@ -14,7 +14,10 @@ RUN npm install --install-links=true
 COPY backend/ ./
 RUN npm run build
 
-FROM node:20-alpine
+FROM node:22.23.4-alpine
+
+# Node backports the Brotli fix while retaining its 1.1.0 version string.
+RUN node -e "if (!Number.isInteger(require('node:zlib').constants.BROTLI_DECODER_ERROR_FORMAT_BLOCK_SWITCH)) throw new Error('CVE-2026-111497 runtime patch required')"
 
 # 安装 fontconfig 以支持字体渲染，以及 curl 用于健康检查
 RUN apk add --no-cache fontconfig curl
