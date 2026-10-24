@@ -44,10 +44,17 @@ jobs:
         with:
           lfs: true
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Package source
         run: |
           test -s ocr-api/pipeline/prod_run.py
           (cd ocr-api/pipeline/models && sha256sum -c SHA256SUMS)
+          # Build isolation needs PyPI; do it on Actions, not the GPU host.
+          python -m pip wheel --disable-pip-version-check --no-deps \
+            --wheel-dir ocr-api/dist ./ocr-api
           tar -czf /tmp/maimai-score-hub-ocr-${GITHUB_SHA}.tgz ocr-api
           sha256sum /tmp/maimai-score-hub-ocr-${GITHUB_SHA}.tgz
 
@@ -115,11 +122,17 @@ jobs:
             (cd "$PIPELINE_ROOT/models" && sha256sum -c SHA256SUMS)
             mkdir -p "$CATALOG_ROOT/covers" "$CATALOG_ROOT/galleries"
 
-            HTTP_PROXY=http://127.0.0.1:7890 \
-            HTTPS_PROXY=http://127.0.0.1:7890 \
-            NO_PROXY=localhost,127.0.0.1 \
-              "$PYTHON" -m pip install --disable-pip-version-check \
-                "$RELEASE_DIR/ocr-api"
+            API_WHEELS=("$RELEASE_DIR"/ocr-api/dist/maimai_score_hub_ocr_api-*.whl)
+            if [ "${#API_WHEELS[@]}" != 1 ] || [ ! -f "${API_WHEELS[0]}" ]; then
+              echo "❌ Expected exactly one Actions-built OCR API wheel"
+              exit 1
+            fi
+            # Verify required runtime dependencies already exist, then replace
+            # only this package. Never upgrade the provisioned GPU stack here.
+            "$PYTHON" -m pip install --disable-pip-version-check --dry-run \
+              --no-index "${API_WHEELS[0]}"
+            "$PYTHON" -m pip install --disable-pip-version-check \
+              --no-index --no-deps --force-reinstall "${API_WHEELS[0]}"
 
             PADDLE_GPU_ROOT="$DEPLOY_ROOT/paddle-gpu-3.3.1-cu126"
             PYTHON_SITE="$($PYTHON -c 'import site; print(site.getsitepackages()[0])')"

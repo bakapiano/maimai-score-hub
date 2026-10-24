@@ -64,7 +64,7 @@ systemd: maimai-score-hub-ocr.service
 loopback: 127.0.0.1:19100
 ```
 
-Actions checkout 会拉取 Git LFS 模型。部署保留最近三个 release，并保留共享的 `catalog/` 运行数据。
+Actions checkout 会拉取 Git LFS 模型，并在 runner 构建 API wheel。101 先离线检查运行依赖，再只重装该 wheel，不在 GPU 主机上下载 setuptools 或升级现有 GPU 依赖。部署保留最近三个 release，并保留共享的 `catalog/` 运行数据。
 
 部署切换前会使用 `tests/fixtures/84D5CDA37085D5A296BAF14B27C348BD.jpg`
 执行真实模型回归，固定验证 `METATRON / 100.8039% / MASTER / SD /
