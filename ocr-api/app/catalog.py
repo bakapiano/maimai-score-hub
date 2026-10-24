@@ -24,6 +24,8 @@ class CatalogScheduler:
         self.settings = settings
         self.recognizer = recognizer
         self._task: asyncio.Task[None] | None = None
+        self._reload_pending = False
+        self._loaded_gallery_signature = self._gallery_signature()
         self._status: dict[str, Any] = {
             "enabled": settings.catalog_enabled and settings.mode == "real",
             "running": False,
@@ -35,6 +37,16 @@ class CatalogScheduler:
 
     def status(self) -> dict[str, Any]:
         return dict(self._status)
+
+    def _gallery_signature(self) -> tuple[tuple[int, int] | None, ...]:
+        signatures = []
+        for name in ("cover_arcface_v2_gallery.npz", "title_arcface_v1_gallery.npz"):
+            try:
+                stat = (Path(self.settings.catalog_root) / "galleries" / name).stat()
+                signatures.append((stat.st_mtime_ns, stat.st_size))
+            except FileNotFoundError:
+                signatures.append(None)
+        return tuple(signatures)
 
     async def start(self) -> None:
         if not self._status["enabled"] or self._task is not None:
@@ -114,7 +126,11 @@ class CatalogScheduler:
                 if line.strip()
             ]
             result = json.loads(lines[-1])
-            if result.get("galleryChanged"):
+            signature = self._gallery_signature()
+            self._reload_pending = self._reload_pending or bool(
+                result.get("galleryChanged") or signature != self._loaded_gallery_signature
+            )
+            if self._reload_pending:
                 reloader = getattr(self.recognizer, "reload_catalog", None)
                 if callable(reloader):
                     await asyncio.to_thread(
@@ -126,6 +142,10 @@ class CatalogScheduler:
                         / "galleries"
                         / "title_arcface_v1_gallery.npz",
                     )
+                # A failed reload must retry even if the next refresh makes no
+                # further disk changes. Also catch a previous partial publish.
+                self._loaded_gallery_signature = signature
+                self._reload_pending = False
             self._status.update(
                 {
                     "lastSuccessAt": _now_iso(),

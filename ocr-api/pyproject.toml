@@ -16,6 +16,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+test = [
+  "numpy>=1.26,<3",
+  "Pillow>=10,<13",
+]
 pipeline = [
   "numpy>=1.26,<3",
   "opencv-python-headless>=4.10,<5",

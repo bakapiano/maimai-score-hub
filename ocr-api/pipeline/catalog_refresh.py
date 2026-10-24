@@ -21,6 +21,11 @@ MUSIC_DATA_URL = "https://maimai.diving-fish.com/api/maimaidxprober/music_data"
 DIVING_FISH_COVER_URL = "https://www.diving-fish.com/covers/{cover_id}.png"
 LXNS_COVER_URL = "https://assets.lxns.net/maimai/jacket/{music_id}.png!webp"
 USER_AGENT = "maimai-score-hub-ocr-catalog/1.0"
+# RGB pixel hash of LXNS's HTTP-200 "暂时无法查看" image. Check pixels,
+# not encoded bytes: download_cover normalizes both WebP and PNG to PNG.
+PLACEHOLDER_PIXEL_HASHES = {
+    "ad815884c537efe2c6cd3436e01b72df933ddb602b881fe116fba0ebb947644c",
+}
 PIPELINE_ROOT = Path(__file__).resolve().parent
 if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
@@ -94,6 +99,9 @@ class RefreshResult:
     cachedCovers: int
     downloadedCovers: int
     failedCovers: int
+    rebuiltCoverTitles: int
+    removedCoverTitles: int
+    removedTitleTitles: int
 
 
 def _now_iso() -> str:
@@ -163,24 +171,40 @@ def build_title_index(songs: Iterable[dict[str, Any]]) -> dict[str, object]:
 
 def _cover_music_id(music_id: str) -> str:
     numeric = int(music_id)
-    return str(numeric % 10_000) if numeric >= 100_000 else str(numeric)
+    # Utage adds 100000 to the underlying SD/DX ID; retain DX's 10000.
+    return str(numeric % 100_000) if numeric >= 100_000 else str(numeric)
 
 
 def _cover_filename(music_id: str) -> str:
     return f"{_cover_music_id(music_id).zfill(5)}.png"
 
 
+def _decode_cover(data: bytes) -> Any:
+    from PIL import Image
+
+    if len(data) <= 256:
+        raise ValueError("cover is too small")
+    with Image.open(io.BytesIO(data)) as source:
+        image = source.convert("RGB")
+    if hashlib.sha256(image.tobytes()).hexdigest() in PLACEHOLDER_PIXEL_HASHES:
+        raise ValueError("upstream returned a placeholder cover")
+    return image
+
+
 def _valid_cached_cover(path: Path) -> bool:
-    return path.is_file() and path.stat().st_size > 256
+    try:
+        _decode_cover(path.read_bytes())
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 def download_cover(music_id: str, timeout_seconds: float = 20.0) -> bytes:
-    from PIL import Image
-
     cover_id = _cover_music_id(music_id)
     urls = (
         DIVING_FISH_COVER_URL.format(cover_id=cover_id.zfill(5)),
-        LXNS_COVER_URL.format(music_id=cover_id),
+        # LXNS shares one jacket ID between SD and DX (11820 -> 1820).
+        LXNS_COVER_URL.format(music_id=int(cover_id) % 10_000),
     )
     last_error: Exception | None = None
     for url in urls:
@@ -188,13 +212,13 @@ def download_cover(music_id: str, timeout_seconds: float = 20.0) -> bytes:
             request = Request(url, headers={"User-Agent": USER_AGENT})
             with urlopen(request, timeout=timeout_seconds) as response:
                 source = response.read()
-            image = Image.open(io.BytesIO(source)).convert("RGB")
+            image = _decode_cover(source)
             output = io.BytesIO()
             image.save(output, format="PNG")
             data = output.getvalue()
             if len(data) > 256:
                 return data
-        except (HTTPError, URLError, TimeoutError, OSError) as error:
+        except (HTTPError, URLError, TimeoutError, OSError, ValueError) as error:
             last_error = error
     raise RuntimeError(f"cover download failed for {music_id}: {last_error}")
 
@@ -221,6 +245,7 @@ def sync_cover_cache(
         if _valid_cached_cover(target):
             return False
         data = fetcher(cover_id)
+        _decode_cover(data)
         _atomic_write_bytes(target, data)
         return True
 
@@ -252,15 +277,24 @@ def build_cover_manifest(
     missing: list[dict[str, str]] = []
     classes: set[str] = set()
     seen_entries: set[tuple[str, str]] = set()
+    file_hashes: dict[Path, str | None] = {}
     for song in songs:
         music_id = str(song["id"])
         title = str(song["title"])
         classes.add(title)
         path = cache_dir / _cover_filename(music_id)
         entry_key = (str(path), title)
-        if _valid_cached_cover(path):
+        if path not in file_hashes:
+            file_hashes[path] = (
+                hashlib.sha256(path.read_bytes()).hexdigest()
+                if _valid_cached_cover(path) else None
+            )
+        if file_hashes[path] is not None:
             if entry_key not in seen_entries:
-                entries.append({"path": str(path), "id": music_id, "title": title})
+                entries.append({
+                    "path": str(path), "id": music_id, "title": title,
+                    "sha256": file_hashes[path],
+                })
                 seen_entries.add(entry_key)
         else:
             missing.append({"id": music_id, "title": title})
@@ -281,7 +315,32 @@ def _load_gallery(path: Path) -> tuple[list[str], Any]:
     return titles, embeddings
 
 
-def _stage_gallery(path: Path, titles: list[str], embeddings: Any) -> Path:
+def _load_cover_fingerprints(path: Path) -> dict[str, str] | None:
+    import numpy as np
+
+    with np.load(path, allow_pickle=True) as data:
+        if "source_fingerprints" not in data:
+            return None
+        return json.loads(str(data["source_fingerprints"].item()))
+
+
+def _manifest_fingerprints(manifest: dict[str, Any]) -> dict[str, str]:
+    by_title: dict[str, set[str]] = {}
+    for entry in manifest["covers"]:
+        by_title.setdefault(entry["title"], set()).add(entry["sha256"])
+    return {
+        title: hashlib.sha256("\n".join(sorted(hashes)).encode()).hexdigest()
+        for title, hashes in by_title.items()
+    }
+
+
+def _stage_gallery(
+    path: Path,
+    titles: list[str],
+    embeddings: Any,
+    *,
+    source_fingerprints: dict[str, str] | None = None,
+) -> Path:
     import numpy as np
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -291,6 +350,8 @@ def _stage_gallery(path: Path, titles: list[str], embeddings: Any) -> Path:
             output,
             titles=np.array(titles, dtype=object),
             embeddings=embeddings,
+            **({"source_fingerprints": json.dumps(source_fingerprints, sort_keys=True)}
+               if source_fingerprints is not None else {}),
         )
     return temporary
 
@@ -308,7 +369,10 @@ def _merge_gallery(
     }
     by_title.update(additions)
     titles = sorted(by_title)
-    embeddings = np.stack([by_title[title] for title in titles]).astype(np.float32)
+    embeddings = (
+        np.stack([by_title[title] for title in titles]).astype(np.float32)
+        if titles else np.empty((0, existing_embeddings.shape[1]), dtype=np.float32)
+    )
     return titles, embeddings
 
 
@@ -465,8 +529,37 @@ def refresh_catalog(
 
     cover_titles, cover_embeddings = _load_gallery(paths.cover_gallery)
     title_titles, title_embeddings = _load_gallery(paths.title_gallery)
-    missing_cover_titles = sorted(set(desired_titles) - set(cover_titles))
+    desired_fingerprints = _manifest_fingerprints(manifest)
+    stored_fingerprints = _load_cover_fingerprints(paths.cover_gallery)
+    seed_titles = set(_load_gallery(paths.models / "cover_arcface_v2_gallery.npz")[0])
+    if stored_fingerprints is None:
+        # Legacy runtime additions may encode placeholders even when the cache
+        # has since been repaired. Rebuild ALL untracked additions, preserving
+        # the trusted bundled prototypes (which include real training crops).
+        cover_fingerprints = {
+            title: desired_fingerprints[title]
+            for title in cover_titles
+            if title in seed_titles and title in desired_fingerprints
+        }
+    else:
+        cover_fingerprints = dict(stored_fingerprints)
+    missing_cover_titles = sorted(
+        title for title, fingerprint in desired_fingerprints.items()
+        if title not in cover_titles or cover_fingerprints.get(title) != fingerprint
+    )
     missing_title_titles = sorted(set(desired_titles) - set(title_titles))
+
+    # Only an authoritative remote catalog may retire old/renamed labels.
+    desired_set = set(desired_titles)
+    removed_cover_titles = {
+        title for title in cover_titles
+        if (source == "remote" and title not in desired_set)
+        or (title in desired_set and title not in desired_fingerprints
+            and title not in seed_titles)
+    }
+    removed_title_titles = (
+        set(title_titles) - desired_set if source == "remote" else set()
+    )
 
     cover_additions = (
         _build_cover_additions(
@@ -489,22 +582,34 @@ def refresh_catalog(
         if missing_title_titles
         else {}
     )
-    gallery_changed = bool(cover_additions or title_additions)
-    if cover_additions or title_additions:
+    next_fingerprints = {
+        title: fingerprint for title, fingerprint in cover_fingerprints.items()
+        if title not in removed_cover_titles
+    }
+    next_fingerprints.update({
+        title: desired_fingerprints[title] for title in cover_additions
+    })
+    gallery_changed = bool(
+        cover_additions or title_additions or removed_cover_titles or removed_title_titles
+    )
+    if gallery_changed or stored_fingerprints != next_fingerprints:
+        cover_indices = [i for i, t in enumerate(cover_titles) if t not in removed_cover_titles]
+        title_indices = [i for i, t in enumerate(title_titles) if t not in removed_title_titles]
         merged_cover_titles, merged_cover_embeddings = _merge_gallery(
-            cover_titles,
-            cover_embeddings,
+            [cover_titles[i] for i in cover_indices],
+            cover_embeddings[cover_indices],
             cover_additions,
         )
         merged_title_titles, merged_title_embeddings = _merge_gallery(
-            title_titles,
-            title_embeddings,
+            [title_titles[i] for i in title_indices],
+            title_embeddings[title_indices],
             title_additions,
         )
         staged_cover = _stage_gallery(
             paths.cover_gallery,
             merged_cover_titles,
             merged_cover_embeddings,
+            source_fingerprints=next_fingerprints,
         )
         staged_title = _stage_gallery(
             paths.title_gallery,
@@ -529,6 +634,9 @@ def refresh_catalog(
         cachedCovers=cover_cache.cached,
         downloadedCovers=cover_cache.downloaded,
         failedCovers=cover_cache.failed,
+        rebuiltCoverTitles=len(cover_additions),
+        removedCoverTitles=len(removed_cover_titles),
+        removedTitleTitles=len(removed_title_titles),
     )
     _atomic_write_json(paths.status, asdict(result))
     return result

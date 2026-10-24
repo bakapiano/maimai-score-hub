@@ -44,12 +44,15 @@ real 模式运行在 101 的 `bench-venv`。模型二进制通过 Git LFS 管理
 API lifespan 启动后台任务，每小时运行一次 `pipeline/catalog_refresh.py`：
 
 1. 拉取水鱼 `music_data`，重建 `titles.json`。
-2. 将封面缓存到 `OCR_CATALOG_ROOT/covers/`；已有且有效的图片直接复用。
-3. 重建 `cover_manifest.json`。
-4. 新曲出现时，仅计算新增曲目的 Cover/Title embedding，再分别原子写入两个 Gallery。
-5. API 在 Gallery 更新成功后热加载新索引。
+2. 将封面缓存到 `OCR_CATALOG_ROOT/covers/`；解码校验图片并拒绝落雪的 HTTP-200 占位图，缺失、损坏和占位缓存自动重试下载。有效图片仍直接复用，不会周期性覆盖有效缓存。
+3. 重建带封面 SHA-256 的 `cover_manifest.json`。
+4. 新曲或本地封面内容变化时重建对应 Cover embedding；新标题补充 Title embedding。只有成功获取远端曲库时才移除已删除/改名的旧标签。
+5. Cover Gallery 内原子保存来源指纹。首次迁移旧 Gallery 时重建无来源记录的运行时增量，保留训练时的初始原型；构建中断会在下一轮重试，不会把已下载封面误当成已更新特征。
+6. API 在 Gallery 更新成功后热加载新索引，热加载失败也会重试。
 
-Cover 优先取水鱼，随后尝试落雪资源。宴谱复用普通曲目的本地缓存封面。刷新状态通过 `/healthz` 的 `catalog` 字段查看。持久化目录位于 release 目录之外，部署会保留封面缓存与增量 Gallery。
+Cover 优先取水鱼，随后尝试落雪资源。水鱼 DX `11820` 对应落雪 `1820`；宴谱去掉 `100000` 偏移后复用普通曲目的本地缓存封面，保留水鱼 DX 偏移。刷新状态通过 `/healthz` 的 `catalog` 字段查看，包括 `rebuiltCoverTitles`、`removedCoverTitles`、`removedTitleTitles`。持久化目录位于 release 目录之外，部署会保留封面缓存与增量 Gallery。
+
+轻量回归测试：`pip install -e 'ocr-api[test]'` 后运行 `python -m unittest discover -s ocr-api/tests -v`。`tests/fixtures/lxns-unavailable.png.b64` 是本次故障线上缓存的真实占位图（2026-10-24），用于验证 PNG/WebP 归一化后的占位检测，不是实际乐曲封面。
 
 ## 部署
 
