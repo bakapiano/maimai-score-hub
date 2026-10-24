@@ -42,7 +42,7 @@ full-screen on mobile. The five switches autosave; only the image URL is copied.
   are capped at 1 MiB / 1 megapixel, resized and re-encoded without metadata.
 - No finished SVGs are put in the BullMQ Redis instance.
 
-Each public request checks the current share/account before the hot cache,
+Each public request reaching the origin checks the current share/account before the hot cache,
 and checks again before returning an image or 304. Cached data never grants
 permission. Changes to public profile fields, theme, normalized asset bytes
 or the renderer version select a different cache entry. Artifacts
@@ -50,11 +50,18 @@ are replaced with compare-and-swap, so an in-flight renderer cannot clobber
 another writer's revision. Share generation fences rotation/disable/visibility races.
 Account deletion removes both collections' corresponding rows.
 
-Responses use `Cache-Control: public, no-cache`, weak ETags and
+Public responses (including 304) use
+`Cache-Control: public, max-age=300, s-maxage=7200, must-revalidate`, weak ETags and
 `Vary: Accept-Encoding`. Gzip is served when accepted. Private previews and
 errors use `no-store`. Nginx does not proxy-cache these routes; the frontend
 service worker bypasses them. Third-party image proxies and previously saved
 copies cannot be recalled, and already in-flight responses may finish.
+Browsers can reuse a fresh response for five minutes; compliant shared caches
+can reuse it for two hours without contacting the origin. Profile changes,
+visibility restrictions, rotation and disabling therefore may take up to two
+hours to disappear from shared caches. No stale-while-revalidate/stale-if-error
+window is granted. This reduces origin requests, but does not fix a failed
+first fetch or an unreachable origin when cached content expires.
 
 ## Rendering/security
 

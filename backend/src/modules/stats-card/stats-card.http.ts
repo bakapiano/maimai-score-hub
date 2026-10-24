@@ -6,6 +6,10 @@ import { promisify } from 'node:util';
 import { ByteLru } from './byte-lru';
 import type { StatsCardImage } from './stats-card.service';
 const decompress = promisify(gunzip);
+// Cache at shared proxies for two hours; browsers refresh within five minutes.
+// Revocation still gates origin reads, but cannot recall fresh downstream copies.
+const PUBLIC_CARD_CACHE_CONTROL =
+  'public, max-age=300, s-maxage=7200, must-revalidate';
 
 @Catch()
 export class StatsCardExceptionFilter implements ExceptionFilter {
@@ -50,7 +54,10 @@ export async function sendStatsCard(
   publicImage: boolean,
 ) {
   res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
-  res.setHeader('Cache-Control', publicImage ? 'public, no-cache' : 'no-store');
+  res.setHeader(
+    'Cache-Control',
+    publicImage ? PUBLIC_CARD_CACHE_CONTROL : 'no-store',
+  );
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader(
     'Content-Security-Policy',
