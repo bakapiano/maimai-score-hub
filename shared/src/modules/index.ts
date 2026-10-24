@@ -11,3 +11,4 @@ export * from './sdgb-worker';
 export * from './observability';
 export * from './ocr';
 export * from './android-app-release';
+export * from './stats-card';

@@ -1,9 +1,9 @@
 import { Card, Paper, createTheme } from "@mantine/core";
+import { PROFILE_CARD_FONT } from "@maimai-score-hub/shared";
 
 export const CARD_RADIUS = "md" as const;
 
-const systemSans =
-  "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji'";
+const systemSans = PROFILE_CARD_FONT;
 
 export const appTheme = createTheme({
   fontFamily: systemSans,

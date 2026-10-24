@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { StatsCardModule } from '../stats-card/stats-card.module';
 import { UserEntity, UserSchema } from './schemas/user.schema';
 
 import { AuthModule } from '../auth/auth.module';
@@ -28,6 +29,7 @@ import {
 
 @Module({
   imports: [
+    StatsCardModule,
     forwardRef(() => AuthModule),
     SdgbWorkerModule,
     MongooseModule.forFeature([

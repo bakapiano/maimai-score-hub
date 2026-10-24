@@ -1490,9 +1490,316 @@ paths:
                   - status
         "404":
           description: "404"
+  /me/stats-card:
+    patch:
+      tags: &a5
+        - statsCard
+      parameters: []
+      operationId: statsCard.updateDisplay
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rating:
+                  type: boolean
+                awakeningCount:
+                  type: boolean
+                classRank:
+                  type: boolean
+                courseRank:
+                  type: boolean
+                title:
+                  type: boolean
+              additionalProperties: false
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  code:
+                    type: string
+                    pattern: ^[A-Za-z0-9_-]{32}$
+                    nullable: true
+                  updatedAt:
+                    type: string
+                    nullable: true
+                  display:
+                    type: object
+                    properties:
+                      rating:
+                        type: boolean
+                      awakeningCount:
+                        type: boolean
+                      classRank:
+                        type: boolean
+                      courseRank:
+                        type: boolean
+                      title:
+                        type: boolean
+                    required:
+                      - rating
+                      - awakeningCount
+                      - classRank
+                      - courseRank
+                      - title
+                    additionalProperties: false
+                required:
+                  - enabled
+                  - code
+                  - updatedAt
+                  - display
+    get:
+      tags: *a5
+      parameters: []
+      operationId: statsCard.state
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  code:
+                    type: string
+                    pattern: ^[A-Za-z0-9_-]{32}$
+                    nullable: true
+                  updatedAt:
+                    type: string
+                    nullable: true
+                  display:
+                    type: object
+                    properties:
+                      rating:
+                        type: boolean
+                      awakeningCount:
+                        type: boolean
+                      classRank:
+                        type: boolean
+                      courseRank:
+                        type: boolean
+                      title:
+                        type: boolean
+                    required:
+                      - rating
+                      - awakeningCount
+                      - classRank
+                      - courseRank
+                      - title
+                    additionalProperties: false
+                required:
+                  - enabled
+                  - code
+                  - updatedAt
+                  - display
+    post:
+      tags: *a5
+      parameters: []
+      operationId: statsCard.enable
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              additionalProperties: false
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  code:
+                    type: string
+                    pattern: ^[A-Za-z0-9_-]{32}$
+                    nullable: true
+                  updatedAt:
+                    type: string
+                    nullable: true
+                  display:
+                    type: object
+                    properties:
+                      rating:
+                        type: boolean
+                      awakeningCount:
+                        type: boolean
+                      classRank:
+                        type: boolean
+                      courseRank:
+                        type: boolean
+                      title:
+                        type: boolean
+                    required:
+                      - rating
+                      - awakeningCount
+                      - classRank
+                      - courseRank
+                      - title
+                    additionalProperties: false
+                required:
+                  - enabled
+                  - code
+                  - updatedAt
+                  - display
+    delete:
+      tags: *a5
+      parameters: []
+      operationId: statsCard.disable
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  code:
+                    type: string
+                    pattern: ^[A-Za-z0-9_-]{32}$
+                    nullable: true
+                  updatedAt:
+                    type: string
+                    nullable: true
+                  display:
+                    type: object
+                    properties:
+                      rating:
+                        type: boolean
+                      awakeningCount:
+                        type: boolean
+                      classRank:
+                        type: boolean
+                      courseRank:
+                        type: boolean
+                      title:
+                        type: boolean
+                    required:
+                      - rating
+                      - awakeningCount
+                      - classRank
+                      - courseRank
+                      - title
+                    additionalProperties: false
+                required:
+                  - enabled
+                  - code
+                  - updatedAt
+                  - display
+  /me/stats-card/rotate:
+    post:
+      tags: *a5
+      parameters: []
+      operationId: statsCard.rotate
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              additionalProperties: false
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  code:
+                    type: string
+                    pattern: ^[A-Za-z0-9_-]{32}$
+                    nullable: true
+                  updatedAt:
+                    type: string
+                    nullable: true
+                  display:
+                    type: object
+                    properties:
+                      rating:
+                        type: boolean
+                      awakeningCount:
+                        type: boolean
+                      classRank:
+                        type: boolean
+                      courseRank:
+                        type: boolean
+                      title:
+                        type: boolean
+                    required:
+                      - rating
+                      - awakeningCount
+                      - classRank
+                      - courseRank
+                      - title
+                    additionalProperties: false
+                required:
+                  - enabled
+                  - code
+                  - updatedAt
+                  - display
+  /me/stats-card/preview.svg:
+    get:
+      tags: *a5
+      parameters:
+        - name: theme
+          in: query
+          schema:
+            default: light
+            type: string
+            enum:
+              - light
+              - dark
+      operationId: statsCard.preview
+      responses:
+        "200":
+          description: "200"
+  /stats/{code}/card.svg:
+    get:
+      tags: *a5
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{32}$
+        - name: theme
+          in: query
+          schema:
+            default: light
+            type: string
+            enum:
+              - light
+              - dark
+      operationId: statsCard.image
+      responses:
+        "200":
+          description: "200"
+        "304":
+          description: "304"
   /me/cabinet-score-jobs:
     post:
-      tags: &a5
+      tags: &a6
         - sync
       parameters: []
       operationId: sync.createCabinetScoreJob
@@ -1608,7 +1915,7 @@ paths:
           description: "409"
   /me/cabinet-score-jobs/active:
     get:
-      tags: *a5
+      tags: *a6
       parameters: []
       operationId: sync.getActiveCabinetScoreJob
       responses:
@@ -1703,7 +2010,7 @@ paths:
                   - job
   /me/cabinet-score-jobs/{jobId}:
     get:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: jobId
           in: path
@@ -1797,7 +2104,7 @@ paths:
                   - updatedAt
   /me/sync/latest:
     get:
-      tags: *a5
+      tags: *a6
       parameters: []
       operationId: sync.latest
       responses:
@@ -1923,7 +2230,7 @@ paths:
                 nullable: true
   /me/sync/scores:
     post:
-      tags: *a5
+      tags: *a6
       parameters: []
       operationId: sync.updateScores
       requestBody:
@@ -2023,7 +2330,7 @@ paths:
           description: "503"
   /me/sync/latest/exports/diving-fish:
     post:
-      tags: *a5
+      tags: *a6
       parameters: []
       operationId: sync.exportToDivingFish
       responses:
@@ -2186,7 +2493,7 @@ paths:
                   - job
   /me/sync/latest/exports/lxns:
     post:
-      tags: *a5
+      tags: *a6
       parameters: []
       operationId: sync.exportToLxns
       responses:
@@ -2349,7 +2656,7 @@ paths:
                   - job
   /me/sync/prober-export-jobs/{exportJobId}:
     get:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: exportJobId
           in: path
@@ -2499,7 +2806,7 @@ paths:
                 additionalProperties: true
   /me/sync/prober-export-jobs:
     get:
-      tags: *a5
+      tags: *a6
       parameters: []
       operationId: sync.listProberExportJobs
       responses:
@@ -2651,7 +2958,7 @@ paths:
                   - items
   /me/score-changes:
     get:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: musicId
           in: query
@@ -2816,7 +3123,7 @@ paths:
                   - nextCursor
   /me/score-history:
     get:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: start
           in: query
@@ -2961,7 +3268,7 @@ paths:
                   - hasEarlier
   /me/score-history/calendar:
     get:
-      tags: *a5
+      tags: *a6
       parameters:
         - name: from
           in: query
@@ -3026,7 +3333,7 @@ paths:
                   - hasEarlier
   /me/dxnet-jobs:
     post:
-      tags: &a6
+      tags: &a7
         - job
       parameters:
         - name: authorization
@@ -3279,7 +3586,7 @@ paths:
                   - code
   /me/dxnet-jobs/{jobId}:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: jobId
           in: path
@@ -3458,7 +3765,7 @@ paths:
                   - friendCode
   /me/dxnet-jobs/active:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: authorization
           in: header
@@ -3638,7 +3945,7 @@ paths:
                   - job
   /me/dxnet-jobs/friendship:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: authorization
           in: header
@@ -3682,7 +3989,7 @@ paths:
                   - checkedAt
   /me/dxnet-jobs/{jobId}/verify:
     post:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: jobId
           in: path
@@ -3871,7 +4178,7 @@ paths:
                   - job
   /workers/dxnet/jobs/{jobId}:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: jobId
           in: path
@@ -4112,7 +4419,7 @@ paths:
                   - updatedAt
                   - friendCode
     patch:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: jobId
           in: path
@@ -4534,7 +4841,7 @@ paths:
                   - code
   /workers/dxnet/jobs/{jobId}/prepare-cabinet-friendship:
     post:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: jobId
           in: path
@@ -4671,7 +4978,7 @@ paths:
                   - code
   /workers/dxnet/bots/{botUserFriendCode}/active-friend-codes:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: botUserFriendCode
           in: path
@@ -4690,7 +4997,7 @@ paths:
                   type: string
   /workers/dxnet/qr-login/rival-names:
     get:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: job.getRunningQrLoginRivalNames
       responses:
@@ -4704,7 +5011,7 @@ paths:
                   type: string
   /workers/dxnet/users/activity:
     post:
-      tags: *a6
+      tags: *a7
       parameters: []
       operationId: job.getUsersActivity
       requestBody:
@@ -4744,7 +5051,7 @@ paths:
                     - cabinetUserId
   /workers/dxnet/jobs/{jobId}/cache/{diff}/{type}:
     get:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: jobId
           in: path
@@ -4810,7 +5117,7 @@ paths:
                 required:
                   - songs
     put:
-      tags: *a6
+      tags: *a7
       parameters:
         - name: jobId
           in: path
@@ -4888,7 +5195,7 @@ paths:
                   - success
   /catalog/music:
     get:
-      tags: &a7
+      tags: &a8
         - music
       parameters: []
       operationId: music.listAll
@@ -4913,7 +5220,7 @@ paths:
                   additionalProperties: true
   /catalog/music/aliases:
     get:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: music.listAliases
       responses:
@@ -4947,7 +5254,7 @@ paths:
                   - aliases
   /admin/catalog/music/sync:
     post:
-      tags: &a8
+      tags: &a9
         - admin
       parameters: []
       operationId: admin.syncMusic
@@ -4956,7 +5263,7 @@ paths:
           description: "201"
   /admin/catalog/aliases/sync:
     post:
-      tags: *a7
+      tags: *a8
       parameters: []
       operationId: music.forceAliasSync
       responses:
@@ -4974,7 +5281,7 @@ paths:
                 additionalProperties: true
   /admin/dashboard/stats:
     get:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.getStats
       responses:
@@ -4996,7 +5303,7 @@ paths:
                 additionalProperties: true
   /admin/dashboard/job-stats:
     get:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.getJobStats
       responses:
@@ -5008,7 +5315,7 @@ paths:
                 nullable: true
   /admin/dashboard/job-trend:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: hours
           in: query
@@ -5024,7 +5331,7 @@ paths:
                 nullable: true
   /admin/dashboard/job-error-stats:
     get:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.getJobErrorStats
       responses:
@@ -5036,7 +5343,7 @@ paths:
                 nullable: true
   /admin/dxnet-jobs:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: friendCode
           in: query
@@ -5069,7 +5376,7 @@ paths:
                 nullable: true
   /admin/users:
     get:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.getAllUsers
       responses:
@@ -5083,7 +5390,7 @@ paths:
                   nullable: true
   /admin/dxnet-jobs/active:
     get:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.getActiveJobs
       responses:
@@ -5095,7 +5402,7 @@ paths:
                 nullable: true
   /workers/bots/status:
     post:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.reportBotStatus
       requestBody:
@@ -5178,7 +5485,7 @@ paths:
           description: "201"
   /admin/bots:
     get:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.getBotStatus
       responses:
@@ -5226,7 +5533,7 @@ paths:
                   additionalProperties: true
   /admin/bots/{friendCode}/remark:
     patch:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: friendCode
           in: path
@@ -5251,7 +5558,7 @@ paths:
           description: "200"
   /admin/bots/{friendCode}/cabinet-user-id:
     patch:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: friendCode
           in: path
@@ -5278,7 +5585,7 @@ paths:
           description: "200"
   /admin/bots/{friendCode}/device-status:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: friendCode
           in: path
@@ -5321,7 +5628,7 @@ paths:
                   - stale
   /admin/bots/{friendCode}/player-qr/request:
     post:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: friendCode
           in: path
@@ -5387,7 +5694,7 @@ paths:
                   - errorCode
   /admin/bots/{friendCode}/player-qr:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: friendCode
           in: path
@@ -5452,7 +5759,7 @@ paths:
                   - qrExpiresAt
                   - errorCode
     patch:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: friendCode
           in: path
@@ -5548,7 +5855,7 @@ paths:
                   - errorCode
   /admin/bots/{friendCode}:
     delete:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: friendCode
           in: path
@@ -5561,7 +5868,7 @@ paths:
           description: "200"
   /admin/catalog/covers/sync:
     post:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.syncCovers
       responses:
@@ -5569,7 +5876,7 @@ paths:
           description: "201"
   /admin/catalog/covers/force-sync:
     post:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.forceSyncCovers
       responses:
@@ -5577,7 +5884,7 @@ paths:
           description: "201"
   /admin/dxnet-jobs/cleanup:
     post:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.cleanupJobs
       responses:
@@ -5585,7 +5892,7 @@ paths:
           description: "201"
   /admin/dxnet-routing-control:
     get:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.getDxnetRoutingControl
       responses:
@@ -5612,7 +5919,7 @@ paths:
                         - manual_update
                         - qr_identity
                   claimCanaryByFlow:
-                    default: &a9 {}
+                    default: &a10 {}
                     type: object
                     properties:
                       manual_update:
@@ -5625,7 +5932,7 @@ paths:
                   - botAllowlist
                   - enabledClaimFlows
     patch:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.patchDxnetRoutingControl
       requestBody:
@@ -5651,7 +5958,7 @@ paths:
                       - manual_update
                       - qr_identity
                 claimCanaryByFlow:
-                  default: *a9
+                  default: *a10
                   type: object
                   properties:
                     manual_update:
@@ -5685,7 +5992,7 @@ paths:
                         - manual_update
                         - qr_identity
                   claimCanaryByFlow:
-                    default: *a9
+                    default: *a10
                     type: object
                     properties:
                       manual_update:
@@ -5712,7 +6019,7 @@ paths:
                   - code
   /admin/observability/status:
     get:
-      tags: *a8
+      tags: *a9
       parameters: []
       operationId: admin.getObservabilityStatus
       responses:
@@ -5724,7 +6031,7 @@ paths:
                 nullable: true
   /admin/realtime/overview:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: env
           in: query
@@ -5747,7 +6054,7 @@ paths:
                 nullable: true
   /admin/realtime/worker-groups:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: env
           in: query
@@ -5775,7 +6082,7 @@ paths:
                 nullable: true
   /admin/history/api:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: env
           in: query
@@ -5804,7 +6111,7 @@ paths:
                   nullable: true
   /admin/history/rum:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: env
           in: query
@@ -5833,7 +6140,7 @@ paths:
                   nullable: true
   /admin/history/analytics:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: env
           in: query
@@ -5862,7 +6169,7 @@ paths:
                   nullable: true
   /admin/history/workers:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: env
           in: query
@@ -5891,7 +6198,7 @@ paths:
                   nullable: true
   /admin/history/logs:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: env
           in: query
@@ -5949,7 +6256,7 @@ paths:
                   nullable: true
   /admin/history/log-workers:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: env
           in: query
@@ -5985,7 +6292,7 @@ paths:
                     - lastSeenAt
   /admin/jobs/{jobId}/debug:
     get:
-      tags: *a8
+      tags: *a9
       parameters:
         - name: jobId
           in: path
@@ -6009,7 +6316,7 @@ paths:
                 nullable: true
   /catalog/covers/{songId}:
     get:
-      tags: &a10
+      tags: &a11
         - cover
       parameters:
         - name: songId
@@ -6025,7 +6332,7 @@ paths:
           description: "404"
   /catalog/covers/{songId}.jpg:
     get:
-      tags: *a10
+      tags: *a11
       parameters:
         - name: songId
           in: path
@@ -6040,7 +6347,7 @@ paths:
           description: "404"
   /admin/catalog/covers/backfill-variants:
     post:
-      tags: *a10
+      tags: *a11
       parameters: []
       operationId: cover.backfillVariants
       responses:
@@ -6048,7 +6355,7 @@ paths:
           description: "201"
   /me/score-exports/best50:
     get:
-      tags: &a11
+      tags: &a12
         - scoreExport
       parameters: []
       operationId: scoreExport.best50
@@ -6057,7 +6364,7 @@ paths:
           description: "200"
   /me/score-exports/level:
     get:
-      tags: *a11
+      tags: *a12
       parameters: []
       operationId: scoreExport.level
       responses:
@@ -6065,7 +6372,7 @@ paths:
           description: "200"
   /me/score-exports/version:
     get:
-      tags: *a11
+      tags: *a12
       parameters: []
       operationId: scoreExport.version
       responses:
@@ -6073,7 +6380,7 @@ paths:
           description: "200"
   /me/score-exports/history:
     get:
-      tags: *a11
+      tags: *a12
       parameters:
         - name: date
           in: query
@@ -6126,7 +6433,7 @@ paths:
           description: "200"
   /workers/sdgb/jobs/heartbeat:
     post:
-      tags: &a12
+      tags: &a13
         - sdgbWorker
       parameters: []
       operationId: sdgbWorker.heartbeat
@@ -6325,7 +6632,7 @@ paths:
                   - desiredLaneMemberships
   /workers/sdgb/incidents:
     post:
-      tags: *a12
+      tags: *a13
       parameters: []
       operationId: sdgbWorker.incident
       requestBody:
@@ -6408,7 +6715,7 @@ paths:
           description: "200"
   /workers/sdgb/jobs/{jobId}:
     get:
-      tags: *a12
+      tags: *a13
       parameters:
         - name: jobId
           in: path
@@ -6579,7 +6886,7 @@ paths:
         "404":
           description: "404"
     patch:
-      tags: *a12
+      tags: *a13
       parameters:
         - name: jobId
           in: path
@@ -6846,7 +7153,7 @@ paths:
           description: "404"
   /observability/rum:
     post:
-      tags: &a13
+      tags: &a14
         - observability
       parameters: []
       operationId: observability.ingestRum
@@ -6952,7 +7259,7 @@ paths:
                   - accepted
   /observability/events:
     post:
-      tags: *a13
+      tags: *a14
       parameters: []
       operationId: observability.ingestEvents
       requestBody:
@@ -7026,7 +7333,7 @@ paths:
                   - accepted
   /workers/logs/{kind}/batches:
     post:
-      tags: *a13
+      tags: *a14
       parameters:
         - name: kind
           in: path
@@ -7120,7 +7427,7 @@ paths:
                   - accepted
   /workers/dxnet/jobs/{jobId}/api-calls:
     post:
-      tags: *a13
+      tags: *a14
       parameters:
         - name: jobId
           in: path
@@ -7228,7 +7535,7 @@ paths:
                   - accepted
   /workers/{kind}/external-api-calls:
     post:
-      tags: *a13
+      tags: *a14
       parameters:
         - name: kind
           in: path

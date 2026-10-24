@@ -20,6 +20,7 @@ import { useState } from "react";
 
 import { AccountSettingsSection } from "./SettingsPanelAccountSection";
 import { AppCard } from "./AppCard";
+import { StatsCardSettingsSection } from "./StatsCardSettingsSection";
 import { InstallAppButton } from "./InstallAppButton";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { usePwaInstall } from "../hooks/usePwaInstall";
@@ -197,6 +198,7 @@ export function SettingsContent({ onClose = () => {} }: { onClose?: () => void }
   return (
     <Box style={{ height: "100%" }}>
       <Stack gap="xl" mx="auto" w="100%">
+        <StatsCardSettingsSection />
         <AppearanceSettingsSection
           colorScheme={colorScheme}
           onChange={setColorScheme}

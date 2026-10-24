@@ -1,13 +1,8 @@
-import { decodeHtmlEntities } from "@maimai-score-hub/shared";
 import {
-  Badge,
-  Box,
-  Divider,
-  Group,
-  Image,
-  Stack,
-  Text,
-} from "@mantine/core";
+  decodeHtmlEntities,
+  getProfileRatingGradient,
+} from "@maimai-score-hub/shared";
+import { Badge, Box, Divider, Group, Image, Stack, Text } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 import { normalizeMaimaiImgUrl } from "../utils/maimaiImages";
 import { AppCard } from "./AppCard";
@@ -72,40 +67,6 @@ function hexToRgba(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-function getDeluxeRatingGradient(rating: number) {
-  if (rating < 1000) {
-    return { from: "#9bdcf7", to: "#9bdcf7" };
-  }
-  if (rating < 2000) {
-    return { from: "#4ea3ff", to: "#2364d2" };
-  }
-  if (rating < 4000) {
-    return { from: "#b7e84f", to: "#2f9e44" };
-  }
-  if (rating < 7000) {
-    return { from: "#ffe066", to: "#f08c00" };
-  }
-  if (rating < 10000) {
-    return { from: "#ff8787", to: "#e03131" };
-  }
-  if (rating < 12000) {
-    return { from: "#da77f2", to: "#862e9c" };
-  }
-  if (rating < 13000) {
-    return { from: "#c08457", to: "#7c4a2d" };
-  }
-  if (rating < 14000) {
-    return { from: "#9bdcf7", to: "#2364d2" };
-  }
-  if (rating < 14500) {
-    return { from: "#ffd43b", to: "#f08c00" };
-  }
-  if (rating < 15000) {
-    return { from: "#fff3bf", to: "#fab005" };
-  }
-  return { from: "#ae3ec9", to: "#15aabf" };
-}
-
 function TitleBadge({
   title,
   trophyColor,
@@ -155,9 +116,7 @@ function TitleBadge({
       }}
     >
       <span
-        className={
-          scrolling ? classes.titleTrackScrolling : classes.titleTrack
-        }
+        className={scrolling ? classes.titleTrackScrolling : classes.titleTrack}
       >
         <span ref={measureRef} className={classes.titleText}>
           {title}
@@ -217,7 +176,7 @@ export function ProfileCard({ profile }: Props) {
                   size="md"
                   radius={10}
                   variant="gradient"
-                  gradient={getDeluxeRatingGradient(profile.rating)}
+                  gradient={getProfileRatingGradient(profile.rating)}
                 >
                   <span className={classes.ratingPrefix}>Rating: </span>
                   {profile.rating}
@@ -225,12 +184,7 @@ export function ProfileCard({ profile }: Props) {
               )}
             </Group>
 
-            <Text
-              className={classes.username}
-              fw={500}
-              size="lg"
-              lineClamp={1}
-            >
+            <Text className={classes.username} fw={500} size="lg" lineClamp={1}>
               {username ?? "未知用户"}
             </Text>
 

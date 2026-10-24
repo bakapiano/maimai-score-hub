@@ -4,11 +4,10 @@ import { fileURLToPath, URL } from "node:url";
 
 const apiProxyTarget =
   process.env.FRONTEND_API_PROXY_TARGET ?? "http://127.0.0.1:9050";
-const apiProxyOrigin = /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|$)/.test(
-  apiProxyTarget,
-)
-  ? "http://localhost:3001"
-  : "https://maiscorehub.bakapiano.com";
+const apiProxyOrigin =
+  /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|$)/.test(apiProxyTarget)
+    ? "http://localhost:3001"
+    : "https://maiscorehub.bakapiano.com";
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -43,6 +42,11 @@ export default defineConfig({
     port: 3001,
     host: "127.0.0.1",
     proxy: {
+      "/stats/": {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        rewrite: (path) => "/api/v1" + path,
+      },
       "/admin": {
         target: "http://127.0.0.1:3002",
         changeOrigin: true,

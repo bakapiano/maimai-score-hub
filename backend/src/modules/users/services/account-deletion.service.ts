@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { StatsCardService } from '../../stats-card/stats-card.service';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { Types } from 'mongoose';
@@ -16,6 +17,7 @@ import { ScoreChangeEntity } from '../../sync/schemas/score-change.schema';
 export class AccountDeletionService {
   constructor(
     private readonly users: UsersService,
+    private readonly statsCards: StatsCardService,
     @InjectModel(SyncEntity.name)
     private readonly syncModel: Model<SyncDocument>,
     @InjectModel(JobEntity.name)
@@ -60,6 +62,7 @@ export class AccountDeletionService {
       this.passkeyModel.deleteMany({ userId: new Types.ObjectId(userId) }),
       this.proberExportJobModel.deleteMany({ friendCode }),
       this.proberExportStateModel.deleteMany({ friendCode }),
+      this.statsCards.deleteForUser(userId),
     ]);
     return {
       ok: true as const,

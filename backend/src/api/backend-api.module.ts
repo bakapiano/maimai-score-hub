@@ -1,4 +1,7 @@
 import { Module } from '@nestjs/common';
+import { StatsCardModule } from '../modules/stats-card/stats-card.module';
+import { MeStatsCardController } from './me/me-stats-card.controller';
+import { PublicStatsCardController } from './public/public-stats-card.controller';
 
 import { AdminBotsController } from './admin/admin-bots.controller';
 import { AdminAndroidAppReleaseController } from './admin/admin-android-app-release.controller';
@@ -58,6 +61,7 @@ import { DxnetBotAssignmentBusyFilter } from '../modules/job/dxnet-job.exception
 
 @Module({
   imports: [
+    StatsCardModule,
     AdminModule,
     AndroidAppReleaseModule,
     AndroidWorkflowModule,
@@ -79,6 +83,8 @@ import { DxnetBotAssignmentBusyFilter } from '../modules/job/dxnet-job.exception
     UsersModule,
   ],
   controllers: [
+    MeStatsCardController,
+    PublicStatsCardController,
     AuthController,
     AndroidAppReleaseController,
     AndroidWorkflowController,

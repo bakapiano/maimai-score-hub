@@ -38,6 +38,9 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
+  // Revocable profile cards must always revalidate at the backend.
+  // Never cache an SVG here or use it as the navigation app-shell fallback.
+  if (url.pathname.startsWith("/stats/")) return;
   if (url.pathname.startsWith("/maimai-mobile/img/")) return;
 
   if (request.mode === "navigate") {
