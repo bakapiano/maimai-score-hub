@@ -294,7 +294,7 @@ export class CabinetIdentityMatcherService {
   ): string {
     const matches = friends.filter(
       (candidate) =>
-        candidate.userName === rivalName && candidate.rating === rating,
+        candidate.userName === rivalName,
     );
     if (matches.length === 0) {
       const sample = friends
