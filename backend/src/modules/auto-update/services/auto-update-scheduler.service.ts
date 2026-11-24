@@ -32,6 +32,7 @@ import {
 import { AutoUpdateActivityService } from './auto-update-activity.service';
 import { AutoUpdateDailyFullUpdateService } from './auto-update-daily-full-update.service';
 import { AutoUpdateFcfsWindowService } from './auto-update-fcfs-window.service';
+import { runTimeBudgetedBatch } from './time-budgeted-batch';
 
 const SCHEDULER_VERSION = 'rival-first-v1';
 const SETTLED_FULL_UPDATE_SOURCE = 'auto_update_settled_full_update';
@@ -178,14 +179,38 @@ export class AutoUpdateSchedulerService
       return null;
     }
 
-    signal?.throwIfAborted();
-    const summary = await this.runSweep(signal);
+    let summary: Awaited<ReturnType<AutoUpdateSchedulerService['runSweep']>>;
+    try {
+      signal?.throwIfAborted();
+      summary = await this.runSweep(signal);
+      signal?.throwIfAborted();
+    } catch (error) {
+      await this.runsModel
+        .updateOne(
+          { bucketKey },
+          {
+            $set: {
+              status: 'failed',
+              finishedAt: new Date(),
+              lastError: error instanceof Error ? error.message : String(error),
+            },
+          },
+        )
+        .catch((err) =>
+          this.logger.warn(
+            `failed to finalize aborted auto-update run: ${err}`,
+          ),
+        );
+      throw error;
+    }
     await this.runsModel
       .updateOne(
         { bucketKey },
         {
           $set: {
             status: 'completed',
+            finishedAt: new Date(),
+            lastError: null,
             totalUsers: summary.totalUsers,
             triggered: summary.triggered,
             skippedNoChange: summary.skippedNoChange,
@@ -200,7 +225,10 @@ export class AutoUpdateSchedulerService
   }
 
   // Rival, map, FC/FS, settled and daily lanes intentionally share one leased
-  // snapshot so all due calculations use the same `now`.
+  // snapshot so all due calculations use the same `now`. Probe phases have
+  // separate admission budgets so a busy Rival batch cannot starve Map or
+  // the following settlement phases. Do not run Map and Rival concurrently:
+  // they update shared per-user tier/backoff state.
   // eslint-disable-next-line complexity
   async runSweep(signal?: AbortSignal): Promise<{
     totalUsers: number;
@@ -312,11 +340,11 @@ export class AutoUpdateSchedulerService
         mapResults.filter((r) => r.action === 'failed').length;
 
       this.logger.log(
-        `rival-first auto-update sweep done: ${triggered} changed, ${skippedNoChange} unchanged, ${failed} failed (rivalDue=${due.length}, mapDue=${mapDue.length}, fcfsWindow=${fcfsWindow?.windowKey ?? '-'}, fcfsChangedUsers=${fcfsWindow?.changedUsers ?? 0}, pendingFullReconciled=${pendingFullReconciled}, pendingFullActive=${pendingFullActive}, pendingFullLimit=${pendingFullDispatchLimit}, pendingFullDue=${pendingFullUpdate.due}, pendingFullCreated=${pendingFullUpdate.created}, pendingFullCovered=${pendingFullUpdate.coveredByActive}, pendingFullDeferred=${pendingFullUpdate.deferred}, pendingFullFailed=${pendingFullUpdate.failed}, dailyDate=${dailyFullUpdate?.businessDate ?? '-'}, dailyStaged=${dailyFullUpdate?.staged ?? 0}, dailyReconciled=${dailyFullUpdate?.reconciled ?? 0}, dailyDispatched=${dailyFullUpdate?.dispatched ?? 0}, dailyActive=${dailyFullUpdate?.activeDailyUpdateScores ?? 0}, dailyLimit=${dailyFullUpdate?.dispatchLimit ?? 0})`,
+        `rival-first auto-update sweep done: ${triggered} changed, ${skippedNoChange} unchanged, ${failed} failed (rivalDue=${due.length}, rivalProcessed=${results.length}, rivalDeferred=${due.length - results.length}, mapDue=${mapDue.length}, mapProcessed=${mapResults.length}, mapDeferred=${mapDue.length - mapResults.length}, fcfsWindow=${fcfsWindow?.windowKey ?? '-'}, fcfsChangedUsers=${fcfsWindow?.changedUsers ?? 0}, pendingFullReconciled=${pendingFullReconciled}, pendingFullActive=${pendingFullActive}, pendingFullLimit=${pendingFullDispatchLimit}, pendingFullDue=${pendingFullUpdate.due}, pendingFullCreated=${pendingFullUpdate.created}, pendingFullCovered=${pendingFullUpdate.coveredByActive}, pendingFullDeferred=${pendingFullUpdate.deferred}, pendingFullFailed=${pendingFullUpdate.failed}, dailyDate=${dailyFullUpdate?.businessDate ?? '-'}, dailyStaged=${dailyFullUpdate?.staged ?? 0}, dailyReconciled=${dailyFullUpdate?.reconciled ?? 0}, dailyDispatched=${dailyFullUpdate?.dispatched ?? 0}, dailyActive=${dailyFullUpdate?.activeDailyUpdateScores ?? 0}, dailyLimit=${dailyFullUpdate?.dispatchLimit ?? 0})`,
       );
 
       return {
-        totalUsers: due.length + mapDue.length,
+        totalUsers: results.length + mapResults.length,
         triggered,
         skippedNoChange,
         failed,
@@ -395,40 +423,26 @@ export class AutoUpdateSchedulerService
     states: AutoUpdateProbeStateEntity[],
     signal?: AbortSignal,
   ): Promise<AutoUpdateProbeResult[]> {
-    const results: AutoUpdateProbeResult[] = [];
-    let next = 0;
-    const workers = Array.from(
-      { length: Math.min(this.timing.concurrency, states.length) },
-      async () => {
-        while (next < states.length) {
-          signal?.throwIfAborted();
-          const index = next++;
-          results[index] = await this.processRivalProbe(states[index]);
-        }
-      },
-    );
-    await Promise.all(workers);
-    return results;
+    return runTimeBudgetedBatch({
+      items: states,
+      concurrency: this.timing.concurrency,
+      budgetMs: Math.min(60_000, this.timing.sweepHardTimeoutMs / 10),
+      process: (state) => this.processRivalProbe(state),
+      signal,
+    });
   }
 
   private async runDueMapStates(
     states: AutoUpdateProbeStateEntity[],
     signal?: AbortSignal,
   ): Promise<AutoUpdateProbeResult[]> {
-    const results: AutoUpdateProbeResult[] = [];
-    let next = 0;
-    const workers = Array.from(
-      { length: Math.min(this.timing.mapConcurrency, states.length) },
-      async () => {
-        while (next < states.length) {
-          signal?.throwIfAborted();
-          const index = next++;
-          results[index] = await this.processMapProbe(states[index]);
-        }
-      },
-    );
-    await Promise.all(workers);
-    return results;
+    return runTimeBudgetedBatch({
+      items: states,
+      concurrency: this.timing.mapConcurrency,
+      budgetMs: Math.min(60_000, this.timing.sweepHardTimeoutMs / 10),
+      process: (state) => this.processMapProbe(state),
+      signal,
+    });
   }
 
   private async runDuePendingFullUpdateStates(

@@ -1,0 +1,22 @@
+name: test auto-update scheduling
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.4"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm --prefix shared install
+      - run: npm --prefix shared run build
+      - run: npm install --install-links=true
+        working-directory: backend
+      - run: npx jest --runInBand src/modules/auto-update src/common/redis/redis-lease.service.spec.ts
+        working-directory: backend

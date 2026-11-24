@@ -17,8 +17,11 @@ jobs:
   build:
     uses: ./.github/workflows/build-backend.yml
 
+  auto-update-tests:
+    uses: ./.github/workflows/test-auto-update.yml
+
   deploy:
-    needs: build
+    needs: [build, auto-update-tests]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

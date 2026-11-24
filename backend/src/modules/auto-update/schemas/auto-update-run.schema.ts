@@ -24,7 +24,13 @@ export class AutoUpdateRunEntity {
   ranOn!: string;
 
   @Prop({ type: String, default: 'running' })
-  status!: 'running' | 'completed';
+  status!: 'running' | 'completed' | 'failed';
+
+  @Prop({ type: Date, default: null })
+  finishedAt!: Date | null;
+
+  @Prop({ type: String, default: null })
+  lastError!: string | null;
 
   @Prop({ type: Number, default: 0 })
   totalUsers!: number;

@@ -19,11 +19,15 @@ function createService(overrides?: {
   activity?: Record<string, unknown>;
 }) {
   const timing = {
+    concurrency: 4,
+    rivalBatchLimit: 480,
+    sweepHardTimeoutMs: 600_000,
     mapConcurrency: 2,
     mapBatchLimit: 120,
     settledFullUpdateRetryMs: 10 * 60 * 1000,
     settledFullUpdateClaimTimeoutMs: 5 * 60 * 1000,
     priorityForTier: jest.fn(() => 30),
+    settledFullUpdateDispatchLimit: jest.fn(() => 0),
   };
   const stateModel = {
     updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
@@ -36,6 +40,7 @@ function createService(overrides?: {
     ...(overrides?.taskModel ?? {}),
   };
   const jobs = {
+    countActiveUpdateScoreBySource: jest.fn().mockResolvedValue(0),
     create: jest.fn().mockResolvedValue({ jobId: 'recent-job' }),
     getActiveUpdateScoreByFriendCode: jest.fn().mockResolvedValue(null),
     findById: jest.fn().mockResolvedValue(null),
@@ -79,6 +84,10 @@ function createService(overrides?: {
     }),
   };
 
+  const runsModel = {
+    findOneAndUpdate: jest.fn().mockResolvedValue(null),
+    updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+  };
   return {
     service: new AutoUpdateSchedulerService(
       {} as any,
@@ -89,7 +98,7 @@ function createService(overrides?: {
       {} as any,
       stateModel as any,
       taskModel as any,
-      {} as any,
+      runsModel as any,
       timing as any,
       activity as any,
       fcfsWindow as any,
@@ -104,8 +113,102 @@ function createService(overrides?: {
     sdgb,
     activity,
     fcfsWindow,
+    dailyFullUpdate,
+    runsModel,
   };
 }
+
+describe('AutoUpdateSchedulerService probe fairness', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('reaches Map and settlement with a full slow Rival backlog', async () => {
+    const rivalStates = Array.from({ length: 480 }, (_, i) => ({
+      friendCode: `r${i}`,
+    }));
+    const mapStates = Array.from({ length: 120 }, (_, i) => ({
+      friendCode: `m${i}`,
+    }));
+    const find = jest
+      .fn()
+      .mockImplementationOnce(() => queryResult(rivalStates))
+      .mockImplementationOnce(() => queryResult(mapStates));
+    const { service, stateModel, fcfsWindow, dailyFullUpdate } = createService({
+      stateModel: { find },
+    });
+    const internal = service as any;
+    jest.spyOn(internal, 'syncEnabledStates').mockResolvedValue(undefined);
+    const rival = jest
+      .spyOn(internal, 'processRivalProbe')
+      .mockImplementation(async (state: any) => {
+        await new Promise((resolve) => setTimeout(resolve, 10_000));
+        return { friendCode: state.friendCode, action: 'skipped' };
+      });
+    const map = jest
+      .spyOn(internal, 'processMapProbe')
+      .mockImplementation(async (state: any) => {
+        await new Promise((resolve) => setTimeout(resolve, 10_000));
+        return { friendCode: state.friendCode, action: 'skipped' };
+      });
+    const sweep = service.runSweep();
+    await jest.advanceTimersByTimeAsync(59_999);
+    expect(map).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(60_001);
+    const summary = await sweep;
+    expect(rival).toHaveBeenCalledTimes(24);
+    expect(map).toHaveBeenCalledTimes(12);
+    expect(summary.totalUsers).toBe(36);
+    expect(summary.skippedNoChange).toBe(36);
+    expect(summary.entries).toHaveLength(36);
+    expect(fcfsWindow.run).toHaveBeenCalledTimes(1);
+    expect(dailyFullUpdate.run).toHaveBeenCalledTimes(1);
+    // Admission does not advance dates or create tasks for deferred users.
+    expect(stateModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('finishes admitted long-running Rival calls before entering Map', async () => {
+    const states = Array.from({ length: 10 }, (_, i) => ({
+      friendCode: `r${i}`,
+    }));
+    const find = jest
+      .fn()
+      .mockImplementationOnce(() => queryResult(states))
+      .mockImplementationOnce(() => queryResult([{ friendCode: 'map' }]));
+    const { service } = createService({ stateModel: { find } });
+    const internal = service as any;
+    jest.spyOn(internal, 'syncEnabledStates').mockResolvedValue(undefined);
+    const rival = jest
+      .spyOn(internal, 'processRivalProbe')
+      .mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 120_000));
+        return { action: 'failed' };
+      });
+    const map = jest
+      .spyOn(internal, 'processMapProbe')
+      .mockResolvedValue({ action: 'skipped' });
+    const sweep = service.runSweep();
+    await jest.advanceTimersByTimeAsync(119_999);
+    expect(map).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1);
+    await expect(sweep).resolves.toMatchObject({ totalUsers: 5, failed: 4 });
+    expect(rival).toHaveBeenCalledTimes(4);
+    expect(map).toHaveBeenCalledTimes(1);
+  });
+
+  it('finalizes failed run rows rather than leaving them running forever', async () => {
+    const { service, runsModel } = createService();
+    const error = new Error('lease hard timeout');
+    jest.spyOn(service, 'runSweep').mockRejectedValue(error);
+    await expect((service as any).runSweepClaimed()).rejects.toBe(error);
+    expect(runsModel.updateOne).toHaveBeenCalledWith(expect.any(Object), {
+      $set: {
+        status: 'failed',
+        finishedAt: expect.any(Date),
+        lastError: error.message,
+      },
+    });
+  });
+});
 
 describe('AutoUpdateSchedulerService settled full updates', () => {
   it('creates a full update_score job for due pending settled updates', async () => {
