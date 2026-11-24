@@ -22,10 +22,10 @@ RUN node -e "if (!Number.isInteger(require('node:zlib').constants.BROTLI_DECODER
 # 安装 fontconfig 以支持字体渲染，以及 curl 用于健康检查
 # Bound the CDN attempt on mainland hosts. The fallback changes only the
 # download location; Alpine's trusted package-signing keys remain unchanged.
-RUN if ! timeout 90 apk add --no-cache fontconfig curl; then \
+RUN if ! timeout -k 10 90 apk add --no-cache fontconfig curl; then \
       sed 's|https://dl-cdn.alpinelinux.org/alpine|https://mirrors.tuna.tsinghua.edu.cn/alpine|g' \
         /etc/apk/repositories > /tmp/apk-repositories; \
-      timeout 180 apk --repositories-file /tmp/apk-repositories add --no-cache fontconfig curl; \
+      timeout -k 10 180 apk --repositories-file /tmp/apk-repositories add --no-cache fontconfig curl; \
     fi \
     && rm -f /tmp/apk-repositories
 
