@@ -20,7 +20,14 @@ FROM node:22.23.4-alpine
 RUN node -e "if (!Number.isInteger(require('node:zlib').constants.BROTLI_DECODER_ERROR_FORMAT_BLOCK_SWITCH)) throw new Error('CVE-2026-111497 runtime patch required')"
 
 # 安装 fontconfig 以支持字体渲染，以及 curl 用于健康检查
-RUN apk add --no-cache fontconfig curl
+# Bound the CDN attempt on mainland hosts. The fallback changes only the
+# download location; Alpine's trusted package-signing keys remain unchanged.
+RUN if ! timeout 90 apk add --no-cache fontconfig curl; then \
+      sed 's|https://dl-cdn.alpinelinux.org/alpine|https://mirrors.tuna.tsinghua.edu.cn/alpine|g' \
+        /etc/apk/repositories > /tmp/apk-repositories; \
+      timeout 180 apk --repositories-file /tmp/apk-repositories add --no-cache fontconfig curl; \
+    fi \
+    && rm -f /tmp/apk-repositories
 
 # Copy built shared package so install-links can copy it
 WORKDIR /app/shared
