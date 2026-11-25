@@ -39,3 +39,23 @@ time with the existing image. Never recreate Mongo, Redis or nginx for this
 change. Keep at least two healthy backend replicas until a new replica is
 healthy, then remove only the explicitly identified old replica. Rollback
 uses the preserved image and settings through the same rolling sequence.
+
+## Production acceptance (2026-11-25, Asia/Shanghai)
+
+The runtime-only rolling update completed at 21:10:05 using the existing
+application image/revision `59b63e8`. Both replicas were healthy; each was
+checked for 16/8 concurrency and 480/240 batches before replacing its old
+counterpart. Neither the workers nor stateful dependencies were restarted.
+
+The 21:11 and 21:13 sweeps each completed all 480 Rival and 240 Map probes
+with zero failures, finishing at 21:12:47 and 21:14:47 (about 107 seconds).
+This establishes a two-minute cadence in the observation window, equivalent
+to approximately 14,400 Rival and 7,200 Map probes/hour if sustained; these
+are extrapolations, not measured hour-long totals. At 21:14:46, mean observed
+durations were 1.80s Rival and 1.61s Map, with no failed probes since rollout.
+Due counts fell from 3,157/3,418 at 21:10:59 to 2,437/3,022 at 21:14:46.
+The old backlog was still draining, so per-user target intervals had not yet
+been fully revalidated. Local and GitHub regression checks passed 40 tests.
+
+Host-only rollback files remain under
+`/root/maimai-backend-capacity-before-20261125.ECRtFoVl/`.
