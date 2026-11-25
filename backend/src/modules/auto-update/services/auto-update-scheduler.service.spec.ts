@@ -122,6 +122,59 @@ describe('AutoUpdateSchedulerService probe fairness', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
 
+  it('drains the production capacity profile within two minutes at measured latency', async () => {
+    const rivalStates = Array.from({ length: 480 }, (_, i) => ({
+      friendCode: `r${i}`,
+    }));
+    const mapStates = Array.from({ length: 240 }, (_, i) => ({
+      friendCode: `m${i}`,
+    }));
+    const find = jest
+      .fn()
+      .mockImplementationOnce(() => queryResult(rivalStates))
+      .mockImplementationOnce(() => queryResult(mapStates));
+    const { service, timing, fcfsWindow } = createService({
+      stateModel: { find },
+    });
+    Object.assign(timing, {
+      concurrency: 16,
+      mapConcurrency: 8,
+      mapBatchLimit: 240,
+    });
+    const internal = service as any;
+    jest.spyOn(internal, 'syncEnabledStates').mockResolvedValue(undefined);
+    let activeRival = 0;
+    let peakRival = 0;
+    let activeMap = 0;
+    let peakMap = 0;
+    const rival = jest
+      .spyOn(internal, 'processRivalProbe')
+      .mockImplementation(async () => {
+        peakRival = Math.max(peakRival, ++activeRival);
+        expect(activeMap).toBe(0);
+        await new Promise((resolve) => setTimeout(resolve, 1600));
+        activeRival--;
+        return { action: 'skipped' };
+      });
+    const map = jest
+      .spyOn(internal, 'processMapProbe')
+      .mockImplementation(async () => {
+        peakMap = Math.max(peakMap, ++activeMap);
+        expect(activeRival).toBe(0);
+        await new Promise((resolve) => setTimeout(resolve, 1600));
+        activeMap--;
+        return { action: 'skipped' };
+      });
+    const sweep = service.runSweep();
+    await jest.advanceTimersByTimeAsync(96_000);
+    await expect(sweep).resolves.toMatchObject({ totalUsers: 720, failed: 0 });
+    expect(rival).toHaveBeenCalledTimes(480);
+    expect(map).toHaveBeenCalledTimes(240);
+    expect(peakRival).toBe(16);
+    expect(peakMap).toBe(8);
+    expect(fcfsWindow.run).toHaveBeenCalledTimes(1);
+  });
+
   it('reaches Map and settlement with a full slow Rival backlog', async () => {
     const rivalStates = Array.from({ length: 480 }, (_, i) => ({
       friendCode: `r${i}`,

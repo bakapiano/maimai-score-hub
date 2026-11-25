@@ -3,11 +3,32 @@ import { ConfigService } from '@nestjs/config';
 import { AutoUpdateSchedulerTimingService } from './auto-update-scheduler-timing.service';
 
 describe('AutoUpdateSchedulerTimingService', () => {
+  it('accepts an explicit production probe capacity profile without changing deadlines', () => {
+    const timing = new AutoUpdateSchedulerTimingService(
+      new ConfigService({
+        AUTO_UPDATE_RIVAL_CONCURRENCY: '16',
+        AUTO_UPDATE_MAP_CONCURRENCY: '8',
+        AUTO_UPDATE_RIVAL_BATCH_LIMIT: '480',
+        AUTO_UPDATE_MAP_BATCH_LIMIT: '240',
+      }),
+    );
+
+    expect(timing.concurrency).toBe(16);
+    expect(timing.mapConcurrency).toBe(8);
+    expect(timing.rivalBatchLimit).toBe(480);
+    expect(timing.mapBatchLimit).toBe(240);
+    expect(timing.sweepHardTimeoutMs).toBe(600_000);
+    expect(timing.rivalTimeoutMs).toBe(120_000);
+    expect(timing.mapTimeoutMs).toBe(60_000);
+  });
+
   it('defaults settled full update dispatch to a twelve-job waterline', () => {
     const timing = new AutoUpdateSchedulerTimingService(new ConfigService());
 
     expect(timing.rivalBatchLimit).toBe(480);
     expect(timing.mapBatchLimit).toBe(120);
+    expect(timing.concurrency).toBe(4);
+    expect(timing.mapConcurrency).toBe(2);
     expect(timing.settledFullUpdateBatchLimit).toBe(12);
     expect(timing.settledFullUpdateMaxActive).toBe(12);
     expect(timing.settledFullUpdateDispatchLimit(0)).toBe(12);
