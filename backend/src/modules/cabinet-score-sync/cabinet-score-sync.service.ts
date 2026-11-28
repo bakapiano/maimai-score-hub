@@ -281,6 +281,8 @@ export class CabinetScoreSyncService {
   private publicErrorMessage(code: string | null, fallback: string | null) {
     const known: Record<string, string> = {
       QR_EXPIRED: '二维码已过期，请刷新后重新提交',
+      QR_UPSTREAM_BUSY: '华立二维码服务暂时繁忙，请稍后重试',
+      QR_AUTH_FAILED: '二维码验证失败，请刷新二维码后重试',
       CABINET_USER_MISMATCH: '二维码与当前绑定账号不一致',
       ACCOUNT_ALREADY_LOGGED_IN: '账号正在机台登录中，请结束游玩后再试',
       SESSION_CLEANUP_PENDING: '正在清理上一次登录状态，请稍后再试',
