@@ -34,6 +34,8 @@ export default defineConfig(({ command }) => ({
       "@maimai-score-hub/shared": fileURLToPath(
         new URL("../shared/src/index.ts", import.meta.url),
       ),
+      // Avoid loading thousands of icon chunk files in Vite dev mode
+      "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
     },
   },
   build: {
@@ -41,19 +43,7 @@ export default defineConfig(({ command }) => ({
     // Keep the entry bundle parseable there so users see the app instead of a
     // blank screen before React and frontend observability can start.
     target: "chrome77",
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          react: ["react", "react-dom"],
-          mantine: [
-            "@mantine/core",
-            "@mantine/hooks",
-            "@mantine/notifications",
-          ],
-          icons: ["@tabler/icons-react"],
-        },
-      },
-    },
+    cssCodeSplit: false,
   },
   server: {
     port: 3001,
