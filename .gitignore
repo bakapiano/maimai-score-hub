@@ -136,4 +136,7 @@ ocr/scripts/training/
 AccessKey.csv
 *AccessKey*.csv
 
+# Local direct-deploy host settings (never commit)
+.env.deploy.local
+
 
