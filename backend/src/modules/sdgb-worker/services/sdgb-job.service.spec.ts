@@ -48,15 +48,18 @@ describe('SdgbJobService verified completion receipts', () => {
         .mockReturnValue({ lean: jest.fn().mockResolvedValue(row) }),
       findOneAndUpdate: jest.fn().mockResolvedValue({ toObject: () => row }),
     };
+    const observability = {
+      recordJobTimelineEvent: jest.fn(),
+    };
     const registry = { isMembershipActive: jest.fn().mockResolvedValue(true) };
     const service = new SdgbJobService(
       model as never,
-      {} as never,
+      observability as never,
       registry as never,
       {} as never,
       { get: (_key: string, fallback?: unknown) => fallback } as never,
     );
-    return { service, model, registry };
+    return { service, model, observability, registry };
   }
 
   it('returns the same result for the original execution after membership changes', async () => {
@@ -101,7 +104,7 @@ describe('SdgbJobService verified completion receipts', () => {
   });
 
   it('stores the hashed identity atomically with completion and clears the live token', async () => {
-    const { service, model } = setup();
+    const { service, model, observability } = setup();
     await service.completeMusicScoreFinalization(
       'job',
       { syncId: 'sync', scoreCount: 4390 },
@@ -121,6 +124,14 @@ describe('SdgbJobService verified completion receipts', () => {
         }) as unknown,
       }),
       { new: true },
+    );
+    expect(observability.recordJobTimelineEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: 'job',
+        jobKind: 'sdgb',
+        jobType: 'get_music_score',
+        toStatus: 'completed',
+      }),
     );
   });
 });

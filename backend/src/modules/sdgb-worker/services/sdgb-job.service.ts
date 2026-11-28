@@ -630,7 +630,20 @@ export class SdgbJobService implements OnModuleInit, OnModuleDestroy {
         'music score job cannot complete before cleanup succeeds',
       );
     }
-    return toView(doc.toObject() as SdgbJobEntity);
+    const updated = doc.toObject() as SdgbJobEntity;
+    this.observability.recordJobTimelineEvent({
+      ts: now,
+      jobId,
+      jobKind: 'sdgb',
+      jobType: updated.jobType,
+      eventName: sdgbTimelineEventName('completed'),
+      fromStatus: 'processing',
+      toStatus: 'completed',
+      durationMs: now.getTime() - updated.createdAt.getTime(),
+      errorClass: null,
+      message: null,
+    });
+    return toView(updated);
   }
 
   /**
