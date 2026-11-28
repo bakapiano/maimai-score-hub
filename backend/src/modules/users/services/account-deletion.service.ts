@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import { StatsCardService } from '../../stats-card/stats-card.service';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
@@ -9,6 +9,7 @@ import { SyncEntity } from '../../sync/schemas/sync.schema';
 import type { SyncDocument } from '../../sync/schemas/sync.schema';
 import { UsersService } from './users.service';
 import { PasskeyCredentialEntity } from '../../auth/schemas/passkey-credential.schema';
+import { AuthSessionService } from '../../auth/services/auth-session.service';
 import { ProberExportJobEntity } from '../../prober-export/schemas/prober-export-job.schema';
 import { ProberExportStateEntity } from '../../prober-export/schemas/prober-export-state.schema';
 import { ScoreChangeEntity } from '../../sync/schemas/score-change.schema';
@@ -30,6 +31,8 @@ export class AccountDeletionService {
     private readonly proberExportStateModel: Model<ProberExportStateEntity>,
     @InjectModel(ScoreChangeEntity.name)
     private readonly scoreChangeModel: Model<ScoreChangeEntity>,
+    @Inject(forwardRef(() => AuthSessionService))
+    private readonly authSessions: AuthSessionService,
   ) {}
 
   /**
@@ -55,6 +58,7 @@ export class AccountDeletionService {
       passkeyRes,
       exportJobRes,
       exportStateRes,
+      sessionsDeleted,
     ] = await Promise.all([
       this.syncModel.deleteMany({ friendCode }),
       this.scoreChangeModel.deleteMany({ friendCode }),
@@ -62,6 +66,7 @@ export class AccountDeletionService {
       this.passkeyModel.deleteMany({ userId: new Types.ObjectId(userId) }),
       this.proberExportJobModel.deleteMany({ friendCode }),
       this.proberExportStateModel.deleteMany({ friendCode }),
+      this.authSessions.deleteAllForUser(userId),
       this.statsCards.deleteForUser(userId),
     ]);
     return {
@@ -75,6 +80,7 @@ export class AccountDeletionService {
         passkeys: passkeyRes.deletedCount ?? 0,
         proberExportJobs: exportJobRes.deletedCount ?? 0,
         proberExportStates: exportStateRes.deletedCount ?? 0,
+        sessions: sessionsDeleted,
       },
     };
   }

@@ -27,7 +27,6 @@ import { useMemo } from "react";
 import { type MiniProfile } from "../components/MiniProfileCard";
 import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
-import { AppFooter } from "../components/AppFooter";
 import { useAuth } from "../providers/AuthContext";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { getCachedProfile } from "../utils/offlineCache";
@@ -48,7 +47,7 @@ const pages: PageMeta[] = [
     label: "网站首页",
     to: "/app",
     title: "网站首页",
-    description: "开始使用 maimai Score Hub",
+    description: "舞萌 DX 成绩同步与查询",
     icon: <IconHome size={18} />,
     color: "teal",
   },
@@ -64,7 +63,7 @@ const pages: PageMeta[] = [
     label: "乐曲成绩",
     to: "/app/scores",
     title: "乐曲成绩",
-    description: "查看和分析你的游戏成绩数据",
+    description: "查看 B50、定数表、牌子进度与成绩历史",
     icon: <IconMusic size={18} />,
     color: "grape",
   },
@@ -72,7 +71,7 @@ const pages: PageMeta[] = [
     label: "网站设置",
     to: "/app/settings",
     title: "网站设置",
-    description: "主题、应用安装、账号和本地缓存",
+    description: "名片外链、外观、账号与缓存",
     icon: <IconSettings size={18} />,
     color: "gray",
   },
@@ -373,7 +372,6 @@ export default function AuthedLayout() {
             <div style={{ maxWidth: 838, margin: "0 auto" }}>
               <PageHeader
                 title={currentPage.title}
-                description={currentPage.description}
                 hideDescriptionOnMobile
               />
             </div>
@@ -388,7 +386,7 @@ export default function AuthedLayout() {
                 icon={<IconInfoCircle size={18} />}
                 radius="md"
               >
-                当前处于离线模式，仅可查看缓存的成绩数据：
+                当前处于离线模式，仅可查看本地缓存成绩。{" "}
                 <Anchor
                   component="button"
                   type="button"
@@ -399,7 +397,7 @@ export default function AuthedLayout() {
                     navigate("/login", { replace: true });
                   }}
                 >
-                  登录来使用完整功能
+                  前往登录
                 </Anchor>
               </Alert>
             </div>
@@ -417,7 +415,6 @@ export default function AuthedLayout() {
           </div>
         </Box>
 
-        <AppFooter />
       </AppShell.Main>
       <MobileBottomNav
         pathname={location.pathname}

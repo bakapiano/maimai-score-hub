@@ -20,6 +20,7 @@ import {
   IconRectangle,
   IconTrophy,
 } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
 import { ScoreDetailModal } from "../../components/ScoreDetailModal";
 import { AppCard } from "../../components/AppCard";
 import { apiUrl } from "../../api/baseUrl";
@@ -184,7 +185,11 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
       await downloadBlob(blob, "best50.png");
     } catch (err) {
       console.error(err);
-      alert((err as Error).message || "导出失败");
+      notifications.show({
+        title: "导出失败",
+        message: err instanceof Error ? err.message : "导出失败",
+        color: "red",
+      });
     } finally {
       setExporting(false);
     }
@@ -271,7 +276,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
                   现版本 Best 15
                 </Title>
                 <div className={classes.cardGrid}>
-                  {ratingSummary.newTop.slice(0, 15).map((score, idx) => {
+                  {ratingSummary.newTop.map((score, idx) => {
                     const music = musicMap.get(score.musicId);
                     const chart =
                       score.cid !== null && score.cid !== undefined
@@ -315,7 +320,7 @@ export function Best50Tab({ scores, loading }: Best50TabProps) {
                   旧版本 Best 35
                 </Title>
                 <div className={classes.cardGrid}>
-                  {ratingSummary.oldTop.slice(0, 35).map((score, idx) => {
+                  {ratingSummary.oldTop.map((score, idx) => {
                     const music = musicMap.get(score.musicId);
                     const chart =
                       score.cid !== null && score.cid !== undefined

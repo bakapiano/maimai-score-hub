@@ -1,4 +1,5 @@
 import { Box, Card, Group, Text } from "@mantine/core";
+import { memo } from "react";
 import {
   GOLD_SCORE_STROKE_STYLE,
   LEVEL_COLORS,
@@ -141,7 +142,7 @@ function MinimalScoreOverlay({
   );
 }
 
-export function MinimalMusicScoreCard({
+export const MinimalMusicScoreCard = memo(function MinimalMusicScoreCard({
   musicId,
   chartIndex,
   score,
@@ -202,4 +203,4 @@ export function MinimalMusicScoreCard({
       </Box>
     </Card>
   );
-}
+});

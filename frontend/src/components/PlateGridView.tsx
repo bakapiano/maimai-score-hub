@@ -1,4 +1,5 @@
 import { Box, Group, Stack, Text } from "@mantine/core";
+import { memo, useMemo } from "react";
 import type { MusicChartPayload, MusicRow } from "../types/music";
 import {
   getCoverUrl,
@@ -116,7 +117,7 @@ function PlateRankBadge({ rank }: { rank: string }) {
   );
 }
 
-function PlateCard({
+const PlateCard = memo(function PlateCard({
   entry,
   plan,
   completionMode,
@@ -201,7 +202,7 @@ function PlateCard({
       )}
     </Box>
   );
-}
+});
 
 type PlateGridViewProps = {
   levels: LevelGroup[];
@@ -222,9 +223,19 @@ export function PlateGridView({
   sectionFilters,
   onSectionFilterChange,
 }: PlateGridViewProps) {
+  const levelSummaries = useMemo(
+    () =>
+      levels.map((level) => ({
+        level,
+        rankSummary: summarizeRanks(level.items),
+        statusSummary: summarizeStatuses(level.items),
+      })),
+    [levels],
+  );
+
   return (
     <Stack gap="lg">
-      {levels.map((level) => {
+      {levelSummaries.map(({ level, rankSummary, statusSummary }) => {
         const sectionFilter = sectionFilters?.[level.levelKey] ?? null;
         const effectiveFilter = pageFilter ?? sectionFilter;
         const visibleItems = level.items.filter((entry) =>
@@ -234,8 +245,8 @@ export function PlateGridView({
           <Stack key={level.levelKey} gap="xs">
             <ScoreSectionSummary
               title={level.levelKey}
-              rankSummary={summarizeRanks(level.items)}
-              statusSummary={summarizeStatuses(level.items)}
+              rankSummary={rankSummary}
+              statusSummary={statusSummary}
               filter={sectionFilter}
               onFilterChange={
                 onSectionFilterChange

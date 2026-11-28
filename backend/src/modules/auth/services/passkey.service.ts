@@ -28,6 +28,7 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { UsersService } from '../../users/services/users.service';
 import { PasskeyCredentialEntity } from '../schemas/passkey-credential.schema';
 import { AuthService } from './auth.service';
+import type { SessionMeta } from './auth-session.service';
 
 type PasskeyCeremony = {
   type: 'registration' | 'authentication';
@@ -114,6 +115,7 @@ export class PasskeyService {
     clientIp: string,
     ceremonyId: string,
     rawResponse: Record<string, unknown>,
+    meta?: SessionMeta,
   ) {
     await this.enforcePublicRateLimit(clientIp);
     const ceremony = await this.consumeCeremony(ceremonyId);
@@ -182,7 +184,7 @@ export class PasskeyService {
         },
       );
       this.auth.updateLastActiveAt(String(user._id));
-      return this.auth.issueTokenForUser(user as never);
+      return this.auth.issueTokenForUser(user as never, meta);
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;

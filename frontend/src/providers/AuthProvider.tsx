@@ -8,6 +8,7 @@ import { usersApi } from "../api/appClient";
 import {
   AuthContext,
   type AuthProfile,
+  type ClearTokenOptions,
   type RefreshProfileOptions,
 } from "./AuthContext";
 import {
@@ -15,8 +16,18 @@ import {
   cacheProfile,
   setOfflineMode as persistOfflineMode,
 } from "../utils/offlineCache";
+import {
+  clearStoredSessionTokens,
+  isLegacyAccessToken,
+  persistSessionTokens,
+  readAccessToken,
+  readRefreshToken,
+  refreshSessionTokens,
+  revokeCurrentSession,
+  shouldProactivelyRefresh,
+  subscribeSessionTokens,
+} from "../utils/authSession";
 
-const TOKEN_KEY = "netbot_token";
 const PROFILE_CACHE_TTL_MS = 10_000;
 
 const profileRequests = new Map<string, Promise<AuthProfile | null>>();
@@ -27,48 +38,71 @@ const profileCache = new Map<
 
 class UnauthorizedProfileError extends Error {}
 
-function readInitialToken() {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch (err) {
-    console.warn("Cannot read token from localStorage", err);
-    return null;
+function persistLoadedProfileHints(nextProfile: AuthProfile | null) {
+  if (!nextProfile) {
+    return;
   }
-}
-
-function persistToken(token: string | null) {
   try {
-    if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
-    } else {
-      localStorage.removeItem(TOKEN_KEY);
+    if (nextProfile.friendCode) {
+      localStorage.setItem("lastFriendCode", nextProfile.friendCode);
     }
-  } catch (err) {
-    console.warn("Cannot persist token to localStorage", err);
+    if (nextProfile.username) {
+      localStorage.setItem("lastUsername", nextProfile.username);
+    }
+  } catch {
+    // ignore
+  }
+  if (nextProfile.profile) {
+    cacheProfile({
+      avatarUrl: nextProfile.profile.avatarUrl,
+      username: nextProfile.profile.username,
+      friendCode: nextProfile.friendCode,
+    });
   }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setTokenState] = useState<string | null>(() =>
-    readInitialToken()
+    readAccessToken(),
   );
   const [offline, setOfflineState] = useState(() => isOfflineMode());
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
-  const setToken = useCallback((next: string | null) => {
-    setProfile(null);
-    setProfileError(null);
-    if (next) {
-      setOfflineState(false);
-      persistOfflineMode(false);
-    }
-    setTokenState(next);
-    persistToken(next);
+  useEffect(() => {
+    return subscribeSessionTokens((nextAccessToken) => {
+      setTokenState((prev) => (prev === nextAccessToken ? prev : nextAccessToken));
+      if (!nextAccessToken) {
+        setProfile(null);
+      }
+    });
   }, []);
 
-  const clearToken = useCallback(() => setToken(null), [setToken]);
+  const setToken = useCallback(
+    (next: string | null, refreshToken?: string | null) => {
+      setProfile(null);
+      setProfileError(null);
+      if (next) {
+        setOfflineState(false);
+        persistOfflineMode(false);
+      }
+      setTokenState(next);
+      persistSessionTokens(next, refreshToken);
+    },
+    [],
+  );
+
+  const clearToken = useCallback((options?: ClearTokenOptions) => {
+    setProfile(null);
+    setProfileError(null);
+    setTokenState(null);
+    if (options?.revoke === false) {
+      clearStoredSessionTokens();
+      return;
+    }
+    void revokeCurrentSession();
+  }, []);
 
   const setOffline = useCallback((v: boolean) => {
     setOfflineState(v);
@@ -79,7 +113,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (options: RefreshProfileOptions = {}) => {
       if (!token || offline) {
         setProfileLoading(false);
-        if (!token) {setProfile(null);}
+        if (!token) {
+          setProfile(null);
+        }
         return null;
       }
 
@@ -118,32 +154,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const nextProfile = await request;
-        profileCache.set(token, {
+        const activeToken = readAccessToken() ?? token;
+        profileCache.set(activeToken, {
           value: nextProfile,
           expiresAt: Date.now() + PROFILE_CACHE_TTL_MS,
         });
         setProfile(nextProfile);
-
-        const fc = nextProfile?.friendCode;
-        const username = nextProfile?.username;
-        try {
-          if (fc) {localStorage.setItem("lastFriendCode", fc);}
-          if (username) {localStorage.setItem("lastUsername", username);}
-        } catch {
-          // ignore
-        }
-        if (nextProfile?.profile) {
-          cacheProfile({
-            avatarUrl: nextProfile.profile.avatarUrl,
-            username: nextProfile.profile.username,
-            friendCode: nextProfile.friendCode,
-          });
-        }
+        persistLoadedProfileHints(nextProfile);
 
         return nextProfile;
       } catch (err) {
         if (err instanceof UnauthorizedProfileError) {
-          setToken(null);
+          clearStoredSessionTokens();
+          setTokenState(null);
+          setProfile(null);
           return null;
         }
         const message = err instanceof Error ? err.message : String(err);
@@ -153,12 +177,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfileLoading(false);
       }
     },
-    [token, offline, setToken],
+    [token, offline],
   );
 
+  // Silently upgrade legacy 30-day JWTs or proactively rotate near-expiry access tokens.
   useEffect(() => {
-    // Skip token validation in offline mode
-    if (!token || offline) {return;}
+    if (!token || offline) {
+      return;
+    }
+    const refreshToken = readRefreshToken();
+    const needsUpgrade = !refreshToken && isLegacyAccessToken(token);
+    const needsRefresh = Boolean(refreshToken) && shouldProactivelyRefresh(token);
+    if (needsUpgrade || needsRefresh) {
+      void refreshSessionTokens();
+    }
+  }, [token, offline]);
+
+  useEffect(() => {
+    if (!token || offline) {
+      return;
+    }
 
     refreshProfile().catch((err) => {
       if (!(err instanceof UnauthorizedProfileError)) {
@@ -203,7 +241,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       profileLoading,
       profileError,
       refreshProfile,
-    ]
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

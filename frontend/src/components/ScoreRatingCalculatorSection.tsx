@@ -163,7 +163,7 @@ export function ScoreRatingCalculatorSection({
         {chartConstant === null ? (
           <Paper withBorder className={classes.emptyChartData}>
             <Text size="sm" c="dimmed">
-              当前谱面没有返回详细定数，无法计算 DX Rating 线。
+              该谱面暂无定数数据，无法计算 Rating 线。
             </Text>
           </Paper>
         ) : (

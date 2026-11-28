@@ -35,8 +35,8 @@ export function ScoreHistoryFilterPanel({
         }
       />
       <Switch
-        label="忽略无关键变化的记录"
-        description="仅保留评级档位、DX 星级或 FC/FS 状态发生变化的记录"
+        label="仅显示关键变化"
+        description="仅保留评级、DX 星级或 FC/FS 提升的记录"
         checked={settings.keyChangesOnly}
         onChange={(event) =>
           onSettingsChange({ keyChangesOnly: event.currentTarget.checked })

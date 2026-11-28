@@ -1,0 +1,26 @@
+.helpButton {
+  height: 30px;
+  padding: 0 11px 0 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  background-color: light-dark(
+    rgba(34, 139, 230, 0.1),
+    rgba(77, 171, 247, 0.14)
+  );
+  color: light-dark(var(--mantine-color-blue-7), var(--mantine-color-blue-3));
+  transition: background-color 120ms ease;
+}
+
+.helpButton:hover {
+  background-color: light-dark(
+    rgba(34, 139, 230, 0.16),
+    rgba(77, 171, 247, 0.22)
+  );
+}

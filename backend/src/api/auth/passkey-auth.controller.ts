@@ -31,6 +31,7 @@ export class PasskeyAuthController {
       req.ip ?? req.socket.remoteAddress ?? 'unknown',
       body.ceremonyId,
       body.response,
+      { userAgent: req.headers['user-agent'] ?? null },
     );
   }
 }

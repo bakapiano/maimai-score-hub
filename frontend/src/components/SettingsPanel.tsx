@@ -30,6 +30,10 @@ import { useAndroidAppUpdate } from "../features/android-update/AndroidAppUpdate
 function InstallAppSettingsSection() {
   const { status } = usePwaInstall();
 
+  if (status !== "prompt" && status !== "ios") {
+    return null;
+  }
+
   return (
     <AppCard compact>
       <Stack gap="md">
@@ -38,32 +42,11 @@ function InstallAppSettingsSection() {
           title="安装应用"
         />
         {status === "prompt" && (
-          <Stack gap="xs">
-            <Text size="sm" c="dimmed">
-              将 maimai Score Hub 安装为应用后，可以从桌面或主屏幕直接打开。
-            </Text>
-            <InstallAppButton fullWidth variant="filled" />
-          </Stack>
+          <InstallAppButton fullWidth variant="filled" />
         )}
         {status === "ios" && (
-          <Stack gap="xs">
-            <Text size="sm">
-              iOS 需要通过 Safari 的分享菜单添加到主屏幕。
-            </Text>
-            <Text size="sm" c="dimmed">
-              点击底部分享按钮，然后选择“添加到主屏幕”。
-            </Text>
-          </Stack>
-        )}
-        {status === "installed" && (
           <Text size="sm" c="dimmed">
-            应用已经安装，或当前正在以应用模式运行。
-          </Text>
-        )}
-        {status === "unavailable" && (
-          <Text size="sm" c="dimmed">
-            当前浏览器暂未提供安装入口。可以尝试使用 Chrome、Edge
-            或移动端浏览器的菜单添加到主屏幕。
+            在 Safari 点击底部分享按钮，选择“添加到主屏幕”。
           </Text>
         )}
       </Stack>
@@ -138,21 +121,16 @@ function CacheSettingsSection({
           icon={<IconDatabase size={16} />}
           title="缓存"
         />
-        <Stack gap={4}>
-          <Button
-            variant="light"
-            color="red"
-            fullWidth
-            leftSection={<IconTrash size={16} />}
-            onClick={onClearCache}
-            loading={clearing}
-          >
-            清除本地缓存
-          </Button>
-          <Text size="xs" c="dimmed">
-            清除所有本地缓存数据
-          </Text>
-        </Stack>
+        <Button
+          variant="light"
+          color="red"
+          fullWidth
+          leftSection={<IconTrash size={16} />}
+          onClick={onClearCache}
+          loading={clearing}
+        >
+          清除本地缓存
+        </Button>
       </Stack>
     </AppCard>
   );
@@ -160,6 +138,7 @@ function CacheSettingsSection({
 
 function preserveSessionCache() {
   const token = localStorage.getItem("netbot_token");
+  const refreshToken = localStorage.getItem("netbot_refresh_token");
   const offlineMode = localStorage.getItem("offline_mode");
   const cachedProfile = localStorage.getItem("offline_cache_profile");
   const cachedSync = localStorage.getItem("offline_cache_sync_latest");
@@ -167,6 +146,9 @@ function preserveSessionCache() {
   localStorage.clear();
   if (token) {
     localStorage.setItem("netbot_token", token);
+  }
+  if (refreshToken) {
+    localStorage.setItem("netbot_refresh_token", refreshToken);
   }
   if (offlineMode) {
     localStorage.setItem("offline_mode", offlineMode);

@@ -9,10 +9,16 @@ import { ConfigService } from '@nestjs/config';
 import { JobService } from '../../job/services/job.service';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../../users/services/users.service';
+import {
+  AuthSessionService,
+  type SessionMeta,
+} from './auth-session.service';
 
 export type AuthTokenPayload = {
   sub?: string;
   friendCode?: string;
+  sid?: string;
+  typ?: string;
   iat?: number;
   exp?: number;
 };
@@ -25,6 +31,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly users: UsersService,
     private readonly jobs: JobService,
+    private readonly sessions: AuthSessionService,
     config: ConfigService,
   ) {
     this.skipAuth = config.get<string>('SKIP_AUTH', 'false') === 'true';
@@ -33,6 +40,7 @@ export class AuthService {
   async requestLogin(
     friendCode: string,
     method: 'bot_sends_request' | 'user_sends_request',
+    meta?: SessionMeta,
   ) {
     const normalized = friendCode.trim();
     if (!normalized) {
@@ -50,7 +58,7 @@ export class AuthService {
     if (this.skipAuth) {
       return {
         skipAuth: true,
-        ...(await this.issueTokenForUser(user as never)),
+        ...(await this.issueTokenForUser(user as never, meta)),
       };
     }
 
@@ -80,7 +88,7 @@ export class AuthService {
     return { ...result, userId: user._id };
   }
 
-  async checkStatus(jobId: string) {
+  async checkStatus(jobId: string, meta?: SessionMeta) {
     const job = await this.jobs.get(jobId);
     const status = job.status;
     if (
@@ -106,10 +114,11 @@ export class AuthService {
         await this.users.update(userId, { profile: job.profile });
       }
 
-      const signed = await this.issueTokenForUser(user as never);
+      const signed = await this.issueTokenForUser(user as never, meta);
       return {
         status,
         token: signed.token,
+        refreshToken: signed.refreshToken,
         user: signed.user,
       };
     }
@@ -120,13 +129,14 @@ export class AuthService {
   async loginWithPassword(
     login: { friendCode?: string; username?: string },
     password: string,
+    meta?: SessionMeta,
   ) {
     const user = await this.users.verifyPasswordCredentials(login, password);
     if (!user) {
       throw new UnauthorizedException('账号或密码不正确');
     }
     this.updateLastActiveAt(String(user._id));
-    return this.issueTokenForUser(user as never);
+    return this.issueTokenForUser(user as never, meta);
   }
 
   async verifyLoginRequest(jobId: string) {
@@ -157,12 +167,16 @@ export class AuthService {
     this.users.updateLastActiveAt(userId).catch(() => {});
   }
 
-  async issueTokenForUser(user: {
-    _id: unknown;
-    friendCode: string;
-    [key: string]: unknown;
-  }): Promise<{
+  async issueTokenForUser(
+    user: {
+      _id: unknown;
+      friendCode: string;
+      [key: string]: unknown;
+    },
+    meta?: SessionMeta,
+  ): Promise<{
     token: string;
+    refreshToken: string;
     user: { id: string; friendCode: string; [key: string]: unknown };
   }> {
     const safeUser = { ...user };
@@ -170,18 +184,15 @@ export class AuthService {
     delete safeUser.divingFishImportToken;
     delete safeUser.lxnsImportToken;
     delete safeUser.cabinetUserId;
-    const now = Math.floor(Date.now() / 1000);
     const userId = String(user._id);
-    const token = await this.jwt.signAsync(
-      {
-        sub: userId,
-        friendCode: user.friendCode,
-        iat: now,
-      },
-      { expiresIn: '30d' },
+    const issued = await this.sessions.createSession(
+      userId,
+      user.friendCode,
+      meta,
     );
     return {
-      token,
+      token: issued.token,
+      refreshToken: issued.refreshToken,
       user: { ...safeUser, id: userId, friendCode: user.friendCode },
     };
   }

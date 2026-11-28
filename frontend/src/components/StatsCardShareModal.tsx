@@ -18,7 +18,6 @@ import {
   IconCopy,
   IconLink,
   IconRefresh,
-  IconShieldLock,
   IconWorldOff,
   IconShare,
   IconSun,
@@ -246,9 +245,6 @@ function ShareSettings({ token }: { token: string }) {
         theme={theme}
         onRetry={() => setRevision((value) => value + 1)}
       />
-      <Alert icon={<IconShieldLock size={18} />} color="orange" variant="light">
-        任何拿到链接的人都能查看和转发，请注意隐私保护
-      </Alert>
       {error && (
         <Alert color="red" title="操作未完成">
           {error}
@@ -343,6 +339,9 @@ function LinkField({ url }: { url: string }) {
           )}
         </CopyButton>
       </Group>
+      <Text size="xs" c="dimmed">
+        持有此链接即可查看名片内容
+      </Text>
     </Stack>
   );
 }
@@ -424,8 +423,8 @@ function ShareActions({
           <Alert color={confirm === "disable" ? "red" : "orange"}>
             <Text size="sm">
               {confirm === "rotate"
-                ? "重置后旧链接失效，需要替换已粘贴的引用。确认重置？"
-                : "关闭后源站不再提供这张名片。第三方已保存的图片无法收回。确认关闭？"}
+                ? "重置后旧链接将立即失效，已嵌入处需同步更换。确认重置？"
+                : "关闭后链接立即失效，第三方已缓存的图片不受影响。确认关闭？"}
             </Text>
             <Group mt="sm" justify="flex-end">
               <Button

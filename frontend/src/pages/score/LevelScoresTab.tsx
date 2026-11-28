@@ -29,6 +29,8 @@ import {
 import type { MusicChartPayload, MusicRow } from "../../types/music";
 import {
   type MouseEvent,
+  useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -55,8 +57,10 @@ import {
 } from "../../components/ScoreDisplayFilter.model";
 import type { SyncScore } from "../../types/syncScore";
 import classes from "./LevelScoresTab.module.css";
+import { notifications } from "@mantine/notifications";
 import { downloadBlob } from "../../utils/downloadBlob";
 import { useAuth } from "../../providers/AuthContext";
+import { useMusic } from "../../providers/MusicContext";
 import {
   getRatingFloors,
 } from "../../utils/ratingFloors";
@@ -164,18 +168,44 @@ const buildBuckets = (
   return buckets;
 };
 
-function useHorizontalDragScroll() {
+function useHorizontalDragScroll(itemCount: number) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const startX = useRef(0);
   const scrollLeftPos = useRef(0);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollBounds = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) {
+      return;
+    }
+    setCanScrollLeft(el.scrollLeft > 2);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) {
+      return;
+    }
+    updateScrollBounds();
+    const observer = new ResizeObserver(updateScrollBounds);
+    observer.observe(el);
+    el.addEventListener("scroll", updateScrollBounds, { passive: true });
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("scroll", updateScrollBounds);
+    };
+  }, [itemCount, updateScrollBounds]);
 
   const scrollLeft = () => {
-    scrollContainerRef.current?.scrollBy({ left: -150, behavior: "smooth" });
+    scrollContainerRef.current?.scrollBy({ left: -160, behavior: "smooth" });
   };
 
   const scrollRight = () => {
-    scrollContainerRef.current?.scrollBy({ left: 150, behavior: "smooth" });
+    scrollContainerRef.current?.scrollBy({ left: 160, behavior: "smooth" });
   };
 
   const handleMouseDown = (event: MouseEvent) => {
@@ -207,6 +237,8 @@ function useHorizontalDragScroll() {
 
   return {
     scrollContainerRef,
+    canScrollLeft,
+    canScrollRight,
     scrollLeft,
     scrollRight,
     handleMouseDown,
@@ -214,6 +246,49 @@ function useHorizontalDragScroll() {
     handleMouseUp: stopDragging,
     handleMouseLeave: stopDragging,
   };
+}
+
+function buildDetailSections(
+  current: LevelBucket | undefined,
+  displayFilter: DisplayFilterSettings,
+) {
+  if (!current) {
+    return [];
+  }
+  return current.details
+    .map((detail) => {
+      const baseItems = detail.items.filter((entry) =>
+        matchesScoreFilter(
+          entry.score?.score || entry.score?.dxScore || null,
+          displayFilter,
+        ),
+      );
+      if (baseItems.length === 0) {
+        return null;
+      }
+      return {
+        detailKey: detail.detailKey,
+        sectionKey: `${current.levelKey}-${detail.detailKey}`,
+        baseItems,
+        rankSummary: summarizeRanks(baseItems),
+        statusSummary: summarizeStatuses(baseItems),
+      };
+    })
+    .filter(
+      (section): section is NonNullable<typeof section> => section !== null,
+    );
+}
+
+function isDisplayFilterActive(displayFilter: DisplayFilterSettings) {
+  return (
+    displayFilter.showFc !== DEFAULT_DISPLAY_FILTER.showFc ||
+    displayFilter.showFs !== DEFAULT_DISPLAY_FILTER.showFs ||
+    displayFilter.showScore !== DEFAULT_DISPLAY_FILTER.showScore ||
+    displayFilter.scoreDisplayMode !== DEFAULT_DISPLAY_FILTER.scoreDisplayMode ||
+    displayFilter.scoreDecimals !== DEFAULT_DISPLAY_FILTER.scoreDecimals ||
+    displayFilter.scoreMin !== DEFAULT_DISPLAY_FILTER.scoreMin ||
+    displayFilter.scoreMax !== DEFAULT_DISPLAY_FILTER.scoreMax
+  );
 }
 
 type LevelScoresTabProps = {
@@ -229,9 +304,10 @@ export function LevelScoresTab({
   loading,
 }: LevelScoresTabProps) {
   const { token } = useAuth();
+  const { musicMap } = useMusic();
   const ratingFloors = useMemo(
-    () => getRatingFloors(scores, new Set(musics.map((music) => music.id))),
-    [scores, musics],
+    () => getRatingFloors(scores, musicMap),
+    [scores, musicMap],
   );
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -275,15 +351,34 @@ export function LevelScoresTab({
     );
   }, [currentAllItems, displayFilter]);
 
+  const currentSummary = useMemo(
+    () =>
+      currentFilteredItems.length > 0
+        ? {
+            rankSummary: summarizeRanks(currentFilteredItems),
+            statusSummary: summarizeStatuses(currentFilteredItems),
+            averageScore: calculateAverageScore(currentFilteredItems),
+          }
+        : null,
+    [currentFilteredItems],
+  );
+
+  const detailSections = useMemo(
+    () => buildDetailSections(current, displayFilter),
+    [current, displayFilter],
+  );
+
   const {
     scrollContainerRef,
+    canScrollLeft,
+    canScrollRight,
     scrollLeft,
     scrollRight,
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,
     handleMouseLeave,
-  } = useHorizontalDragScroll();
+  } = useHorizontalDragScroll(buckets.length);
 
   const handleExport = async () => {
     if (!token || !current) {return;}
@@ -304,20 +399,17 @@ export function LevelScoresTab({
       await downloadBlob(blob, `level-${current.levelKey}.png`);
     } catch (err) {
       console.error(err);
-      alert((err as Error).message || "导出失败");
+      notifications.show({
+        title: "导出失败",
+        message: err instanceof Error ? err.message : "导出失败",
+        color: "red",
+      });
     } finally {
       setExporting(false);
     }
   };
 
-  const hasActiveDisplayFilter =
-    displayFilter.showFc !== DEFAULT_DISPLAY_FILTER.showFc ||
-    displayFilter.showFs !== DEFAULT_DISPLAY_FILTER.showFs ||
-    displayFilter.showScore !== DEFAULT_DISPLAY_FILTER.showScore ||
-    displayFilter.scoreDisplayMode !== DEFAULT_DISPLAY_FILTER.scoreDisplayMode ||
-    displayFilter.scoreDecimals !== DEFAULT_DISPLAY_FILTER.scoreDecimals ||
-    displayFilter.scoreMin !== DEFAULT_DISPLAY_FILTER.scoreMin ||
-    displayFilter.scoreMax !== DEFAULT_DISPLAY_FILTER.scoreMax;
+  const hasActiveDisplayFilter = isDisplayFilterActive(displayFilter);
 
   const displayFilterContent = (
     <ScoreDisplayFilterContent
@@ -356,23 +448,16 @@ export function LevelScoresTab({
         </Group>
 
         {buckets.length > 0 && (
-          <Box pos="relative">
+          <Box className={classes.selectorRow}>
             <ActionIcon
-              variant="filled"
+              variant="light"
               color="blue"
               size="md"
               radius="xl"
               onClick={scrollLeft}
+              disabled={!canScrollLeft}
               aria-label="向左滚动"
-              style={{
-                position: "absolute",
-                left: 0,
-                top: 0,
-                bottom: 0,
-                margin: "auto 0",
-                zIndex: 10,
-                boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-              }}
+              className={classes.scrollButton}
             >
               <IconChevronLeft size={18} />
             </ActionIcon>
@@ -382,17 +467,7 @@ export function LevelScoresTab({
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseLeave}
-              style={{
-                overflowX: "auto",
-                scrollbarWidth: "none",
-                msOverflowStyle: "none",
-                WebkitOverflowScrolling: "touch",
-                touchAction: "pan-x",
-                cursor: "grab",
-                userSelect: "none",
-                paddingLeft: 36,
-                paddingRight: 36,
-              }}
+              className={classes.scroller}
             >
               <SegmentedControl
                 value={current?.levelKey ?? ""}
@@ -410,21 +485,14 @@ export function LevelScoresTab({
               />
             </Box>
             <ActionIcon
-              variant="filled"
+              variant="light"
               color="blue"
               size="md"
               radius="xl"
               onClick={scrollRight}
+              disabled={!canScrollRight}
               aria-label="向右滚动"
-              style={{
-                position: "absolute",
-                right: 0,
-                top: 0,
-                bottom: 0,
-                margin: "auto 0",
-                zIndex: 10,
-                boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-              }}
+              className={classes.scrollButton}
             >
               <IconChevronRight size={18} />
             </ActionIcon>
@@ -432,11 +500,11 @@ export function LevelScoresTab({
         )}
       </Box>
 
-      {current && currentFilteredItems.length > 0 && (
+      {current && currentSummary && (
         <ScoreSummaryCard
-          rankSummary={summarizeRanks(currentFilteredItems)}
-          statusSummary={summarizeStatuses(currentFilteredItems)}
-          averageScore={calculateAverageScore(currentFilteredItems)}
+          rankSummary={currentSummary.rankSummary}
+          statusSummary={currentSummary.statusSummary}
+          averageScore={currentSummary.averageScore}
           filter={pageFilter}
           onFilterChange={setPageFilter}
         />
@@ -468,29 +536,21 @@ export function LevelScoresTab({
           </Text>
         ) : (
           <Stack gap="lg">
-            {current.details.map((detail, idx) => {
-              const baseItems = detail.items.filter((entry) =>
-                matchesScoreFilter(
-                  entry.score?.score || entry.score?.dxScore || null,
-                  displayFilter,
-                ),
-              );
-              if (baseItems.length === 0) {return null;}
-              const sectionKey = `${current.levelKey}-${detail.detailKey}`;
-              const sectionFilter = sectionFilters[sectionKey] ?? null;
+            {detailSections.map((section, idx) => {
+              const sectionFilter = sectionFilters[section.sectionKey] ?? null;
               const effectiveFilter = pageFilter ?? sectionFilter;
-              const visibleItems = baseItems.filter((entry) =>
+              const visibleItems = section.baseItems.filter((entry) =>
                 matchesBadgeFilter(entry, effectiveFilter),
               );
               return (
-                <Stack key={sectionKey} gap="xs">
+                <Stack key={section.sectionKey} gap="xs">
                   <ScoreSectionSummary
-                    title={detail.detailKey}
-                    rankSummary={summarizeRanks(baseItems)}
-                    statusSummary={summarizeStatuses(baseItems)}
+                    title={section.detailKey}
+                    rankSummary={section.rankSummary}
+                    statusSummary={section.statusSummary}
                     filter={sectionFilter}
                     onFilterChange={(next) =>
-                      setSectionFilter(sectionKey, next)
+                      setSectionFilter(section.sectionKey, next)
                     }
                   />
                   <Group
@@ -519,7 +579,7 @@ export function LevelScoresTab({
                       </div>
                     ))}
                   </Group>
-                  {idx < current.details.length - 1 && (
+                  {idx < detailSections.length - 1 && (
                     <Divider variant="dashed" mt="md" mb="0" />
                   )}
                 </Stack>

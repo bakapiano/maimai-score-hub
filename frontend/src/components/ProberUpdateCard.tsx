@@ -268,6 +268,15 @@ function DivingFishPanel({
                   value={importToken}
                   disabled={interactionDisabled}
                   onChange={(event) => onTokenChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "Enter" &&
+                      importToken &&
+                      !interactionDisabled
+                    ) {
+                      onExportWithToken();
+                    }
+                  }}
                 />
                 <Group
                   grow
@@ -300,8 +309,7 @@ function DivingFishPanel({
             <Tabs.Panel value="login" pt="md">
               <Stack gap="sm">
                 <Text size="xs" c="dimmed">
-                  账号密码仅用于获取 Import
-                  Token，不会保存在服务器或浏览器中。
+                  账号密码仅用于单次获取 Import Token，不会被保存。
                 </Text>
                 <TextInput
                   label="用户名"
@@ -318,6 +326,11 @@ function DivingFishPanel({
                   value={password}
                   disabled={fetchingToken || interactionDisabled}
                   onChange={(event) => onPasswordChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !loginDisabled) {
+                      onExportWithLogin();
+                    }
+                  }}
                 />
                 <Group
                   grow
@@ -415,6 +428,15 @@ function LxnsPanel({
               value={importToken}
               disabled={interactionDisabled}
               onChange={(event) => onTokenChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  importToken &&
+                  !interactionDisabled
+                ) {
+                  onExport();
+                }
+              }}
             />
             <Group
               grow

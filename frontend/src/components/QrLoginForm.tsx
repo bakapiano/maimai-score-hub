@@ -30,6 +30,7 @@ const STATUS_LABEL: Record<string, string> = {
 type QrLoginJson = {
   kind?: "fast" | "async";
   token?: string | null;
+  refreshToken?: string | null;
   attemptId?: string | null;
   message?: string | { code?: string; message?: string };
   error?: string | null;
@@ -68,7 +69,7 @@ function isExpiredQr(json: QrLoginJson | null) {
 }
 
 function showQrLoginSuccess() {
-  notifications.show({ color: "green", message: "神秘二维码登录成功" });
+  notifications.show({ color: "green", message: "二维码登录成功" });
 }
 
 /**
@@ -87,7 +88,7 @@ function showQrLoginSuccess() {
  *    a QR attempt is in flight.
  */
 export interface QrLoginFormProps {
-  onSuccess: (token: string) => void;
+  onSuccess: (token: string, refreshToken?: string | null) => void;
   onBusyChange?: (busy: boolean) => void;
   /** Disabled by parent when the friend-code tab has its own job. */
   disabled?: boolean;
@@ -133,8 +134,8 @@ export function QrLoginForm({
       attemptId: string,
       signal?: AbortSignal,
       timeoutMs = LOGIN_TASK_CACHE_TTL_MS,
-    ): Promise<string> => {
-      return pollWithBackoff<string>(
+    ): Promise<{ token: string; refreshToken: string | null }> => {
+      return pollWithBackoff<{ token: string; refreshToken: string | null }>(
         async () => {
           const { body } = await fetchForPoll(
             apiUrl(`/auth/qr-login/${attemptId}`),
@@ -143,13 +144,23 @@ export function QrLoginForm({
           const json = body as {
             status?: string;
             token?: string | null;
+            refreshToken?: string | null;
             error?: string | null;
           } | null;
           const status = json?.status ?? "pending";
           setProgress(STATUS_LABEL[status] ?? status);
           if (status === "matched") {
             if (json?.token) {
-              return { done: true, value: String(json.token) };
+              return {
+                done: true,
+                value: {
+                  token: String(json.token),
+                  refreshToken:
+                    typeof json.refreshToken === "string"
+                      ? json.refreshToken
+                      : null,
+                },
+              };
             }
             throw new HttpClientError(
               502,
@@ -161,7 +172,7 @@ export function QrLoginForm({
             throw new HttpClientError(
               400,
               { message: json?.error },
-              json?.error || "神秘二维码登录失败",
+              json?.error || "二维码登录失败",
             );
           }
           if (
@@ -186,14 +197,14 @@ export function QrLoginForm({
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       try {
-        const token = await pollAttempt(
+        const credentials = await pollAttempt(
           attemptId,
           ctrl.signal,
           Math.max(1, pending.expiresAt - Date.now()),
         );
         clearPendingQrLogin();
         showQrLoginSuccess();
-        onSuccess(token);
+        onSuccess(credentials.token, credentials.refreshToken);
       } catch (pollErr) {
         if (pollErr instanceof PollAborted) {
           return;
@@ -201,7 +212,7 @@ export function QrLoginForm({
         clearPendingQrLogin();
         notifications.show({
           color: "red",
-          title: "神秘二维码登录失败",
+          title: "二维码登录失败",
           message: pollErr instanceof Error ? pollErr.message : String(pollErr),
         });
       } finally {
@@ -228,10 +239,10 @@ export function QrLoginForm({
       ctrl.signal,
       Math.max(1, cached.expiresAt - Date.now()),
     )
-      .then((token) => {
+      .then((credentials) => {
         clearPendingQrLogin();
         showQrLoginSuccess();
-        onSuccess(token);
+        onSuccess(credentials.token, credentials.refreshToken);
       })
       .catch((err) => {
         if (err instanceof PollAborted) {
@@ -241,13 +252,13 @@ export function QrLoginForm({
         if (err instanceof PollTimeout || err instanceof PollDead) {
           notifications.show({
             color: "red",
-            title: "神秘二维码登录失败",
+            title: "二维码登录失败",
             message: err.message,
           });
         } else if (err instanceof HttpClientError) {
           notifications.show({
             color: "red",
-            title: "神秘二维码登录失败",
+            title: "二维码登录失败",
             message: err.message,
           });
         }
@@ -275,7 +286,10 @@ export function QrLoginForm({
       if (res.ok && json?.kind === "fast" && json?.token) {
         clearPendingQrLogin();
         showQrLoginSuccess();
-        onSuccess(String(json.token));
+        onSuccess(
+          String(json.token),
+          typeof json.refreshToken === "string" ? json.refreshToken : null,
+        );
         return;
       }
       if (res.ok && json?.kind === "async" && json?.attemptId) {
@@ -288,7 +302,10 @@ export function QrLoginForm({
       if (res.ok && json?.token) {
         clearPendingQrLogin();
         showQrLoginSuccess();
-        onSuccess(String(json.token));
+        onSuccess(
+          String(json.token),
+          typeof json.refreshToken === "string" ? json.refreshToken : null,
+        );
         return;
       }
       // Backend returns BadRequestException({code,message}) for known
@@ -296,8 +313,8 @@ export function QrLoginForm({
       if (isExpiredQr(json)) {
         notifications.show({
           color: "orange",
-          title: "神秘二维码已过期",
-          message: "神秘二维码每隔几分钟会换新，请刷新二维码后重新上传。",
+          title: "二维码已过期",
+          message: "二维码已过期，请刷新后重新上传。",
           autoClose: 8000,
         });
         return;
@@ -309,13 +326,13 @@ export function QrLoginForm({
       // framework noise to the end user.
       notifications.show({
         color: "red",
-        title: "神秘二维码登录失败",
+        title: "二维码登录失败",
         message: getQrLoginMessage(json, res.status),
       });
     } catch (err) {
       notifications.show({
         color: "red",
-        title: "神秘二维码登录失败",
+        title: "二维码登录失败",
         message: err instanceof Error ? err.message : String(err),
       });
     } finally {
@@ -370,7 +387,7 @@ export function QrLoginForm({
           icon={<IconInfoCircle size={18} />}
         >
           <Text size="sm">
-            登录任务处理时间较长，请继续等待，不要重复提交二维码。
+            当前队列较慢，请稍候，勿重复提交。
           </Text>
         </Alert>
       )}

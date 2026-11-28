@@ -668,7 +668,7 @@ function ChartDetails({
         ) : (
           <Paper withBorder className={classes.emptyChartData}>
             <Text size="sm" c="dimmed">
-              当前曲库没有返回该谱面的物量数据。
+              该谱面暂无物量数据。
             </Text>
           </Paper>
         )}

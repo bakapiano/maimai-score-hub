@@ -61,8 +61,8 @@ export function getAndroidUpdatePresentation({
     label: "等待代理更新",
     text:
       mode === "recent"
-        ? "读取最近游玩并写入当前账号"
-        : "读取全部难度成绩并写入当前账号",
+        ? "同步最近游玩的成绩"
+        : "同步全部难度的成绩",
     badge: null,
     state: "idle",
     progress: 0,

@@ -11,7 +11,7 @@ test("regular web keeps Android proxy update out of sync methods", () => {
   assert.deepEqual(options.at(-1), {
     value: "image_ocr",
     name: "成绩图识别",
-    description: "从相册成绩图识别并上传成绩",
+    description: "上传结算图自动识别并导入",
   });
 });
 
@@ -22,6 +22,6 @@ test("Android WebView adds proxy update as the fourth sync method", () => {
   assert.deepEqual(options.at(-1), {
     value: "android_local",
     name: "代理更新",
-    description: "使用当前手机微信，通过本地代理更新成绩",
+    description: "通过本机微信直接同步成绩",
   });
 });

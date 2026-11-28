@@ -12,16 +12,18 @@ export function RadioCardGroup({
   data,
   value,
   disabled = false,
+  showDescription = true,
   onChange,
 }: {
   data: RadioCardOption[];
   value?: string;
   disabled?: boolean;
+  showDescription?: boolean;
   onChange?: (value: string) => void;
 }) {
   return (
     <Radio.Group value={value} onChange={onChange}>
-      <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="xs">
+      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="xs">
         {data.map((item) => (
           <Radio.Card
             className={classes.root}
@@ -30,13 +32,19 @@ export function RadioCardGroup({
             key={item.value}
             disabled={disabled}
           >
-            <Group wrap="nowrap" align="flex-start">
+            <Group
+              wrap="nowrap"
+              align={showDescription ? "flex-start" : "center"}
+              gap="xs"
+            >
               <Radio.Indicator />
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <Text className={classes.label}>{item.name}</Text>
-                <Text className={classes.description} lh="xs">
-                  {item.description}
-                </Text>
+                {showDescription && item.description ? (
+                  <Text className={classes.description} lh="xs">
+                    {item.description}
+                  </Text>
+                ) : null}
               </div>
             </Group>
           </Radio.Card>

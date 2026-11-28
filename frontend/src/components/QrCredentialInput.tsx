@@ -22,7 +22,7 @@ export function QrCredentialInput({
   return (
     <TextInput
       label={label}
-      placeholder="粘贴二维码字符串"
+      placeholder="粘贴二维码内容"
       leftSection={<IconQrcode size={16} />}
       rightSectionWidth={108}
       rightSectionPointerEvents="all"

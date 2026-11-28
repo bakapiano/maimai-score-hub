@@ -65,6 +65,10 @@ export class QrLoginAttemptEntity {
   @Prop({ type: String, default: null })
   token!: string | null;
 
+  /** Set when status becomes 'matched'. */
+  @Prop({ type: String, default: null })
+  refreshToken!: string | null;
+
   /** Set when status becomes 'failed'. */
   @Prop({ type: String, default: null })
   error!: string | null;

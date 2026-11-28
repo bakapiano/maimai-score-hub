@@ -1,6 +1,7 @@
 import { initContract } from "@ts-rest/core";
 
 import {
+  AuthSessionSummarySchema,
   BindCabinetQrBodySchema,
   BindCabinetQrMismatchSchema,
   BindCabinetQrResponseSchema,
@@ -14,6 +15,7 @@ import {
   PasskeyRegistrationVerifyBodySchema,
   PasskeySummarySchema,
   RenamePasskeyBodySchema,
+  RevokeOtherSessionsResponseSchema,
   SetAccountPasswordBodySchema,
   UpdateProfileBodySchema,
   UserProfileSchema,
@@ -101,6 +103,35 @@ export const usersContract = c.router({
       403: c.type<{ code: string; message: string }>(),
       404: c.type<{ code: string; message: string }>(),
       429: c.type<{ code: string; message: string }>(),
+    },
+  },
+  listSessions: {
+    method: "GET",
+    path: "/me/sessions",
+    headers: c.type<{ authorization: string }>(),
+    responses: {
+      200: AuthSessionSummarySchema.array(),
+      401: c.type<{ error: string }>(),
+    },
+  },
+  revokeSession: {
+    method: "DELETE",
+    path: "/me/sessions/:id",
+    pathParams: c.type<{ id: string }>(),
+    headers: c.type<{ authorization: string }>(),
+    body: c.noBody(),
+    responses: {
+      200: c.type<{ ok: true }>(),
+      404: c.type<{ error: string }>(),
+    },
+  },
+  revokeOtherSessions: {
+    method: "POST",
+    path: "/me/sessions/revoke-others",
+    headers: c.type<{ authorization: string }>(),
+    body: c.noBody(),
+    responses: {
+      200: RevokeOtherSessionsResponseSchema,
     },
   },
   getDivingFishToken: {

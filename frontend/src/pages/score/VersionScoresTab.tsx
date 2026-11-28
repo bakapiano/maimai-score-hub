@@ -43,8 +43,10 @@ import {
   getVersionDisplayName,
   MAI_LEGACY_VERSIONS,
 } from "../../constants/versions";
+import { notifications } from "@mantine/notifications";
 import { downloadBlob } from "../../utils/downloadBlob";
 import { useAuth } from "../../providers/AuthContext";
+import { useMusic } from "../../providers/MusicContext";
 import {
   getRatingFloors,
 } from "../../utils/ratingFloors";
@@ -323,15 +325,57 @@ function getVisibleVersionLevels(
     .filter((lvl) => lvl.items.length > 0);
 }
 
+function mergeVersionBuckets(buckets: VersionBucket[]): VersionBucket[] {
+  const result = [...buckets];
+  for (const group of MERGE_GROUPS) {
+    const indices = group.versions
+      .map((v) => result.findIndex((b) => b.versionKey === v))
+      .filter((i) => i !== -1);
+    if (indices.length <= 1) {continue;}
+
+    const mergedLevelMap = new Map<string, ChartEntry[]>();
+    for (const idx of indices) {
+      for (const level of result[idx].levels) {
+        const list = mergedLevelMap.get(level.levelKey) ?? [];
+        if (!mergedLevelMap.has(level.levelKey)) {
+          mergedLevelMap.set(level.levelKey, list);
+        }
+        list.push(...level.items);
+      }
+    }
+    const merged: VersionBucket = {
+      versionKey: group.key,
+      levels: Array.from(mergedLevelMap.entries())
+        .map(([levelKey, items]) => ({
+          levelKey,
+          levelNumeric: parseLevelValue(levelKey),
+          items: items.sort(
+            (a, b) => detailSortValue(b.chart) - detailSortValue(a.chart),
+          ),
+        }))
+        .sort(
+          (a, b) =>
+            (b.levelNumeric ?? -Infinity) - (a.levelNumeric ?? -Infinity),
+        ),
+    };
+    result[indices[0]] = merged;
+    for (let i = indices.length - 1; i >= 1; i--) {
+      result.splice(indices[i], 1);
+    }
+  }
+  return result;
+}
+
 export function VersionScoresTab({
   musics,
   scores,
   loading,
 }: VersionScoresTabProps) {
   const { token } = useAuth();
+  const { musicMap } = useMusic();
   const ratingFloors = useMemo(
-    () => getRatingFloors(scores, new Set(musics.map((music) => music.id))),
-    [scores, musics],
+    () => getRatingFloors(scores, musicMap),
+    [scores, musicMap],
   );
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -377,47 +421,7 @@ export function VersionScoresTab({
   );
 
   // Merge version groups that share a plate (e.g. maimai + maimai+ → 真代)
-  const mergedBuckets = useMemo(() => {
-    const result = [...buckets];
-    for (const group of MERGE_GROUPS) {
-      const indices = group.versions
-        .map((v) => result.findIndex((b) => b.versionKey === v))
-        .filter((i) => i !== -1);
-      if (indices.length <= 1) {continue;}
-
-      // Merge into the first one
-      const mergedLevelMap = new Map<string, ChartEntry[]>();
-      for (const idx of indices) {
-        for (const level of result[idx].levels) {
-          const list = mergedLevelMap.get(level.levelKey) ?? [];
-          if (!mergedLevelMap.has(level.levelKey))
-            {mergedLevelMap.set(level.levelKey, list);}
-          list.push(...level.items);
-        }
-      }
-      const merged: VersionBucket = {
-        versionKey: group.key,
-        levels: Array.from(mergedLevelMap.entries())
-          .map(([levelKey, items]) => ({
-            levelKey,
-            levelNumeric: parseLevelValue(levelKey),
-            items: items.sort(
-              (a, b) => detailSortValue(b.chart) - detailSortValue(a.chart),
-            ),
-          }))
-          .sort(
-            (a, b) =>
-              (b.levelNumeric ?? -Infinity) - (a.levelNumeric ?? -Infinity),
-          ),
-      };
-      // Replace first, remove rest
-      result[indices[0]] = merged;
-      for (let i = indices.length - 1; i >= 1; i--) {
-        result.splice(indices[i], 1);
-      }
-    }
-    return result;
-  }, [buckets]);
+  const mergedBuckets = useMemo(() => mergeVersionBuckets(buckets), [buckets]);
 
   // Build "舞代" virtual bucket: all legacy versions (maimai → FiNALE) merged
   const maiBucket = useMemo(() => {
@@ -493,6 +497,14 @@ export function VersionScoresTab({
     () => visibleLevels.flatMap((lvl) => lvl.items),
     [visibleLevels],
   );
+  const visibleSummary = useMemo(
+    () => ({
+      rankSummary: summarizeRanks(visibleEntries),
+      statusSummary: summarizeStatuses(visibleEntries),
+      averageScore: calculateAverageScore(visibleEntries),
+    }),
+    [visibleEntries],
+  );
 
   const handleExport = async () => {
     if (!token || !current) {return;}
@@ -515,7 +527,11 @@ export function VersionScoresTab({
       await downloadBlob(blob, `version-${current.versionKey}-${platePlan}.png`);
     } catch (err) {
       console.error(err);
-      alert((err as Error).message || "导出失败");
+      notifications.show({
+        title: "导出失败",
+        message: err instanceof Error ? err.message : "导出失败",
+        color: "red",
+      });
     } finally {
       setExporting(false);
     }
@@ -566,7 +582,7 @@ export function VersionScoresTab({
       </Group>
 
       {buckets.length > 0 && (
-        <Group gap="xs" wrap="nowrap" align="center">
+        <Group gap="xs" wrap="wrap" align="center">
           <Select
             data={versionOptions}
             value={current?.versionKey ?? null}
@@ -576,7 +592,7 @@ export function VersionScoresTab({
             placeholder="选择要查看的版本"
             clearable={false}
             disabled={isPending}
-            style={{ flex: 1, minWidth: 0 }}
+            style={{ flex: "1 1 160px", minWidth: 0 }}
           />
           <SegmentedControl
             visibleFrom="sm"
@@ -603,7 +619,7 @@ export function VersionScoresTab({
             }
             clearable={false}
             disabled={isPending}
-            styles={{ root: { width: 112, flexShrink: 0 } }}
+            styles={{ root: { width: 146, flexShrink: 0 } }}
           />
         </Group>
       )}
@@ -623,9 +639,9 @@ export function VersionScoresTab({
           />
           <Stack gap="md">
             <ScoreSummaryCard
-              rankSummary={summarizeRanks(visibleEntries)}
-              statusSummary={summarizeStatuses(visibleEntries)}
-              averageScore={calculateAverageScore(visibleEntries)}
+              rankSummary={visibleSummary.rankSummary}
+              statusSummary={visibleSummary.statusSummary}
+              averageScore={visibleSummary.averageScore}
               filter={pageFilter}
               onFilterChange={setPageFilter}
             />

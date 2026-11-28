@@ -1,3 +1,30 @@
+.selectorRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.scroller {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  cursor: grab;
+  user-select: none;
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollButton {
+  flex: 0 0 auto;
+}
+
 .levelSelector :global(.mantine-SegmentedControl-label) {
   min-width: 48px;
   text-align: center;

@@ -3,6 +3,11 @@ import { Module, forwardRef } from '@nestjs/common';
 
 import { AuthGuard } from './guards/auth.guard';
 import { AuthService } from './services/auth.service';
+import { AuthSessionService } from './services/auth-session.service';
+import {
+  AuthSessionEntity,
+  AuthSessionSchema,
+} from './schemas/auth-session.schema';
 import { BotsModule } from '../bots/bots.module';
 import { JobModule } from '../job/job.module';
 import { JwtModule } from '@nestjs/jwt';
@@ -40,6 +45,7 @@ import { randomBytes } from 'node:crypto';
       { name: MusicEntity.name, schema: MusicSchema },
       { name: QrLoginAttemptEntity.name, schema: QrLoginAttemptSchema },
       { name: PasskeyCredentialEntity.name, schema: PasskeyCredentialSchema },
+      { name: AuthSessionEntity.name, schema: AuthSessionSchema },
     ]),
     UsersModule,
     SdgbWorkerModule,
@@ -48,6 +54,7 @@ import { randomBytes } from 'node:crypto';
   ],
   providers: [
     AuthService,
+    AuthSessionService,
     AuthGuard,
     CabinetIdentityMatcherService,
     QrLoginService,
@@ -55,6 +62,7 @@ import { randomBytes } from 'node:crypto';
   ],
   exports: [
     AuthService,
+    AuthSessionService,
     AuthGuard,
     CabinetIdentityMatcherService,
     QrLoginService,

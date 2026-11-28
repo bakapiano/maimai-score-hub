@@ -9,11 +9,16 @@
   margin-inline: calc(var(--mantine-spacing-md) * -1);
   padding-inline: var(--mantine-spacing-md);
   overflow-x: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   position: sticky;
   top: var(--app-shell-header-offset, 3.5rem);
   z-index: 10;
   background-color: var(--mantine-color-body);
+}
+
+.tabsList::-webkit-scrollbar {
+  display: none;
 }
 
 .tabsList::before {
@@ -34,8 +39,8 @@
   }
 }
 
-/* Narrow score page: tighter tabs, hide icons, shorten labels */
-@container score-tabs (max-width: 420px) {
+/* Medium-narrow score page (e.g. narrow desktop with sidebar): compact full tabs */
+@container score-tabs (max-width: 580px) {
   .tabsList {
     gap: 0;
   }
@@ -43,7 +48,16 @@
   .tab {
     flex: 1 1 0;
     justify-content: center;
-    padding-inline: 0.4rem;
+    padding-inline: 0.5rem;
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+}
+
+/* Narrow score page: hide icons and shorten labels */
+@container score-tabs (max-width: 480px) {
+  .tab {
+    padding-inline: 0.35rem;
     font-size: 0.78rem;
   }
 

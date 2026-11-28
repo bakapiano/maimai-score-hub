@@ -151,9 +151,6 @@ function UnmatchedSummary({ draft }: { draft: ScoreOcrDraft }) {
   return (
     <Box className={classes.unmatchedSummary}>
       <Text fw={700}>{draft.candidates[0]?.title ?? "未匹配乐曲"}</Text>
-      <Text size="sm" c="dimmed">
-        请在下方选择曲目后确认成绩。
-      </Text>
     </Box>
   );
 }
@@ -233,16 +230,16 @@ function ResultFields({
         确认识别结果
       </Text>
       <Text size="sm" c="dimmed" mb="sm">
-        已填写的项目将覆盖现有成绩，留空项目保留原值。
+        已填项将覆盖原成绩，留空项保持不变。
       </Text>
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         <Select
           label="乐曲"
-          placeholder="选择 OCR 候选曲目"
+          placeholder="选择曲目"
           data={candidateMusicOptions}
           value={draft.musicId || null}
           clearable
-          nothingFoundMessage="没有可用的 OCR 候选曲目"
+          nothingFoundMessage="无匹配曲目"
           onChange={(value) =>
             onChange({ musicId: value ?? "", selected: Boolean(value) })
           }
@@ -280,7 +277,7 @@ function ResultFields({
           onChange={(value) => onChange({ fc: value })}
         />
         <StatusIconSelector
-          label="FS（目前需要手动填写）"
+          label="FS（需手动选择）"
           name={`${draft.id}-fs`}
           options={FS_OPTIONS}
           value={draft.fs}

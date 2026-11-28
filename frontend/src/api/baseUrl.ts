@@ -1,15 +1,13 @@
 const API_V1_PATH = "/api/v1";
-const PRODUCTION_API_BASE_URL =
-  "https://api.maiscorehub.bakapiano.com/api/v1";
 
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
 
-export const API_BASE_URL = (
-  configuredApiBaseUrl ||
-  (import.meta.env.PROD ? PRODUCTION_API_BASE_URL : API_V1_PATH)
-).replace(/\/+$/, "");
+export const API_BASE_URL = (configuredApiBaseUrl || API_V1_PATH).replace(
+  /\/+$/,
+  "",
+);
 
-/** Build an API v1 URL while keeping local development on Vite's /api proxy. */
+/** Build an API v1 URL using the same-origin /api/v1 prefix by default. */
 export function apiUrl(path = ""): string {
   if (/^https?:\/\//i.test(path)) {
     return path;

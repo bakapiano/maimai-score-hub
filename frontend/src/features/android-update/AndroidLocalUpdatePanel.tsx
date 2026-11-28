@@ -102,7 +102,7 @@ export function AndroidLocalUpdatePanel({
     const bridge = getAndroidHostBridge();
     if (!bridge) {
       setStatus({
-        message: "Android 代理桥接暂时不可用，请重新打开页面",
+        message: "本地同步服务暂不可用，请重新打开页面。",
         terminal: true,
         success: false,
       });

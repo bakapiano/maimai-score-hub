@@ -4,6 +4,7 @@ import { useMediaQuery } from "@mantine/hooks";
 
 import { renderMusicIcon, renderRank } from "./MusicScoreCard";
 import { AppCard } from "./AppCard";
+import classes from "./ScoreSummaryBadges.module.css";
 import {
   cycleBadgeFilter,
   fcOrder,
@@ -19,10 +20,10 @@ import {
   type StatusSummary,
 } from "./ScoreSummaryBadges.model";
 
-const COMPACT_STAT_MIN_WIDTH = 128;
+const COMPACT_STAT_MIN_WIDTH = 114;
 const COMPACT_STAT_HEIGHT = 34;
 const COMPACT_STAT_PADDING = "2px 6px";
-const DENSE_STAT_WIDTH = 96;
+const DENSE_STAT_WIDTH = 92;
 const DENSE_RANK_WIDTH = 34;
 
 function getStatItemLayout(compact: boolean, dense: boolean) {
@@ -214,9 +215,10 @@ export function CombinedBadges({
       : undefined;
 
   return (
-    <Group gap={6} wrap="wrap" align="center">
-      {leadingContent}
-      {rankList.map((r) => (
+    <Box className={classes.badgeRow}>
+      <Box className={classes.badgeGrid}>
+        {leadingContent}
+        {rankList.map((r) => (
         <StatItem
           key={r}
           count={rankSummary.counts[r]}
@@ -265,11 +267,14 @@ export function CombinedBadges({
           })}
         />
       ))}
-      <ExpandButton
-        expanded={expanded}
-        onClick={() => setExpanded((prev) => !prev)}
-      />
-    </Group>
+      </Box>
+      <Box className={classes.expandWrap}>
+        <ExpandButton
+          expanded={expanded}
+          onClick={() => setExpanded((prev) => !prev)}
+        />
+      </Box>
+    </Box>
   );
 }
 
@@ -373,8 +378,8 @@ export function ScoreSummaryCard({
     <AppCard>
       <Stack gap="sm">
         {/* 达成率统计 */}
-        <Box>
-          <Group gap={4} wrap="wrap">
+        <Box className={classes.badgeRow}>
+          <Box className={classes.badgeGrid}>
             {rankList.map((r) => (
               <StatItem
                 key={r}
@@ -390,16 +395,18 @@ export function ScoreSummaryCard({
                 compact
               />
             ))}
+          </Box>
+          <Box className={classes.expandWrap}>
             <ExpandButton
               expanded={rankExpanded}
               onClick={() => setRankExpanded((prev) => !prev)}
             />
-          </Group>
+          </Box>
         </Box>
 
         {/* FC / FS 统计 */}
-        <Box>
-          <Group gap={4} wrap="wrap">
+        <Box className={classes.badgeRow}>
+          <Box className={classes.badgeGrid}>
             {fcList.map((key) => (
               <StatItem
                 key={`fc-${key}`}
@@ -428,11 +435,13 @@ export function ScoreSummaryCard({
                 compact
               />
             ))}
+          </Box>
+          <Box className={classes.expandWrap}>
             <ExpandButton
               expanded={statusExpanded}
               onClick={() => setStatusExpanded((prev) => !prev)}
             />
-          </Group>
+          </Box>
         </Box>
 
         {/* 平均达成率 */}

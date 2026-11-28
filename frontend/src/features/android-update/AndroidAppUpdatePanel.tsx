@@ -81,7 +81,7 @@ export function AndroidAppUpdatePanel() {
               {release.mandatory && <Badge color="red">重要更新</Badge>}
             </Group>
             <Text size="sm" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
-              {release.notes || "包含稳定性与兼容性改进。"}
+              {release.notes || "常规优化与问题修复。"}
             </Text>
             <Text size="xs" c="dimmed">
               安装包 {formatBytes(release.apkSize)} · {release.channel}

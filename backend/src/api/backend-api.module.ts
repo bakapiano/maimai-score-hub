@@ -29,6 +29,7 @@ import { CoverModule } from '../modules/cover/cover.module';
 import { JobModule } from '../modules/job/job.module';
 import { MeController } from './me/me.controller';
 import { MePasskeysController } from './me/me-passkeys.controller';
+import { MeSessionsController } from './me/me-sessions.controller';
 import { MeCabinetScoreJobsController } from './me/me-cabinet-score-jobs.controller';
 import { MeDxnetJobsController } from './me/me-dxnet-jobs.controller';
 import { MeScoreExportController } from './me/me-score-export.controller';
@@ -91,6 +92,7 @@ import { DxnetBotAssignmentBusyFilter } from '../modules/job/dxnet-job.exception
     PasskeyAuthController,
     MeController,
     MePasskeysController,
+    MeSessionsController,
     MeCabinetScoreJobsController,
     MeDxnetJobsController,
     MeScoreExportController,

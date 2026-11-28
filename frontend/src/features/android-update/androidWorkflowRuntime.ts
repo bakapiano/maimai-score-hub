@@ -120,6 +120,10 @@ export async function runAndroidWorkflow(
     });
     if (mode === "login" && result.token) {
       window.localStorage.setItem("netbot_token", result.token);
+      const refreshToken = (result as { refreshToken?: unknown }).refreshToken;
+      if (typeof refreshToken === "string" && refreshToken) {
+        window.localStorage.setItem("netbot_refresh_token", refreshToken);
+      }
       window.setTimeout(() => window.location.replace("/app"), 120);
     }
     return result;

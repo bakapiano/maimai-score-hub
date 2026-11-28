@@ -645,6 +645,8 @@ paths:
                           - fast
                       token:
                         type: string
+                      refreshToken:
+                        type: string
                       user:
                         type: object
                         properties:
@@ -710,6 +712,9 @@ paths:
                   token:
                     type: string
                     nullable: true
+                  refreshToken:
+                    type: string
+                    nullable: true
                   error:
                     type: string
                     nullable: true
@@ -770,6 +775,8 @@ paths:
                 type: object
                 properties:
                   token:
+                    type: string
+                  refreshToken:
                     type: string
                   user:
                     type: object
@@ -858,6 +865,8 @@ paths:
                 properties:
                   token:
                     type: string
+                  refreshToken:
+                    type: string
                   user:
                     type: object
                     properties:
@@ -916,6 +925,91 @@ paths:
                 required:
                   - code
                   - message
+  /auth/refresh:
+    post:
+      tags: *a3
+      parameters: []
+      operationId: auth.refreshToken
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+                  minLength: 1
+              required:
+                - refreshToken
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  refreshToken:
+                    type: string
+                required:
+                  - token
+                  - refreshToken
+        "401":
+          description: "401"
+  /auth/upgrade:
+    post:
+      tags: *a3
+      parameters: []
+      operationId: auth.upgradeSession
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  refreshToken:
+                    type: string
+                required:
+                  - token
+                  - refreshToken
+        "401":
+          description: "401"
+  /auth/logout:
+    post:
+      tags: *a3
+      parameters: []
+      operationId: auth.logout
+      requestBody:
+        description: Body
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+                  minLength: 1
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                required:
+                  - ok
   /me:
     get:
       tags: &a4
@@ -1317,6 +1411,84 @@ paths:
           description: "404"
         "429":
           description: "429"
+  /me/sessions:
+    get:
+      tags: *a4
+      parameters: []
+      operationId: users.listSessions
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    deviceLabel:
+                      type: string
+                    userAgent:
+                      type: string
+                      nullable: true
+                    current:
+                      type: boolean
+                    createdAt:
+                      type: string
+                    lastUsedAt:
+                      type: string
+                    expiresAt:
+                      type: string
+                  required:
+                    - id
+                    - deviceLabel
+                    - userAgent
+                    - current
+                    - createdAt
+                    - lastUsedAt
+                    - expiresAt
+        "401":
+          description: "401"
+  /me/sessions/{id}:
+    delete:
+      tags: *a4
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      operationId: users.revokeSession
+      responses:
+        "200":
+          description: "200"
+        "404":
+          description: "404"
+  /me/sessions/revoke-others:
+    post:
+      tags: *a4
+      parameters: []
+      operationId: users.revokeOtherSessions
+      responses:
+        "200":
+          description: "200"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  revokedCount:
+                    type: integer
+                    minimum: 0
+                required:
+                  - ok
+                  - revokedCount
   /me/prober-tokens/diving-fish:
     post:
       tags: *a4

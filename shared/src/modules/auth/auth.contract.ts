@@ -14,6 +14,10 @@ import {
   PasskeyAuthenticationVerifyBodySchema,
   PasskeyErrorSchema,
   PasskeyOptionsResponseSchema,
+  LogoutBodySchema,
+  LogoutResponseSchema,
+  RefreshTokenBodySchema,
+  RefreshTokenResponseSchema,
   TokenLoginResponseSchema,
 } from "./auth.schema";
 
@@ -88,6 +92,33 @@ export const authContract = c.router({
       400: PasskeyErrorSchema,
       401: PasskeyErrorSchema,
       429: PasskeyErrorSchema,
+    },
+  },
+  refreshToken: {
+    method: "POST",
+    path: "/auth/refresh",
+    body: RefreshTokenBodySchema,
+    responses: {
+      200: RefreshTokenResponseSchema,
+      401: c.type<{ error: string }>(),
+    },
+  },
+  upgradeSession: {
+    method: "POST",
+    path: "/auth/upgrade",
+    headers: c.type<{ authorization: string }>(),
+    body: c.noBody(),
+    responses: {
+      200: RefreshTokenResponseSchema,
+      401: c.type<{ error: string }>(),
+    },
+  },
+  logout: {
+    method: "POST",
+    path: "/auth/logout",
+    body: LogoutBodySchema,
+    responses: {
+      200: LogoutResponseSchema,
     },
   },
 });

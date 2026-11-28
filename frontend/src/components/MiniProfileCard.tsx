@@ -2,6 +2,7 @@ import { Avatar, Group, Menu, Text, UnstyledButton } from "@mantine/core";
 import { IconCopy, IconLogin, IconLogout } from "@tabler/icons-react";
 import type { ReactNode, SyntheticEvent } from "react";
 
+import { copyTextToClipboard } from "../utils/clipboard";
 import { normalizeMaimaiImgUrl } from "../utils/maimaiImages";
 import { notifications } from "@mantine/notifications";
 import { useNavigate } from "react-router-dom";
@@ -142,16 +143,25 @@ export function HeaderProfileCard({
               const friendCode = localStorage.getItem("lastFriendCode");
               if (friendCode) {
                 const url = `${window.location.origin}/login?friendCode=${friendCode}`;
-                navigator.clipboard.writeText(url);
-                notifications.show({
-                  title: "链接已复制",
-                  message: "从此链接进入可自动填写好友代码",
-                  color: "teal",
+                void copyTextToClipboard(url).then((copied) => {
+                  notifications.show(
+                    copied
+                      ? {
+                          title: "链接已复制",
+                          message: "从此链接进入可自动填写好友码",
+                          color: "teal",
+                        }
+                      : {
+                          title: "复制失败",
+                          message: "当前浏览器不支持自动复制",
+                          color: "red",
+                        },
+                  );
                 });
               } else {
                 notifications.show({
                   title: "无法生成链接",
-                  message: "未找到好友代码信息",
+                  message: "未找到好友码信息",
                   color: "red",
                 });
               }

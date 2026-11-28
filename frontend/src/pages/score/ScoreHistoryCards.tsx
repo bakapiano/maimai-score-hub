@@ -328,7 +328,7 @@ function HistoryCardMetadata({ change }: { change: ScoreChange }) {
         radius="sm"
         tt="none"
         className={`${classes.cardMetaBadge} ${classes.musicIdBadge}`}
-        style={{ color: idColor }}
+        style={{ "--history-id-color": idColor } as CSSProperties}
       >
         #{change.musicId}
       </Badge>

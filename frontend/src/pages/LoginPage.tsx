@@ -44,6 +44,7 @@ import {
   FriendRequestAcceptanceAlert,
   FriendRequestVerificationButton,
 } from "../components/FriendRequestVerification";
+import { copyTextToClipboard } from "../utils/clipboard";
 import { formatFriendRequestSentAt } from "../utils/formatDate";
 import { AppHeader } from "../components/AppHeader";
 import { PageHeader } from "../components/PageHeader";
@@ -52,7 +53,6 @@ import { notifications } from "@mantine/notifications";
 import { useAuth } from "../providers/AuthContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { hasOfflineData } from "../utils/offlineCache";
-import { AppFooter } from "../components/AppFooter";
 import { FriendCodeGuide } from "../components/FriendCodeGuide";
 import { recordAnalyticsEvent } from "../utils/observability";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
@@ -89,6 +89,7 @@ type LoginJobStatus = {
 type LoginStatus = {
   status?: string;
   token?: string;
+  refreshToken?: string;
   profile?: UserProfile;
   job?: LoginJobStatus;
   error?: string | null;
@@ -98,13 +99,14 @@ type LoginStatus = {
 type LoginRequestBody = {
   skipAuth?: boolean;
   token?: string | null;
+  refreshToken?: string | null;
   jobId?: string;
   botFriendCode?: string | number | null;
   createdAt?: string | null;
   job?: LoginJobStatus;
 };
 
-type LoginPollOutcome = { kind: "authenticated"; token: string } | { kind: "ended"; status: "completed" | "failed" | "canceled"; message: string };
+type LoginPollOutcome = { kind: "authenticated"; token: string; refreshToken?: string | null } | { kind: "ended"; status: "completed" | "failed" | "canceled"; message: string };
 
 type PasswordLoginIdentifier = "friendCode" | "username";
 type LoginMethod = "bot_sends_request" | "user_sends_request";
@@ -157,6 +159,16 @@ function readLoginMethod(): LoginMethod {
   }
 }
 
+function copyWithToast(text: string, title: string, message: string, failMessage: string) {
+  void copyTextToClipboard(text).then((copied) => {
+    notifications.show(
+      copied
+        ? { title, message, color: "teal" }
+        : { title: "复制失败", message: failMessage, color: "red" },
+    );
+  });
+}
+
 function persistLoginMethod(method: LoginMethod) {
   try {
     localStorage.setItem(LOGIN_METHOD_KEY, method);
@@ -165,77 +177,7 @@ function persistLoginMethod(method: LoginMethod) {
   }
 }
 
-function LoginMethodCard({
-  active,
-  description,
-  disabled,
-  icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  description: string;
-  disabled: boolean;
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <Paper
-      component="button"
-      type="button"
-      withBorder
-      p="sm"
-      disabled={disabled}
-      onClick={onClick}
-      style={{
-        width: "100%",
-        textAlign: "left",
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.6 : 1,
-        borderColor: active
-          ? "var(--mantine-color-blue-6)"
-          : "var(--mantine-color-default-border)",
-        background: active
-          ? "var(--mantine-color-blue-light)"
-          : "var(--mantine-color-body)",
-      }}
-    >
-      <Group gap="sm" wrap="nowrap" align="flex-start">
-        <Box
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 8,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-            background: active
-              ? "var(--mantine-color-blue-filled)"
-              : "var(--mantine-color-gray-light)",
-            color: active ? "white" : "var(--mantine-color-dimmed)",
-          }}
-        >
-          {icon}
-        </Box>
-        <Stack gap={2} style={{ minWidth: 0 }}>
-          <Group gap={6} wrap="nowrap">
-            <Text size="sm" fw={700}>
-              {active ? "✓ " : ""}
-              {label}
-            </Text>
-          </Group>
-          <Text size="xs" c="dimmed" lineClamp={2}>
-            {description}
-          </Text>
-        </Stack>
-      </Group>
-    </Paper>
-  );
-}
-
-function IdentifierCard({
+function LoginOptionCard({
   active,
   disabled,
   icon,
@@ -252,6 +194,7 @@ function IdentifierCard({
     <Paper
       component="button"
       type="button"
+      aria-pressed={active}
       withBorder
       p="sm"
       disabled={disabled}
@@ -288,7 +231,6 @@ function IdentifierCard({
           {icon}
         </Box>
         <Text size="sm" fw={700}>
-          {active ? "✓ " : ""}
           {label}
         </Text>
       </Group>
@@ -297,7 +239,7 @@ function IdentifierCard({
 }
 
 export default function LoginPage() {
-  useDocumentTitle("登陆");
+  useDocumentTitle("登录");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { token, setToken, offline, setOffline } = useAuth();
@@ -498,7 +440,11 @@ export default function LoginPage() {
           if (typeof data.token === "string" && data.token) {
             return {
               done: true,
-              value: { kind: "authenticated", token: data.token },
+              value: {
+                kind: "authenticated",
+                token: data.token,
+                refreshToken: typeof data.refreshToken === "string" ? data.refreshToken : null,
+              },
             };
           }
           if (!status) {
@@ -553,7 +499,7 @@ export default function LoginPage() {
       .then((outcome) => {
         if (controller.signal.aborted) {return;}
         if (outcome.kind === "authenticated") {
-          setToken(outcome.token);
+          setToken(outcome.token, outcome.refreshToken ?? null);
           recordAnalyticsEvent("login_success", { method: "friend_code" });
           setPolling(false);
           setJobId("");
@@ -656,7 +602,7 @@ export default function LoginPage() {
         if (!directToken) {
           throw new Error("登录响应缺少凭证");
         }
-        setToken(directToken);
+        setToken(directToken, typeof body.refreshToken === "string" ? body.refreshToken : null);
         recordAnalyticsEvent("login_success", { method: "skip_auth" });
         notifications.show({
           title: "登录成功",
@@ -737,7 +683,7 @@ export default function LoginPage() {
           | { friendCode?: string; username?: string | null }
           | undefined;
         persistLastLoginAccount(user);
-        setToken(String(res.body.token));
+        setToken(String(res.body.token), typeof res.body.refreshToken === "string" ? res.body.refreshToken : null);
         recordAnalyticsEvent("login_success", { method: "password" });
         setPasswordLoginPassword("");
         notifications.show({
@@ -778,7 +724,7 @@ export default function LoginPage() {
     if (!browserSupportsWebAuthn()) {
       notifications.show({
         title: "当前浏览器不支持网站密钥",
-        message: "请使用最新版 Chrome、Edge、Safari 或 Firefox。",
+        message: "请更换浏览器或使用其他方式登录。",
         color: "yellow",
       });
       return;
@@ -818,7 +764,7 @@ export default function LoginPage() {
       }
 
       persistLastLoginAccount(verifyResult.body.user);
-      setToken(String(verifyResult.body.token));
+      setToken(String(verifyResult.body.token), typeof verifyResult.body.refreshToken === "string" ? verifyResult.body.refreshToken : null);
       recordAnalyticsEvent("login_success", { method: "passkey" });
       notifications.show({
         title: "登录成功",
@@ -901,14 +847,7 @@ export default function LoginPage() {
           }}
         >
           <Container size="sm" style={{ maxWidth: 600, width: "100%" }}>
-            <PageHeader
-              title="欢迎！"
-              description={
-                androidLoginAvailable
-                  ? "选择微信、好友码、账号密码、二维码或网站密钥登录"
-                  : "选择好友码、账号密码、二维码或网站密钥登录"
-              }
-            />
+            <PageHeader title="欢迎！" />
           </Container>
         </Box>
 
@@ -934,7 +873,7 @@ export default function LoginPage() {
                 >
                   <Stack gap="sm">
                     <Text size="sm">
-                      请登录 maimai NET，向下面这个 Bot 好友码发送好友申请。
+                      请登录 maimai NET，向以下 Bot 好友码发送好友申请：
                     </Text>
                     <Paper withBorder p="sm">
                       <Group justify="space-between" align="center">
@@ -946,8 +885,11 @@ export default function LoginPage() {
                             size="xs"
                             variant="light"
                             onClick={() =>
-                              navigator.clipboard?.writeText(
+                              copyWithToast(
                                 assignedBotFriendCode,
+                                "好友码已复制",
+                                assignedBotFriendCode,
+                                "请手动长按或选中复制 Bot 好友码",
                               )
                             }
                           >
@@ -1050,14 +992,20 @@ export default function LoginPage() {
                         <Stack gap="md">
                           <Group align="flex-end" gap="xs">
                             <TextInput
-                              label="好友代码"
-                              placeholder="请输入 NET 好友代码"
+                              label="好友码"
+                              placeholder="请输入 15 位好友码"
+                              inputMode="numeric"
                               leftSection={<IconId size={16} />}
                               value={friendCode}
                               onChange={(e) => {
                                 const val = e.currentTarget.value;
                                 if (/^\d*$/.test(val) && val.length <= 15) {
                                   setFriendCode(val);
+                                }
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" && canLogin) {
+                                  void startLogin();
                                 }
                               }}
                               disabled={
@@ -1067,7 +1015,7 @@ export default function LoginPage() {
                               styles={{ label: { textAlign: "left" } }}
                               error={
                                 friendCode && friendCode.length !== 15
-                                  ? "好友代码必须是 15 位数字"
+                                  ? "好友码必须是 15 位数字"
                                   : null
                               }
                               style={{ flex: 1 }}
@@ -1076,16 +1024,15 @@ export default function LoginPage() {
                               <Tooltip label="复制快速登录链接" withArrow>
                                 <Button
                                   variant="light"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(
+                                  aria-label="复制快速登录链接"
+                                  onClick={() =>
+                                    copyWithToast(
                                       quickLoginUrl,
-                                    );
-                                    notifications.show({
-                                      title: "链接已复制",
-                                      message: "从此链接进入可自动填写好友代码",
-                                      color: "teal",
-                                    });
-                                  }}
+                                      "链接已复制",
+                                      "从此链接进入可自动填写好友码",
+                                      "当前浏览器不支持自动复制，请手动复制地址栏链接",
+                                    )
+                                  }
                                   color="blue"
                                   px="xs"
                                 >
@@ -1100,27 +1047,25 @@ export default function LoginPage() {
                               申请方向
                             </Text>
                             <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
-                              <LoginMethodCard
+                              <LoginOptionCard
                                 active={loginMethod === "bot_sends_request"}
                                 disabled={
                                   polling || qrBusy || passkeyLoginLoading
                                 }
                                 icon={<IconRobot size={18} />}
                                 label="Bot 向我发送"
-                                description="按页面提示接受好友申请"
                                 onClick={() => {
                                   setLoginMethod("bot_sends_request");
                                   persistLoginMethod("bot_sends_request");
                                 }}
                               />
-                              <LoginMethodCard
+                              <LoginOptionCard
                                 active={loginMethod === "user_sends_request"}
                                 disabled={
                                   polling || qrBusy || passkeyLoginLoading
                                 }
                                 icon={<IconSend size={18} />}
                                 label="我向 Bot 发送"
-                                description="手动向分配的 Bot 好友码发送申请"
                                 onClick={() => {
                                   setLoginMethod("user_sends_request");
                                   persistLoginMethod("user_sends_request");
@@ -1131,6 +1076,7 @@ export default function LoginPage() {
 
                           <Group grow w="100%" gap="sm">
                             <Button
+                              className="msh-login-submit"
                               onClick={startLogin}
                               disabled={!canLogin || polling}
                               loading={loading}
@@ -1184,7 +1130,7 @@ export default function LoginPage() {
                               账号类型
                             </Text>
                             <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
-                              <IdentifierCard
+                              <LoginOptionCard
                                 active={passwordLoginIdentifier === "username"}
                                 disabled={
                                   polling ||
@@ -1199,7 +1145,7 @@ export default function LoginPage() {
                                   persistPasswordLoginIdentifier("username");
                                 }}
                               />
-                              <IdentifierCard
+                              <LoginOptionCard
                                 active={passwordLoginIdentifier === "friendCode"}
                                 disabled={
                                   polling ||
@@ -1208,7 +1154,7 @@ export default function LoginPage() {
                                   passkeyLoginLoading
                                 }
                                 icon={<IconId size={18} />}
-                                label="好友代码"
+                                label="好友码"
                                 onClick={() => {
                                   setPasswordLoginIdentifier("friendCode");
                                   persistPasswordLoginIdentifier("friendCode");
@@ -1220,6 +1166,8 @@ export default function LoginPage() {
                             <TextInput
                               label="好友码"
                               placeholder="15 位好友码"
+                              inputMode="numeric"
+                              autoComplete="username"
                               leftSection={<IconId size={16} />}
                               value={passwordFriendCode}
                               onChange={(event) => {
@@ -1228,39 +1176,26 @@ export default function LoginPage() {
                                   setPasswordFriendCode(value);
                                 }
                               }}
-                              disabled={
-                                polling ||
-                                qrBusy ||
-                                passwordLoginLoading ||
-                                passkeyLoginLoading
-                              }
-                              error={
-                                passwordFriendCode &&
-                                passwordFriendCode.length !== 15
-                                  ? "好友码必须是 15 位数字"
-                                  : null
-                              }
+                              onKeyDown={(e) => { if (e.key === "Enter" && canPasswordLogin) { void startPasswordLogin(); } }}
+                              disabled={polling || qrBusy || passwordLoginLoading || passkeyLoginLoading}
+                              error={passwordFriendCode && passwordFriendCode.length !== 15 ? "好友码必须是 15 位数字" : null}
                             />
                           ) : (
                             <TextInput
                               label="用户名"
                               placeholder="自定义用户名"
+                              autoComplete="username"
                               leftSection={<IconUser size={16} />}
                               value={passwordUsername}
-                              onChange={(event) =>
-                                setPasswordUsername(event.currentTarget.value)
-                              }
-                              disabled={
-                                polling ||
-                                qrBusy ||
-                                passwordLoginLoading ||
-                                passkeyLoginLoading
-                              }
+                              onChange={(e) => setPasswordUsername(e.currentTarget.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter" && canPasswordLogin) { void startPasswordLogin(); } }}
+                              disabled={polling || qrBusy || passwordLoginLoading || passkeyLoginLoading}
                             />
                           )}
                           <PasswordInput
                             label="密码"
                             placeholder="请输入密码"
+                            autoComplete="current-password"
                             leftSection={<IconPassword size={16} />}
                             value={passwordLoginPassword}
                             onChange={(event) =>
@@ -1279,6 +1214,7 @@ export default function LoginPage() {
                             }}
                           />
                           <Button
+                            className="msh-login-submit"
                             onClick={startPasswordLogin}
                             disabled={!canPasswordLogin}
                             loading={passwordLoginLoading}
@@ -1293,8 +1229,8 @@ export default function LoginPage() {
                     <Tabs.Panel value="qr" pt="md">
                       <AppCard>
                         <QrLoginForm
-                          onSuccess={(t) => {
-                            setToken(t);
+                          onSuccess={(t, rt) => {
+                            setToken(t, rt ?? null);
                             recordAnalyticsEvent("login_success", {
                               method: "qr",
                             });
@@ -1309,16 +1245,12 @@ export default function LoginPage() {
                     <Tabs.Panel value="passkey" pt="md">
                       <AppCard>
                         <Stack gap="md">
-                          <Text size="sm" c="dimmed">
-                            使用指纹、面容、设备 PIN
-                            或实体安全密钥登录，无需输入用户名和密码。
-                          </Text>
                           {!browserSupportsWebAuthn() && (
                             <Alert
                               color="yellow"
                               title="当前浏览器不支持网站密钥"
                             >
-                              请升级浏览器，或使用其他登录方式。
+                              请更换浏览器或使用其他方式登录。
                             </Alert>
                           )}
                           <Button
@@ -1359,7 +1291,6 @@ export default function LoginPage() {
           </Container>
         </Box>
 
-        <AppFooter />
       </AppShell.Main>
     </AppShell>
   );

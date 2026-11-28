@@ -32,6 +32,7 @@ import type { Request, Response } from 'express';
 
 import { AccountDeletionService } from '../../modules/users/services/account-deletion.service';
 import { AuthGuard } from '../../modules/auth/guards/auth.guard';
+import { AuthSessionService } from '../../modules/auth/services/auth-session.service';
 import { CabinetService } from '../../modules/users/services/cabinet.service';
 import { UsersService } from '../../modules/users/services/users.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -49,6 +50,11 @@ function extractUserId(req: AuthedRequest): string | undefined {
   };
   const candidate = typed.user?.sub ?? typed.userId;
   return typeof candidate === 'string' ? candidate : undefined;
+}
+
+function extractSessionId(req: AuthedRequest): string | undefined {
+  const typed = req as unknown as { user?: { sid?: unknown } };
+  return typeof typed.user?.sid === 'string' ? typed.user.sid : undefined;
 }
 
 function toSafeProfile(user: Record<string, unknown>) {
@@ -79,6 +85,7 @@ export class MeController {
     private readonly accountDeletion: AccountDeletionService,
     private readonly proberExports: ProberExportService,
     private readonly qrLogin: QrLoginService,
+    private readonly authSessions: AuthSessionService,
   ) {}
 
   @Get()
@@ -154,6 +161,12 @@ export class MeController {
     }
 
     const updated = await this.users.setAccountPassword(userId, body);
+    if (body.newPassword !== undefined) {
+      await this.authSessions.revokeOtherSessions(
+        userId,
+        extractSessionId(req),
+      );
+    }
     return toSafeProfile(updated as unknown as Record<string, unknown>);
   }
 

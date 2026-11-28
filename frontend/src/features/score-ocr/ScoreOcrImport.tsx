@@ -295,7 +295,7 @@ export function ScoreOcrImport({
       });
       notifications.show({
         title: "成绩已更新",
-        message: `提交 ${response.submittedChartCount} 个谱面，更新 ${response.changedChartCount} 个谱面`,
+        message: `已提交 ${response.submittedChartCount} 条成绩，更新 ${response.changedChartCount} 条`,
         color: "green",
       });
       await onImported();

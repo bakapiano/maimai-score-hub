@@ -391,7 +391,11 @@ function ExportScoreCard({
       ) : null}
       <div
         className={classes.musicId}
-        style={{ color: ID_COLORS[chartIndex] ?? textColor }}
+        style={
+          {
+            "--card-id-color": ID_COLORS[chartIndex] ?? textColor,
+          } as CSSProperties
+        }
       >
         #{card.musicId}
       </div>

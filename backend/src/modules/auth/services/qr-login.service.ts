@@ -20,6 +20,7 @@ import {
   type PreparedCabinetIdentity,
 } from './cabinet-identity-matcher.service';
 import { AuthService } from './auth.service';
+import type { SessionMeta } from './auth-session.service';
 import { JobService } from '../../job/services/job.service';
 import { RedisLeaseService } from '../../../common/redis/redis-lease.service';
 
@@ -35,6 +36,7 @@ type WorkerJobView = Awaited<ReturnType<JobService['getWorker']>>;
 export interface QrLoginFastResult {
   kind: 'fast';
   token: string;
+  refreshToken?: string;
   user: { id: string; friendCode: string; [key: string]: unknown };
 }
 
@@ -49,6 +51,7 @@ export interface QrLoginPollResult {
   attemptId: string;
   status: QrLoginStatus;
   token?: string | null;
+  refreshToken?: string | null;
   user?: { id: string; friendCode: string; [key: string]: unknown } | null;
   error?: string | null;
 }
@@ -116,7 +119,10 @@ export class QrLoginService implements OnModuleInit, OnModuleDestroy {
    * Sync entry. Either signs a token immediately (fast path) or returns
    * an attemptId that the FE polls.
    */
-  async loginByQr(qrCode: string): Promise<QrLoginInitResult> {
+  async loginByQr(
+    qrCode: string,
+    meta?: SessionMeta,
+  ): Promise<QrLoginInitResult> {
     if (!qrCode || !qrCode.trim()) {
       throw new Error('qrCode required');
     }
@@ -143,7 +149,7 @@ export class QrLoginService implements OnModuleInit, OnModuleDestroy {
       );
       return {
         kind: 'fast',
-        ...(await this.auth.issueTokenForUser(existing as never)),
+        ...(await this.auth.issueTokenForUser(existing as never, meta)),
       };
     }
 
@@ -239,6 +245,7 @@ export class QrLoginService implements OnModuleInit, OnModuleDestroy {
     await this.setAttemptStatus(attemptId, 'matched', {
       resolvedFriendCode: friendCode,
       token: signed.token,
+      refreshToken: signed.refreshToken,
     });
   }
 
@@ -320,6 +327,7 @@ export class QrLoginService implements OnModuleInit, OnModuleDestroy {
       attemptId,
       status: doc.status,
       token: doc.token ?? null,
+      refreshToken: doc.refreshToken ?? null,
       error: doc.error ?? null,
     };
     if (doc.status === 'matched' && doc.resolvedFriendCode) {
@@ -539,6 +547,7 @@ export class QrLoginService implements OnModuleInit, OnModuleDestroy {
     await this.setAttemptStatus(current.id, 'matched', {
       resolvedFriendCode: friendCode,
       token: signed.token,
+      refreshToken: signed.refreshToken,
     });
   }
 

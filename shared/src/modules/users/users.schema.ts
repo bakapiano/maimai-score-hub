@@ -150,3 +150,23 @@ export const BindCabinetQrMismatchSchema = z.object({
 });
 
 export type BindCabinetQrBody = z.infer<typeof BindCabinetQrBodySchema>;
+
+export const AuthSessionSummarySchema = z.object({
+  id: z.string(),
+  deviceLabel: z.string(),
+  userAgent: z.string().nullable(),
+  current: z.boolean(),
+  createdAt: z.string(),
+  lastUsedAt: z.string(),
+  expiresAt: z.string(),
+});
+
+export const RevokeOtherSessionsResponseSchema = z.object({
+  ok: z.literal(true),
+  revokedCount: z.number().int().nonnegative(),
+});
+
+export type AuthSessionSummary = z.infer<typeof AuthSessionSummarySchema>;
+export type RevokeOtherSessionsResponse = z.infer<
+  typeof RevokeOtherSessionsResponseSchema
+>;

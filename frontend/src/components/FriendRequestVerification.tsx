@@ -146,11 +146,10 @@ export function FriendRequestAcceptanceAlert({
     >
       <Stack gap="sm">
         <Text size="sm">
-          Bot 已发送好友申请，请登录 NET 并在核对时间一致后同意好友申请。
+          Bot 已发送好友申请，请登录 NET 核对时间后同意。
         </Text>
         <Text size="sm" c="red" fw={700}>
-          若申请时间不是 {formatFriendRequestSentAt(friendRequestSentAt)}
-          ，请勿接受，可能是他人尝试登录！
+          如申请时间与 {formatFriendRequestSentAt(friendRequestSentAt)} 不符，请勿同意。
         </Text>
         <Progress.Root size="xl" mt={4}>
           <Progress.Section

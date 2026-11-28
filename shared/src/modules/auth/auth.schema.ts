@@ -37,7 +37,25 @@ export const AuthUserSchema = z
 
 export const TokenLoginResponseSchema = z.object({
   token: z.string(),
+  refreshToken: z.string().optional(),
   user: AuthUserSchema,
+});
+
+export const RefreshTokenBodySchema = z.object({
+  refreshToken: z.string().min(1),
+});
+
+export const RefreshTokenResponseSchema = z.object({
+  token: z.string(),
+  refreshToken: z.string(),
+});
+
+export const LogoutBodySchema = z.object({
+  refreshToken: z.string().min(1).optional(),
+});
+
+export const LogoutResponseSchema = z.object({
+  ok: z.literal(true),
 });
 
 export const WebAuthnJsonSchema = z.record(z.unknown());
@@ -108,6 +126,7 @@ export const LoginByQrResponseSchema = z.union([
   z.object({
     kind: z.literal("fast"),
     token: z.string(),
+    refreshToken: z.string().optional(),
     user: AuthUserSchema,
   }),
   z.object({
@@ -128,6 +147,7 @@ export const QrLoginPollResponseSchema = z.object({
   attemptId: z.string(),
   status: CabinetIdentityAttemptStatusSchema,
   token: z.string().nullable(),
+  refreshToken: z.string().nullable().optional(),
   error: z.string().nullable(),
   user: AuthUserSchema.optional(),
 });
@@ -137,3 +157,6 @@ export type PasswordLoginBody = z.infer<typeof PasswordLoginBodySchema>;
 export type PasskeyAuthenticationVerifyBody = z.infer<
   typeof PasskeyAuthenticationVerifyBodySchema
 >;
+export type RefreshTokenBody = z.infer<typeof RefreshTokenBodySchema>;
+export type RefreshTokenResponse = z.infer<typeof RefreshTokenResponseSchema>;
+export type LogoutBody = z.infer<typeof LogoutBodySchema>;

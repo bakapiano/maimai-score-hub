@@ -19,10 +19,14 @@ export type RefreshProfileOptions = {
   force?: boolean;
 };
 
+export type ClearTokenOptions = {
+  revoke?: boolean;
+};
+
 export type AuthContextValue = {
   token: string | null;
-  setToken: (token: string | null) => void;
-  clearToken: () => void;
+  setToken: (token: string | null, refreshToken?: string | null) => void;
+  clearToken: (options?: ClearTokenOptions) => void;
   offline: boolean;
   setOffline: (v: boolean) => void;
   profile: AuthProfile | null;

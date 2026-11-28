@@ -523,7 +523,7 @@ export function ScoreVerificationSection({
   return (
     <Stack gap="sm" className={classes.verificationSection}>
       <Group justify="space-between" align="center" gap="xs">
-        <Text fw={700}>铺面确认</Text>
+        <Text fw={700}>谱面确认</Text>
         <SearchActions difficultyName={difficultyName} scoreData={scoreData} />
       </Group>
     </Stack>

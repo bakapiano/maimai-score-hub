@@ -307,7 +307,7 @@ function getSyncStatusView({
   syncStatus: JobStatus | null;
 }) {
   if (loading) {
-    return { color: "gray", label: "加载中", text: "正在获取同步状态" };
+    return { color: "gray", label: "加载中", text: null };
   }
   if (!syncStatus) {
     return lastSync
@@ -316,18 +316,18 @@ function getSyncStatusView({
           label: `上次更新 ${formatElapsedTime(
             lastSync.lastMergedAt ?? lastSync.updatedAt,
           )}`,
-          text: "点击开始同步数据",
+          text: null,
         }
-      : { color: "gray", label: "未同步", text: "完成首次同步后即可查看成绩" };
+      : { color: "gray", label: "未同步", text: null };
   }
   if (syncStatus.status === "completed") {
-    return { color: "green", label: "已完成", text: "本次同步已完成" };
+    return { color: "green", label: "已完成", text: null };
   }
   if (syncStatus.status === "failed" || syncStatus.status === "canceled") {
-    return { color: "red", label: "失败", text: "同步任务未完成" };
+    return { color: "red", label: "同步失败", text: null };
   }
   if (syncStatus.status === "queued") {
-    return { color: "gray", label: "排队中", text: "任务正在等待执行" };
+    return { color: "gray", label: "排队中", text: null };
   }
   return {
     color: "blue",
@@ -369,31 +369,31 @@ function getCabinetSyncStatusView(job: CabinetScoreJob | null) {
     return {
       color: "gray",
       label: "等待二维码",
-      text: "请上传或粘贴当前二维码",
+      text: null,
     };
   }
   if (job.cleanupStatus === "pending") {
     return {
       color: "orange",
       label: "清理中",
-      text: "正在安全退出机台登录状态",
+      text: "正在退出机台会话",
     };
   }
   if (job.cleanupStatus === "unconfirmed") {
     return {
       color: "red",
       label: "等待会话释放",
-      text: "暂时无法确认已安全退出",
+      text: "暂未确认会话退出，请稍后重试",
     };
   }
   if (job.status === "completed") {
-    return { color: "green", label: "已完成", text: "二维码成绩更新完成" };
+    return { color: "green", label: "已完成", text: null };
   }
   if (job.status === "failed") {
-    return { color: "red", label: "失败", text: "二维码成绩任务未完成" };
+    return { color: "red", label: "同步失败", text: null };
   }
   if (job.status === "queued") {
-    return { color: "gray", label: "排队中", text: "正在等待 sdgb-worker" };
+    return { color: "gray", label: "排队中", text: null };
   }
   return { color: "blue", label: "同步中", text: "正在读取完整机台成绩" };
 }
@@ -486,11 +486,14 @@ function AutoExportBadges({
   }
 
   return (
-    <Group gap={4}>
+    <Group gap={4} wrap="nowrap">
       {result.divingFish && (
         <Badge
           variant="light"
           radius="md"
+          size="sm"
+          px={6}
+          style={{ flexShrink: 0 }}
           color={exportStatusColor(result.divingFish.status)}
         >
           水鱼 {exportStatusSymbol(result.divingFish.status)}
@@ -500,6 +503,9 @@ function AutoExportBadges({
         <Badge
           variant="light"
           radius="md"
+          size="sm"
+          px={6}
+          style={{ flexShrink: 0 }}
           color={exportStatusColor(result.lxns.status)}
         >
           落雪 {exportStatusSymbol(result.lxns.status)}
@@ -531,7 +537,7 @@ function DxnetDifficultySwitch({
       onChange={(event) => onChange(event.currentTarget.checked)}
       disabled={disabled}
       label="更新全部难度"
-      description="开启后同时更新 BASIC 与 ADVANCED"
+      description="默认仅更新红谱及以上，开启后包含绿谱与黄谱"
     />
   );
 }
@@ -993,7 +999,8 @@ export default function SyncPage() {
             paddingTop: 48,
             gap: 12,
             backdropFilter: "blur(4px)",
-            backgroundColor: "rgba(255, 255, 255, 0.3)",
+            backgroundColor:
+              "light-dark(rgba(255, 255, 255, 0.45), rgba(20, 21, 23, 0.55))",
             borderRadius: 8,
             zIndex: 10,
           }}
@@ -1255,8 +1262,8 @@ export default function SyncPage() {
                 <Divider />
 
                 <SimpleGrid
-                  cols={{ base: 1, xs: 3 }}
-                  spacing={{ base: "xs", xs: "md" }}
+                  cols={{ base: 1, sm: 3 }}
+                  spacing={{ base: "xs", sm: "md" }}
                 >
                   <SyncMetric icon={<IconClock size={18} />} label="最近同步">
                     <Text size="sm" fw={600}>

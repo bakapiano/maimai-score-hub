@@ -10,24 +10,24 @@ const BASE_OPTIONS: RadioCardOption[] = [
   {
     value: "dxnet_bot",
     name: "DX Net",
-    description: "通过 DX Net 好友成绩同步游戏数据",
+    description: "通过 DX Net 好友对比同步成绩",
   },
   {
     value: "cabinet_qr",
     name: "二维码",
-    description: "使用机台二维码读取完整游戏成绩",
+    description: "通过二维码同步完整成绩",
   },
   {
     value: "image_ocr",
     name: "成绩图识别",
-    description: "从相册成绩图识别并上传成绩",
+    description: "上传结算图自动识别并导入",
   },
 ];
 
 const ANDROID_OPTION: RadioCardOption = {
   value: "android_local",
   name: "代理更新",
-  description: "使用当前手机微信，通过本地代理更新成绩",
+  description: "通过本机微信直接同步成绩",
 };
 
 export function getSyncMethodOptions(

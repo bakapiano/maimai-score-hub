@@ -35,14 +35,14 @@ const banners: Banner[] = [
   },
   {
     title: "乐曲成绩",
-    description: "查看和分析你的游戏成绩数据",
+    description: "查看 B50、定数表、牌子进度与成绩历史",
     icon: IconMusic,
     color: "grape",
     to: "/app/scores",
   },
   {
     title: "网站设置",
-    description: "主题、账号、危险操作",
+    description: "名片外链、外观、账号与缓存",
     icon: IconSettings,
     color: "gray",
     to: "/app/settings",

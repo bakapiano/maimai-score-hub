@@ -195,7 +195,7 @@ export function ScoreChangeHistoryRow({
         ))}
         {!fields.length ? (
           <Text size="sm" c="dimmed">
-            本次未改变达成率、DX 分数、FC 或 FS
+            达成率、DX 分与 FC/FS 均无变化
           </Text>
         ) : null}
       </Group>
@@ -341,7 +341,7 @@ export function ScoreChangeHistorySection({
           </Stack>
         ) : !items.length ? (
           <Text size="sm" c="dimmed">
-            暂无变化记录。记录仅从成绩历史功能上线后开始积累。
+            暂无成绩变化记录（仅记录功能上线后的更新）。
           </Text>
         ) : (
           <Stack gap="xs">

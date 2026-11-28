@@ -27,6 +27,7 @@ export function SyncMethodSelector({
     <>
       <RadioCardGroup
         value={value}
+        showDescription={false}
         onChange={(nextValue) => onChange(nextValue as SyncMethod)}
         data={options}
       />

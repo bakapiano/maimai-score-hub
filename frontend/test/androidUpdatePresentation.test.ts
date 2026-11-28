@@ -13,7 +13,7 @@ test("presents an idle proxy update like the DXNET status row", () => {
     {
       color: "gray",
       label: "等待代理更新",
-      text: "读取最近游玩并写入当前账号",
+      text: "同步最近游玩的成绩",
       badge: null,
       state: "idle",
       progress: 0,

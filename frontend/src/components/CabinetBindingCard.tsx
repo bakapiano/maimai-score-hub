@@ -26,8 +26,8 @@ import {
 } from "../utils/poll";
 
 const CABINET_BINDING_STATUS: Record<string, string> = {
-  pending: "正在排队准备好友关系…",
-  adding_rival: "正在通过机台建立好友关系…",
+  pending: "排队处理中…",
+  adding_rival: "正在建立好友关联…",
   waiting_snapshot: "正在确认二维码身份…",
 };
 
@@ -236,7 +236,7 @@ export function CabinetBindingCard({
     if (!v) {
       notifications.show({
         color: "red",
-        message: "请填入 QR 字符串或上传二维码图片",
+        message: "请粘贴二维码内容或上传二维码图片",
       });
       return;
     }
@@ -326,7 +326,7 @@ export function CabinetBindingCard({
             <Group justify="space-between" align="center" wrap="nowrap">
               <Group gap="xs" wrap="nowrap">
                 <Text size="sm" fw={500}>
-                  解绑二维码
+                  绑定状态
                 </Text>
                 <Badge color="green" variant="light" size="sm">
                   已绑定

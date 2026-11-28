@@ -40,7 +40,7 @@
 
 .cardGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 252px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 8px;
   width: 100%;
 }
@@ -88,13 +88,13 @@
       180deg,
       var(--card-level-color) 0,
       var(--card-level-color) 70.6%,
-      #fff 70.6%,
-      #fafafa 88%,
-      #fff 100%
+      light-dark(#fff, var(--mantine-color-dark-7)) 70.6%,
+      light-dark(#fafafa, var(--mantine-color-dark-6)) 88%,
+      light-dark(#fff, var(--mantine-color-dark-7)) 100%
     );
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.16),
-    0 2px 6px rgba(0, 0, 0, 0.12);
+    0 0 0 1px light-dark(rgba(0, 0, 0, 0.16), rgba(255, 255, 255, 0.12)),
+    0 2px 6px rgba(0, 0, 0, 0.16);
   pointer-events: none;
   user-select: none;
 }
@@ -281,12 +281,18 @@
   box-sizing: border-box;
   border: 1px solid currentColor;
   border-radius: 2px;
+  background: light-dark(transparent, var(--mantine-color-dark-6));
+  color: var(--card-id-color);
   font-size: clamp(7px, 3.4cqw, 11px);
   font-weight: 700;
   line-height: 1;
   text-align: center;
   white-space: nowrap;
   pointer-events: none;
+}
+
+[data-mantine-color-scheme="dark"] .musicId {
+  color: color-mix(in srgb, var(--card-id-color) 75%, #ffffff);
 }
 
 @media (max-width: 520px) {

@@ -64,13 +64,14 @@ export function ScoreDisplayFilterContent({
               <>
                 <SegmentedControl
                   size="xs"
+                  fullWidth
                   value={value.scoreDisplayMode}
                   onChange={(v) =>
                     update({ scoreDisplayMode: v as ScoreDisplayMode })
                   }
                   data={[
-                    { value: "rank", label: "评级（SSS+ / SSS）" },
-                    { value: "score", label: "分数（100.5 / 100.0）" },
+                    { value: "rank", label: "评级 (SSS+)" },
+                    { value: "score", label: "分数 (100.5%)" },
                   ]}
                 />
                 {value.scoreDisplayMode === "score" && (

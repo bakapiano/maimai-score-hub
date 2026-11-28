@@ -1,4 +1,13 @@
-import { Button, PasswordInput, Stack, Text, TextInput } from "@mantine/core";
+import {
+  Button,
+  Divider,
+  Group,
+  PasswordInput,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+} from "@mantine/core";
 import {
   IconAlertTriangle,
   IconCopy,
@@ -12,11 +21,13 @@ import { useEffect, useState } from "react";
 import { notifications } from "@mantine/notifications";
 import { AppCard } from "./AppCard";
 import { apiUrl } from "../api/baseUrl";
+import { copyTextToClipboard } from "../utils/clipboard";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { useAuth } from "../providers/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { usersApi } from "../api/appClient";
 import { PasskeyManagementSection } from "./PasskeyManagementSection";
+import { SessionManagementSection } from "./SessionManagementSection";
 
 type AccountSettingsSectionProps = {
   onClose: () => void;
@@ -101,6 +112,7 @@ function getResponseMessage(
 function clearDeletedAccountStorage() {
   try {
     localStorage.removeItem("netbot_token");
+    localStorage.removeItem("netbot_refresh_token");
     localStorage.removeItem("lastFriendCode");
     localStorage.removeItem("lastUsername");
     localStorage.removeItem("pendingLoginJobId");
@@ -124,18 +136,27 @@ function copyQuickLoginLink() {
   if (!friendCode) {
     notifications.show({
       title: "无法生成链接",
-      message: "未找到好友代码信息",
+      message: "未找到好友码信息",
       color: "red",
     });
     return;
   }
 
   const url = `${window.location.origin}/login?friendCode=${friendCode}`;
-  void navigator.clipboard.writeText(url);
-  notifications.show({
-    title: "链接已复制",
-    message: "从此链接进入可自动填写好友代码",
-    color: "teal",
+  void copyTextToClipboard(url).then((copied) => {
+    notifications.show(
+      copied
+        ? {
+            title: "链接已复制",
+            message: "从此链接进入可自动填写好友码",
+            color: "teal",
+          }
+        : {
+            title: "复制失败",
+            message: "当前浏览器不支持自动复制",
+            color: "red",
+          },
+    );
   });
 }
 
@@ -193,21 +214,39 @@ function PasswordSettingsForm({
       <TextInput
         label="自定义用户名"
         placeholder="可选，用于密码登录"
+        autoComplete="username"
         value={accountUsername}
         onChange={(event) => onAccountUsernameChange(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !savingPassword) {
+            onSavePassword();
+          }
+        }}
       />
       {accountHasPassword && (
         <PasswordInput
           label="当前密码"
+          autoComplete="current-password"
           value={currentPassword}
           onChange={(event) => onCurrentPasswordChange(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !savingPassword) {
+              onSavePassword();
+            }
+          }}
           placeholder="修改用户名或密码时必填"
         />
       )}
       <PasswordInput
         label={accountHasPassword ? "新密码" : "设置密码"}
+        autoComplete="new-password"
         value={newPassword}
         onChange={(event) => onNewPasswordChange(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !savingPassword) {
+            onSavePassword();
+          }
+        }}
         placeholder={accountHasPassword ? "不修改密码可留空" : "至少 8 位"}
       />
       <Button
@@ -219,9 +258,6 @@ function PasswordSettingsForm({
       >
         保存登录设置
       </Button>
-      <Text size="xs" c="dimmed">
-        保存后可使用好友码或自定义用户名 + 密码登录。用户名可修改，但需要当前密码。
-      </Text>
     </Stack>
   );
 }
@@ -234,34 +270,37 @@ function DeleteAccountBox({
   onDeleteAccount: () => void;
 }) {
   return (
-    <Stack gap="xs">
-      <Text size="xs" c="dimmed">
-        彻底删除你的账号在网站的所有相关数据，此操作不可撤销。
-      </Text>
-      <Button
-        variant="filled"
-        color="red"
-        fullWidth
-        leftSection={<IconTrash size={16} />}
-        loading={deletingAccount}
-        onClick={onDeleteAccount}
-      >
-        删除我的账号
-      </Button>
-    </Stack>
+    <Button
+      variant="filled"
+      color="red"
+      fullWidth
+      leftSection={<IconTrash size={16} />}
+      loading={deletingAccount}
+      onClick={onDeleteAccount}
+    >
+      删除我的账号
+    </Button>
   );
 }
 
 export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps) {
-  const { token, clearToken, offline, setOffline } = useAuth();
+  const { token, clearToken, offline, setOffline, profile, refreshProfile } =
+    useAuth();
   const navigate = useNavigate();
   const [deletingAccount, setDeletingAccount] = useState(false);
-  const [accountUsername, setAccountUsername] = useState("");
-  const [initialUsername, setInitialUsername] = useState("");
-  const [accountHasPassword, setAccountHasPassword] = useState(false);
+  const [accountUsername, setAccountUsername] = useState(
+    () => profile?.username ?? "",
+  );
+  const [initialUsername, setInitialUsername] = useState(
+    () => profile?.username ?? "",
+  );
+  const [accountHasPassword, setAccountHasPassword] = useState(
+    () => Boolean(profile?.hasPassword),
+  );
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
+  const [sessionRefreshSignal, setSessionRefreshSignal] = useState(0);
 
   useEffect(() => {
     if (!token || offline) {
@@ -269,27 +308,31 @@ export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps)
     }
 
     let cancelled = false;
-    void (async () => {
-      const res = await usersApi.profile({
-        headers: { authorization: `Bearer ${token}` },
-      });
-      if (cancelled || res.status !== 200) {
+    const applyProfile = (
+      source: { username?: string | null; hasPassword?: boolean } | null,
+    ) => {
+      if (cancelled || !source) {
         return;
       }
-      const body = res.body as {
-        username?: string | null;
-        hasPassword?: boolean;
-      };
-      const username = body.username ?? "";
+      const username = source.username ?? "";
       setAccountUsername(username);
       setInitialUsername(username);
-      setAccountHasPassword(!!body.hasPassword);
-    })();
+      setAccountHasPassword(Boolean(source.hasPassword));
+    };
+
+    if (profile) {
+      applyProfile(profile);
+      return;
+    }
+
+    void refreshProfile()
+      .then((loaded) => applyProfile(loaded))
+      .catch(() => undefined);
 
     return () => {
       cancelled = true;
     };
-  }, [token, offline]);
+  }, [token, offline, profile, refreshProfile]);
 
   if (!token && !offline) {
     return null;
@@ -328,14 +371,13 @@ export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps)
         });
         return;
       }
-      const d = json?.deleted ?? {};
       notifications.show({
         color: "green",
         title: "账号已删除",
-        message: `已清除 ${d.user ?? 0} 用户、${d.syncs ?? 0} 同步记录、${d.scoreChanges ?? 0} 条变化历史、${d.jobs ?? 0} 任务、${d.passkeys ?? 0} 个网站密钥。`,
+        message: "账号及全部关联数据已清除。",
       });
       clearDeletedAccountStorage();
-      clearToken();
+      clearToken({ revoke: false });
       onClose();
       navigate("/login", { replace: true });
     } catch (err) {
@@ -418,9 +460,15 @@ export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps)
       persistLastUsername(savedUsername);
       setCurrentPassword("");
       setNewPassword("");
+      if (passwordChanged) {
+        setSessionRefreshSignal((n) => n + 1);
+      }
+      void refreshProfile({ force: true }).catch(() => undefined);
       notifications.show({
         color: "green",
-        message: "账号登录设置已保存",
+        message: passwordChanged
+          ? "密码已更新，其他登录设备已自动下线"
+          : "账号登录设置已保存",
       });
     } catch (err) {
       notifications.show({
@@ -466,24 +514,39 @@ export function AccountSettingsSection({ onClose }: AccountSettingsSectionProps)
                 token={token!}
                 hasPassword={accountHasPassword}
               />
-              <Button
-                variant="light"
-                color="blue"
-                fullWidth
-                leftSection={<IconCopy size={16} />}
-                onClick={copyQuickLoginLink}
-              >
-                快速登录链接
-              </Button>
-              <Button
-                variant="light"
-                color="red"
-                fullWidth
-                leftSection={<IconLogout size={16} />}
-                onClick={handleLogout}
-              >
-                退出登录
-              </Button>
+              <SessionManagementSection
+                token={token!}
+                refreshSignal={sessionRefreshSignal}
+              />
+              <Divider my="xs" />
+              <Stack gap="xs">
+                <Group gap="xs">
+                  <IconLogin size={17} />
+                  <Text fw={600} size="sm">
+                    登录与会话
+                  </Text>
+                </Group>
+                <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
+                  <Button
+                    variant="light"
+                    color="blue"
+                    fullWidth
+                    leftSection={<IconCopy size={16} />}
+                    onClick={copyQuickLoginLink}
+                  >
+                    快速登录链接
+                  </Button>
+                  <Button
+                    variant="light"
+                    color="red"
+                    fullWidth
+                    leftSection={<IconLogout size={16} />}
+                    onClick={handleLogout}
+                  >
+                    退出登录
+                  </Button>
+                </SimpleGrid>
+              </Stack>
             </>
           )}
           </Stack>

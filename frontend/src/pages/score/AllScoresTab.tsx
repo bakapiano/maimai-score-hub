@@ -35,7 +35,6 @@ import {
 import { getVersionSortIndex, sortVersions } from "../../constants/versions";
 import {
   useCallback,
-  useEffect,
   useMemo,
   useState,
   useTransition,
@@ -61,6 +60,7 @@ import {
   getRatingFloorByIsNew,
   getRatingFloors,
 } from "../../utils/ratingFloors";
+import { getAchievementRank } from "../../utils/achievementRank";
 import {
   buildScoreSearchIndex,
   ScoreSearchEngine,
@@ -151,25 +151,19 @@ const RANK_ORDER: Record<string, number> = {
 };
 
 function getRank(scoreVal: number) {
-  if (scoreVal >= 100.5) {return "SSS+";}
-  if (scoreVal >= 100) {return "SSS";}
-  if (scoreVal >= 99.5) {return "SS+";}
-  if (scoreVal >= 99) {return "SS";}
-  if (scoreVal >= 98) {return "S+";}
-  if (scoreVal >= 97) {return "S";}
-  if (scoreVal >= 94) {return "AAA";}
-  if (scoreVal >= 90) {return "AA";}
-  if (scoreVal >= 80) {return "A";}
-  return "F";
+  return getAchievementRank(scoreVal) ?? "D";
 }
 
 function getScoreChart(
   score: SyncScore,
+  musicMap: Map<string, MusicRow>,
   chartMap: ChartMap,
-) {
-  return score.cid !== null && score.cid !== undefined
-    ? chartMap.get(score.cid)
-    : undefined;
+): MusicChartPayload | undefined {
+  return (
+    (score.cid !== null && score.cid !== undefined
+      ? chartMap.get(score.cid)
+      : undefined) ?? musicMap.get(score.musicId)?.charts?.[score.chartIndex]
+  );
 }
 
 function buildFilterOptions(
@@ -184,7 +178,7 @@ function buildFilterOptions(
 
   scores.forEach((score) => {
     const music = musicMap.get(score.musicId);
-    const chart = getScoreChart(score, chartMap);
+    const chart = getScoreChart(score, musicMap, chartMap);
     if (music?.category) {categories.add(music.category);}
     if (score.type) {versions.add(score.type.toUpperCase());}
     if (music?.version) {musicVersions.add(music.version);}
@@ -204,8 +198,10 @@ function matchesDetailLevelFilter(
   detailLevel: number | null | undefined,
   filters: Pick<ScoreFilterState, "detailLevelMin" | "detailLevelMax">,
 ) {
+  const hasMin = typeof filters.detailLevelMin === "number";
+  const hasMax = typeof filters.detailLevelMax === "number";
   if (typeof detailLevel !== "number") {
-    return true;
+    return !hasMin && !hasMax;
   }
   if (
     typeof filters.detailLevelMin === "number" &&
@@ -229,7 +225,7 @@ function scoreMatchesFilters(
   chartMap: ChartMap,
 ) {
   const music = musicMap.get(score.musicId);
-  const chart = getScoreChart(score, chartMap);
+  const chart = getScoreChart(score, musicMap, chartMap);
   const checks = [
     filters.categoryFilter.length === 0 ||
       filters.categoryFilter.includes(music?.category || ""),
@@ -260,12 +256,16 @@ const SCORE_COMPARERS: Record<
       "zh-CN",
     ),
   level: (a, b) => (a.chartIndex ?? 0) - (b.chartIndex ?? 0),
-  detailLevel: (a, b, { chartMap }) =>
-    (getScoreChart(a, chartMap)?.detailLevel ?? 0) -
-    (getScoreChart(b, chartMap)?.detailLevel ?? 0),
+  detailLevel: (a, b, { musicMap, chartMap }) =>
+    (getScoreChart(a, musicMap, chartMap)?.detailLevel ?? 0) -
+    (getScoreChart(b, musicMap, chartMap)?.detailLevel ?? 0),
   score: (a, b) => parseScoreValue(a.score) - parseScoreValue(b.score),
-  dxScore: (a, b) =>
-    parseInt(a.dxScore ?? "", 10) - parseInt(b.dxScore ?? "", 10),
+  dxScore: (a, b) => {
+    const aVal = Number.parseInt(a.dxScore ?? "", 10);
+    const bVal = Number.parseInt(b.dxScore ?? "", 10);
+    return (Number.isFinite(aVal) ? aVal : -Infinity) -
+      (Number.isFinite(bVal) ? bVal : -Infinity);
+  },
   rating: (a, b) =>
     (typeof a.rating === "number" ? a.rating : -Infinity) -
     (typeof b.rating === "number" ? b.rating : -Infinity),
@@ -536,13 +536,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
     return page > totalPages ? totalPages : page;
   }, [sortedScores.length, page, pageSize]);
 
-  // Sync page state when validPage differs
-  useEffect(() => {
-    if (validPage !== page) {
-      setPage(validPage);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [validPage]);
+
 
   const summary = useMemo(
     () => ({ total: sortedScores.length, page: validPage, pageSize }),
@@ -648,7 +642,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
             size="xs"
           />
           <MultiSelect
-            label="铺面类型"
+            label="谱面类型"
             placeholder="全部"
             data={filterOptions.versions}
             value={versionFilter}
@@ -769,7 +763,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
             disabled={showCategory && !canHideColumn}
           />
           <Checkbox
-            label="铺面类型"
+            label="谱面类型"
             size="xs"
             checked={showVersion}
             onChange={(e) =>
@@ -983,7 +977,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
           overlayProps={{ radius: "sm", blur: 2 }}
         />
         <Box style={{ overflowX: "auto", maxWidth: "100%" }}>
-          <Table>
+          <Table highlightOnHover horizontalSpacing={6} verticalSpacing={6}>
             <Table.Thead>
               <Table.Tr>
                 {showCover && <Table.Th>封面</Table.Th>}
@@ -997,10 +991,10 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                   />
                 )}
                 {showCategory && <Table.Th>分类</Table.Th>}
-                {showVersion && <Table.Th>铺面类型</Table.Th>}
+                {showVersion && <Table.Th>谱面类型</Table.Th>}
                 {showMusicVersion && (
                   <SortableHeader
-                    label="铺面版本"
+                    label="谱面版本"
                     sortKey="musicVersion"
                     currentSortKey={sortKey}
                     sortOrder={sortOrder}
@@ -1069,13 +1063,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
             <Table.Tbody>
               {paginatedScores.map((score, idx) => {
                 const music = musicMap.get(score.musicId);
-                const chart =
-                  score.cid !== null && score.cid !== undefined
-                    ? chartMap.get(score.cid)
-                    : undefined;
-                if (!chart) {
-                  console.log("Missing chart for score:", score);
-                }
+                const chart = getScoreChart(score, musicMap, chartMap);
                 const name = music?.title || score.musicId;
                 const artist = music?.artist;
                 const coverUrl = getCoverUrl(score.musicId);
@@ -1116,8 +1104,8 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
                         <DeferredImage
                           src={coverUrl}
                           alt={name}
-                          h={48}
-                          w={48}
+                          h={40}
+                          w={40}
                           fit="cover"
                           radius="sm"
                           fallbackSrc={FALLBACK_COVER}
@@ -1313,21 +1301,23 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
               )}
             </Table.Tbody>
           </Table>
+        </Box>
 
-          <Group justify="space-between" px="md" py="sm" align="center">
-            <Text size="sm" c="dimmed">
-              {summary.total > 0 ? (page - 1) * pageSize + 1 : 0} -
-              {Math.min(page * pageSize, summary.total)} / {summary.total}
-            </Text>
-            <Group gap="sm" align="center">
-              <Pagination
-                total={Math.max(1, Math.ceil(summary.total / pageSize))}
-                value={page}
-                onChange={setPage}
-                size="sm"
-                radius="md"
-                disabled={loading || summary.total === 0}
-              />
+        <Group justify="space-between" py="sm" align="center" wrap="wrap" gap="sm">
+          <Text size="sm" c="dimmed">
+            {summary.total > 0 ? (validPage - 1) * pageSize + 1 : 0} -{" "}
+            {Math.min(validPage * pageSize, summary.total)} / {summary.total}
+          </Text>
+          <Group gap="sm" align="center" wrap="wrap">
+            <Pagination
+              total={Math.max(1, Math.ceil(summary.total / pageSize))}
+              value={validPage}
+              onChange={setPage}
+              size="sm"
+              radius="md"
+              disabled={loading || summary.total === 0}
+            />
+            <Group gap={6} align="center" wrap="nowrap">
               <Text size="sm" c="dimmed">
                 每页
               </Text>
@@ -1349,7 +1339,7 @@ export function AllScoresTab({ scores, loading, error }: AllScoresTabProps) {
               />
             </Group>
           </Group>
-        </Box>
+        </Group>
       </Box>
     </Stack>
   );

@@ -7,6 +7,7 @@ import {
 import type { Request } from 'express';
 
 import { AuthService, type AuthTokenPayload } from '../services/auth.service';
+import { AuthSessionService } from '../services/auth-session.service';
 
 type AuthedRequest = Request & {
   user?: AuthTokenPayload;
@@ -14,9 +15,12 @@ type AuthedRequest = Request & {
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly sessions: AuthSessionService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<AuthedRequest>();
     const rawHeader: unknown =
       req.headers['authorization'] || req.headers['Authorization'];
@@ -34,6 +38,9 @@ export class AuthGuard implements CanActivate {
     const token = header.slice(7).trim();
     const payload = this.auth.verifyToken(token);
     if (!payload) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+    if (payload.sid && (await this.sessions.isSessionRevoked(payload.sid))) {
       throw new UnauthorizedException('Invalid or expired token');
     }
 

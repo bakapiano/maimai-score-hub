@@ -1,7 +1,12 @@
-import { initClient } from "@ts-rest/core";
+import {
+  initClient,
+  tsRestFetchApi,
+  type ApiFetcher,
+} from "@ts-rest/core";
 import * as sharedContract from "@maimai-score-hub/shared";
 import type { AppStatistics } from "@maimai-score-hub/shared";
 import { API_BASE_URL, apiUrl } from "./baseUrl";
+import { refreshSessionTokens } from "../utils/authSession";
 
 const {
   appContract,
@@ -12,7 +17,36 @@ const {
   usersContract,
 } = sharedContract;
 
-const withApiBase = (baseUrl = API_BASE_URL) => ({ baseUrl });
+const authedTsRestApi: ApiFetcher = async (args) => {
+  const response = await tsRestFetchApi(args);
+  const authHeader =
+    args.headers?.authorization ?? args.headers?.Authorization;
+  if (
+    response.status === 401 &&
+    typeof authHeader === "string" &&
+    authHeader.toLowerCase().startsWith("bearer ") &&
+    !args.path.includes("/auth/refresh") &&
+    !args.path.includes("/auth/upgrade") &&
+    !args.path.includes("/auth/logout")
+  ) {
+    const nextToken = await refreshSessionTokens();
+    if (nextToken) {
+      return tsRestFetchApi({
+        ...args,
+        headers: {
+          ...args.headers,
+          authorization: `Bearer ${nextToken}`,
+        },
+      });
+    }
+  }
+  return response;
+};
+
+const withApiBase = (baseUrl = API_BASE_URL) => ({
+  baseUrl,
+  api: authedTsRestApi,
+});
 
 export const appApi = initClient(appContract as any, withApiBase()) as any;
 export const authApi = initClient(authContract as any, withApiBase()) as any;

@@ -17,7 +17,7 @@ import {
   Text,
 } from "@mantine/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { AllScoresTab } from "./score/AllScoresTab";
 import { Best50Tab } from "./score/Best50Tab";
@@ -27,12 +27,48 @@ import type { SyncScore } from "../types/syncScore";
 import { VersionScoresTab } from "./score/VersionScoresTab";
 import { useAuth } from "../providers/AuthContext";
 import { useMusic } from "../providers/MusicContext";
-import { cacheSyncLatest, getCachedSyncLatest } from "../utils/offlineCache";
+import {
+  cacheSyncLatest,
+  getCachedProfile,
+  getCachedSyncLatest,
+} from "../utils/offlineCache";
 import { fetchLatestSync } from "../api/syncLatest";
 import { runWhenIdle, scheduleIdleTask } from "../utils/idle";
 import classes from "./ScorePage.module.css";
 
-function readCachedScores() {
+const SCORE_TABS = ["best", "levels", "versions", "history", "all"] as const;
+type ScoreTab = (typeof SCORE_TABS)[number];
+
+function parseScoreTab(value: string | null): ScoreTab {
+  return SCORE_TABS.includes(value as ScoreTab) ? (value as ScoreTab) : "best";
+}
+
+function readLastFriendCode() {
+  try {
+    return localStorage.getItem("lastFriendCode");
+  } catch {
+    return null;
+  }
+}
+
+function isCacheOwnedByCurrentUser(
+  offline: boolean,
+  friendCode?: string | null,
+) {
+  if (offline) {
+    return true;
+  }
+  const cachedFriendCode = getCachedProfile()?.friendCode;
+  const knownFriendCode = friendCode ?? readLastFriendCode();
+  return Boolean(
+    cachedFriendCode && knownFriendCode && cachedFriendCode === knownFriendCode,
+  );
+}
+
+function readCachedScores(offline: boolean, friendCode?: string | null) {
+  if (!isCacheOwnedByCurrentUser(offline, friendCode)) {
+    return null;
+  }
   const cached = getCachedSyncLatest();
   if (!cached) {
     return null;
@@ -45,32 +81,94 @@ function readCachedScores() {
   };
 }
 
-function readCachedScoresWhenIdle() {
-  return runWhenIdle(() => readCachedScores(), 300);
+function readCachedScoresWhenIdle(
+  offline: boolean,
+  friendCode?: string | null,
+) {
+  return runWhenIdle(() => readCachedScores(offline, friendCode), 300);
 }
 
 function cacheSyncLatestWhenIdle(data: Parameters<typeof cacheSyncLatest>[0]) {
   scheduleIdleTask(() => cacheSyncLatest(data), 1000);
 }
 
+function useScoreTab() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = parseScoreTab(searchParams.get("tab"));
+  const setActiveTab = useCallback(
+    (next: string | null) => {
+      const tab = parseScoreTab(next);
+      setSearchParams(
+        (prev) => {
+          const updated = new URLSearchParams(prev);
+          if (tab === "best") {
+            updated.delete("tab");
+          } else {
+            updated.set("tab", tab);
+          }
+          return updated;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+  return { activeTab, setActiveTab };
+}
+
+function EmptySyncOverlay({ offline }: { offline: boolean }) {
+  return (
+    <Box
+      style={{
+        position: "absolute",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        backdropFilter: "blur(2px)",
+        backgroundColor:
+          "light-dark(rgba(255, 255, 255, 0.45), rgba(20, 21, 23, 0.55))",
+        borderRadius: 8,
+        zIndex: 1,
+      }}
+    >
+      <Stack align="center" gap="xs">
+        {offline ? (
+          <Text size="sm" c="dimmed">
+            暂无离线缓存的成绩数据
+          </Text>
+        ) : (
+          <Anchor component={Link} to="/app/sync">
+            <Group gap={6} align="center">
+              <IconRefresh size={16} />
+              <span>同步数据以查看成绩</span>
+            </Group>
+          </Anchor>
+        )}
+      </Stack>
+    </Box>
+  );
+}
+
 export default function ScorePage() {
-  const { token, offline } = useAuth();
+  const { token, offline, profile } = useAuth();
   const { musics, loading: musicLoading } = useMusic();
+  const { activeTab, setActiveTab } = useScoreTab();
   const [scores, setScores] = useState<SyncScore[]>([]);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(() => Boolean(token || offline));
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("best");
   const hasSync = Boolean(lastSyncAt) || scores.length > 0;
   const historyActive = activeTab === "history";
   const hasSyncRef = useRef(hasSync);
+  const friendCode = profile?.friendCode ?? null;
 
   useEffect(() => {
     hasSyncRef.current = hasSync;
   }, [hasSync]);
 
   const applyCachedScores = useCallback(async () => {
-    const cached = await readCachedScoresWhenIdle();
+    const cached = await readCachedScoresWhenIdle(offline, friendCode);
     if (!cached) {
       return false;
     }
@@ -78,7 +176,25 @@ export default function ScorePage() {
     setScores(cached.scores);
     setLastSyncAt(cached.lastSyncAt);
     return true;
-  }, []);
+  }, [friendCode, offline]);
+
+  useEffect(() => {
+    if (!token || offline || hasSyncRef.current) {
+      return;
+    }
+    let cancelled = false;
+    void readCachedScoresWhenIdle(false, friendCode).then((cached) => {
+      if (cancelled || !cached || hasSyncRef.current) {
+        return;
+      }
+      setScores(cached.scores);
+      setLastSyncAt(cached.lastSyncAt);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [friendCode, offline, token]);
 
   const clearScoresIfEmpty = useCallback(() => {
     if (hasSyncRef.current) {
@@ -225,14 +341,16 @@ export default function ScorePage() {
     );
   }
 
+  const showEmptyOverlay = !historyActive && !hasSync && !error;
+
   return (
     <Stack gap="md">
       <Box style={{ position: "relative" }}>
         <Box
           style={{
-            pointerEvents: !historyActive && !hasSync && !error ? "none" : "auto",
-            filter: !historyActive && !hasSync && !error ? "blur(1px)" : "none",
-            opacity: !historyActive && !hasSync && !error ? 0.6 : 1,
+            pointerEvents: showEmptyOverlay ? "none" : "auto",
+            filter: showEmptyOverlay ? "blur(1px)" : "none",
+            opacity: showEmptyOverlay ? 0.6 : 1,
             transition: "filter 120ms ease, opacity 120ms ease",
           }}
         >
@@ -304,36 +422,7 @@ export default function ScorePage() {
           </Tabs>
         </Box>
 
-        {!historyActive && !hasSync && !error && (
-          <Box
-            style={{
-              position: "absolute",
-              inset: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              backdropFilter: "blur(2px)",
-              backgroundColor: "rgba(255, 255, 255, 0.35)",
-              borderRadius: 8,
-              zIndex: 1,
-            }}
-          >
-            <Stack align="center" gap="xs">
-              {offline ? (
-                <Text size="sm" c="dimmed">
-                  暂无离线缓存的成绩数据
-                </Text>
-              ) : (
-                <Anchor component={Link} to="/app/sync">
-                  <Group gap={6} align="center">
-                    <IconRefresh size={16} />
-                    <span>同步数据以查看成绩</span>
-                  </Group>
-                </Anchor>
-              )}
-            </Stack>
-          </Box>
-        )}
+        {showEmptyOverlay && <EmptySyncOverlay offline={offline} />}
       </Box>
     </Stack>
   );

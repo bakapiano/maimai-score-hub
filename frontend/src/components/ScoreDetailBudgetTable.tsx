@@ -278,7 +278,7 @@ export function ScoreDetailBudgetTable({
     return (
       <Paper withBorder className={classes.emptyChartData}>
         <Text size="sm" c="dimmed">
-          当前曲库没有返回可用于达成率容错计算的物量数据。
+          该谱面暂无物量数据，无法计算容错。
         </Text>
       </Paper>
     );
@@ -442,8 +442,7 @@ export function ScoreDetailBudgetTable({
       ) : null}
 
       <Text size="xs" c="dimmed">
-        表内数值表示等效多少个 TAP 粉；BREAK 单独按 2550 / 2500 /
-        2000 / 1500 / 1250 / 1000 / 0 展示。
+        表内数值为等效 TAP Great 数量；BREAK 按各判定分值单独列出。
       </Text>
     </Stack>
   );

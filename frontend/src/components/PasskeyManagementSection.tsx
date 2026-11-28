@@ -272,12 +272,145 @@ function PasskeyContent({
   if (passkeys.length === 0) {
     return (
       <Text size="xs" c="dimmed">
-        尚未创建网站密钥。创建后可使用指纹、面容、设备 PIN 或安全密钥登录。
+        暂无网站密钥
       </Text>
     );
   }
   return (
     <PasskeyList passkeys={passkeys} onRename={onRename} onDelete={onDelete} />
+  );
+}
+
+function PasskeyModals({
+  createOpened,
+  creating,
+  createName,
+  createPassword,
+  onCloseCreate,
+  onCreateNameChange,
+  onCreatePasswordChange,
+  onCreate,
+  renameTarget,
+  renameName,
+  renaming,
+  onCloseRename,
+  onRenameNameChange,
+  onRename,
+  deleteTarget,
+  deletePassword,
+  deleting,
+  onCloseDelete,
+  onDeletePasswordChange,
+  onDelete,
+}: {
+  createOpened: boolean;
+  creating: boolean;
+  createName: string;
+  createPassword: string;
+  onCloseCreate: () => void;
+  onCreateNameChange: (value: string) => void;
+  onCreatePasswordChange: (value: string) => void;
+  onCreate: () => void;
+  renameTarget: PasskeySummary | null;
+  renameName: string;
+  renaming: boolean;
+  onCloseRename: () => void;
+  onRenameNameChange: (value: string) => void;
+  onRename: () => void;
+  deleteTarget: PasskeySummary | null;
+  deletePassword: string;
+  deleting: boolean;
+  onCloseDelete: () => void;
+  onDeletePasswordChange: (value: string) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <>
+      <Modal
+        opened={createOpened}
+        onClose={onCloseCreate}
+        title="创建网站密钥"
+        centered
+      >
+        <Stack>
+          <TextInput
+            label="名称"
+            maxLength={50}
+            value={createName}
+            onChange={(event) => onCreateNameChange(event.currentTarget.value)}
+          />
+          <PasswordInput
+            label="当前密码"
+            autoComplete="current-password"
+            value={createPassword}
+            onChange={(event) =>
+              onCreatePasswordChange(event.currentTarget.value)
+            }
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !creating) {
+                onCreate();
+              }
+            }}
+          />
+          <Button loading={creating} onClick={onCreate}>
+            继续创建
+          </Button>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={!!renameTarget}
+        onClose={onCloseRename}
+        title="重命名网站密钥"
+        centered
+      >
+        <Stack>
+          <TextInput
+            label="名称"
+            maxLength={50}
+            value={renameName}
+            onChange={(event) => onRenameNameChange(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !renaming) {
+                onRename();
+              }
+            }}
+          />
+          <Button loading={renaming} onClick={onRename}>
+            保存
+          </Button>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={!!deleteTarget}
+        onClose={onCloseDelete}
+        title="删除网站密钥"
+        centered
+      >
+        <Stack>
+          <Text size="sm">
+            删除“{deleteTarget?.name}”后，该网站密钥将无法再用于登录。
+          </Text>
+          <PasswordInput
+            label="当前密码"
+            autoComplete="current-password"
+            value={deletePassword}
+            onChange={(event) =>
+              onDeletePasswordChange(event.currentTarget.value)
+            }
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !deleting) {
+                onDelete();
+              }
+            }}
+          />
+          <Button color="red" loading={deleting} onClick={onDelete}>
+            确认删除
+          </Button>
+        </Stack>
+      </Modal>
+    </>
   );
 }
 
@@ -518,79 +651,33 @@ export function PasskeyManagementSection({
         onDelete={setDeleteTarget}
       />
 
-      <Modal
-        opened={createOpened}
-        onClose={closeCreate}
-        title="创建网站密钥"
-        centered
-      >
-        <Stack>
-          <TextInput
-            label="名称"
-            description="已根据当前设备和浏览器自动填写，可自行修改"
-            maxLength={50}
-            value={createName}
-            onChange={(event) => setCreateName(event.currentTarget.value)}
-          />
-          <PasswordInput
-            label="当前密码"
-            value={createPassword}
-            onChange={(event) => setCreatePassword(event.currentTarget.value)}
-          />
-          <Button loading={creating} onClick={() => void handleCreate()}>
-            继续创建
-          </Button>
-        </Stack>
-      </Modal>
-
-      <Modal
-        opened={!!renameTarget}
-        onClose={() => !renaming && setRenameTarget(null)}
-        title="重命名网站密钥"
-        centered
-      >
-        <Stack>
-          <TextInput
-            label="名称"
-            maxLength={50}
-            value={renameName}
-            onChange={(event) => setRenameName(event.currentTarget.value)}
-          />
-          <Button loading={renaming} onClick={() => void handleRename()}>
-            保存
-          </Button>
-        </Stack>
-      </Modal>
-
-      <Modal
-        opened={!!deleteTarget}
-        onClose={() => {
+      <PasskeyModals
+        createOpened={createOpened}
+        creating={creating}
+        createName={createName}
+        createPassword={createPassword}
+        onCloseCreate={closeCreate}
+        onCreateNameChange={setCreateName}
+        onCreatePasswordChange={setCreatePassword}
+        onCreate={() => void handleCreate()}
+        renameTarget={renameTarget}
+        renameName={renameName}
+        renaming={renaming}
+        onCloseRename={() => !renaming && setRenameTarget(null)}
+        onRenameNameChange={setRenameName}
+        onRename={() => void handleRename()}
+        deleteTarget={deleteTarget}
+        deletePassword={deletePassword}
+        deleting={deleting}
+        onCloseDelete={() => {
           if (!deleting) {
             setDeleteTarget(null);
             setDeletePassword("");
           }
         }}
-        title="删除网站密钥"
-        centered
-      >
-        <Stack>
-          <Text size="sm">
-            删除“{deleteTarget?.name}”后，该网站密钥将无法再用于登录。
-          </Text>
-          <PasswordInput
-            label="当前密码"
-            value={deletePassword}
-            onChange={(event) => setDeletePassword(event.currentTarget.value)}
-          />
-          <Button
-            color="red"
-            loading={deleting}
-            onClick={() => void handleDelete()}
-          >
-            确认删除
-          </Button>
-        </Stack>
-      </Modal>
+        onDeletePasswordChange={setDeletePassword}
+        onDelete={() => void handleDelete()}
+      />
     </Box>
   );
 }

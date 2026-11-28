@@ -38,12 +38,21 @@
   }
 
   .mantine-AppShell-main.msh-authed-main {
-    height: calc(100dvh - var(--msh-mobile-bottom-nav-height));
-    min-height: calc(100dvh - var(--msh-mobile-bottom-nav-height)) !important;
+    margin-top: var(--msh-mobile-header-height);
+    height: calc(
+      100dvh - var(--msh-mobile-header-height) -
+        var(--msh-mobile-bottom-nav-height)
+    );
+    min-height: calc(
+      100dvh - var(--msh-mobile-header-height) -
+        var(--msh-mobile-bottom-nav-height)
+    ) !important;
+    padding-top: 0 !important;
     padding-bottom: 0 !important;
     overflow-x: hidden !important;
     overflow-y: auto !important;
     overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
   }
 
   .msh-login-main {
@@ -84,4 +93,51 @@
 /* Disable Mantine default active press effect (translateY) to prevent button shift */
 .mantine-active:active {
   transform: none;
+}
+
+/* Improve legibility of disabled primary action buttons on auth screens */
+.msh-login-submit[data-disabled],
+.msh-login-submit:disabled {
+  background-color: light-dark(
+    var(--mantine-color-gray-2),
+    var(--mantine-color-dark-5)
+  );
+  color: light-dark(
+    var(--mantine-color-gray-7),
+    var(--mantine-color-dark-1)
+  );
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4));
+}
+
+@media (min-width: 48.01em) {
+  html {
+    scrollbar-gutter: stable;
+  }
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  html,
+  .mantine-AppShell-main.msh-authed-main {
+    scrollbar-width: thin;
+    scrollbar-color: light-dark(rgba(0, 0, 0, 0.22), rgba(255, 255, 255, 0.22)) transparent;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: light-dark(rgba(0, 0, 0, 0.2), rgba(255, 255, 255, 0.22));
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: light-dark(rgba(0, 0, 0, 0.36), rgba(255, 255, 255, 0.38));
 }

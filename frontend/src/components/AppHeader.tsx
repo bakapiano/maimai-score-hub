@@ -1,16 +1,18 @@
 import {
-  Badge,
   Box,
   Group,
   Image,
   Text,
+  UnstyledButton,
   useComputedColorScheme,
 } from "@mantine/core";
+import { IconHelpCircle } from "@tabler/icons-react";
 import { type ReactNode, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { syncAndroidStatusBar } from "../features/android-update/androidSystemBar";
 import { HeaderProfileCard, type MiniProfile } from "./MiniProfileCard";
+import classes from "./AppHeader.module.css";
 
 type AppHeaderProps = {
   profile?: MiniProfile | null;
@@ -30,8 +32,22 @@ export function AppHeader({
   offline,
 }: AppHeaderProps) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const isAboutPage = pathname === "/about";
   const colorScheme = useComputedColorScheme("light");
   const headerAnchorRef = useRef<HTMLDivElement>(null);
+
+  const helpButton = !isAboutPage ? (
+    <UnstyledButton
+      type="button"
+      className={classes.helpButton}
+      aria-label="获得帮助"
+      onClick={() => navigate("/about")}
+    >
+      <IconHelpCircle size={15} stroke={2} />
+      <span>帮助</span>
+    </UnstyledButton>
+  ) : null;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -82,9 +98,6 @@ export function AppHeader({
           <Text fw={700} lineClamp={1} style={{ minWidth: 0 }}>
             maimai Score Hub
           </Text>
-          <Badge size="md" variant="default">
-            测试版
-          </Badge>
         </Group>
         <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
           {rightSection ??
@@ -94,49 +107,55 @@ export function AppHeader({
                 onLogout={onLogout}
                 offline={offline}
               />
-            ) : null)}
+            ) : (
+              helpButton
+            ))}
         </Group>
       </Group>
 
       <Group
         h="100%"
         px="md"
-        justify="flex-start"
+        gap="xs"
+        justify="space-between"
         wrap="nowrap"
         hiddenFrom="sm"
         style={{ overflow: "hidden" }}
       >
-        {rightSection ??
-          (showProfile ? (
-            <HeaderProfileCard
-              profile={profile ?? null}
-              onLogout={onLogout}
-              offline={offline}
-              menuItems={profileMenuItems}
-              menuPosition="bottom-start"
-              showUsernameOnMobile
-            />
-          ) : (
-            <Group
-              gap="sm"
-              wrap="nowrap"
-              style={{ minWidth: 0, cursor: "pointer" }}
-              onClick={() => navigate("/")}
-            >
-              <Box w={32} h={32} style={{ flexShrink: 0 }}>
-                <Image
-                  src="/favicon.png"
-                  alt=""
-                  width={32}
-                  height={32}
-                  fit="cover"
-                />
-              </Box>
-              <Text fw={700} lineClamp={1} style={{ minWidth: 0 }}>
-                maimai Score Hub
-              </Text>
-            </Group>
-          ))}
+        <Box style={{ minWidth: 0, overflow: "hidden" }}>
+          {rightSection ??
+            (showProfile ? (
+              <HeaderProfileCard
+                profile={profile ?? null}
+                onLogout={onLogout}
+                offline={offline}
+                menuItems={profileMenuItems}
+                menuPosition="bottom-start"
+                showUsernameOnMobile
+              />
+            ) : (
+              <Group
+                gap="sm"
+                wrap="nowrap"
+                style={{ minWidth: 0, cursor: "pointer" }}
+                onClick={() => navigate("/")}
+              >
+                <Box w={32} h={32} style={{ flexShrink: 0 }}>
+                  <Image
+                    src="/favicon.png"
+                    alt=""
+                    width={32}
+                    height={32}
+                    fit="cover"
+                  />
+                </Box>
+                <Text fw={700} lineClamp={1} style={{ minWidth: 0 }}>
+                  maimai Score Hub
+                </Text>
+              </Group>
+            ))}
+        </Box>
+        {!rightSection ? helpButton : null}
       </Group>
     </>
   );

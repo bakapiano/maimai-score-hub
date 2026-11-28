@@ -11,12 +11,12 @@
   width: 100%;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.2);
+  border: 1px solid light-dark(rgba(0, 0, 0, 0.2), rgba(255, 255, 255, 0.14));
   border-radius: 6px;
   background: transparent;
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.16),
-    0 2px 6px rgba(0, 0, 0, 0.12);
+    0 0 0 1px light-dark(rgba(0, 0, 0, 0.16), rgba(255, 255, 255, 0.08)),
+    0 2px 6px rgba(0, 0, 0, 0.16);
   font-family:
     "Resource Han Rounded CN", "Torus", "PingFang SC", "Noto Sans CJK SC",
     sans-serif;
@@ -120,9 +120,14 @@
   min-width: 13.258cqw;
   border: 1px solid currentColor;
   border-radius: 2px;
-  background: #fff;
+  background: light-dark(#fff, var(--mantine-color-dark-6));
+  color: var(--history-id-color);
   -webkit-text-stroke: 0;
   text-shadow: none;
+}
+
+[data-mantine-color-scheme="dark"] .musicIdBadge {
+  color: color-mix(in srgb, var(--history-id-color) 75%, #ffffff);
 }
 
 .cardChanges {
@@ -291,7 +296,7 @@
   padding: 1.19cqw 2.381cqw;
   border-top: 1px solid
     light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));
-  background: #fff;
+  background: light-dark(#fff, var(--mantine-color-dark-7));
   gap: 1.19cqw !important;
 }
 
@@ -300,7 +305,7 @@
 }
 
 .cardFooter .cardTime {
-  color: #6c757d;
+  color: light-dark(#6c757d, var(--mantine-color-dark-2));
 }
 
 .footerBadge {

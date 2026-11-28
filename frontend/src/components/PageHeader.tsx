@@ -2,7 +2,7 @@ import { Stack, Text, Title } from "@mantine/core";
 
 interface PageHeaderProps {
   title: string;
-  description: string;
+  description?: string;
   hideDescriptionOnMobile?: boolean;
 }
 
@@ -20,9 +20,11 @@ export function PageHeader({
         <Title order={2} visibleFrom="sm">
           {title}
         </Title>
-        <Text size="sm" visibleFrom="sm">
-          {description}
-        </Text>
+        {description ? (
+          <Text size="sm" visibleFrom="sm">
+            {description}
+          </Text>
+        ) : null}
       </Stack>
     );
   }
@@ -30,7 +32,7 @@ export function PageHeader({
   return (
     <Stack gap={4}>
       <Title order={2}>{title}</Title>
-      <Text size="sm">{description}</Text>
+      {description ? <Text size="sm">{description}</Text> : null}
     </Stack>
   );
 }

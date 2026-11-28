@@ -59,6 +59,50 @@ type HistoryGroup = {
   items: ScoreHistoryDisplayItem[];
 };
 const SETTINGS_KEY = "score_history_settings_v2";
+const MAX_AUTO_BACKFILL_WINDOWS = 2;
+
+function formatShortRangeDate(timestamp: number) {
+  const date = new Date(timestamp);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}/${month}/${day}`;
+}
+
+async function fetchInitialHistoryWithBackfill(input: {
+  token: string;
+  start: number;
+  end: number;
+  signal: AbortSignal;
+}) {
+  let windowRange = { start: input.start, end: input.end };
+  let result = await fetchScoreHistoryFeed({
+    token: input.token,
+    ...windowRange,
+    signal: input.signal,
+  });
+  let items = result.items;
+  let hasEarlier = result.hasEarlier;
+  let steps = 0;
+
+  while (
+    items.length === 0 &&
+    hasEarlier &&
+    steps < MAX_AUTO_BACKFILL_WINDOWS
+  ) {
+    windowRange = previousHistoryWindow(windowRange.start);
+    result = await fetchScoreHistoryFeed({
+      token: input.token,
+      ...windowRange,
+      signal: input.signal,
+    });
+    items = appendUniqueChanges(items, result.items);
+    hasEarlier = result.hasEarlier;
+    steps += 1;
+  }
+
+  return { items, hasEarlier, start: windowRange.start };
+}
 
 function readSettings(): ScoreHistorySettings {
   try {
@@ -180,6 +224,7 @@ function HistoryResults({
   loadedItemCount,
   visibleItemCount,
   selectedDay,
+  loadedRangeLabel,
   groups,
   musicMap,
 }: {
@@ -188,6 +233,7 @@ function HistoryResults({
   loadedItemCount: number;
   visibleItemCount: number;
   selectedDay: string | null;
+  loadedRangeLabel: string;
   groups: HistoryGroup[];
   musicMap: Map<string, MusicRow>;
 }) {
@@ -209,7 +255,9 @@ function HistoryResults({
     return (
       <Stack align="center" py="xl">
         <Text c="dimmed" ta="center">
-          {selectedDay ? "所选日期没有成绩历史" : "已加载范围内暂无成绩历史"}
+          {selectedDay
+            ? "所选日期没有成绩历史"
+            : `已加载范围（${loadedRangeLabel}）内暂无成绩历史`}
         </Text>
       </Stack>
     );
@@ -312,13 +360,14 @@ export function ScoreHistoryTab() {
     const controller = new AbortController();
     feedRequest.current = controller;
     setLoading(true);
-    void fetchScoreHistoryFeed({
+    void fetchInitialHistoryWithBackfill({
       token,
       ...initialFeedWindow,
       signal: controller.signal,
     })
       .then((result) => {
         setItems(result.items);
+        setHistoryStart(result.start);
         setFeedHasEarlier(result.hasEarlier);
       })
       .catch((cause: unknown) => {
@@ -501,6 +550,7 @@ export function ScoreHistoryTab() {
         loadedItemCount={items.length}
         visibleItemCount={displayItems.length}
         selectedDay={selectedDay}
+        loadedRangeLabel={`${formatShortRangeDate(historyStart)} ~ ${formatShortRangeDate(initialFeedWindow.end)}`}
         groups={groups}
         musicMap={musicMap}
       />

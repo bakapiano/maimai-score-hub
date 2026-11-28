@@ -70,7 +70,7 @@ export function AndroidAutoLoginPanel() {
     const bridge = getAndroidHostBridge();
     if (!bridge) {
       setStatus({
-        message: "Android 登录桥接暂时不可用，请重新打开页面",
+        message: "微信登录服务暂不可用，请重新打开页面。",
         terminal: true,
         success: false,
         mode: "login",
@@ -99,7 +99,7 @@ export function AndroidAutoLoginPanel() {
         </Group>
 
         <Text size="sm" c="dimmed">
-          使用当前微信的 DX Net 身份进行登录
+          通过当前微信的 DX Net 账号直接登录
         </Text>
 
         {running && <Progress value={100} animated size="sm" radius="xl" />}

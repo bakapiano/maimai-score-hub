@@ -14,7 +14,7 @@ export function SyncStatusSummary({
 }: {
   color: string;
   label: string;
-  text: string;
+  text?: string | null;
   badge?: string | null;
   state: SyncStatusVisualState;
   action?: ReactNode;
@@ -61,9 +61,11 @@ export function SyncStatusSummary({
               </Badge>
             )}
           </Group>
-          <Text size="sm" c="dimmed">
-            {text}
-          </Text>
+          {text ? (
+            <Text size="sm" c="dimmed">
+              {text}
+            </Text>
+          ) : null}
         </Stack>
       </Group>
       {action}

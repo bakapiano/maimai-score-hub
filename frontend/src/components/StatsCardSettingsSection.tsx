@@ -17,8 +17,7 @@ export function StatsCardSettingsSection() {
           title="舞萌名片外链"
         />
         <Text size="sm" c="dimmed">
-          生成并分享舞萌名片外链，可以展示在 Github README
-          或其他网站中，随时重置或关闭。
+          生成可嵌入 GitHub README 或个人主页的动态名片链接，随时可重置或关闭。
         </Text>
         <Button
           variant="light"
@@ -32,7 +31,7 @@ export function StatsCardSettingsSection() {
         </Button>
         {offline && (
           <Text size="xs" c="dimmed">
-            请退出离线模式后管理分享。
+            离线模式下无法管理分享，请先登录。
           </Text>
         )}
       </Stack>
