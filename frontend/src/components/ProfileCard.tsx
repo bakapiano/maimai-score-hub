@@ -5,6 +5,7 @@ import {
 import { Badge, Box, Divider, Group, Image, Stack, Text } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 import { normalizeMaimaiImgUrl } from "../utils/maimaiImages";
+import { cdnUrl } from "../api/cdnUrl";
 import { AppCard } from "./AppCard";
 import classes from "./ProfileCard.module.css";
 
@@ -215,7 +216,7 @@ export function ProfileCard({ profile }: Props) {
                 <Group className={classes.starGroup} gap={2} wrap="nowrap">
                   <Image
                     className={classes.starIcon}
-                    src="/maimai-mobile/img/icon_star.png"
+                    src={cdnUrl("/maimai-mobile/img/icon_star.png")}
                     alt="star"
                     fit="contain"
                     referrerPolicy="no-referrer"

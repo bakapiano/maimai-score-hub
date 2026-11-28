@@ -1,6 +1,7 @@
 // Utility functions for Music Score Card components
 
 import { apiUrl } from "../../api/baseUrl";
+import { cdnUrl } from "../../api/cdnUrl";
 
 const RANK_ASSET: Record<string, string> = {
   "SSS+": "UI_TTR_Rank_SSSp.png",
@@ -99,7 +100,7 @@ export function renderRank(
             </filter>
           </defs>
           <image
-            href={`/mai/pic/${asset}`}
+            href={cdnUrl(`/mai/pic/${asset}`)}
             width="256"
             height="120"
             preserveAspectRatio="xMidYMid meet"
@@ -111,7 +112,7 @@ export function renderRank(
 
     return (
       <img
-        src={`/mai/pic/${asset}`}
+        src={cdnUrl(`/mai/pic/${asset}`)}
         alt={r}
         style={imageStyle}
       />
@@ -146,7 +147,7 @@ export function renderMusicIcon(
 
     return (
       <img
-        src={`/mai/pic/${asset}`}
+        src={cdnUrl(`/mai/pic/${asset}`)}
         alt={alt}
         style={{
           display: "inline-block",
@@ -250,15 +251,23 @@ export function getRankFromScore(score: string | null): string {
  * Build cover URL from music ID
  * v=3: bust browser cache after enabling webp content-negotiation
  */
-export function getCoverUrl(musicId: string): string {
-  return apiUrl(`/catalog/covers/${musicId}?v=3`);
+export function getCoverUrl(
+  musicId: string,
+  opts?: { size?: "thumb" | "full" },
+): string {
+  const sizeParam = opts?.size === "full" ? "" : "&size=thumb";
+  return cdnUrl(
+    apiUrl(`/catalog/covers/${musicId}?v=4&format=webp${sizeParam}`),
+  );
 }
 
 /**
  * Get FC/FS icon URL
  */
 export function getIconUrl(icon: string): string {
-  return `/maimai-mobile/img/music_icon_${normalizeRemoteIconKey(icon)}.png`;
+  return cdnUrl(
+    `/maimai-mobile/img/music_icon_${normalizeRemoteIconKey(icon)}.png`,
+  );
 }
 
 function normalizeRemoteIconKey(icon: string): string {

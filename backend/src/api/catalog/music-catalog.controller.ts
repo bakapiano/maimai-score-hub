@@ -11,12 +11,19 @@ export class MusicCatalogController {
   ) {}
 
   @Get()
+  @Header(
+    'Cache-Control',
+    'public, max-age=600, s-maxage=1800, stale-while-revalidate=3600',
+  )
   async listAll() {
     return this.musicService.findAll();
   }
 
   @Get('aliases')
-  @Header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600')
+  @Header(
+    'Cache-Control',
+    'public, max-age=600, s-maxage=1800, stale-while-revalidate=3600',
+  )
   async listAliases() {
     return this.musicAliasService.findAll();
   }

@@ -13,6 +13,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { syncAndroidStatusBar } from "../features/android-update/androidSystemBar";
 import { HeaderProfileCard, type MiniProfile } from "./MiniProfileCard";
 import classes from "./AppHeader.module.css";
+import { cdnUrl } from "../api/cdnUrl";
 
 type AppHeaderProps = {
   profile?: MiniProfile | null;
@@ -85,7 +86,7 @@ export function AppHeader({
         >
           <Box w={36} h={36}>
             <Image
-              src="/favicon.png"
+              src={cdnUrl("/favicon.webp")}
               alt="app icon"
               width={36}
               height={36}
@@ -142,7 +143,7 @@ export function AppHeader({
               >
                 <Box w={32} h={32} style={{ flexShrink: 0 }}>
                   <Image
-                    src="/favicon.png"
+                    src={cdnUrl("/favicon.webp")}
                     alt=""
                     width={32}
                     height={32}

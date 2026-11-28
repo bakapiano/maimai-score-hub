@@ -1,9 +1,11 @@
-const CACHE_NAME = "maimai-score-hub-app-v1";
+const CACHE_NAME = "maimai-score-hub-app-v2";
+const CDN_ORIGIN = "https://cdn.maiscorehub.bakapiano.com";
 const APP_SHELL_URLS = [
   "/",
   "/index.html",
   "/manifest.webmanifest",
   "/favicon.png",
+  "/favicon.webp",
   "/pwa-192x192.png",
   "/pwa-512x512.png",
   "/avatar-placeholder.svg",
@@ -36,7 +38,10 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return;
+  const isSameOrigin = url.origin === self.location.origin;
+  const isCdnStaticAsset =
+    url.origin === CDN_ORIGIN && url.pathname.startsWith("/assets/");
+  if (!isSameOrigin && !isCdnStaticAsset) return;
   if (url.pathname.startsWith("/api/")) return;
   // Revocable profile cards must always revalidate at the backend.
   // Never cache an SVG here or use it as the navigation app-shell fallback.

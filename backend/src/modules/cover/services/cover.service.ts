@@ -32,6 +32,10 @@ export type LocalBackfillSummary = {
 };
 
 type CoverFormat = 'png' | 'webp';
+export type CoverSize = 'full' | 'thumb';
+
+const THUMB_SIZE_PX = 200;
+const THUMB_WEBP_QUALITY = 75;
 
 const DIVING_FISH_MUSIC_URL =
   'https://www.diving-fish.com/api/maimaidxprober/music_data';
@@ -42,6 +46,7 @@ export class CoverService {
   private readonly divingFishCoverBase = 'https://www.diving-fish.com/covers';
   private readonly lxnsCoverBase = 'https://assets.lxns.net/maimai/jacket';
   private readonly baseDir = join(process.cwd(), 'covers');
+  private readonly thumbInFlight = new Map<string, Promise<string | null>>();
 
   constructor(
     @InjectModel(MusicEntity.name)
@@ -55,6 +60,11 @@ export class CoverService {
   private buildLocalPath(id: string, format: CoverFormat = 'png') {
     const padded = this.padId(id);
     return join(this.baseDir, `${padded}.${format}`);
+  }
+
+  private buildThumbPath(id: string) {
+    const padded = this.padId(id);
+    return join(this.baseDir, `${padded}.thumb.webp`);
   }
 
   private async pathExists(path: string): Promise<boolean> {
@@ -82,8 +92,23 @@ export class CoverService {
     return (await this.pathExists(path)) ? path : null;
   }
 
-  async getPreferredLocalPath(id: string, preferWebp: boolean) {
-    if (preferWebp) {
+  async getPreferredLocalPath(
+    id: string,
+    preferWebp: boolean,
+    options: { size?: CoverSize; forceFormat?: CoverFormat } = {},
+  ) {
+    const wantWebp = options.forceFormat
+      ? options.forceFormat === 'webp'
+      : preferWebp;
+
+    if (options.size === 'thumb' && wantWebp) {
+      const thumbPath = await this.getOrCreateThumbPath(id);
+      if (thumbPath) {
+        return { path: thumbPath, format: 'webp' as const };
+      }
+    }
+
+    if (wantWebp) {
       const webp = await this.getLocalPathIfExists(id, 'webp');
       if (webp) {
         return { path: webp, format: 'webp' as const };
@@ -98,6 +123,52 @@ export class CoverService {
     }
     const webp = await this.getLocalPathIfExists(id, 'webp');
     return webp ? { path: webp, format: 'webp' as const } : null;
+  }
+
+  private async getOrCreateThumbPath(id: string): Promise<string | null> {
+    const thumbPath = this.buildThumbPath(id);
+    if (await this.pathExists(thumbPath)) {
+      return thumbPath;
+    }
+
+    const key = this.padId(id);
+    const existing = this.thumbInFlight.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const task = this.generateThumbFromLocal(id, thumbPath).finally(() => {
+      if (this.thumbInFlight.get(key) === task) {
+        this.thumbInFlight.delete(key);
+      }
+    });
+    this.thumbInFlight.set(key, task);
+    return task;
+  }
+
+  private async generateThumbFromLocal(
+    id: string,
+    thumbPath: string,
+  ): Promise<string | null> {
+    const sourcePath =
+      (await this.getLocalPathIfExists(id, 'png')) ??
+      (await this.getLocalPathIfExists(id, 'webp'));
+    if (!sourcePath) {
+      return null;
+    }
+
+    try {
+      await sharp(sourcePath, { failOn: 'none' })
+        .resize(THUMB_SIZE_PX, THUMB_SIZE_PX, { fit: 'cover' })
+        .webp({ quality: THUMB_WEBP_QUALITY })
+        .toFile(thumbPath);
+      return thumbPath;
+    } catch (err) {
+      this.logger.warn(
+        `Failed to generate thumb cover for id=${id}: ${(err as Error).message}`,
+      );
+      return null;
+    }
   }
 
   async getCoverCount(): Promise<number> {
@@ -429,12 +500,18 @@ export class CoverService {
   ): Promise<boolean> {
     const pngPath = this.buildLocalPath(dbId, 'png');
     const webpPath = this.buildLocalPath(dbId, 'webp');
+    const thumbPath = this.buildThumbPath(dbId);
 
     try {
       const image = sharp(sourceBuffer, { failOn: 'none' });
       await Promise.all([
         image.clone().png().toFile(pngPath),
         image.clone().webp({ quality: 78 }).toFile(webpPath),
+        image
+          .clone()
+          .resize(THUMB_SIZE_PX, THUMB_SIZE_PX, { fit: 'cover' })
+          .webp({ quality: THUMB_WEBP_QUALITY })
+          .toFile(thumbPath),
       ]);
       return true;
     } catch (err) {

@@ -8,10 +8,27 @@ const apiProxyOrigin =
   /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|$)/.test(apiProxyTarget)
     ? "http://localhost:3001"
     : "https://maiscorehub.bakapiano.com";
+const cdnBaseUrl = (
+  process.env.VITE_CDN_BASE_URL ?? "https://cdn.maiscorehub.bakapiano.com"
+).replace(/\/+$/, "");
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
+  experimental:
+    command === "build" && cdnBaseUrl
+      ? {
+          renderBuiltUrl(filename, { hostType }) {
+            if (
+              filename.startsWith("assets/") &&
+              (hostType === "html" || hostType === "js" || hostType === "css")
+            ) {
+              return `${cdnBaseUrl}/${filename}`;
+            }
+            return { relative: true };
+          },
+        }
+      : undefined,
   resolve: {
     alias: {
       "@maimai-score-hub/shared": fileURLToPath(
@@ -66,4 +83,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

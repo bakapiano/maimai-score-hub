@@ -127,3 +127,13 @@ ocr/scripts/training/
 /android-app/release-artifacts/
 *.jks
 *.keystore
+
+.agents
+
+/lumenfolio-site
+
+# Cloud AccessKey credentials (never commit)
+AccessKey.csv
+*AccessKey*.csv
+
+

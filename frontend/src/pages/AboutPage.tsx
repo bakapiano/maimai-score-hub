@@ -39,6 +39,7 @@ import { useAuth } from "../providers/AuthContext";
 import { copyTextToClipboard } from "../utils/clipboard";
 import { getCachedProfile } from "../utils/offlineCache";
 import classes from "./AboutPage.module.css";
+import { cdnUrl } from "../api/cdnUrl";
 
 function resolveHeaderProfile(
   authProfile: ReturnType<typeof useAuth>["profile"],
@@ -173,7 +174,7 @@ function BrandOverviewCard() {
           <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
             <Box w={44} h={44} style={{ flexShrink: 0 }}>
               <Image
-                src="/favicon.png"
+                src={cdnUrl("/favicon.webp")}
                 alt="maimai Score Hub"
                 w={44}
                 h={44}
